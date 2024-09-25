@@ -4,12 +4,12 @@ import { useEffect, useState } from 'react'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { supabase } from '@/lib/supabase'
 import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,DialogClose } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Trash2 } from 'lucide-react'
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger,SheetClose } from "@/components/ui/sheet"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from "@/components/ui/select"
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger, SheetClose } from "@/components/ui/sheet"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 
 interface Company {
@@ -52,10 +52,11 @@ export function PasswordCheckerReports() {
   }
 
   const handleSave = async (updatedCompany: Company) => {
+    const { id, ...updateData } = updatedCompany
     const { error } = await supabase
       .from('PasswordChecker')
-      .update(updatedCompany)
-      .eq('id', updatedCompany.id)
+      .update(updateData)
+      .eq('id', id)
 
     if (error) {
       console.error('Error updating company:', error)
@@ -230,7 +231,9 @@ export function PasswordCheckerReports() {
                                 />
                               </div>
                             </div>
-                            <Button onClick={() => handleSave(editingCompany)}>Save Changes</Button>
+                            <DialogClose asChild>
+                              <Button onClick={() => handleSave(editingCompany)}>Save Changes</Button>
+                            </DialogClose>
                           </DialogContent>
                         </Dialog>
                         <Button variant="outline" size="sm" onClick={() => handleDelete(company.id)}>
