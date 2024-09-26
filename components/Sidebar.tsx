@@ -17,17 +17,17 @@ const navItems = [
     // One-off Tools
     { href: "/password-checker", icon: Key, label: "Password Checker", category: "One-off Tools", available: true },
     { href: "/manufacturers-details", icon: Factory, label: "Manufacturers Details", category: "One-off Tools", available: true },
-    { href: "/withholding-tax-doc-extractor", icon: FileText, label: "Withholding Tax Doc Extractor", category: "One-off Tools", available: true },
-    { href: "/tax-compliance-downloader", icon: ShieldCheck, label: "Tax Compliance Downloader", category: "One-off Tools", available: true },
-    { href: "/password-changer", icon: Key, label: "Password Changer", category: "One-off Tools", available: true },
-    { href: "/pin-profile-extractor", icon: ClipboardCheck, label: "PIN Profile Extractor", category: "One-off Tools", available: true },
+    { href: "/withholding-tax-doc-extractor", icon: FileText, label: "Withholding Tax Doc Extractor", category: "One-off Tools", available: false },
+    { href: "/tax-compliance-downloader", icon: ShieldCheck, label: "Tax Compliance Downloader", category: "One-off Tools", available: false },
+    { href: "/password-changer", icon: Key, label: "Password Changer", category: "One-off Tools", available: false },
+    { href: "/pin-profile-extractor", icon: ClipboardCheck, label: "PIN Profile Extractor", category: "One-off Tools", available: false },
 
     // Monthly Tools
-    { href: "/withholding-tax-downloader", icon: Download, label: "Withholding Tax Downloader", category: "Monthly Tools", available: true },
-    { href: "/auto-population-downloader", icon: Users, label: "Auto Population Downloader", category: "Monthly Tools", available: true },
-    { href: "/liabilities-extractor", icon: FileSpreadsheet, label: "Liabilities Extractor", category: "Monthly Tools", available: true },
-    { href: "/withholding-vat-extractor", icon: DollarSign, label: "Withholding VAT Extractor", category: "Monthly Tools", available: true },
-    { href: "/ledger-downloader", icon: BarChart2, label: "Ledger Downloader", category: "Monthly Tools", available: true },
+    { href: "/withholding-tax-downloader", icon: Download, label: "Withholding Tax Downloader", category: "Monthly Tools", available: false },
+    { href: "/auto-population-downloader", icon: Users, label: "Auto Population Downloader", category: "Monthly Tools", available: false },
+    { href: "/liabilities-extractor", icon: FileSpreadsheet, label: "Liabilities Extractor", category: "Monthly Tools", available: false },
+    { href: "/withholding-vat-extractor", icon: DollarSign, label: "Withholding VAT Extractor", category: "Monthly Tools", available: false },
+    { href: "/ledger-downloader", icon: BarChart2, label: "Ledger Downloader", category: "Monthly Tools", available: false },
 
     // Suggested New Tools
     { href: "/pin-registration", icon: FileSignature, label: "PIN Registration Tool", category: "Suggested New Tools", available: false },
@@ -37,8 +37,7 @@ const navItems = [
     { href: "/payment-reminders", icon: CreditCard, label: "Tax Payment Reminders", category: "Suggested New Tools", available: false },
     { href: "/audit-logs", icon: FileText, label: "Audit Logs Viewer", category: "Suggested New Tools", available: false },
     
-    { href: "/settings", icon: Settings, label: "Settings", category: "Main", available: true },
-];
+    { href: "/settings", icon: Settings, label: "Settings", category: "Main", available: false },];
 
 export function Sidebar() {
     const pathname = usePathname()
