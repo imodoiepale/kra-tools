@@ -6,6 +6,9 @@ import { Sidebar } from "@/components/Sidebar";
 import { Navbar } from '@/components/Navbar';
 import { Toaster } from 'react-hot-toast';
 
+import { ToastContainer, toast } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
+
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
@@ -31,6 +34,7 @@ export default function RootLayout({
                 <div className="overflow-auto">
                   {children}
                   <Toaster />
+                  <ToastContainer />
                 </div>
               </div>
             </div>

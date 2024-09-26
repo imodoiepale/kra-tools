@@ -14,71 +14,76 @@ import {
 
 interface PasswordCheckerRunningProps {
     onComplete: () => void
+    progress: number
+    status: string
 }
 
-export function PasswordCheckerRunning({ onComplete }: PasswordCheckerRunningProps) {
-    const [progress, setProgress] = useState(0)
+export function PasswordCheckerRunning({ onComplete, progress, status }: PasswordCheckerRunningProps) {
+    const [logs, setLogs] = useState([])
     const [totalCompanies, setTotalCompanies] = useState(0)
-    const [logs, setLogs] = useState<any[]>([]) // State for logging
 
     useEffect(() => {
-        const fetchProgress = async () => {
+        const fetchTotalCompanies = async () => {
             const { count } = await supabase
                 .from('PasswordChecker')
                 .select('*', { count: 'exact' })
 
             setTotalCompanies(count || 0)
+        }
 
-            const channel = supabase
-                .channel('table-db-changes')
-                .on(
-                    'postgres_changes',
-                    {
-                        event: 'UPDATE',
-                        schema: 'public',
-                        table: 'PasswordChecker',
-                    },
-                    (payload) => {
-                        if (payload.new.status !== 'Pending') {
-                            setProgress(prev => prev + 1)
-                            // Add log entry
-                            setLogs(prevLogs => {
-                                const newLog = {
-                                    company_name: payload.new.company_name,
-                                    kra_pin: payload.new.kra_pin,
-                                    kra_password: payload.new.kra_password,                                    status: payload.new.status,
-                                    timestamp: new Date().toLocaleString(),
-                                }
-                                console.log('New log entry:', newLog)
-                                return [...prevLogs, newLog]
-                            })
-                        }
-                    }
-                )
-                .subscribe()
+        fetchTotalCompanies()
 
-            return () => {
-                supabase.removeChannel(channel)
+        const fetchLogs = async () => {
+            const { data, error } = await supabase
+                .from('AutomationProgress')
+                .select('logs')
+                .eq('id', 1)
+                .single()
+
+            if (data && data.logs) {
+                setLogs(data.logs)
             }
         }
 
-        fetchProgress()
+        fetchLogs()
+
+        const channel = supabase
+            .channel('table-db-changes')
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'AutomationProgress',
+                },
+                (payload) => {
+                    if (payload.new && payload.new.logs) {
+                        setLogs(payload.new.logs)
+                    }
+                }
+            )
+            .subscribe()
+
+        return () => {
+            supabase.removeChannel(channel)
+        }
     }, [])
 
     useEffect(() => {
-        if (progress === totalCompanies && totalCompanies > 0) {
+        if (status === "Completed") {
             onComplete()
         }
-    }, [progress, totalCompanies, onComplete])
-
-    const percentComplete = totalCompanies > 0 ? (progress / totalCompanies) * 100 : 0
+    }, [status, onComplete])
 
     return (
         <div className="space-y-4">
             <h3 className="text-lg font-medium">Password Check in Progress</h3>
-            <Progress value={percentComplete} className="w-full" />
+            <Progress value={progress} className="w-full" />
             <p className="text-sm text-gray-500">
-                {progress} out of {totalCompanies} companies checked ({percentComplete.toFixed(1)}%)
+                Status: {status}
+            </p>
+            <p className="text-sm text-gray-500">
+                {Math.round(progress / 100 * totalCompanies)} out of {totalCompanies} companies checked ({progress.toFixed(1)}%)
             </p>
 
             <div className="overflow-x-auto">
@@ -103,29 +108,13 @@ export function PasswordCheckerRunning({ onComplete }: PasswordCheckerRunningPro
                                     <TableCell>{log.kra_pin}</TableCell>
                                     <TableCell>{log.kra_password}</TableCell>
                                     <TableCell>{log.status}</TableCell>
-                                    <TableCell>{log.timestamp}</TableCell>
+                                    <TableCell>{new Date(log.timestamp).toLocaleString()}</TableCell>
                                 </TableRow>
                             ))}
                         </TableBody>
                     </Table>
                 </div>
             </div>
-            <style jsx>{`
-                .overflow-x-auto {
-                    overflow-x: auto
-                }
-                .overflow-y-auto {
-                    overflow-y: auto
-                }
-                .max-h-[calc(100vh-300px)] {
-                    max-height: calc(100vh - 300px)
-                }
-                .sticky {
-                    position: sticky
-                    top: 0
-                    z-index: 10
-                }
-            `}</style>
         </div>
     )
 }

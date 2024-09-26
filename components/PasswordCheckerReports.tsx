@@ -4,13 +4,13 @@ import { useEffect, useState } from 'react'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { supabase } from '@/lib/supabase'
 import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,DialogClose } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogClose } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Trash2 } from 'lucide-react'
+import { Trash2, Download } from 'lucide-react'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger, SheetClose } from "@/components/ui/sheet"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-
+import ExcelJS from 'exceljs'
 
 interface Company {
   id: number
@@ -79,6 +79,19 @@ export function PasswordCheckerReports() {
     }
   }
 
+  const handleDeleteAll = async () => {
+    const { error } = await supabase
+      .from('PasswordChecker')
+      .delete()
+      .neq('id', 0)  // This will delete all rows
+
+    if (error) {
+      console.error('Error deleting all companies:', error)
+    } else {
+      setCompanies([])
+    }
+  }
+
   const handleAddCompany = async () => {
     const { data, error } = await supabase
       .from('PasswordChecker')
@@ -97,66 +110,177 @@ export function PasswordCheckerReports() {
     }
   }
 
+  const handleDownloadExcel = async () => {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Password Check Reports');
+  
+    // Add headers starting from B2
+    const headers = ['Index', 'Company Name', 'KRA PIN', 'KRA Password', 'Status', 'Last Checked'];
+    
+    worksheet.addRow([]); // Create empty first row
+    const headerRow = worksheet.getRow(2);
+    headers.forEach((header, i) => {
+      headerRow.getCell(i + 2).value = header; // Start from column B
+    });
+  
+    headerRow.eachCell((cell) => {
+      cell.font = { bold: true };
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFFFFF00' }
+      };
+    });
+  
+    // Add data starting from row 3 (B3 onwards)
+    companies.forEach((company, index) => {
+      const row = worksheet.addRow([
+        '', // Empty cell in column A
+        index + 1, // Index in B
+        company.company_name, // Company Name in C
+        company.kra_pin, // KRA PIN in D
+        company.kra_password, // KRA Password in E
+        company.status, // Status in F
+        company.last_checked ? new Date(company.last_checked).toLocaleString() : 'Missing' // Last Checked in G
+      ]);
+  
+      // Center-align the index column (column B)
+      row.getCell(2).alignment = { horizontal: 'center' };
+  
+      // Set status cell background color
+      const statusCell = row.getCell(6); // Status is in column F (6th column)
+      if (company.status.toLowerCase() === 'valid') {
+        statusCell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FF90EE90' } // Light green for valid
+        };
+      } else if (company.status.toLowerCase() === 'invalid') {
+        statusCell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFFF6347' } // Tomato red for invalid
+        };
+      } else {
+        statusCell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFFFD700' } // Gold for other statuses
+        };
+      }
+    });
+  
+    // Auto-fit columns based on their content
+    worksheet.columns.forEach((column) => {
+      let maxLength = 0;
+      column.eachCell({ includeEmpty: true }, (cell) => {
+        const cellLength = cell.value ? cell.value.toString().length : 10;
+        if (cellLength > maxLength) {
+          maxLength = cellLength;
+        }
+      });
+      column.width = maxLength + 2; // Add padding for better readability
+    });
+  
+    // Add borders to all cells, except column A (empty column)
+    worksheet.eachRow({ includeEmpty: true }, (row) => {
+      row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+        if (colNumber > 1) { // Skip borders for column A
+          cell.border = {
+            top: { style: 'thin' },
+            left: { style: 'thin' },
+            bottom: { style: 'thin' },
+            right: { style: 'thin' }
+          };
+        }
+      });
+    });
+  
+    // Generate Excel file
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+  
+    // Trigger download
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'password_check_reports.xlsx';
+    link.click();
+  
+    // Clean up
+    URL.revokeObjectURL(url);
+  };
+  
+
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <h3 className="text-lg font-medium">Password Check Reports</h3>
-        <Sheet>
-          <SheetTrigger asChild>
-            <Button>Add New Company</Button>
-          </SheetTrigger>
-          <SheetContent>
-            <SheetHeader>
-              <SheetTitle>Add New Company</SheetTitle>
-            </SheetHeader>
-            <div className="grid gap-4 py-4">
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="company_name">Company Name</Label>
-                <Input
-                  id="company_name"
-                  value={newCompany.company_name}
-                  onChange={(e) => setNewCompany({ ...newCompany, company_name: e.target.value })}
-                />
+        <div className="flex space-x-2">
+          <Sheet>
+            <SheetTrigger asChild>
+              <Button size="sm">Add New Company</Button>
+            </SheetTrigger>
+            <SheetContent>
+              <SheetHeader>
+                <SheetTitle>Add New Company</SheetTitle>
+              </SheetHeader>
+              <div className="grid gap-4 py-4">
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="company_name">Company Name</Label>
+                  <Input
+                    id="company_name"
+                    value={newCompany.company_name}
+                    onChange={(e) => setNewCompany({ ...newCompany, company_name: e.target.value })}
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="kra_pin">KRA PIN</Label>
+                  <Input
+                    id="kra_pin"
+                    value={newCompany.kra_pin}
+                    onChange={(e) => setNewCompany({ ...newCompany, kra_pin: e.target.value })}
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="kra_password">KRA Password</Label>
+                  <Input
+                    id="kra_password"
+                    type="password"
+                    value={newCompany.kra_password}
+                    onChange={(e) => setNewCompany({ ...newCompany, kra_password: e.target.value })}
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="status">Status</Label>
+                  <Select
+                    id="status"
+                    value={newCompany.status}
+                    onValueChange={(value) => setNewCompany({ ...newCompany, status: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="valid">Valid</SelectItem>
+                      <SelectItem value="invalid">Invalid</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="kra_pin">KRA PIN</Label>
-                <Input
-                  id="kra_pin"
-                  value={newCompany.kra_pin}
-                  onChange={(e) => setNewCompany({ ...newCompany, kra_pin: e.target.value })}
-                />
-              </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="kra_password">KRA Password</Label>
-                <Input
-                  id="kra_password"
-                  type="password"
-                  value={newCompany.kra_password}
-                  onChange={(e) => setNewCompany({ ...newCompany, kra_password: e.target.value })}
-                />
-              </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="status">Status</Label>
-                <Select
-                  id="status"
-                  value={newCompany.status}
-                  onValueChange={(value) => setNewCompany({ ...newCompany, status: value })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="valid">Valid</SelectItem>
-                    <SelectItem value="invalid">Invalid</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <SheetClose asChild>
-              <Button onClick={handleAddCompany}>Add Company</Button>
-            </SheetClose>
-          </SheetContent>
-        </Sheet>
+              <SheetClose asChild>
+                <Button size="sm" onClick={handleAddCompany}>Add Company</Button>
+              </SheetClose>
+            </SheetContent>
+          </Sheet>
+          <Button size="sm" onClick={handleDownloadExcel}>
+            <Download className="h-4 w-4 mr-2" />
+            Download Excel
+          </Button>
+          <Button size="sm" variant="destructive" onClick={handleDeleteAll}>
+            Delete All
+          </Button>
+        </div>
       </div>
       <div className="rounded-md border">
         <div className="overflow-x-auto">
