@@ -1,18 +1,20 @@
+// pages/pin-checker-details.tsx
 // @ts-nocheck
-"use client";
+"use client"
+
 import { useState, useEffect } from 'react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { PasswordCheckerRunning } from '@/components/PasswordCheckerRunning'
-import { PasswordCheckerReports } from '@/components/PasswordCheckerReports'
+import { PinCheckerDetailsRunning } from '@/components/PinCheckerDetailsRunning'
+import { PinCheckerDetailsReports } from '@/components/PinCheckerDetailsReports'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { motion } from "framer-motion"
 import { supabase } from '@/lib/supabase'
 
-export default function PasswordChecker() {
+export default function PinCheckerDetails() {
     const [isChecking, setIsChecking] = useState(false)
     const [activeTab, setActiveTab] = useState("start")
     const [progress, setProgress] = useState(0)
@@ -35,7 +37,7 @@ export default function PasswordChecker() {
     const fetchCompanies = async () => {
         const { data, error } = await supabase
             .from('PasswordChecker')
-            .select('id, company_name, kra_pin, kra_password, status')
+            .select('id, company_name, kra_pin')
             .order('id', { ascending: true })
 
         if (error) {
@@ -47,11 +49,9 @@ export default function PasswordChecker() {
 
     const checkProgress = async () => {
         try {
-            const response = await fetch('/api/password-checker', {
+            const response = await fetch('/api/pin-checker-details', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ action: "getProgress" })
             });
             if (!response.ok) throw new Error('Failed to fetch progress');
@@ -66,9 +66,6 @@ export default function PasswordChecker() {
             }
         } catch (error) {
             console.error('Error checking progress:', error);
-            setIsChecking(false);
-            setStatus("Not Started");
-            setProgress(0);
         }
     };
 
@@ -79,12 +76,10 @@ export default function PasswordChecker() {
         }
 
         try {
-            const response = await fetch('/api/password-checker', {
+            const response = await fetch('/api/pin-checker-details', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
                     action: "start",
                     runOption,
                     selectedIds: runOption === 'selected' ? selectedCompanies : []
@@ -94,13 +89,13 @@ export default function PasswordChecker() {
             if (!response.ok) throw new Error('API request failed')
 
             const data = await response.json()
-            console.log('Password check started:', data)
+            console.log('PIN Checker Details started:', data)
             setIsChecking(true)
             setStatus("Running")
             setActiveTab("running")
         } catch (error) {
-            console.error('Error starting password check:', error)
-            alert('Failed to start password check. Please try again.')
+            console.error('Error starting PIN Checker Details:', error)
+            alert('Failed to start PIN Checker Details. Please try again.')
         }
     }
 
@@ -111,11 +106,9 @@ export default function PasswordChecker() {
         }
 
         try {
-            const response = await fetch('/api/password-checker', {
+            const response = await fetch('/api/pin-checker-details', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ action: "stop" })
             })
 
@@ -132,8 +125,8 @@ export default function PasswordChecker() {
         }
     }
 
-    const handleCheckboxChange = (id) => {
-        setSelectedCompanies(prev =>
+    const handleCheckboxChange = (id: string) => {
+        setSelectedCompanies((prev: string[] | never[]) =>
             prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
         )
     }
@@ -142,8 +135,8 @@ export default function PasswordChecker() {
         <div className="p-4 w-full">
             <Card>
                 <CardHeader>
-                    <CardTitle>KRA Password Checker</CardTitle>
-                    <CardDescription>Validate KRA passwords for multiple companies</CardDescription>
+                    <CardTitle>PIN Checker Details (Obligations)</CardTitle>
+                    <CardDescription>Extract obligation details for multiple companies</CardDescription>
                 </CardHeader>
                 <CardContent>
                     <Tabs value={activeTab} onValueChange={setActiveTab}>
@@ -155,8 +148,8 @@ export default function PasswordChecker() {
                         <TabsContent value="start">
                             <Card>
                                 <CardHeader>
-                                    <CardTitle>Start Password Check</CardTitle>
-                                    <CardDescription>Begin the password validation process for companies.</CardDescription>
+                                    <CardTitle>Start PIN Checker Details</CardTitle>
+                                    <CardDescription>Begin the obligation details extraction process for companies.</CardDescription>
                                 </CardHeader>
                                 <CardContent>
                                     <div className="mb-4">
@@ -187,8 +180,6 @@ export default function PasswordChecker() {
                                                                 <TableHead className="sticky top-0 bg-white">#</TableHead>
                                                                 <TableHead className="sticky top-0 bg-white">Company Name</TableHead>
                                                                 <TableHead className="sticky top-0 bg-white">KRA PIN</TableHead>
-                                                                <TableHead className="sticky top-0 bg-white">KRA Password</TableHead>
-                                                                <TableHead className="sticky top-0 bg-white">Status</TableHead>
                                                             </TableRow>
                                                         </TableHeader>
                                                         <TableBody>
@@ -202,13 +193,7 @@ export default function PasswordChecker() {
                                                                     </TableCell>
                                                                     <TableCell className="text-center">{index + 1}</TableCell>
                                                                     <TableCell>{company.company_name}</TableCell>
-                                                                    <TableCell>{company.kra_pin || <span className="text-red-500 font-bold">Missing</span>}</TableCell>
-                                                                    <TableCell>{company.kra_password || <span className="text-red-500 font-bold">Missing</span>}</TableCell>
-                                                                    <TableCell className="">
-                                                                        {company.status?.toLowerCase() === 'valid' && <span className="bg-green-500 text-white px-2 py-1 rounded">{company.status}</span>}
-                                                                        {company.status?.toLowerCase() === 'invalid' && <span className="bg-red-500 text-white px-2 py-1 rounded">{company.status}</span>}
-                                                                        {company.status?.toLowerCase() !== 'valid' && company.status?.toLowerCase() !== 'invalid' && <span className="bg-yellow-500 text-white px-2 py-1 rounded">{company.status}</span>}
-                                                                    </TableCell>
+                                                                    <TableCell>{company.kra_pin}</TableCell>
                                                                 </TableRow>
                                                             ))}
                                                         </TableBody>
@@ -230,33 +215,25 @@ export default function PasswordChecker() {
                                                                     <TableHead>#</TableHead>
                                                                     <TableHead>Company Name</TableHead>
                                                                     <TableHead>KRA PIN</TableHead>
-                                                                    <TableHead>KRA Password</TableHead>
-                                                                    <TableHead>Status</TableHead>
                                                                 </TableRow>
                                                             </TableHeader>
                                                             <TableBody>
                                                                 {companies.filter(c => selectedCompanies.includes(c.id)).map((company, index) => (
                                                                     <TableRow key={company.id} className="bg-blue-100">
-                                                                        <TableCell className="text-center">{index + 1}</TableCell>
+                                                                        <TableCell>{index + 1}</TableCell>
                                                                         <TableCell>{company.company_name}</TableCell>
-                                                                        <TableCell>{company.kra_pin || <span className="text-red-500 font-bold">Missing</span>}</TableCell>
-                                                                        <TableCell>{company.kra_password || <span className="text-red-500 font-bold">Missing</span>}</TableCell>
-                                                                        <TableCell className="">
-                                                                            {company.status?.toLowerCase() === 'valid' && <span className="bg-green-500 text-white px-2 py-1 rounded">{company.status}</span>}
-                                                                            {company.status?.toLowerCase() === 'invalid' && <span className="bg-red-500 text-white px-2 py-1 rounded">{company.status}</span>}
-                                                                            {company.status?.toLowerCase() !== 'valid' && company.status?.toLowerCase() !== 'invalid' && <span className="bg-yellow-500 text-white px-2 py-1 rounded">{company.status}</span>}
-                                                                        </TableCell>
+                                                                        <TableCell>{company.kra_pin}</TableCell>
                                                                     </TableRow>
                                                                 ))}
                                                             </TableBody>
                                                         </Table>
                                                     </div>
                                                     <div className="mt-4">
-                                                        <Button onClick={handleStartCheck} disabled={isChecking || selectedCompanies.length === 0}>
-                                                            {isChecking ? 'Running...' : 'Start Password Check'}
+                                                        <Button onClick={handleStartCheck} disabled={isChecking || (runOption === 'selected' && selectedCompanies.length === 0)}>
+                                                            {isChecking ? 'Running...' : 'Start PIN Checker Details'}
                                                         </Button>
                                                         <Button onClick={handleStopCheck} disabled={!isChecking} variant="destructive" className="ml-2">
-                                                            Stop Password Check
+                                                            Stop PIN Checker Details
                                                         </Button>
                                                     </div>
                                                 </motion.div>
@@ -264,34 +241,34 @@ export default function PasswordChecker() {
                                         </div>
                                     )}
                                 </CardContent>
-                                {runOption === 'all' && (
+                                {runOption !== 'selected' && (
                                     <CardFooter>
-                                        <Button onClick={handleStartCheck} disabled={isChecking}>
-                                            {isChecking ? 'Running...' : 'Start Password Check'}
+                                        <Button onClick={handleStartCheck} disabled={isChecking || (runOption === 'selected' && selectedCompanies.length === 0)}>
+                                            {isChecking ? 'Running...' : 'Start PIN Checker Details'}
                                         </Button>
                                         <Button onClick={handleStopCheck} disabled={!isChecking} variant="destructive" className="ml-2">
-                                            Stop Password Check
+                                            Stop PIN Checker Details
                                         </Button>
                                     </CardFooter>
                                 )}
                             </Card>
                         </TabsContent>
                         <TabsContent value="running">
-                            <PasswordCheckerRunning
+                            <PinCheckerDetailsRunning 
                                 onComplete={() => {
                                     setActiveTab("reports");
                                     setIsChecking(false);
                                     setStatus("Completed");
-                                }}
+                                }} 
                                 progress={progress}
                                 status={status}
                             />
                             <Button onClick={handleStopCheck} disabled={!isChecking} variant="destructive" className="mt-4">
-                                Stop Password Check
+                                Stop PIN Checker Details
                             </Button>
                         </TabsContent>
                         <TabsContent value="reports">
-                            <PasswordCheckerReports />
+                            <PinCheckerDetailsReports />
                         </TabsContent>
                     </Tabs>
                 </CardContent>

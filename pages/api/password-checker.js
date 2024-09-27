@@ -182,7 +182,7 @@ export default async function handler(req, res) {
         return res.status(405).json({ message: "Method not allowed" });
     }
 
-    const { action } = req.body;
+    const { action, runOption, selectedIds } = req.body;
 
     if (action === "getProgress") {
         const progress = await getAutomationProgress();
@@ -209,7 +209,7 @@ export default async function handler(req, res) {
         await updateAutomationProgress(0, "Running", []);
 
         // Start the automation process in the background
-        processCompanies().catch(console.error);
+        processCompanies(runOption, selectedIds).catch(console.error);
 
         return res.status(200).json({ message: "Automation started." });
     }
@@ -217,9 +217,13 @@ export default async function handler(req, res) {
     return res.status(400).json({ message: "Invalid action." });
 }
 
-async function processCompanies() {
+async function processCompanies(runOption, selectedIds) {
     try {
-        const data = await readSupabaseData();
+        let data = await readSupabaseData();
+
+        if (runOption === 'selected' && selectedIds && selectedIds.length > 0) {
+            data = data.filter(company => selectedIds.includes(company.id));
+        }
 
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet("Password Validation");
