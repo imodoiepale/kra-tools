@@ -22,12 +22,15 @@ interface PinCheckerDetail {
     paye_status: string;
     paye_effective_from: string;
     paye_effective_to: string;
-    rent_income_status: string;
-    rent_income_effective_from: string;
-    rent_income_effective_to: string;
+    rent_income_mri_status: string;
+    rent_income_mri_effective_from: string;
+    rent_income_mri_effective_to: string;
     resident_individual_status: string;
     resident_individual_effective_from: string;
     resident_individual_effective_to: string;
+    turnover_tax_status: string;
+    turnover_tax_effective_from: string;
+    turnover_tax_effective_to: string;
     error_message?: string;
     last_checked_at: string;
 }
@@ -109,8 +112,9 @@ export function PinCheckerDetailsReports() {
             'Income Tax Company Status', 'Income Tax Company From', 'Income Tax Company To',
             'VAT Status', 'VAT From', 'VAT To',
             'PAYE Status', 'PAYE From', 'PAYE To',
-            'Rent Income Status', 'Rent Income From', 'Rent Income To',
+            'Rent Income (MRI) Status', 'Rent Income (MRI) From', 'Rent Income (MRI) To',
             'Resident Individual Status', 'Resident Individual From', 'Resident Individual To',
+            'Turnover Tax Status', 'Turnover Tax From', 'Turnover Tax To',
             'Error Message', 'Last Checked At'
         ]);
 
@@ -130,8 +134,9 @@ export function PinCheckerDetailsReports() {
                 detail.income_tax_company_status, detail.income_tax_company_effective_from, detail.income_tax_company_effective_to,
                 detail.vat_status, detail.vat_effective_from, detail.vat_effective_to,
                 detail.paye_status, detail.paye_effective_from, detail.paye_effective_to,
-                detail.rent_income_status, detail.rent_income_effective_from, detail.rent_income_effective_to,
+                detail.rent_income_mri_status, detail.rent_income_mri_effective_from, detail.rent_income_mri_effective_to,
                 detail.resident_individual_status, detail.resident_individual_effective_from, detail.resident_individual_effective_to,
+                detail.turnover_tax_status, detail.turnover_tax_effective_from, detail.turnover_tax_effective_to,
                 detail.error_message,
                 detail.last_checked_at
             ]);
@@ -213,6 +218,7 @@ export function PinCheckerDetailsReports() {
         link.download = 'pin_checker_details.xlsx';
         link.click();
     }    
+
     const getCellColor = (obligationType: string) => {
         switch (obligationType) {
             case 'income_tax_company':
@@ -221,10 +227,12 @@ export function PinCheckerDetailsReports() {
                 return 'bg-green-100';
             case 'paye':
                 return 'bg-yellow-100';
-            case 'rent_income':
+            case 'rent_income_mri':
                 return 'bg-purple-100';
             case 'resident_individual':
                 return 'bg-pink-100';
+            case 'turnover_tax':
+                return 'bg-orange-100';
             default:
                 return '';
         }
@@ -271,8 +279,8 @@ export function PinCheckerDetailsReports() {
                                             <ArrowUpDown className="ml-2 h-4 w-4" />
                                         </Button>
                                     </TableHead>
-                                    {['Income Tax Company', 'VAT', 'PAYE', 'Rent Income', 'Resident Individual'].map((header, index) => (
-                                        <TableHead key={index} className={`sticky top-0 ${header === 'Income Tax Company' ? 'bg-blue-100' : getCellColor(header.toLowerCase().replace(' ', '_'))} border-r border-black border-b text-center font-bold text-black`} colSpan={3}>{header}</TableHead>
+                                    {['Income Tax Company', 'VAT', 'PAYE', 'Rent Income (MRI)', 'Resident Individual', 'Turnover Tax'].map((header, index) => (
+                                        <TableHead key={index} className={`sticky top-0 ${getCellColor(header.toLowerCase().replace(' ', '_'))} border-r border-black border-b text-center font-bold text-black`} colSpan={3}>{header}</TableHead>
                                     ))}
                                     <TableHead className="sticky top-0 bg-white border-r border-black border-b font-bold text-black text-center">Last Checked</TableHead>
                                     <TableHead className="sticky top-0 bg-white border-b font-bold text-black text-center">Actions</TableHead>
@@ -280,9 +288,9 @@ export function PinCheckerDetailsReports() {
                                 <TableRow className="h-8">
                                     <TableHead className="sticky top-8 bg-white border-r border-black border-b"></TableHead>
                                     <TableHead className="sticky top-8 bg-white border-r border-black border-b"></TableHead>
-                                    {['Income Tax Company', 'VAT', 'PAYE', 'Rent Income', 'Resident Individual'].flatMap((header) => (
+                                    {['Income Tax Company', 'VAT', 'PAYE', 'Rent Income (MRI)', 'Resident Individual', 'Turnover Tax'].flatMap((header) => (
                                         ['Status', 'From', 'To'].map((subHeader, index) => (
-                                            <TableHead key={`${header}-${subHeader}`} className={`sticky top-8 ${header === 'Income Tax Company' ? 'bg-blue-100' : getCellColor(header.toLowerCase().replace(' ', '_'))} border-r border-black border-b text-black text-center`}>{subHeader}</TableHead>
+                                            <TableHead key={`${header}-${subHeader}`} className={`sticky top-8 ${getCellColor(header.toLowerCase().replace(' ', '_'))} border-r border-black border-b text-black text-center`}>{subHeader}</TableHead>
                                         ))
                                     ))}
                                     <TableHead className="sticky top-8 bg-white border-r border-black border-b"></TableHead>
@@ -296,7 +304,7 @@ export function PinCheckerDetailsReports() {
                                         <TableCell className="border-r border-black font-bold text-black text-center">{index + 1}</TableCell>
                                         <TableCell className="border-r border-black">{detail.company_name}</TableCell>
 
-                                        {['income_tax_company', 'vat', 'paye', 'rent_income', 'resident_individual'].map((type) => (
+                                        {['income_tax_company', 'vat', 'paye', 'rent_income_mri', 'resident_individual', 'turnover_tax'].map((type) => (
                                             <>
                                                 <TableCell className={`${getCellColor(type)} border-l border-r border-black ${!detail[`${type}_status`] || detail[`${type}_status`].toLowerCase() === 'no obligation' ? 'font-bold text-red-600 bg-red-100' : ''} text-center`}>
                                                     {!detail[`${type}_status`] ? (

@@ -324,14 +324,15 @@ function createExcelFile(companyData) {
         "Income Tax - PAYE Current Status",
         "Income Tax - PAYE Effective From Date",
         "Income Tax - PAYE Effective To Date",
-        "Income Tax - Rent Income Current Status",
-        "Income Tax - Rent Income Effective From Date",
-        "Income Tax - Rent Income Effective To Date",
-        "Income Tax - Resident Individual Current Status",
-        "Income Tax - Resident Individual Effective From Date",
+        "Income Tax - Rent Income (MRI) Current Status",
+        "Income Tax - Rent Income (MRI) Effective From Date",
+        "Income Tax - Rent Income (MRI) Effective To Date",
         "Income Tax - Resident Individual Current Status",
         "Income Tax - Resident Individual Effective From Date",
         "Income Tax - Resident Individual Effective To Date",
+        "Income Tax - Turnover Tax Current Status",
+        "Income Tax - Turnover Tax Effective From Date",
+        "Income Tax - Turnover Tax Effective To Date",
         "Error"
     ];
 
@@ -376,12 +377,15 @@ function createExcelFile(companyData) {
             company.paye_status,
             company.paye_effective_from,
             company.paye_effective_to,
-            company.rent_income_status,
-            company.rent_income_effective_from,
-            company.rent_income_effective_to,
+            company.rent_income_mri_status,
+            company.rent_income_mri_effective_from,
+            company.rent_income_mri_effective_to,
             company.resident_individual_status,
             company.resident_individual_effective_from,
             company.resident_individual_effective_to,
+            company.turnover_tax_status,
+            company.turnover_tax_effective_from,
+            company.turnover_tax_effective_to,
             company.error || ""
         ];
 
@@ -408,6 +412,7 @@ function createExcelFile(companyData) {
         row.getCell(10).fill = row.getCell(11).fill = row.getCell(12).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: colors.paye } };
         row.getCell(13).fill = row.getCell(14).fill = row.getCell(15).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: colors.rentIncome } };
         row.getCell(16).fill = row.getCell(17).fill = row.getCell(18).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: colors.residentIndividual } };
+        row.getCell(19).fill = row.getCell(20).fill = row.getCell(21).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: colors.turnoverTax } };
 
         // Set light red color for empty cells
         for (let i = 4; i <= 19; i++) {
