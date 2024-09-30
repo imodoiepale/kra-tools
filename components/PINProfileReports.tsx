@@ -23,6 +23,8 @@ export function PINProfileReports() {
         extraction_date: true,
     });
 
+    
+
     useEffect(() => {
         fetchReports();
     }, []);
