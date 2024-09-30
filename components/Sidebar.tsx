@@ -19,7 +19,7 @@ const navItems = [
     { href: "/manufacturers-details", icon: Factory, label: "Manufacturers Details", category: "One-off Tools", available: true },
     { href: "/pin-checker-details", icon: ClipboardCheck, label: "PIN Checker Details (Obligations)", category: "One-off Tools", available: true },
     { href: "/withholding-tax-doc-extractor", icon: FileText, label: "Withholding Tax Doc Extractor", category: "One-off Tools", available: false },
-    { href: "/tax-compliance-downloader", icon: ShieldCheck, label: "Tax Compliance Downloader", category: "One-off Tools", available: false },
+    { href: "/tcc", icon: ShieldCheck, label: "Tax Compliance Downloader", category: "One-off Tools", available: true },
     { href: "/password-changer", icon: Key, label: "Password Changer", category: "One-off Tools", available: false },
     { href: "/pin-profile-extractor", icon: ClipboardCheck, label: "PIN Profile Extractor", category: "One-off Tools", available: false },
 
