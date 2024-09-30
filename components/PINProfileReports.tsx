@@ -63,9 +63,15 @@ export function PINProfileReports() {
         report.company_pin.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
-    const handleSort = (key) => {
-        // Implement sorting logic here
+    const handleSort = (column) => {
+        if (sortColumn === column) {
+            setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+        } else {
+            setSortColumn(column);
+            setSortOrder('asc');
+        }
     };
+
 
     const exportToExcel = () => {
         // Implement Excel export logic here
