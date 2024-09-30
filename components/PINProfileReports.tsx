@@ -36,15 +36,22 @@ export function PINProfileReports() {
 
             if (error) throw error;
 
-            const formattedReports = data.map(report => ({
-                id: report.id,
-                company_name: report.company_name,
-                company_pin: report.company_pin,
-                expiry_date: report.expiry_date || 'N/A',
-                extraction_date: new Date(report.created_at).toLocaleDateString(),
-                pdf_link: report.extractions.pdf_link || null,
-            }));
+            const formattedReports = data.map(company => {
+                const extractions = company.extractions;
+                const latestDate = Object.keys(extractions).sort((a, b) => new Date(b) - new Date(a))[0];
+                const latestExtraction = extractions[latestDate];
 
+                return {
+                    id: company.id,
+                    company_name: company.company_name,
+                    company_pin: company.company_pin,
+                    expiry_date: latestExtraction.expiry_date || 'N/A',
+                    extraction_date: latestDate,
+                    pdf_link: latestExtraction.pdf_link !== "no doc"
+                        ? `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/kra-documents/${latestExtraction.pdf_link}`
+                        : null
+                };
+            });
             setReports(formattedReports);
         } catch (error) {
             console.error('Error fetching reports:', error);
@@ -117,7 +124,7 @@ export function PINProfileReports() {
                                         <TableHead key={key} className={`font-bold ${key === 'index' ? 'text-center sticky left-0 bg-white' : ''}`}>
                                             <div className="flex items-center justify-between">
                                                 {label}
-                                                {key !== 'tcc_cert' && key !== 'screenshot' && key !== 'status' && (
+                                                {key !== 'profile'  && (
                                                     <ArrowUpDown className="h-4 w-4 cursor-pointer" onClick={() => handleSort(key)} />
                                                 )}
                                             </div>
@@ -174,7 +181,7 @@ export function PINProfileReports() {
                                                 )
                                             ),
                                             alwaysVisible: true
-                                        },
+                                        }
                                         
                                     ].map(({ key, content, alwaysVisible }) => (
                                         (alwaysVisible || visibleColumns[key]) && (
