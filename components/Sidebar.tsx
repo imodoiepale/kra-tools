@@ -25,6 +25,7 @@ const navItems = [
     { href: "/password-changer", icon: Key, label: "Password Changer", category: "One-off Tools", available: false },
 
     // Monthly Tools
+    { href: "/auto-population", icon: FileSpreadsheet, label: "Auto-Population", category: "Monthly Tools", available: true },
     { href: "/withholding-tax-downloader", icon: Download, label: "Withholding Tax Downloader", category: "Monthly Tools", available: false },
     { href: "/auto-population-downloader", icon: Users, label: "Auto Population Downloader", category: "Monthly Tools", available: false },
     { href: "/liabilities-extractor", icon: FileSpreadsheet, label: "Liabilities Extractor", category: "Monthly Tools", available: false },

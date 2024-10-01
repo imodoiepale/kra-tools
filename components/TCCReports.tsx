@@ -386,12 +386,12 @@ export function TCCReports() {
                 </div>
             </TabsContent>
             <TabsContent value="detailed">
-                <div className="flex space-x-8">
-                    <ScrollArea className="h-[1000px] w-90 rounded-md border">
+                <div className="flex space-x-8 mb-4">
+                    <ScrollArea className="h-[600px] w-85 rounded-md border">
                         {reports.map((report, index) => (
                             <React.Fragment key={report.id}>
                                 <div
-                                    className={`p-4 cursor-pointer transition-colors duration-200 ${
+                                    className={`p-2 cursor-pointer transition-colors duration-200 text-xs uppercase ${
                                         selectedCompany?.id === report.id
                                             ? 'bg-blue-500 text-white font-bold'
                                             : 'hover:bg-blue-100'
@@ -410,92 +410,94 @@ export function TCCReports() {
                         {selectedCompany && (
                             <Card className="shadow-lg">
                                 <CardHeader className="bg-gradient-to-r from-blue-500 to-purple-500 text-white">
-                                    <CardTitle className="text-2xl">{selectedCompany.company_name}</CardTitle>
+                                    <CardTitle className="text-xl">{selectedCompany.company_name}</CardTitle>
                                 </CardHeader>
-                                <CardContent className="space-y-8">
+                                <CardContent className="space-y-6">
                                 
-                                    <div>
-                                        <h4 className="font-medium my-4 text-xl">Full Table Data</h4>
-                                        <Table>
-                                            <TableHeader>
-                                                <TableRow>
-                                                    <TableHead className="text-center">Serial No</TableHead>
-                                                    <TableHead>PIN</TableHead>
-                                                    <TableHead>Taxpayer Name</TableHead>
-                                                    <TableHead>Status</TableHead>
-                                                    <TableHead>Certificate Date</TableHead>
-                                                    <TableHead>Expiry Date</TableHead>
-                                                    <TableHead>Certificate Serial No</TableHead>
-                                                </TableRow>
-                                            </TableHeader>
-                                            <TableBody>
-                                                {selectedCompany.full_table_data.map((row, index) => {
-                                                    const isApproved = row.Status === 'Approved'
-                                                    return (
-                                                        <TableRow key={index}>
-                                                            <TableCell className="text-center text-lg">{row.SerialNo}</TableCell>
-                                                            <TableCell>{row.PIN}</TableCell>
-                                                            <TableCell>{row.TaxPayerName}</TableCell>
-                                                            <TableCell>
-                                                                <span className={`px-2 py-1 rounded-full text-xs font-semibold ${row.Status === 'Approved' ? 'bg-green-100 text-green-800' :
-                                                                    row.Status === 'Expired' ? 'bg-red-100 text-red-800' :
-                                                                        'bg-yellow-100 text-yellow-800'
-                                                                    }`}>
-                                                                    {row.Status}
-                                                                </span>
-                                                            </TableCell>
-                                                            <TableCell className="font-bold">{row.CertificateDate}</TableCell>
-                                                            <TableCell className={`font-bold ${isApproved ? 'text-green-500' : 'text-red-500'}`}>
-                                                                {row.ExpiryDate}
-                                                            </TableCell>
-                                                            <TableCell>{row.CertificateSerialNo}</TableCell>
-                                                        </TableRow>
-                                                    )
-                                                })}
-                                            </TableBody>
-                                        </Table>
-                                    </div>
-                                    <div className="overflow-auto max-h-[80vh]">
-                                        <h4 className="font-medium mb-4 text-xl">Documents</h4>
-                                        <div className="grid grid-cols-2 gap-8">
-                                            <div className="border rounded-lg p-6">
-                                                <h5 className="font-medium mb-4 text-lg">TCC Certificate</h5>
-                                                {selectedCompany.pdf_link && selectedCompany.pdf_link !== "no doc" ? (
-                                                    <Dialog>
-                                                        <DialogTrigger asChild>
-                                                            <iframe src={selectedCompany.pdf_link} className="w-full h-[400px] cursor-pointer" title="TCC Certificate" />
-                                                        </DialogTrigger>
-                                                        <DialogContent className="max-w-[90vw] max-h-[90vh]">
-                                                            <DialogHeader>
-                                                                <DialogTitle>TCC Certificate</DialogTitle>
-                                                            </DialogHeader>
-                                                            <iframe src={selectedCompany.pdf_link} className="w-full h-[80vh]" title="TCC Certificate" />
-                                                        </DialogContent>
-                                                    </Dialog>
-                                                ) : (
-                                                    <p className="text-red-500 text-3xl font-bold flex items-center justify-center capitalize h-[400px]">Missing</p>
-                                                )}
-                                            </div>
-                                            <div className="border rounded-lg p-6">
-                                                <h5 className="font-medium mb-4 text-lg">Screenshot</h5>
-                                                {selectedCompany.screenshot_link && selectedCompany.screenshot_link !== "no doc" ? (
-                                                    <Dialog>
-                                                        <DialogTrigger asChild>
-                                                            <img src={selectedCompany.screenshot_link} alt="Screenshot" className="w-full h-auto max-h-[400px] object-contain cursor-zoom-in" />
-                                                        </DialogTrigger>
-                                                        <DialogContent className="max-w-[90vw] max-h-[90vh]">
-                                                            <DialogHeader>
-                                                                <DialogTitle>Screenshot</DialogTitle>
-                                                            </DialogHeader>
-                                                            <img src={selectedCompany.screenshot_link} alt="Screenshot" className="w-full h-auto max-h-[80vh] object-contain" />
-                                                        </DialogContent>
-                                                    </Dialog>
-                                                ) : (
-                                                    <p className="text-red-500 text-3xl font-bold flex items-center justify-center capitalize h-[400px]">Missing</p>
-                                                )}
+                                    <ScrollArea className="h-[600px]">
+                                        <div className='text-xs'>
+                                            <h4 className="font-medium my-3 text-sm">Full Table Data</h4>
+                                            <Table>
+                                                <TableHeader>
+                                                    <TableRow>
+                                                        <TableHead className="text-center text-xs">Serial No</TableHead>
+                                                        <TableHead className="text-xs">PIN</TableHead>
+                                                        <TableHead className="text-xs">Taxpayer Name</TableHead>
+                                                        <TableHead className="text-xs">Status</TableHead>
+                                                        <TableHead className="text-xs">Certificate Date</TableHead>
+                                                        <TableHead className="text-xs">Expiry Date</TableHead>
+                                                        <TableHead className="text-xs">Certificate Serial No</TableHead>
+                                                    </TableRow>
+                                                </TableHeader>
+                                                <TableBody>
+                                                    {selectedCompany.full_table_data.map((row, index) => {
+                                                        const isApproved = row.Status === 'Approved'
+                                                        return (
+                                                            <TableRow key={index}>
+                                                                <TableCell className="text-center text-xs">{row.SerialNo}</TableCell>
+                                                                <TableCell className="text-xs">{row.PIN}</TableCell>
+                                                                <TableCell className="text-xs">{row.TaxPayerName}</TableCell>
+                                                                <TableCell>
+                                                                    <span className={`px-2 py-1 rounded-full text-xxs font-semibold ${row.Status === 'Approved' ? 'bg-green-100 text-green-800' :
+                                                                        row.Status === 'Expired' ? 'bg-red-100 text-red-800' :
+                                                                            'bg-yellow-100 text-yellow-800'
+                                                                        }`}>
+                                                                        {row.Status}
+                                                                    </span>
+                                                                </TableCell>
+                                                                <TableCell className="font-bold text-xs">{row.CertificateDate}</TableCell>
+                                                                <TableCell className={`font-bold text-xs ${isApproved ? 'text-green-500' : 'text-red-500'}`}>
+                                                                    {row.ExpiryDate}
+                                                                </TableCell>
+                                                                <TableCell className="text-xs">{row.CertificateSerialNo}</TableCell>
+                                                            </TableRow>
+                                                        )
+                                                    })}
+                                                </TableBody>
+                                            </Table>
+                                        </div>
+                                        <div className="max-h-[60vh]">
+                                            <h4 className="font-medium mb-3 text-base">Documents</h4>
+                                            <div className="grid grid-cols-2 gap-6">
+                                                <div className="border rounded-lg p-4">
+                                                    <h5 className="font-medium mb-3 text-sm">TCC Certificate</h5>
+                                                    {selectedCompany.pdf_link && selectedCompany.pdf_link !== "no doc" ? (
+                                                        <Dialog>
+                                                            <DialogTrigger asChild>
+                                                                <iframe src={selectedCompany.pdf_link} className="w-full h-[600px] cursor-pointer" title="TCC Certificate" />
+                                                            </DialogTrigger>
+                                                            <DialogContent className="max-w-[80vw] max-h-[80vh]">
+                                                                <DialogHeader>
+                                                                    <DialogTitle className="text-sm">TCC Certificate</DialogTitle>
+                                                                </DialogHeader>
+                                                                <iframe src={selectedCompany.pdf_link} className="w-full h-[70vh]" title="TCC Certificate" />
+                                                            </DialogContent>
+                                                        </Dialog>
+                                                    ) : (
+                                                        <p className="text-red-500 text-xl font-bold flex items-center justify-center capitalize h-[300px]">Missing</p>
+                                                    )}
+                                                </div>
+                                                <div className="border rounded-lg p-4">
+                                                    <h5 className="font-medium mb-3 text-sm">Screenshot</h5>
+                                                    {selectedCompany.screenshot_link && selectedCompany.screenshot_link !== "no doc" ? (
+                                                        <Dialog>
+                                                            <DialogTrigger asChild>
+                                                                <img src={selectedCompany.screenshot_link} alt="Screenshot" className="w-[400px] h-auto max-h-[300px] object-contain cursor-zoom-in" />
+                                                            </DialogTrigger>
+                                                            <DialogContent className="max-w-[60vw] max-h-[80vh]">
+                                                                <DialogHeader>
+                                                                    <DialogTitle className="text-sm">Screenshot</DialogTitle>
+                                                                </DialogHeader>
+                                                                <img src={selectedCompany.screenshot_link} alt="Screenshot" className="w-full h-auto max-h-[70vh] object-contain" />
+                                                            </DialogContent>
+                                                        </Dialog>
+                                                    ) : (
+                                                        <p className="text-red-500 text-xl font-bold flex items-center justify-center capitalize h-[300px]">Missing</p>
+                                                    )}
+                                                </div>
                                             </div>
                                         </div>
-                                    </div>
+                                    </ScrollArea>
                                 </CardContent>
                             </Card>
                         )}
