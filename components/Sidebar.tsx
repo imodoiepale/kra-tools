@@ -1,7 +1,7 @@
 // components/Sidebar.tsx
 "use client"
 
-import { LayoutDashboard, Key, Wrench, Settings, Factory, FileCheck, FileText, ShieldCheck, CreditCard, FileSignature, Users, FileSpreadsheet, ClipboardCheck, DollarSign, BarChart2, ChevronLeft, ChevronRight, Download } from "lucide-react";
+import { LayoutDashboard, Key, Lock, Wrench, Settings, Factory, FileCheck, FileText, ShieldCheck, CreditCard, FileSignature, Users, FileSpreadsheet, ClipboardCheck, DollarSign, BarChart2, ChevronLeft, ChevronRight, Download } from "lucide-react";
 import Link from "next/link"
 import { usePathname } from 'next/navigation'
 import { useState } from "react"
@@ -13,6 +13,7 @@ import {
 
 const navItems = [
     { href: "/", icon: LayoutDashboard, label: "Dashboard", category: "Main", available: true },
+    { href: "/password-manager", icon: Lock, label: "Password Manager", category: "Main", available: true },
 
     // One-off Tools
     { href: "/password-checker", icon: Key, label: "Password Checker", category: "One-off Tools", available: true },
@@ -52,7 +53,7 @@ export function Sidebar() {
         <div className="flex h-[150vh]">
             <aside className={`bg-gray-800 text-white transition-all duration-300 ease-in-out ${isExpanded ? 'w-[300px]' : 'w-20'} p-3 hidden md:block relative`}>
                 <div className={`flex items-center mb-6 ${isExpanded ? '' : 'justify-center'}`}>
-                    {isExpanded && <span className="text-lg font-bold">KRA Tools</span>}
+                    {isExpanded && <span className="text-lg font-bold">BCL Tools</span>}
                 </div>
                 <nav className="space-y-1">
                     {categories.map((category) => (

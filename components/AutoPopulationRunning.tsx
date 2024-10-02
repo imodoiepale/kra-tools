@@ -14,6 +14,8 @@ export function AutoPopulationRunning({ onComplete }) {
     const [isRunning, setIsRunning] = useState(false);
     const [logs, setLogs] = useState([]);
     const [currentCompany, setCurrentCompany] = useState('');
+    const [processedCount, setProcessedCount] = useState(0);
+    const [totalCount, setTotalCount] = useState(0);
 
     useEffect(() => {
         const interval = setInterval(fetchProgress, 5000);
@@ -30,6 +32,8 @@ export function AutoPopulationRunning({ onComplete }) {
         setProgress(data.progress);
         setIsRunning(data.isRunning);
         setCurrentCompany(data.currentCompany);
+        setProcessedCount(data.processedCount);
+        setTotalCount(data.totalCount);
         if (!data.isRunning && data.progress === 100) {
             onComplete();
         }
@@ -61,7 +65,7 @@ export function AutoPopulationRunning({ onComplete }) {
             <CardContent className="space-y-4">
                 <Progress value={progress} className="w-full" />
                 <div className="flex justify-between items-center">
-                    <p className="text-lg font-medium">{progress}% complete</p>
+                    <p className="text-lg font-medium">{progress}% complete ({processedCount} of {totalCount})</p>
                     <Button onClick={handleStop} disabled={!isRunning} variant="destructive" size="lg">
                         Stop Auto-Population
                     </Button>
@@ -75,7 +79,16 @@ export function AutoPopulationRunning({ onComplete }) {
                         </div>
                     </div>
                 )}
-                <div className="h-[300px] overflow-y-auto border rounded-lg">
+                {isRunning && processedCount > 0 && totalCount > 0 && (
+                    <div className="flex items-center p-4 text-sm text-blue-800 border border-blue-300 rounded-lg bg-blue-50" role="alert">
+                        <AlertCircle className="flex-shrink-0 inline w-4 h-4 mr-3" />
+                        <span className="sr-only">Info</span>
+                        <div>
+                            <span className="font-medium">Processing:</span> {processedCount} of {totalCount}
+                        </div>
+                    </div>
+                )}
+                {/* <div className="h-[300px] overflow-y-auto border rounded-lg">
                     <Table>
                         <TableHeader>
                             <TableRow>
@@ -94,7 +107,7 @@ export function AutoPopulationRunning({ onComplete }) {
                             ))}
                         </TableBody>
                     </Table>
-                </div>
+                </div> */}
             </CardContent>
         </Card>
     );

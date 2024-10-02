@@ -14,7 +14,7 @@ import { supabase } from '@/lib/supabase'
 
 export default function PasswordChecker() {
     const [isChecking, setIsChecking] = useState(false)
-    const [activeTab, setActiveTab] = useState("start")
+    const [activeTab, setActiveTab] = useState("reports")
     const [progress, setProgress] = useState(0)
     const [status, setStatus] = useState("Not Started")
     const [companies, setCompanies] = useState([])

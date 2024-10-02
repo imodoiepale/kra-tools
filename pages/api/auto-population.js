@@ -1,13 +1,25 @@
-// pages/api/auto-population.js
+// pages/api/auto-populate.js
 import { chromium } from "playwright";
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
 import { createClient } from "@supabase/supabase-js";
 import { createWorker } from 'tesseract.js';
+import JSZip from 'jszip';
 import ExcelJS from 'exceljs';
+import { format, subMonths } from 'date-fns';
+import { EventEmitter } from 'events';
 
-const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+if (!supabaseUrl || !supabaseAnonKey) {
+    throw new Error('Missing Supabase environment variables');
+}
+
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+const automationEmitter = new EventEmitter();
 let isRunning = false;
 let progress = 0;
 let totalCompanies = 0;
@@ -18,23 +30,35 @@ export default async function handler(req, res) {
         return res.status(405).json({ message: "Method not allowed" });
     }
 
-    const { action, companyIds, month, year } = req.body;
+    const { action } = req.body;
 
     switch (action) {
         case "start":
             if (isRunning) {
                 return res.status(400).json({ message: "Auto-population is already running" });
             }
-            isRunning = true;
-            progress = 0;
-            totalCompanies = 0;
-            currentCompany = '';
-            processAutoPopulation(companyIds, month, year).catch(console.error);
-            return res.status(200).json({ message: "VAT auto-population started" });
+            try {
+                isRunning = true;
+                progress = 0;
+                totalCompanies = 0;
+                currentCompany = '';
+                processAutoPopulation().catch(error => {
+                    console.error("Error in processAutoPopulation:", error);
+                    isRunning = false;
+                });
+                return res.status(200).json({ message: "Auto-population started successfully" });
+            } catch (error) {
+                isRunning = false;
+                return res.status(500).json({ message: "Failed to start auto-population", error: error.message });
+            }
 
         case "stop":
+            if (!isRunning) {
+                return res.status(400).json({ message: "Auto-population is not running" });
+            }
+            automationEmitter.emit('stop');
             isRunning = false;
-            return res.status(200).json({ message: "VAT auto-population stopped" });
+            return res.status(200).json({ message: "Auto-population stop signal sent" });
 
         case "progress":
             return res.status(200).json({ progress, totalCompanies, isRunning, currentCompany });
@@ -48,36 +72,44 @@ export default async function handler(req, res) {
     }
 }
 
-async function processAutoPopulation(companyIds, month, year) {
-    const companies = companyIds ? await readSupabaseData(companyIds) : await readSupabaseData();
+async function processAutoPopulation() {
+    const companies = await readSupabaseData();
     totalCompanies = companies.length;
 
-    const formattedDateTime = `${year}-${month.toString().padStart(2, '0')}`;
+    const now = new Date();
+    const formattedDateTime = `${now.getDate()}.${(now.getMonth() + 1).toString().padStart(2, '0')}.${now.getFullYear()}`;
     const downloadFolderPath = path.join(os.homedir(), "Downloads", `AUTO-POPULATE-${formattedDateTime}`);
     await fs.mkdir(downloadFolderPath, { recursive: true });
 
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet("FILED RETURNS ALL MONTHS");
+
+    const excelFilePath = path.join(downloadFolderPath, `AUTO-POPULATION-SUMMARY-${formattedDateTime}.xlsx`);
+    await workbook.xlsx.writeFile(excelFilePath);
+
     for (let i = 0; i < companies.length && isRunning; i++) {
         currentCompany = companies[i].company_name;
-        await processCompany(companies[i], downloadFolderPath, formattedDateTime, month, year);
+
+        if (!isRunning) {
+            console.log("Stopping auto-population process");
+            break;
+        }
+
+        await processCompany(companies[i], downloadFolderPath, formattedDateTime, worksheet);
         progress = Math.round(((i + 1) / totalCompanies) * 100);
+
+        await workbook.xlsx.writeFile(excelFilePath);
     }
 
     isRunning = false;
     currentCompany = '';
+    console.log("Auto-population process completed or stopped");
 }
 
-async function readSupabaseData(companyIds) {
+async function readSupabaseData() {
     try {
-        let query = supabase.from("AutoPopulation").select("*");
-        if (companyIds && companyIds.length > 0) {
-            query = query.in('id', companyIds);
-        }
-        const { data, error } = await query.order("id", { ascending: true });
-
-        if (error) {
-            throw new Error(`Error reading data from 'AutoPopulation' table: ${error.message}`);
-        }
-
+        const { data, error } = await supabase.from("Autopopulate").select("*").order("id", { ascending: true });
+        if (error) throw error;
         return data;
     } catch (error) {
         console.error(`Error reading Supabase data: ${error.message}`);
@@ -85,29 +117,7 @@ async function readSupabaseData(companyIds) {
     }
 }
 
-async function processCompany(company, downloadFolderPath, formattedDateTime, month, year) {
-    const browser = await chromium.launch({ headless: false });
-    const context = await browser.newContext();
-    const page = await context.newPage();
-
-    try {
-        await loginToKRA(page, company);
-        await navigateToVAT(page, month, year);
-        const documents = await downloadDocuments(page, company, downloadFolderPath, formattedDateTime);
-        const monthlyData = await extractMonthlyData(documents.vat_excel);
-        await uploadToSupabase(company, formattedDateTime, documents, monthlyData);
-
-        console.log(`Processed ${company.company_name} for ${formattedDateTime}`);
-    } catch (error) {
-        console.error(`Error processing ${company.company_name}:`, error);
-        await updateSupabaseError(company, formattedDateTime, error.message);
-    } finally {
-        await browser.close();
-    }
-}
-
 async function loginToKRA(page, company) {
-    await page.goto("https://itax.kra.go.ke/KRA-Portal/");
     await page.goto("https://itax.kra.go.ke/KRA-Portal/");
     await page.locator("#logid").click();
     await page.locator("#logid").fill(company.kra_pin);
@@ -117,7 +127,7 @@ async function loginToKRA(page, company) {
     await page.locator('input[name="xxZTT9p2wQ"]').fill(company.kra_itax_current_password);
     await page.waitForTimeout(1500);
     const image = await page.waitForSelector("#captcha_img");
-
+    const imagePath = path.join(os.tmpdir(), "ocr.png");
     await image.screenshot({ path: imagePath });
     const worker = await createWorker('eng', 1);
     console.log("Extracting Text...");
@@ -152,143 +162,356 @@ async function loginToKRA(page, company) {
     }
 }
 
-async function navigateToVAT(page, month, year) {
-    // Implement navigation to VAT page for specific month and year
+async function initiateAndHandleDownload(page, worksheet, company, downloadFolderPath, formattedDateTime) {
+    try {
+        const downloadButton = await page.locator("#dwnlod_btn_tims", { state: 'visible', timeout: 2000 });
+        await downloadButton.click();
+        console.log("AUTO POPULATION button clicked successfully");
+
+        page.once("dialog", dialog => { dialog.accept().catch(() => { }); });
+
+        const isEReturnsPresent = await page.waitForSelector('td.tablerowhead:has-text("e-Returns")',
+            { state: 'visible', timeout: 1000 })
+            .then(() => true)
+            .catch(() => false);
+
+        if (isEReturnsPresent) {
+            console.log("e-Returns header found, skipping to next iteration");
+            const skipRow = worksheet.addRow(["", " ", "SKIPPED - e-Returns HEADER PRESENT"]);
+            highlightCells(skipRow, "C", "D", "FFFF00");
+            worksheet.addRow();
+            return null;
+        }
+
+        const downloadPromise = page.waitForEvent('download');
+        await page.waitForSelector("#dwnlod_btn_tims");
+        page.once("dialog", dialog => {
+            dialog.accept().catch(() => { });
+        });
+        await page.click(".submit");
+        const download = await downloadPromise;
+
+        const previousMonthName = getPreviousMonthName();
+        const fileName = `${company.company_name}-${formattedDateTime}-AUTO-POPULATE-For-${previousMonthName}.zip`;
+        const downloadedFilePath = path.join(downloadFolderPath, fileName);
+        await download.saveAs(downloadedFilePath);
+        console.log(`File downloaded successfully: ${fileName}`);
+        return downloadedFilePath;
+    } catch (error) {
+        console.error("Failed to initiate or complete download:", error);
+        const errorRow = worksheet.addRow(["", " ", `ERROR: ${error.message}`]);
+        highlightCells(errorRow, "C", "D", "FF0000");
+        worksheet.addRow();
+        return null;
+    }
 }
 
-async function downloadDocuments(page, company, downloadFolderPath, formattedDateTime) {
-    const documents = {};
+async function processCompany(company, downloadFolderPath, formattedDateTime, worksheet) {
+    const browser = await chromium.launch({ headless: false, executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe' });
+    const context = await browser.newContext();
+    const page = await context.newPage();
 
-    // Download ZIP file
-    const zipPromise = page.waitForEvent('download');
-    await page.click('#downloadZipButton'); // Replace with actual selector
-    const zipDownload = await zipPromise;
-    const zipPath = path.join(downloadFolderPath, `${company.company_name}-${formattedDateTime}-VAT.zip`);
-    await zipDownload.saveAs(zipPath);
-    documents.zip = zipPath;
-
-    // Download VAT Excel file
-    const excelPromise = page.waitForEvent('download');
-    await page.click('#downloadExcelButton'); // Replace with actual selector
-    const excelDownload = await excelPromise;
-    const excelPath = path.join(downloadFolderPath, `${company.company_name}-${formattedDateTime}-VAT.xlsx`);
-    await excelDownload.saveAs(excelPath);
-    documents.vat_excel = excelPath;
-
-    // Download other documents as needed
-
-    return documents;
-}
-
-async function extractMonthlyData(excelPath) {
-    const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.readFile(excelPath);
-    const worksheet = workbook.getWorksheet(1);
-
-    // Extract relevant data from the Excel file
-    const monthlyData = {
-        total_sales: worksheet.getCell('B10').value, // Example cell
-        total_vat: worksheet.getCell('C10').value,   // Example cell
-        // Add more fields as needed
+    const stopListener = () => {
+        isRunning = false;
+        console.log(`Stopping processing for ${company.company_name}`);
     };
+    automationEmitter.once('stop', stopListener);
 
-    return monthlyData;
+    try {
+        const companyNameRow = worksheet.addRow([`${company.id}`, `${company.company_name}`, `Extraction Date: ${formattedDateTime}`]);
+        highlightCells(companyNameRow, "B", "D", "FFADD8E6", true);
+
+        if (!company.kra_pin || !(company.kra_pin.startsWith("P") || company.kra_pin.startsWith("A"))) {
+            console.log(`Skipping ${company.company_name}: Invalid KRA PIN`);
+            const pinRow = worksheet.addRow(["", " ", "MISSING KRA PIN"]);
+            highlightCells(pinRow, "C", "D", "FF7474");
+            worksheet.addRow();
+            return;
+        }
+
+        if (company.kra_itax_current_password === null) {
+            console.log(`Skipping ${company.company_name}: Password is null`);
+            const passwordRow = worksheet.addRow(["", " ", "MISSING KRA PASSWORD"]);
+            highlightCells(passwordRow, "C", "D", "FF7474");
+            worksheet.addRow();
+            return;
+        }
+
+        await loginToKRA(page, company);
+        await page.waitForLoadState("networkidle");
+
+        const menuItemsSelector = [
+            "#ddtopmenubar > ul > li:nth-child(2) > a",
+            "#ddtopmenubar > ul > li:nth-child(3) > a",
+            "#ddtopmenubar > ul > li:nth-child(4) > a",
+            "#ddtopmenubar > ul > li:nth-child(3) > a"
+        ];
+
+        for (const selector of menuItemsSelector) {
+            await page.reload();
+            const menuItem = await page.$(selector);
+            if (menuItem) {
+                const bbox = await menuItem.boundingBox();
+                if (bbox) {
+                    await page.mouse.move(bbox.x + bbox.width / 2, bbox.y + bbox.height / 2);
+                    if (await page.waitForSelector("#Returns > li:nth-child(3)", { timeout: 1000 }).then(() => true).catch(() => false)) {
+                        break;
+                    }
+                }
+            }
+        }
+
+        await page.waitForSelector("#Returns > li:nth-child(3)");
+        await page.waitForLoadState("networkidle");
+        await page.evaluate(() => { showEReturns() });
+
+        const vatOption = await page.locator("#regType").selectOption("Value Added Tax (VAT)", { state: 'visible', timeout: 500 }).catch(() => null);
+        if (!vatOption) {
+            console.log("VAT option not found, skipping to next iteration");
+            const vatRow = worksheet.addRow(["", " ", "NO VAT"]);
+            highlightCells(vatRow, "C", "D", "FF7474");
+            worksheet.addRow();
+            return;
+        }
+
+        await page.evaluate(() => { showSelTaxType(); });
+
+        const downloadedFilePath = await initiateAndHandleDownload(page, worksheet, company, downloadFolderPath, formattedDateTime);
+        if (!downloadedFilePath) {
+            console.log(`Skipping further processing for ${company.company_name} due to download issues.`);
+            return;
+        }
+
+        const extractedFiles = await extractAndRenameFiles(downloadedFilePath, company, formattedDateTime, downloadFolderPath);
+
+        const excelFilePath = path.join(downloadFolderPath, `AUTO-POPULATION-SUMMARY-${formattedDateTime}.xlsx`);
+
+        // Prepare files for upload
+        const filesToUpload = [
+            { path: downloadedFilePath, type: 'zip' },
+            { path: excelFilePath, type: 'excel' },
+            ...extractedFiles.map(file => ({ path: file.path, type: 'extracted', originalName: file.originalName }))
+        ];
+
+        let uploadedFiles = [];
+        try {
+            uploadedFiles = await uploadToSupabase(filesToUpload, company.company_name, formattedDateTime);
+        } catch (uploadError) {
+            console.error(`Error uploading files for ${company.company_name}:`, uploadError);
+            // Continue with the process, but log the error
+        }
+
+        await updateSupabaseTable({
+            company_name: company.company_name,
+            kra_pin: company.kra_pin,
+            kra_itax_current_password: company.kra_itax_current_password
+        }, formattedDateTime, uploadedFiles);
+
+        const successRow = worksheet.addRow(["", " ", `SUCCESS - For ${getPreviousMonthName()}`]);
+        highlightCells(successRow, "C", "D", "4CB944");
+        worksheet.addRow();
+
+        console.log(`Processing completed for ${company.company_name}`);
+    } catch (error) {
+        console.error(`Error occurred during processing for ${company.company_name}:`, error);
+        const errorRow = worksheet.addRow(["", " ", `ERROR: ${error.message}`]);
+        highlightCells(errorRow, "C", "D", "FF0000");
+        worksheet.addRow();
+    } finally {
+        automationEmitter.removeListener('stop', stopListener);
+        if (page) await page.close().catch(console.error);
+        if (context) await context.close().catch(console.error);
+        if (browser) await browser.close().catch(console.error);
+    }
 }
 
-async function uploadToSupabase(company, formattedDateTime, documents, monthlyData) {
-    const { data, error } = await supabase
-        .from('AutoPopulation')
-        .select('extractions')
-        .eq('company_pin', company.company_pin)
-        .single();
+async function uploadToSupabase(files, companyName, extractionDate) {
+    const currentDate = new Date(extractionDate);
+    const previousMonth = getPreviousMonthName();
+    const monthYear = `${previousMonth} ${currentDate.getFullYear()}`;
+    const uploadedFiles = [];
 
-    if (error) throw error;
+    for (const file of files) {
+        const fileName = path.basename(file.path);
+        const storagePath = `${companyName}/auto-populate/${monthYear}/${fileName}`;
 
-    const extractions = data.extractions || {};
-    extractions[formattedDateTime] = {
-        extraction_date: new Date().toISOString(),
-        status: 'success',
-        documents: {},
-        monthly_data: monthlyData
-    };
+        try {
+            const fileContent = await fs.readFile(file.path);
+            const contentType = file.type === 'zip' ? 'application/zip' :
+                file.type === 'excel' ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' :
+                    'application/octet-stream';
 
-    // Upload documents to Supabase storage and store public URLs
-    for (const [docType, filePath] of Object.entries(documents)) {
-        const fileName = path.basename(filePath);
-        const { data: uploadData, error: uploadError } = await supabase.storage
-            .from('auto-population-documents')
-            .upload(`${company.company_pin}/${formattedDateTime}/${fileName}`, fs.createReadStream(filePath));
+            const { data, error } = await supabase.storage
+                .from('kra-documents')
+                .upload(storagePath, fileContent, { contentType, upsert: true });
 
-        if (uploadError) throw uploadError;
+            if (error) {
+                if (error.statusCode === '409') {
+                    console.log(`File ${fileName} already exists. Updating...`);
+                    const { data: updateData, error: updateError } = await supabase.storage
+                        .from('kra-documents')
+                        .update(storagePath, fileContent, { contentType });
 
-        const { data: publicUrlData } = supabase.storage
-            .from('auto-population-documents')
-            .getPublicUrl(`${company.company_pin}/${formattedDateTime}/${fileName}`);
-
-        extractions[formattedDateTime].documents[docType] = publicUrlData.publicUrl;
+                    if (updateError) throw updateError;
+                    uploadedFiles.push({
+                        path: updateData.path,
+                        fullPath: getPublicUrl(updateData.path),
+                        originalName: file.originalName || fileName,
+                        type: file.type
+                    });
+                } else {
+                    throw error;
+                }
+            } else {
+                uploadedFiles.push({
+                    path: data.path,
+                    fullPath: getPublicUrl(data.path),
+                    originalName: file.originalName || fileName,
+                    type: file.type
+                });
+            }
+        } catch (error) {
+            console.error(`Error uploading file ${fileName} to Supabase:`, error);
+            // Continue with the next file instead of throwing an error
+        }
     }
 
-    const { error: updateError } = await supabase
-        .from('AutoPopulation')
-        .update({ extractions })
-        .eq('company_pin', company.company_pin);
-
-    if (updateError) throw updateError;
+    return uploadedFiles;
+}
+function getPublicUrl(path) {
+    return `${supabaseUrl}/storage/v1/object/public/kra-documents/${path}`;
 }
 
-async function updateSupabaseError(company, formattedDateTime, errorMessage) {
-    const { data, error } = await supabase
-        .from('AutoPopulation')
-        .select('extractions')
-        .eq('company_pin', company.company_pin)
-        .single();
+async function updateSupabaseTable(company, extractionDate, uploadedFiles) {
+    const currentDate = new Date(extractionDate);
+    const previousMonth = getPreviousMonthName();
+    const monthYear = `${previousMonth} ${currentDate.getFullYear()}`;
 
-    if (error) throw error;
+    try {
+        const { data: existingData, error: fetchError } = await supabase
+            .from('Autopopulate')
+            .select('*')
+            .eq('company_name', company.company_name)
+            .single();
 
-    const extractions = data.extractions || {};
-    extractions[formattedDateTime] = {
-        extraction_date: new Date().toISOString(),
-        status: 'error',
-        error_message: errorMessage
-    };
+        if (fetchError && fetchError.code !== 'PGRST116') {
+            console.error("Error fetching existing data:", fetchError);
+            throw fetchError;
+        }
 
-    const { error: updateError } = await supabase
-        .from('AutoPopulation')
-        .update({ extractions })
-        .eq('company_pin', company.company_pin);
+        let updatedExtractions = existingData?.extractions || {};
+        updatedExtractions[monthYear] = {
+            extraction_date: extractionDate,
+            files: uploadedFiles.filter(file => file && file.fullPath).map(file => ({
+                path: file.path,
+                fullPath: file.fullPath,
+                originalName: file.originalName,
+                type: file.type
+            }))
+        };
 
-    if (updateError) throw updateError;
+        const { data, error } = await supabase
+            .from('Autopopulate')
+            .upsert({
+                company_name: company.company_name,
+                kra_pin: company.kra_pin,
+                kra_itax_current_password: company.kra_itax_current_password,
+                extractions: updatedExtractions,
+                last_updated: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+            }, {
+                onConflict: 'company_name',
+                returning: 'minimal'
+            });
+
+        if (error) throw error;
+        console.log(`Supabase table updated successfully for ${company.company_name}`);
+        return data;
+    } catch (error) {
+        console.error("Error updating Supabase table:", error);
+        throw error;
+    }
+}
+
+async function readZipFile(filePath) {
+    const data = await fs.readFile(filePath);
+    const zip = await JSZip.loadAsync(data);
+    const extractedFiles = {};
+
+    for (const [fileName, file] of Object.entries(zip.files)) {
+        if (!file.dir) {
+            const content = await file.async('nodebuffer');
+            extractedFiles[fileName] = content.toString('base64');
+        }
+    }
+
+    return extractedFiles;
+}
+
+async function extractAndRenameFiles(zipFilePath, company, startDateFormatted, downloadFolderPath) {
+    const zip = await JSZip.loadAsync(await fs.readFile(zipFilePath));
+    const extractedFiles = [];
+
+    for (const [fileName, file] of Object.entries(zip.files)) {
+        if (!file.dir) {
+            const newFileName = `${company.company_name}-${startDateFormatted}-${fileName}`;
+            const filePath = path.join(downloadFolderPath, newFileName);
+            await fs.writeFile(filePath, await file.async('nodebuffer'));
+
+            extractedFiles.push({
+                originalName: fileName,
+                newName: newFileName,
+                path: filePath
+            });
+        }
+    }
+
+    return extractedFiles;
+}
+
+function getPreviousMonthName() {
+    const previousMonthDate = subMonths(new Date(), 1);
+    return format(previousMonthDate, 'MMMM');
+}
+
+function highlightCells(row, startCol, endCol, color, bold = false) {
+    for (let col = startCol.charCodeAt(0); col <= endCol.charCodeAt(0); col++) {
+        const cell = row.getCell(String.fromCharCode(col));
+        cell.fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: { argb: color }
+        };
+        if (bold) {
+            cell.font = { bold: true };
+        }
+    }
 }
 
 async function getReports() {
     try {
         const { data, error } = await supabase
-            .from("AutoPopulation")
-            .select("*");
+            .from('Autopopulate')
+            .select('*')
+            .order('id', { ascending: true });
 
-        if (error) {
-            throw new Error(`Error fetching reports: ${error.message}`);
-        }
+        if (error) throw error;
 
-        // Process the data to extract all extractions for each company
-        const processedData = data.map(company => {
-            const extractions = company.extractions;
-            const processedExtractions = Object.entries(extractions).map(([date, extraction]) => ({
-                date,
-                ...extraction,
-            }));
-
-            return {
-                id: company.id,
-                company_name: company.company_name,
-                company_pin: company.company_pin,
-                extractions: processedExtractions,
-            };
-        });
-
-        return processedData;
+        return data.map(item => ({
+            id: item.id,
+            companyName: item.company_name,
+            lastUpdated: item.last_updated,
+            extractions: Object.entries(item.extractions || {}).map(([monthYear, details]) => ({
+                monthYear,
+                extractionDate: details.extraction_date,
+                zipFilePath: details.zip_file_path,
+                excelFilePath: details.excel_file_path,
+                extractedFiles: details.extracted_files
+            }))
+        }));
     } catch (error) {
-        console.error(`Error fetching reports: ${error.message}`);
+        console.error('Error fetching reports:', error);
         throw error;
     }
 }
+
