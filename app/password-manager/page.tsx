@@ -121,17 +121,17 @@ export default function PasswordManager() {
         }
     };
 
-    const handleLinkTable = async (category, subcategory) => {
-        try {
-            const tableName = `${category}_${subcategory}`.toLowerCase();
-            await supabase.rpc('create_table_if_not_exists', { table_name: tableName });
+    // const handleLinkTable = async (category, subcategory) => {
+    //     try {
+    //         const tableName = `${category}_${subcategory}`.toLowerCase();
+    //         await supabase.rpc('create_table_if_not_exists', { table_name: tableName });
 
-            setMissingTables(prev => prev.filter(item => item.category !== category || item.subcategory !== subcategory));
-            setLinkTableDialogOpen(false);
-        } catch (error) {
-            console.error('Error linking table:', error);
-        }
-    };
+    //         setMissingTables(prev => prev.filter(item => item.category !== category || item.subcategory !== subcategory));
+    //         setLinkTableDialogOpen(false);
+    //     } catch (error) {
+    //         console.error('Error linking table:', error);
+    //     }
+    // };
 
     const handleAddItem = async () => {
         try {
@@ -157,18 +157,87 @@ export default function PasswordManager() {
         }
     };
 
+
+    // Fetch all tables from the database
+    const fetchTables = async () => {
+        try {
+            const { data, error } = await supabase.rpc('get_all_tables'); // Replace with the correct RPC or query to fetch all tables
+
+            if (error) throw error;
+            setTables(data || []);
+            setFilteredTables(data || []);
+        } catch (error) {
+            console.error('Error fetching tables:', error);
+        }
+    };
+
+    // Fetch columns from the selected table
+    const fetchTableColumns = async (tableName) => {
+        try {
+            const { data, error } = await supabase.rpc('get_table_columns', { table_name: tableName }); // Replace with the correct RPC to get table columns
+
+            if (error) throw error;
+            setTableColumns(data || []);
+        } catch (error) {
+            console.error('Error fetching table columns:', error);
+        }
+    };
+
+    useEffect(() => {
+        if (linkTableDialogOpen) {
+            fetchTables();
+        }
+    }, [linkTableDialogOpen]);
+
+    // Handle table search
+    const handleSearchChange = (e) => {
+        const term = e.target.value;
+        setSearchTerm(term);
+        setFilteredTables(tables.filter(table => table.name.toLowerCase().includes(term.toLowerCase())));
+    };
+
+    // Handle table selection
+    const handleTableSelect = (tableName) => {
+        setSelectedTable(tableName);
+        fetchTableColumns(tableName);
+    };
+
+    // Handle column mapping selection
+    const handleColumnMappingChange = (categoryColumn, dbColumn) => {
+        setColumnMappings(prev => ({
+            ...prev,
+            [categoryColumn]: dbColumn
+        }));
+    };
+
+    const handleLinkTable = async () => {
+        try {
+            // Implement logic to save the column mappings and link the selected table to the category
+            console.log('Selected Table:', selectedTable);
+            console.log('Column Mappings:', columnMappings);
+
+            // Close dialog after linking
+            setLinkTableDialogOpen(false);
+        } catch (error) {
+            console.error('Error linking table:', error);
+        }
+    };
+
+
     return (
         <div className="p-4 w-full">
             {missingTables.length > 0 && (
-                <div className="bg-yellow-500 text-white p-4 rounded mb-4">
-                    <h2 className="font-bold">Missing Tables</h2>
-                    <p>The following categories/subcategories do not have linked database tables:</p>
-                    <ul className="list-disc ml-6 mb-4">
+                <div className="bg-yellow-400 text-white p-4 rounded mb-4">
+                    <h2 className="font-bold text-lg">Missing Tables</h2>
+                    <p className="text-sm">The following categories/subcategories do not have linked database tables:</p>
+                    <div className="grid grid-cols-4 gap-4 mb-4">
                         {missingTables.map(({ category, subcategory }) => (
-                            <li key={`${category}_${subcategory}`}>{category} - {subcategory}</li>
+                            <div key={`${category}_${subcategory}`} className="p-2 border border-white rounded text-sm">
+                                {category} - {subcategory}
+                            </div>
                         ))}
-                    </ul>
-                    <Button variant="outline" onClick={() => setLinkTableDialogOpen(true)}>
+                    </div>
+                    <Button className="text-sm" onClick={() => setLinkTableDialogOpen(true)}>
                         Link Existing or Create New
                     </Button>
                 </div>
@@ -323,11 +392,11 @@ export default function PasswordManager() {
 
             {/* Link Table Dialog */}
             <AlertDialog open={linkTableDialogOpen} onOpenChange={setLinkTableDialogOpen}>
-                <AlertDialogContent>
+                <AlertDialogContent className="w-[500px]">
                     <AlertDialogHeader>
                         <AlertDialogTitle>Link or Create Tables</AlertDialogTitle>
                     </AlertDialogHeader>
-                    <div className="space-y-4">
+                    <div className="space-y-4 grid grid-cols-2">
                         {missingTables.map(({ category, subcategory }) => (
                             <div key={`${category}_${subcategory}`}>
                                 <p>{category} - {subcategory}</p>
