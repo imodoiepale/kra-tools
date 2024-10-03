@@ -27,6 +27,8 @@ export function AutoPopulationReports() {
         sec_f: true,
     });
     const [selectedReports, setSelectedReports] = useState([]);
+    const [downloadFile, setDownloadFile] = useState(null);
+    const [isDownloadDialogOpen, setIsDownloadDialogOpen] = useState(false);
 
     useEffect(() => {
         fetchReports();

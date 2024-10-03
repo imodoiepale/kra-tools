@@ -360,22 +360,22 @@ export default function PasswordManager() {
     return (
         <div className="p-4 w-full">
             {missingTables.length > 0 && (
-                <div className="bg-yellow-400 text-white p-4 rounded mb-4">
-                    <h2 className="font-bold text-lg">Missing Tables</h2>
-                    <p className="text-sm">The following categories/subcategories do not have linked database tables:</p>
+                <div className="bg-blue-500 text-white p-4 rounded mb-4 shadow-md">
+                    <h2 className="font-bold text-xl">Missing Tables</h2>
+                    <p className="text-xs">The following categories/subcategories do not have linked database tables:</p>
                     <div className="grid grid-cols-4 gap-4 mb-4">
                         {missingTables.map(({ category, subcategory }) => (
-                            <div key={`${category}_${subcategory}`} className="p-2 border border-white rounded text-sm flex justify-between items-center">
+                            <div key={`${category}_${subcategory}`} className="p-2 border border-white rounded text-xs flex justify-between items-center">
                                 <span>{category} - {subcategory}</span>
-                                <div>
+                                <div className="flex space-x-2">
                                     <Button size="sm" onClick={() => {
                                         setSelectedCategoryForLinking({ category, subcategory });
                                         setLinkTableDialogOpen(true);
-                                    }}>Link</Button>
+                                    }} className="bg-green-500 hover:bg-green-700">Link</Button>
                                     <Button size="sm" onClick={() => {
                                         setSelectedCategoryForLinking({ category, subcategory });
                                         setCreateTableDialogOpen(true);
-                                    }}>Create</Button>
+                                    }} className="bg-red-500 hover:bg-red-700">Create</Button>
                                 </div>
                             </div>
                         ))}
@@ -566,9 +566,9 @@ export default function PasswordManager() {
                         {selectedTable && !tableColumnsError && (
                             <div>
                                 <h3 className="font-bold mb-2">Map Columns</h3>
-                                <div className="space-y-2">
+                                <div className="grid grid-cols-2 gap-4 capitalize">
                                     {['name', 'identifier', 'password', 'status'].map(col => (
-                                        <div key={col} className="flex items-center space-x-2">
+                                        <div key={col} className="flex flex-col space-y-2">
                                             <Label>{col}</Label>
                                             <Select
                                                 value={columnMappings[col] || ''}
