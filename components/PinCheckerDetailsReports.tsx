@@ -217,7 +217,7 @@ export function PinCheckerDetailsReports() {
         link.href = window.URL.createObjectURL(blob);
         link.download = 'pin_checker_details.xlsx';
         link.click();
-    }    
+    }
 
     const getCellColor = (obligationType: string) => {
         switch (obligationType) {
