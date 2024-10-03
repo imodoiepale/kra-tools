@@ -303,31 +303,31 @@ export function AutoPopulationReports() {
                                             <Table>
                                                 <TableHeader>
                                                     <TableRow>
-                                                        <TableHead className="text-xs">Index</TableHead>
-                                                        <TableHead className="text-xs">Month</TableHead>
-                                                        <TableHead className="text-xs">Extraction Date</TableHead>
-                                                        <TableHead className="text-xs">VAT3</TableHead>
-                                                        <TableHead className="text-xs">Sec B with VAT</TableHead>
-                                                        <TableHead className="text-xs">Sec B without VAT</TableHead>
-                                                        <TableHead className="text-xs">Sec F</TableHead>
+                                                        <TableHead className="text-xs text-center">Index</TableHead>
+                                                        <TableHead className="text-xs ">Month</TableHead>
+                                                        <TableHead className="text-xs ">Extraction Date</TableHead>
+                                                        <TableHead className="text-xs text-center">VAT3</TableHead>
+                                                        <TableHead className="text-xs text-center">Sec B with VAT</TableHead>
+                                                        <TableHead className="text-xs text-center">Sec B without VAT</TableHead>
+                                                        <TableHead className="text-xs text-center">Sec F</TableHead>
                                                     </TableRow>
                                                 </TableHeader>
                                                 <TableBody>
                                                     {selectedCompany.extractions.map((extraction, index) => (
                                                         <TableRow key={index} className={index % 2 === 0 ? 'bg-white' : 'bg-blue-50'}>
-                                                            <TableCell className="text-xs p-1">{index + 1}</TableCell>
-                                                            <TableCell className="text-xs p-1 whitespace-nowrap">{extraction.monthYear}</TableCell>
-                                                            <TableCell className="text-xs p-1 whitespace-nowrap">
+                                                            <TableCell className="text-xs p-1 text-center">{index + 1}</TableCell>
+                                                            <TableCell className="text-xs p-1 whitespace-nowrap ">{extraction.monthYear}</TableCell>
+                                                            <TableCell className="text-xs p-1 whitespace-nowrap ">
                                                                 {extraction.extractionDate ? (
                                                                     new Date(extraction.extractionDate).toLocaleString()
                                                                 ) : (
                                                                     <span className="text-red-500">Missing</span>
                                                                 )}
                                                             </TableCell>
-                                                            <TableCell className="text-xs p-1">{renderFileButton(findFile(extraction.files, 'vat3'), true)}</TableCell>
-                                                            <TableCell className="text-xs p-1">{renderFileButton(findFile(extraction.files, 'sec_b_with_vat'), true)}</TableCell>
-                                                            <TableCell className="text-xs p-1">{renderFileButton(findFile(extraction.files, 'sec_b_without_vat'), true)}</TableCell>
-                                                            <TableCell className="text-xs p-1">{renderFileButton(findFile(extraction.files, 'sec_f'), true)}</TableCell>
+                                                            <TableCell className="text-xs p-1 text-center">{renderFileButton(findFile(extraction.files, 'vat3'), true)}</TableCell>
+                                                            <TableCell className="text-xs p-1 text-center">{renderFileButton(findFile(extraction.files, 'sec_b_with_vat'), true)}</TableCell>
+                                                            <TableCell className="text-xs p-1 text-center">{renderFileButton(findFile(extraction.files, 'sec_b_without_vat'), true)}</TableCell>
+                                                            <TableCell className="text-xs p-1 text-center">{renderFileButton(findFile(extraction.files, 'sec_f'), true)}</TableCell>
                                                         </TableRow>
                                                     ))}
                                                 </TableBody>
