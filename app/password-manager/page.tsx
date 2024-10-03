@@ -49,6 +49,27 @@ export default function PasswordManager() {
     const [customTableName, setCustomTableName] = useState('');
     const [csvUploadDialogOpen, setCsvUploadDialogOpen] = useState(false);
 
+    const [editDialogOpen, setEditDialogOpen] = useState(false);
+    const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+    const [itemToEdit, setItemToEdit] = useState(null);
+    const [itemToDelete, setItemToDelete] = useState(null);
+
+
+    const [data, setData] = useState([]);
+
+    useEffect(() => {
+        const fetchData = async () => {
+            try {
+                const fetchedData = await fetchAllDataForAllCategories(); // Fetch data
+                setData(fetchedData); // Update state with fetched data
+            } catch (error) {
+                console.error('Error fetching data:', error);
+            }
+        };
+
+        fetchData();
+    }, []);
+
     useEffect(() => {
         initializeCategories();
         fetchAllDataForAllCategories();
@@ -121,7 +142,10 @@ export default function PasswordManager() {
                         .order('id', { ascending: true });
 
                     if (error) throw error;
-                    allData[`${category}_${subcategory}`] = data.map(item => {
+
+                    // Ensure that all data is correctly mapped to the respective category and subcategory
+                    const key = `${category}_${subcategory}`;
+                    allData[key] = data.map(item => {
                         const mappedItem = {};
                         for (const [key, value] of Object.entries(column_mappings)) {
                             mappedItem[key] = item[value];
@@ -130,13 +154,14 @@ export default function PasswordManager() {
                     });
                 })
             );
-            setItems(allData);
+            setItems(prev => ({ ...prev, ...allData })); // Update state with all fetched data
         } catch (error) {
             console.error('Error fetching all data:', error);
         } finally {
             setLoading(false);
         }
     };
+
 
     const fetchDbTables = async () => {
         try {
@@ -293,10 +318,13 @@ export default function PasswordManager() {
 
         try {
             const tableName = customTableName || `${selectedCategoryForLinking.category}_${selectedCategoryForLinking.subcategory}`.toLowerCase();
-            await supabase.rpc('create_table_if_not_exists', { table_name: tableName });
+
+            // Ensure the RPC call is correctly defined in your Supabase setup
+            const { error: createError } = await supabase.rpc('create_table_if_not_exists', { table_name: tableName });
+            if (createError) throw createError; // Check for errors in table creation
 
             // Save the mapping
-            await supabase.from('category_table_mappings').upsert({
+            const { error: upsertError } = await supabase.from('category_table_mappings').upsert({
                 category: selectedCategoryForLinking.category,
                 subcategory: selectedCategoryForLinking.subcategory,
                 table_name: tableName,
@@ -309,6 +337,8 @@ export default function PasswordManager() {
             }, {
                 onConflict: 'category,subcategory'
             });
+
+            if (upsertError) throw upsertError; // Check for errors in upserting the mapping
 
             setMissingTables(prev => prev.filter(item =>
                 item.category !== selectedCategoryForLinking.category ||
@@ -335,19 +365,20 @@ export default function PasswordManager() {
                 const data = rows.slice(1).map(row => {
                     const obj = {};
                     headers.forEach((header, index) => {
-                        obj[header.trim()] = row[index].trim();
+                        // Check if row[index] is defined before calling trim
+                        obj[header.trim()] = row[index] ? row[index].trim() : ''; // Default to empty string if undefined
                     });
                     return obj;
                 });
-
+    
                 try {
                     const tableName = `${activeCategory}_${activeSubCategory}`.toLowerCase();
                     const { data: insertedData, error } = await supabase
                         .from(tableName)
                         .insert(data);
-
+    
                     if (error) throw error;
-
+    
                     await fetchAllDataForAllCategories();
                 } catch (error) {
                     console.error('Error uploading CSV data:', error);
@@ -356,6 +387,90 @@ export default function PasswordManager() {
             reader.readAsText(file);
         }
     };
+    const downloadTemplate = () => {
+        const templateData = [
+            ['Name', 'Identifier', 'Password', 'Status'], // Header row
+            ['', '', '', 'Pending'] // Example row
+        ];
+        const csvContent = templateData.map(e => e.join(",")).join("\n");
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement("a");
+        const url = URL.createObjectURL(blob);
+        link.setAttribute("href", url);
+        link.setAttribute("download", `${activeCategory}_${activeSubCategory}_template.csv`);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
+    const handleEditItem = async () => {
+        if (!itemToEdit) return;
+
+        try {
+            const { data: mapping, error: mappingError } = await supabase
+                .from('category_table_mappings')
+                .select('table_name, column_mappings')
+                .eq('category', activeCategory)
+                .eq('subcategory', activeSubCategory)
+                .single();
+
+            if (mappingError) throw mappingError;
+
+            const { table_name, column_mappings } = mapping;
+
+            const updateData = {};
+            for (const [key, value] of Object.entries(column_mappings)) {
+                updateData[value] = itemToEdit[key];
+            }
+
+            const { error: updateError } = await supabase
+                .from(table_name)
+                .update(updateData)
+                .eq('id', itemToEdit.id); // Assuming 'id' is the primary key
+
+            if (updateError) throw updateError;
+
+            // Refresh the data after editing
+            await fetchAllDataForAllCategories();
+            setEditDialogOpen(false);
+            setItemToEdit(null); // Reset the item to edit
+        } catch (error) {
+            console.error('Error editing item:', error);
+        }
+    };
+
+    const handleDeleteItem = async () => {
+        if (!itemToDelete) return;
+
+        try {
+            const { data: mapping, error: mappingError } = await supabase
+                .from('category_table_mappings')
+                .select('table_name')
+                .eq('category', activeCategory)
+                .eq('subcategory', activeSubCategory)
+                .single();
+
+            if (mappingError) throw mappingError;
+
+            const { table_name } = mapping;
+
+            const { error: deleteError } = await supabase
+                .from(table_name)
+                .delete()
+                .eq('id', itemToDelete.id); // Assuming 'id' is the primary key
+
+            if (deleteError) throw deleteError;
+
+            // Refresh the data after deletion
+            await fetchAllDataForAllCategories();
+            setDeleteDialogOpen(false);
+            setItemToDelete(null); // Reset the item to delete
+        } catch (error) {
+            console.error('Error deleting item:', error);
+        }
+    };
+
 
     return (
         <div className="p-4 w-full">
@@ -460,9 +575,9 @@ export default function PasswordManager() {
                                                                 <TableCell>{item.identifier}</TableCell>
                                                                 <TableCell>{item.password}</TableCell>
                                                                 <TableCell>{item.status}</TableCell>
-                                                                <TableCell>
-                                                                    <Button>Edit</Button>
-                                                                    <Button variant="destructive">Delete</Button>
+                                                                <TableCell className=" flex gap-4">
+                                                                    <Button onClick={() => { setItemToEdit(item); setEditDialogOpen(true); }}>Edit</Button>
+                                                                    <Button variant="destructive" onClick={() => { setItemToDelete(item); setDeleteDialogOpen(true); }}>Delete</Button>
                                                                 </TableCell>
                                                             </TableRow>
                                                         ))}
@@ -620,6 +735,57 @@ export default function PasswordManager() {
                 </DialogContent>
             </Dialog>
 
+            {/* Edit Item Dialog */}
+            <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Edit Item</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                        <div>
+                            <Label>Name</Label>
+                            <Input
+                                value={itemToEdit?.name || ''}
+                                onChange={(e) => setItemToEdit({ ...itemToEdit, name: e.target.value })}
+                            />
+                        </div>
+                        <div>
+                            <Label>Identifier</Label>
+                            <Input
+                                value={itemToEdit?.identifier || ''}
+                                onChange={(e) => setItemToEdit({ ...itemToEdit, identifier: e.target.value })}
+                            />
+                        </div>
+                        <div>
+                            <Label>Password</Label>
+                            <Input
+                                value={itemToEdit?.password || ''}
+                                onChange={(e) => setItemToEdit({ ...itemToEdit, password: e.target.value })}
+                            />
+                        </div>
+                    </div>
+                    <div className="flex justify-end space-x-2">
+                        <Button variant="outline" onClick={() => setEditDialogOpen(false)}>Cancel</Button>
+                        <Button onClick={handleEditItem}>Save</Button>
+                    </div>
+                </DialogContent>
+            </Dialog>
+
+            {/* Delete Item Dialog */}
+            <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Delete Item</DialogTitle>
+                    </DialogHeader>
+                    <p>Are you sure you want to delete {itemToDelete?.name}?</p>
+                    <div className="flex justify-end space-x-2 mt-4">
+                        <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>Cancel</Button>
+                        <Button onClick={handleDeleteItem}>Delete</Button>
+                    </div>
+                </DialogContent>
+            </Dialog>
+
+
             {/* CSV Upload Dialog */}
             <Dialog open={csvUploadDialogOpen} onOpenChange={setCsvUploadDialogOpen}>
                 <DialogContent>
@@ -632,6 +798,7 @@ export default function PasswordManager() {
                         accept=".csv"
                         onChange={handleFileUpload}
                     />
+                    <Button onClick={() => downloadTemplate()}>Download Template</Button>
                     <div className="flex justify-end space-x-2 mt-4">
                         <Button variant="outline" onClick={() => setCsvUploadDialogOpen(false)}>Cancel</Button>
                         <Button onClick={() => document.querySelector('input[type="file"]').click()}>Select File</Button>
