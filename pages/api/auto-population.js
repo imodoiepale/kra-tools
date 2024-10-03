@@ -183,12 +183,12 @@ async function initiateAndHandleDownload(page, worksheet, company, downloadFolde
             return null;
         }
 
-        const downloadPromise = page.waitForEvent('download');
+        const downloadPromise = page.waitForEvent('download', { timeout: 60000 });
         await page.waitForSelector("#dwnlod_btn_tims");
         page.once("dialog", dialog => {
             dialog.accept().catch(() => { });
         });
-        await page.click(".submit");
+        await page.click(".submit", { timeout: 60000 });
         const download = await downloadPromise;
 
         const previousMonthName = getPreviousMonthName();
@@ -330,6 +330,7 @@ async function uploadToSupabase(files, companyName, extractionDate) {
     const previousMonth = getPreviousMonthName();
     const monthYear = `${previousMonth} ${currentDate.getFullYear()}`;
     const uploadedFiles = [];
+    const failedUploads = [];
 
     for (const file of files) {
         const fileName = path.basename(file.path);
@@ -337,9 +338,7 @@ async function uploadToSupabase(files, companyName, extractionDate) {
 
         try {
             const fileContent = await fs.readFile(file.path);
-            const contentType = file.type === 'zip' ? 'application/zip' :
-                file.type === 'excel' ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' :
-                    'application/octet-stream';
+            const contentType = determineContentType(file.type, fileName);
 
             const { data, error } = await supabase.storage
                 .from('kra-documents')
@@ -352,32 +351,52 @@ async function uploadToSupabase(files, companyName, extractionDate) {
                         .from('kra-documents')
                         .update(storagePath, fileContent, { contentType });
 
-                    if (updateError) throw updateError;
-                    uploadedFiles.push({
-                        path: updateData.path,
-                        fullPath: getPublicUrl(updateData.path),
-                        originalName: file.originalName || fileName,
-                        type: file.type
-                    });
+                    if (updateError) {
+                        throw updateError;
+                    }
+                    
+                    uploadedFiles.push(createFileObject(updateData, file, storagePath));
                 } else {
                     throw error;
                 }
             } else {
-                uploadedFiles.push({
-                    path: data.path,
-                    fullPath: getPublicUrl(data.path),
-                    originalName: file.originalName || fileName,
-                    type: file.type
-                });
+                uploadedFiles.push(createFileObject(data, file, storagePath));
             }
+
+            console.log(`Successfully uploaded: ${fileName}`);
         } catch (error) {
             console.error(`Error uploading file ${fileName} to Supabase:`, error);
-            // Continue with the next file instead of throwing an error
+            failedUploads.push({ fileName, error: error.message });
         }
     }
 
-    return uploadedFiles;
+    if (failedUploads.length > 0) {
+        console.warn(`Failed to upload ${failedUploads.length} file(s):`, failedUploads);
+    }
+
+    return uploadedFiles; // Return only the array of uploaded files
 }
+
+function determineContentType(fileType, fileName) {
+    if (fileType === 'zip') return 'application/zip';
+    if (fileType === 'excel') return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    if (fileName.endsWith('.pdf')) return 'application/pdf';
+    if (fileName.endsWith('.csv')) return 'text/csv';
+    if (fileName.endsWith('.txt')) return 'text/plain';
+    return 'application/octet-stream';
+}
+
+function createFileObject(data, file, storagePath) {
+    return {
+        path: data.path || storagePath,
+        fullPath: getPublicUrl(data.path || storagePath),
+        originalName: file.originalName || path.basename(file.path),
+        type: file.type,
+        size: data.size,
+        lastModified: new Date().toISOString()
+    };
+}
+
 function getPublicUrl(path) {
     return `${supabaseUrl}/storage/v1/object/public/kra-documents/${path}`;
 }
@@ -402,7 +421,7 @@ async function updateSupabaseTable(company, extractionDate, uploadedFiles) {
         let updatedExtractions = existingData?.extractions || {};
         updatedExtractions[monthYear] = {
             extraction_date: extractionDate,
-            files: uploadedFiles.filter(file => file && file.fullPath).map(file => ({
+            files: uploadedFiles.map(file => ({
                 path: file.path,
                 fullPath: file.fullPath,
                 originalName: file.originalName,
@@ -449,25 +468,40 @@ async function readZipFile(filePath) {
 }
 
 async function extractAndRenameFiles(zipFilePath, company, startDateFormatted, downloadFolderPath) {
-    const zip = await JSZip.loadAsync(await fs.readFile(zipFilePath));
     const extractedFiles = [];
 
-    for (const [fileName, file] of Object.entries(zip.files)) {
-        if (!file.dir) {
-            const newFileName = `${company.company_name}-${startDateFormatted}-${fileName}`;
-            const filePath = path.join(downloadFolderPath, newFileName);
-            await fs.writeFile(filePath, await file.async('nodebuffer'));
+    async function processZipEntry(zipBuffer, parentPath = '') {
+        const zip = await JSZip.loadAsync(zipBuffer);
 
-            extractedFiles.push({
-                originalName: fileName,
-                newName: newFileName,
-                path: filePath
-            });
+        for (const [fileName, file] of Object.entries(zip.files)) {
+            if (file.dir) continue; // Skip directories
+
+            const content = await file.async('nodebuffer');
+            
+            if (fileName.toLowerCase().endsWith('.zip')) {
+                // If it's a nested zip file, process its contents
+                await processZipEntry(content, `${parentPath}${fileName}-`);
+            } else {
+                // Generate a unique filename
+                const uniqueFileName = `${company.company_name}-${startDateFormatted}-${parentPath}${fileName.replace(/\//g, '-')}`;
+                const newFilePath = path.join(downloadFolderPath, uniqueFileName);
+                
+                await fs.writeFile(newFilePath, content);
+
+                extractedFiles.push({
+                    originalName: `${parentPath}${fileName}`,
+                    newName: uniqueFileName,
+                    path: newFilePath
+                });
+            }
         }
     }
 
+    const zipBuffer = await fs.readFile(zipFilePath);
+    await processZipEntry(zipBuffer);
     return extractedFiles;
 }
+
 
 function getPreviousMonthName() {
     const previousMonthDate = subMonths(new Date(), 1);

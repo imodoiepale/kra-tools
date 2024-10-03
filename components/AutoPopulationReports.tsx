@@ -7,12 +7,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Dialog, DialogContent, DialogTrigger, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ArrowUpDown, Search, Eye, Download, MoreHorizontal, FileIcon, ImageIcon, Play, RefreshCw } from "lucide-react";
+import { ArrowUpDown, Download, MoreHorizontal, Play, RefreshCw } from "lucide-react";
 import * as ExcelJS from 'exceljs';
-import { supabase } from '@/lib/supabase'
+import { supabase } from '@/lib/supabase';
 import { Checkbox } from './ui/checkbox';
-import FileViewer from './FileViewer';
 
 export function AutoPopulationReports() {
     const [reports, setReports] = useState([]);
@@ -23,18 +21,12 @@ export function AutoPopulationReports() {
     const [visibleColumns, setVisibleColumns] = useState({
         company_name: true,
         last_updated: true,
-        extraction_count: true,
-        zip_file: true,
-        excel_file: true,
-        extracted_files: true,
+        vat3: true,
+        sec_b_with_vat: true,
+        sec_b_without_vat: true,
+        sec_f: true,
     });
-
     const [selectedReports, setSelectedReports] = useState([]);
-
-    const viewDocument = (url, title) => {
-        const fileType = url.endsWith('.xlsx') || url.endsWith('.csv') ? 'excel' : 'zip';
-        return <FileViewer url={url} fileType={fileType} title={title} />;
-    };
 
     useEffect(() => {
         fetchReports();
@@ -89,36 +81,21 @@ export function AutoPopulationReports() {
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet('Auto-Populate Reports');
 
-        // Add headers
-        const headers = ['Company Name', 'Last Updated', 'Extraction Count'];
-        const headerRow = worksheet.addRow(headers);
+        const headers = ['Company Name', 'Last Updated', 'VAT3', 'Sec B with VAT', 'Sec B without VAT', 'Sec F'];
+        worksheet.addRow(headers);
 
-        // Style the header row
-        headerRow.eachCell((cell) => {
-            cell.fill = {
-                type: 'pattern',
-                pattern: 'solid',
-                fgColor: { argb: 'FFFFFF00' }
-            };
-            cell.font = { bold: true };
-            cell.border = {
-                top: { style: 'thin' },
-                left: { style: 'thin' },
-                bottom: { style: 'thin' },
-                right: { style: 'thin' }
-            };
-        });
-
-        // Add data
         filteredReports.forEach((report) => {
-            worksheet.addRow([
+            const row = [
                 report.companyName,
                 new Date(report.lastUpdated).toLocaleString(),
-                report.extractions.length
-            ]);
+                findFile(report.extractions[0]?.files, 'vat3')?.originalName || 'Missing',
+                findFile(report.extractions[0]?.files, 'sec_b_with_vat')?.originalName || 'Missing',
+                findFile(report.extractions[0]?.files, 'sec_b_without_vat')?.originalName || 'Missing',
+                findFile(report.extractions[0]?.files, 'sec_f')?.originalName || 'Missing',
+            ];
+            worksheet.addRow(row);
         });
 
-        // Generate and download the file
         const buffer = await workbook.xlsx.writeBuffer();
         const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
         const link = document.createElement('a');
@@ -128,11 +105,7 @@ export function AutoPopulationReports() {
     };
 
     const toggleSelectAll = (checked) => {
-        if (checked) {
-            setSelectedReports(filteredReports.map(report => report.id));
-        } else {
-            setSelectedReports([]);
-        }
+        setSelectedReports(checked ? filteredReports.map(report => report.id) : []);
     };
 
     const toggleSelectReport = (reportId) => {
@@ -144,27 +117,46 @@ export function AutoPopulationReports() {
     };
 
     const runSelectedReports = () => {
+        console.log("Running selected reports:", selectedReports);
         // Implement logic to run selected reports
     };
 
     const runMissingReports = () => {
         const missingReports = filteredReports.filter(report => !report.extractions.length).map(report => report.id);
+        console.log("Running missing reports:", missingReports);
         // Implement logic to run missing reports
     };
 
-    const renderFileButton = (file) => (
-        <Button
-            key={file.path}
-            variant="outline"
-            size="sm"
-            onClick={() => window.open(file.fullPath, '_blank')}
-        >
-            <FileIcon className="mr-1 h-3 w-3" />
-            {file.originalName}
-        </Button>
-    );
+    const findFile = (files, type) => {
+        if (!files || !Array.isArray(files)) return null;
 
-    const findFile = (files, type) => files && Array.isArray(files) ? files.find(f => f.type === type) : null;
+        const filePatterns = {
+            vat3: /VAT3_Return/i,
+            sec_b_with_vat: /SEC_B_WITH_VAT_PIN/i,
+            sec_b_without_vat: /SEC_B_WITHOUT_PIN/i,
+            sec_f: /SEC_F_WITH_VAT_PIN/i
+        };
+
+        return files.find(file => {
+            const fileName = file.originalName || file.name || '';
+            return filePatterns[type].test(fileName);
+        });
+    };
+
+    const renderFileButton = (file, detailed = false) => {
+        if (!file) return <span className="text-red-500 font-bold">Missing</span>;
+        return (
+            <Button
+                key={file.path}
+                variant="outline"
+                size="sm"
+                onClick={() => window.open(file.fullPath, '_blank')}
+            >
+                <Download className="mr-1 h-3 w-3" />
+                Download
+            </Button>
+        );
+    };
 
     return (
         <Tabs defaultValue="summary">
@@ -233,15 +225,18 @@ export function AutoPopulationReports() {
                                     </TableHead>
                                     {[
                                         { key: 'index', label: 'Index', alwaysVisible: true },
-                                        { key: 'company_name', label: 'Company Name' },
-                                        { key: 'last_updated', label: 'Last Updated' },
-                                        { key: 'extracted_files', label: 'Extracted Files', textAlign: 'text-center' },
-                                    ].map(({ key, label, alwaysVisible, textAlign }) => (
+                                        { key: 'company_name', label: 'Company Name', center: false },
+                                        { key: 'last_updated', label: 'Last Updated', center: false },
+                                        { key: 'vat3', label: 'VAT3', center: true },
+                                        { key: 'sec_b_with_vat', label: 'Sec B with VAT', center: true },
+                                        { key: 'sec_b_without_vat', label: 'Sec B without VAT', center: true },
+                                        { key: 'sec_f', label: 'Sec F', center: true },
+                                    ].map(({ key, label, alwaysVisible, center }) => (
                                         (alwaysVisible || visibleColumns[key]) && (
                                             <TableHead key={key}>
-                                                <div className={`flex items-center justify-center ${textAlign ? textAlign : ''}`}>
+                                                <div className={`flex items-center ${center ? 'justify-center' : ''}`}>
                                                     {label}
-                                                    {key !== 'actions' && key !== 'extracted_files' && (
+                                                    {!['index', 'vat3', 'sec_b_with_vat', 'sec_b_without_vat', 'sec_f'].includes(key) && (
                                                         <ArrowUpDown
                                                             className="h-4 w-4 cursor-pointer"
                                                             onClick={() => handleSort(key)}
@@ -262,39 +257,13 @@ export function AutoPopulationReports() {
                                                 onCheckedChange={() => toggleSelectReport(report.id)}
                                             />
                                         </TableCell>
-                                        {[
-                                            { key: 'index', content: index + 1, alwaysVisible: true },
-                                            { key: 'company_name', content: report.companyName },
-                                            { key: 'last_updated', content: new Date(report.lastUpdated).toLocaleString() },
-                                            {
-                                                key: 'extracted_files',
-                                                content: (() => {
-                                                    const extractedFiles = report.extractions[0]?.files?.filter(f => f.type === 'extracted') || [];
-                                                    return extractedFiles.length > 0 ? (
-                                                        <div className="flex flex-wrap gap-1 justify-center">
-                                                            {extractedFiles.map(file => (
-                                                                <React.Fragment key={file.path}>
-                                                                    {/* {viewDocument(file.fullPath, file.originalName)} */}
-                                                                    <Button variant="outline" size="sm" onClick={() => window.open(file.fullPath, '_blank')}>
-                                                                        <Download className="mr-2 h-4 w-4" />
-                                                                        Download {file.originalName}
-                                                                    </Button>
-                                                                </React.Fragment>
-                                                            ))}
-                                                        </div>
-                                                    ) : (
-                                                        <div className="flex flex-wrap gap-1 justify-center">
-                                                            <span className="text-red-500 text-center font-bold">No extracted files</span>
-                                                        </div>
-                                                    );
-                                                })()
-                                            },
-
-                                        ].map(({ key, content, alwaysVisible }) => (
-                                            (alwaysVisible || visibleColumns[key]) && (
-                                                <TableCell key={key}>{content}</TableCell>
-                                            )
-                                        ))}
+                                        <TableCell>{index + 1}</TableCell>
+                                        {visibleColumns.company_name && <TableCell>{report.companyName}</TableCell>}
+                                        {visibleColumns.last_updated && <TableCell>{new Date(report.lastUpdated).toLocaleString()}</TableCell>}
+                                        {visibleColumns.vat3 && <TableCell className="text-center">{renderFileButton(findFile(report.extractions[0]?.files, 'vat3'))}</TableCell>}
+                                        {visibleColumns.sec_b_with_vat && <TableCell className="text-center">{renderFileButton(findFile(report.extractions[0]?.files, 'sec_b_with_vat'))}</TableCell>}
+                                        {visibleColumns.sec_b_without_vat && <TableCell className="text-center">{renderFileButton(findFile(report.extractions[0]?.files, 'sec_b_without_vat'))}</TableCell>}
+                                        {visibleColumns.sec_f && <TableCell className="text-center">{renderFileButton(findFile(report.extractions[0]?.files, 'sec_f'))}</TableCell>}
                                     </TableRow>
                                 ))}
                             </TableBody>
@@ -337,7 +306,10 @@ export function AutoPopulationReports() {
                                                         <TableHead className="text-xs">Index</TableHead>
                                                         <TableHead className="text-xs">Month</TableHead>
                                                         <TableHead className="text-xs">Extraction Date</TableHead>
-                                                        <TableHead className="text-xs">Files</TableHead>
+                                                        <TableHead className="text-xs">VAT3</TableHead>
+                                                        <TableHead className="text-xs">Sec B with VAT</TableHead>
+                                                        <TableHead className="text-xs">Sec B without VAT</TableHead>
+                                                        <TableHead className="text-xs">Sec F</TableHead>
                                                     </TableRow>
                                                 </TableHeader>
                                                 <TableBody>
@@ -352,15 +324,10 @@ export function AutoPopulationReports() {
                                                                     <span className="text-red-500">Missing</span>
                                                                 )}
                                                             </TableCell>
-                                                            <TableCell className="text-xs p-1">
-                                                                <div className="flex flex-wrap gap-1">
-                                                                    {extraction.files.length > 0 ? (
-                                                                        extraction.files.map(renderFileButton)
-                                                                    ) : (
-                                                                        <span className="text-red-500">No files available</span>
-                                                                    )}
-                                                                </div>
-                                                            </TableCell>
+                                                            <TableCell className="text-xs p-1">{renderFileButton(findFile(extraction.files, 'vat3'), true)}</TableCell>
+                                                            <TableCell className="text-xs p-1">{renderFileButton(findFile(extraction.files, 'sec_b_with_vat'), true)}</TableCell>
+                                                            <TableCell className="text-xs p-1">{renderFileButton(findFile(extraction.files, 'sec_b_without_vat'), true)}</TableCell>
+                                                            <TableCell className="text-xs p-1">{renderFileButton(findFile(extraction.files, 'sec_f'), true)}</TableCell>
                                                         </TableRow>
                                                     ))}
                                                 </TableBody>
