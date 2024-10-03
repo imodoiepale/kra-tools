@@ -14,7 +14,7 @@ export default function TCCExtractor() {
         <div className="p-4 w-full">
             <Card>
                 <CardHeader>
-                    <CardTitle>Tax Compliance Certificate Extractor</CardTitle>
+                    <CardTitle>Tax Compliance Certificate Extractor </CardTitle>
                     <CardDescription>Extract and manage Tax Compliance Certificates for companies</CardDescription>
                 </CardHeader>
                 <CardContent>
