@@ -44,26 +44,48 @@ export default function PasswordManager() {
     const [tableColumns, setTableColumns] = useState([]);
     const [columnMappings, setColumnMappings] = useState({});
     const [selectedCategoryForLinking, setSelectedCategoryForLinking] = useState(null);
-
-
+    const [tableColumnsError, setTableColumnsError] = useState(null);
+    const [linkedTables, setLinkedTables] = useState({});
+    const [customTableName, setCustomTableName] = useState('');
     const [csvUploadDialogOpen, setCsvUploadDialogOpen] = useState(false);
 
     useEffect(() => {
         initializeCategories();
         fetchAllDataForAllCategories();
         fetchDbTables();
+        fetchLinkedTables();
     }, []);
+
+    const fetchLinkedTables = async () => {
+        try {
+            const { data, error } = await supabase
+                .from('category_table_mappings')
+                .select('category, subcategory, table_name');
+
+            if (error) throw error;
+
+            const tableMap = {};
+            data.forEach(item => {
+                tableMap[`${item.category}_${item.subcategory}`] = item.table_name;
+            });
+
+            setLinkedTables(tableMap);
+        } catch (error) {
+            console.error('Error fetching linked tables:', error);
+        }
+    };
+
 
     const initializeCategories = async () => {
         try {
             const { data: mappings, error: mappingsError } = await supabase
                 .from('category_table_mappings')
                 .select('*');
-    
+
             if (mappingsError) throw mappingsError;
-    
+
             const mappingsMap = new Map(mappings.map(m => [`${m.category}_${m.subcategory}`, m]));
-    
+
             const missing = [];
             await Promise.all(
                 Object.entries(categories).flatMap(([category, subcategories]) =>
@@ -87,9 +109,9 @@ export default function PasswordManager() {
             const { data: mappings, error: mappingsError } = await supabase
                 .from('category_table_mappings')
                 .select('*');
-    
+
             if (mappingsError) throw mappingsError;
-    
+
             const allData = {};
             await Promise.all(
                 mappings.map(async ({ category, subcategory, table_name, column_mappings }) => {
@@ -97,7 +119,7 @@ export default function PasswordManager() {
                         .from(table_name)
                         .select(Object.values(column_mappings).join(','))
                         .order('id', { ascending: true });
-    
+
                     if (error) throw error;
                     allData[`${category}_${subcategory}`] = data.map(item => {
                         const mappedItem = {};
@@ -156,79 +178,112 @@ export default function PasswordManager() {
 
     const handleAddItem = async () => {
         try {
-            const tableName = `${activeCategory}_${activeSubCategory}`.toLowerCase();
+            const { data: mapping, error: mappingError } = await supabase
+                .from('category_table_mappings')
+                .select('table_name, column_mappings')
+                .eq('category', activeCategory)
+                .eq('subcategory', activeSubCategory)
+                .single();
+
+            if (mappingError) throw mappingError;
+
+            const { table_name, column_mappings } = mapping;
+
+            const insertData = {};
+            for (const [key, value] of Object.entries(column_mappings)) {
+                insertData[value] = newItem[key];
+            }
+
             const { data, error } = await supabase
-                .from(tableName)
-                .insert([newItem])
-                .select();
+                .from(table_name)
+                .insert([insertData]);
 
             if (error) throw error;
+
+            // Fetch the inserted item
+            const { data: fetchedData, error: fetchError } = await supabase
+                .from(table_name)
+                .select('*')
+                .order('id', { ascending: false })
+                .limit(1)
+                .single();
+
+            if (fetchError) throw fetchError;
 
             setItems(prev => ({
                 ...prev,
                 [`${activeCategory}_${activeSubCategory}`]: [
                     ...(prev[`${activeCategory}_${activeSubCategory}`] || []),
-                    data[0]
+                    fetchedData
                 ]
             }));
             setAddDialogOpen(false);
             setNewItem({ name: '', identifier: '', password: '', status: 'Pending' });
         } catch (error) {
             console.error('Error adding item:', error);
+            // Handle the error (e.g., show an error message to the user)
         }
     };
 
     const handleTableSelect = async (tableName) => {
         setSelectedTable(tableName);
+        setTableColumnsError(null);
         try {
-            const { data, error } = await supabase.rpc('get_table_columns', { table_name: tableName });
+            const { data, error } = await supabase.rpc('get_table_columns', { input_table_name: tableName });
             if (error) throw error;
-            setTableColumns(data || []);
+            console.log('Fetched table columns:', data);
+            // Extract column names from the returned objects
+            const columnNames = data.map(item => item.column_name);
+            setTableColumns(columnNames || []);
         } catch (error) {
             console.error('Error fetching table columns:', error);
+            setTableColumnsError(error.message);
         }
     };
-
     const handleColumnMappingChange = (categoryColumn, dbColumn) => {
         console.log('Mapping changed:', categoryColumn, dbColumn);
-        setColumnMappings(prev => ({
-            ...prev,
-            [categoryColumn]: dbColumn
-        }));
+        setColumnMappings(prev => {
+            const newMappings = {
+                ...prev,
+                [categoryColumn]: dbColumn
+            };
+            console.log('New column mappings:', newMappings);
+            return newMappings;
+        });
     };
 
     const handleLinkTable = async () => {
-    if (!selectedCategoryForLinking || !selectedTable || Object.keys(columnMappings).length === 0) {
-        console.error("Please select a category, table, and map columns");
-        return;
-    }
+        if (!selectedCategoryForLinking || !selectedTable || Object.keys(columnMappings).length === 0) {
+            console.error("Please select a category, table, and map columns");
+            return;
+        }
 
-    try {
-        const { data, error } = await supabase
-            .from('category_table_mappings')
-            .upsert({
-                category: selectedCategoryForLinking.category,
-                subcategory: selectedCategoryForLinking.subcategory,
-                table_name: selectedTable,
-                column_mappings: columnMappings
-            }, {
-                onConflict: 'category,subcategory'
-            })
-            .select();
+        try {
+            const { data, error } = await supabase
+                .from('category_table_mappings')
+                .upsert({
+                    category: selectedCategoryForLinking.category,
+                    subcategory: selectedCategoryForLinking.subcategory,
+                    table_name: selectedTable,
+                    column_mappings: columnMappings
+                }, {
+                    onConflict: 'category,subcategory'
+                })
+                .select();
 
-        if (error) throw error;
+            if (error) throw error;
 
-        setMissingTables(prev => prev.filter(item =>
-            item.category !== selectedCategoryForLinking.category ||
-            item.subcategory !== selectedCategoryForLinking.subcategory
-        ));
+            setMissingTables(prev => prev.filter(item =>
+                item.category !== selectedCategoryForLinking.category ||
+                item.subcategory !== selectedCategoryForLinking.subcategory
+            ));
 
-        setLinkTableDialogOpen(false);
-        await fetchAllDataForAllCategories();
-    } catch (error) {
-        console.error('Error linking table:', error);
-    }
-};
+            setLinkTableDialogOpen(false);
+            await fetchAllDataForAllCategories();
+        } catch (error) {
+            console.error('Error linking table:', error);
+        }
+    };
 
     const handleCreateNewTable = async () => {
         if (!selectedCategoryForLinking) {
@@ -237,8 +292,23 @@ export default function PasswordManager() {
         }
 
         try {
-            const tableName = `${selectedCategoryForLinking.category}_${selectedCategoryForLinking.subcategory}`.toLowerCase();
+            const tableName = customTableName || `${selectedCategoryForLinking.category}_${selectedCategoryForLinking.subcategory}`.toLowerCase();
             await supabase.rpc('create_table_if_not_exists', { table_name: tableName });
+
+            // Save the mapping
+            await supabase.from('category_table_mappings').upsert({
+                category: selectedCategoryForLinking.category,
+                subcategory: selectedCategoryForLinking.subcategory,
+                table_name: tableName,
+                column_mappings: {
+                    name: 'name',
+                    identifier: 'identifier',
+                    password: 'password',
+                    status: 'status'
+                }
+            }, {
+                onConflict: 'category,subcategory'
+            });
 
             setMissingTables(prev => prev.filter(item =>
                 item.category !== selectedCategoryForLinking.category ||
@@ -246,6 +316,7 @@ export default function PasswordManager() {
             ));
 
             setCreateTableDialogOpen(false);
+            setCustomTableName('');
             await fetchAllDataForAllCategories();
             await fetchDbTables();
         } catch (error) {
@@ -354,43 +425,50 @@ export default function PasswordManager() {
                                                 </SelectContent>
                                             </Select>
                                         </div>
-                                        <Button onClick={() => setAddDialogOpen(true)}>
-                                            <Plus className="mr-2 h-4 w-4" />
-                                            Add Item
-                                        </Button>
+                                        <div className="flex items-center space-x-2">
+                                            <span className="text-sm text-gray-500">
+                                                Linked to: {linkedTables[`${category}_${activeSubCategory}`] || 'Not linked'}
+                                            </span>
+                                            <Button onClick={() => setAddDialogOpen(true)}>
+                                                <Plus className="mr-2 h-4 w-4" />
+                                                Add Item
+                                            </Button>
+                                        </div>
                                     </CardHeader>
 
                                     <CardContent>
                                         {loading ? (
                                             <div>Loading...</div>
                                         ) : (
-                                            <Table>
-                                                <TableHeader>
-                                                    <TableRow>
-                                                        <TableHead>#</TableHead>
-                                                        <TableHead>Name</TableHead>
-                                                        <TableHead>Identifier</TableHead>
-                                                        <TableHead>Password</TableHead>
-                                                        <TableHead>Status</TableHead>
-                                                        <TableHead>Actions</TableHead>
-                                                    </TableRow>
-                                                </TableHeader>
-                                                <TableBody>
-                                                    {items[`${category}_${activeSubCategory}`]?.map((item, index) => (
-                                                        <TableRow key={item.id}>
-                                                            <TableCell>{index + 1}</TableCell>
-                                                            <TableCell>{item.name}</TableCell>
-                                                            <TableCell>{item.identifier}</TableCell>
-                                                            <TableCell>{item.password}</TableCell>
-                                                            <TableCell>{item.status}</TableCell>
-                                                            <TableCell>
-                                                                <Button>Edit</Button>
-                                                                <Button variant="destructive">Delete</Button>
-                                                            </TableCell>
+                                            <div className="max-h-[400px] overflow-auto">
+                                                <Table>
+                                                    <TableHeader>
+                                                        <TableRow>
+                                                            <TableHead className="sticky top-0 bg-white">#</TableHead>
+                                                            <TableHead className="sticky top-0 bg-white">Name</TableHead>
+                                                            <TableHead className="sticky top-0 bg-white">Identifier</TableHead>
+                                                            <TableHead className="sticky top-0 bg-white">Password</TableHead>
+                                                            <TableHead className="sticky top-0 bg-white">Status</TableHead>
+                                                            <TableHead className="sticky top-0 bg-white">Actions</TableHead>
                                                         </TableRow>
-                                                    ))}
-                                                </TableBody>
-                                            </Table>
+                                                    </TableHeader>
+                                                    <TableBody>
+                                                        {items[`${category}_${activeSubCategory}`]?.map((item, index) => (
+                                                            <TableRow key={item.id}>
+                                                                <TableCell>{index + 1}</TableCell>
+                                                                <TableCell>{item.name}</TableCell>
+                                                                <TableCell>{item.identifier}</TableCell>
+                                                                <TableCell>{item.password}</TableCell>
+                                                                <TableCell>{item.status}</TableCell>
+                                                                <TableCell>
+                                                                    <Button>Edit</Button>
+                                                                    <Button variant="destructive">Delete</Button>
+                                                                </TableCell>
+                                                            </TableRow>
+                                                        ))}
+                                                    </TableBody>
+                                                </Table>
+                                            </div>
                                         )}
                                     </CardContent>
                                 </Card>
@@ -482,7 +560,10 @@ export default function PasswordManager() {
                                 ))}
                             </SelectContent>
                         </Select>
-                        {selectedTable && (
+                        {tableColumnsError && (
+                            <div className="text-red-500">Error: {tableColumnsError}</div>
+                        )}
+                        {selectedTable && !tableColumnsError && (
                             <div>
                                 <h3 className="font-bold mb-2">Map Columns</h3>
                                 <div className="space-y-2">
@@ -521,7 +602,17 @@ export default function PasswordManager() {
                     <DialogHeader>
                         <DialogTitle>Create New Table</DialogTitle>
                     </DialogHeader>
-                    <p>Are you sure you want to create a new table for {selectedCategoryForLinking?.category} - {selectedCategoryForLinking?.subcategory}?</p>
+                    <p>Creating a new table for {selectedCategoryForLinking?.category} - {selectedCategoryForLinking?.subcategory}</p>
+                    <div className="space-y-4">
+                        <div>
+                            <Label>Custom Table Name (optional)</Label>
+                            <Input
+                                value={customTableName}
+                                onChange={(e) => setCustomTableName(e.target.value)}
+                                placeholder={`${selectedCategoryForLinking?.category}_${selectedCategoryForLinking?.subcategory}`.toLowerCase()}
+                            />
+                        </div>
+                    </div>
                     <div className="flex justify-end space-x-2 mt-4">
                         <Button variant="outline" onClick={() => setCreateTableDialogOpen(false)}>Cancel</Button>
                         <Button onClick={handleCreateNewTable}>Create Table</Button>
