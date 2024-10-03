@@ -6,12 +6,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { AlertCircle } from 'lucide-react';
 
-export function PINProfileStart({ onStart, onStop }) {
+
+export function PINCertificateStart({ onStart, onStop }) {
     const [isRunning, setIsRunning] = useState(false);
 
     const handleStart = async () => {
         try {
-            const response = await fetch('/api/pin-profile', {
+            const response = await fetch('/api/pin-certificate', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ action: 'start' })
@@ -20,17 +21,17 @@ export function PINProfileStart({ onStart, onStop }) {
                 setIsRunning(true);
                 onStart();
             } else {
-                throw new Error('Failed to start PIN profile extraction');
+                throw new Error('Failed to start PIN certificate extraction');
             }
         } catch (error) {
-            console.error('Error starting PIN profile extraction:', error);
-            alert('Failed to start PIN profile extraction. Please try again.');
+            console.error('Error starting PIN certificate extraction:', error);
+            alert('Failed to start PIN certificate extraction. Please try again.');
         }
     };
 
     const handleStop = async () => {
         try {
-            const response = await fetch('/api/pin-profile', {
+            const response = await fetch('/api/pin-certificate', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ action: 'stop' })
@@ -39,22 +40,22 @@ export function PINProfileStart({ onStart, onStop }) {
                 setIsRunning(false);
                 onStop();
             } else {
-                throw new Error('Failed to stop PIN profile extraction');
+                throw new Error('Failed to stop PIN certificate extraction');
             }
         } catch (error) {
-            console.error('Error stopping PIN profile extraction:', error);
-            alert('Failed to stop PIN profile extraction. Please try again.');
+            console.error('Error stopping PIN certificate extraction:', error);
+            alert('Failed to stop PIN certificate extraction. Please try again.');
         }
     };
 
     return (
         <Card className="w-full">
             <CardHeader>
-                <CardTitle>PIN Profile Extraction Control</CardTitle>
-                <CardDescription>Manage the PIN Profile extraction process.</CardDescription>
+                <CardTitle>PIN Certificate Extraction Control</CardTitle>
+                <CardDescription>Manage the PIN Certificate extraction process.</CardDescription>
             </CardHeader>
             <CardContent>
-                <p className="mb-4">Use the buttons below to start or stop the PIN profile extraction process for all registered companies.</p>
+                <p className="mb-4">Use the buttons below to start or stop the PIN certificate extraction process for all registered companies.</p>
                 {isRunning && (
                     <div className="flex items-center p-4 mb-4 text-sm text-yellow-800 border border-yellow-300 rounded-lg bg-yellow-50" role="alert">
                         <AlertCircle className="flex-shrink-0 inline w-4 h-4 mr-3" />

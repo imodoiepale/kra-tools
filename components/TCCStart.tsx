@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { AlertCircle } from 'lucide-react';
 
-export function TCCControlPanel({ onStart, onStop }) {
+export function TCCStart({ onStart, onStop }) {
     const [isRunning, setIsRunning] = useState(false);
 
     const handleStart = async () => {

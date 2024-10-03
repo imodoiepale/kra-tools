@@ -5,14 +5,15 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button";
 import { createClient } from '@supabase/supabase-js';
 import { Input } from "@/components/ui/input";
-import { Download, MoreHorizontal, ArrowUpDown, Eye, RefreshCw, Search, Image } from "lucide-react";
-import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuCheckboxItem } from "@/components/ui/dropdown-menu";
+import { Download, MoreHorizontal, ArrowUpDown, Eye, RefreshCw, Search, Image, Play } from "lucide-react";
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuCheckboxItem, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Checkbox } from "@/components/ui/checkbox";
 
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 
-export function PINProfileReports() {
+export function PINCertificateReports() {
     const [reports, setReports] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
     const [sortColumn, setSortColumn] = useState(null);
@@ -22,8 +23,10 @@ export function PINProfileReports() {
         company_pin: true,
         expiry_date: true,
         extraction_date: true,
-        profile: true,
+        certificate: true,
+        actions: true,
     });
+    const [selectedReports, setSelectedReports] = useState([]);
 
     useEffect(() => {
         fetchReports();
@@ -32,7 +35,7 @@ export function PINProfileReports() {
     const fetchReports = async () => {
         try {
             const { data, error } = await supabase
-                .from('PINProfilesAndCertificates')
+                .from('PINCertificates')
                 .select('*')
                 .order('id', { ascending: true });
 
@@ -64,7 +67,7 @@ export function PINProfileReports() {
                     expiry_date: latestExtraction?.expiry_date || 'N/A',
                     extraction_date: formatDate(company.updated_at || latestDate || new Date()),
                     pdf_link: latestExtraction.pdf_link && latestExtraction.pdf_link !== "no doc"
-                        ? `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/kra-documents/${latestExtraction.pdf_link}`
+                        ? `${latestExtraction.pdf_link}`
                         : null,
                 };
             });
@@ -101,6 +104,46 @@ export function PINProfileReports() {
         // Implement Excel export logic here
     };
 
+    const runAutomation = async (companyIds) => {
+        try {
+            const response = await fetch('/api/pin-certificate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'start', companyIds }),
+            });
+            const data = await response.json();
+            console.log('Automation started:', data);
+            // You might want to update the UI to reflect that the automation has started
+        } catch (error) {
+            console.error('Error starting automation:', error);
+        }
+    };
+
+    const runSelectedAutomations = () => {
+        runAutomation(selectedReports);
+    };
+
+    const runMissingAutomations = () => {
+        const missingReports = reports.filter(report => !report.pdf_link).map(report => report.id);
+        runAutomation(missingReports);
+    };
+
+    const toggleSelectAll = (checked) => {
+        if (checked) {
+            setSelectedReports(reports.map(report => report.id));
+        } else {
+            setSelectedReports([]);
+        }
+    };
+
+    const toggleSelectReport = (reportId) => {
+        setSelectedReports(prev => 
+            prev.includes(reportId) 
+                ? prev.filter(id => id !== reportId)
+                : [...prev, reportId]
+        );
+    };
+
     return (
         <div>
             <div className="flex justify-between mb-4">
@@ -118,6 +161,14 @@ export function PINProfileReports() {
                     <Button onClick={fetchReports} size="sm">
                         <RefreshCw className="mr-2 h-3 w-3" />
                         Refresh
+                    </Button>
+                    <Button onClick={runSelectedAutomations} size="sm" disabled={selectedReports.length === 0}>
+                        <Play className="mr-2 h-3 w-3" />
+                        Run Selected
+                    </Button>
+                    <Button onClick={runMissingAutomations} size="sm">
+                        <Play className="mr-2 h-3 w-3" />
+                        Run Missing
                     </Button>
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>
@@ -147,18 +198,25 @@ export function PINProfileReports() {
                     <Table>
                         <TableHeader className="sticky top-0 bg-white z-10">
                             <TableRow>
+                                <TableHead>
+                                    <Checkbox
+                                        checked={selectedReports.length === reports.length}
+                                        onCheckedChange={toggleSelectAll}
+                                    />
+                                </TableHead>
                                 {[
                                     { key: 'index', label: 'Index', alwaysVisible: true },
                                     { key: 'company_name', label: 'Company Name' },
                                     { key: 'company_pin', label: 'KRA PIN' },
                                     { key: 'extraction_date', label: 'Last Extracted' },
-                                    { key: 'profile', label: 'PIN Profile', alwaysVisible: true },
+                                    { key: 'certificate', label: 'PIN Certificate', alwaysVisible: true },
+                                    { key: 'actions', label: 'Actions', alwaysVisible: true },
                                 ].map(({ key, label, alwaysVisible }) => (
                                     (alwaysVisible || visibleColumns[key]) && (
                                         <TableHead key={key} className={`font-bold ${key === 'index' ? 'text-center sticky left-0 bg-white' : key === 'company_name' ? '' : 'text-center'}`}>
                                             <div className={`flex items-center ${key === 'company_name' ? '' : 'justify-center'}`}>
                                                 {label}
-                                                {key !== 'profile' && (
+                                                {!['certificate', 'actions'].includes(key) && (
                                                     <ArrowUpDown className="h-4 w-4 cursor-pointer ml-2" onClick={() => handleSort(key)} />
                                                 )}
                                             </div>
@@ -170,28 +228,32 @@ export function PINProfileReports() {
                         <TableBody>
                             {sortedReports.map((report, index) => (
                                 <TableRow key={report.id} className={index % 2 === 0 ? 'bg-white' : 'bg-blue-50'}>
+                                    <TableCell>
+                                        <Checkbox
+                                            checked={selectedReports.includes(report.id)}
+                                            onCheckedChange={() => toggleSelectReport(report.id)}
+                                        />
+                                    </TableCell>
                                     {[
                                         { key: 'index', content: index + 1, alwaysVisible: true },
                                         { key: 'company_name', content: report.company_name },
                                         { key: 'company_pin', content: report.company_pin === "MISSING PIN/PASSWORD" ? <span className="text-red-500">Missing</span> : report.company_pin },
                                         { key: 'extraction_date', content: <span className="text-center">{report.extraction_date}</span> },
                                         {
-                                            key: 'profile',
+                                            key: 'certificate',
                                             content: (
                                                 report.pdf_link ? (
                                                     <div className="flex justify-center">
                                                         <Dialog>
                                                             <DialogTrigger asChild>
-
-
                                                                 <Button variant='outline' className="text-blue-500 hover:underline text-xs px-1.5 py-0.5 flex items-center justify-center">
                                                                     <Eye className="inline-block mr-1 h-2.5 w-2.5" />
-                                                                    View PIN Profile
+                                                                    View PIN Certificate
                                                                 </Button>
                                                             </DialogTrigger>
                                                             <DialogContent className="w-full max-w-5xl max-h-[90vh]">
                                                                 <DialogHeader>
-                                                                    <DialogTitle>PIN Profile Document</DialogTitle>
+                                                                    <DialogTitle>PIN Certificate Document</DialogTitle>
                                                                 </DialogHeader>
                                                                 <iframe
                                                                     src={`${report.pdf_link}#toolbar=0&navpanes=0&view=FitH&zoom=40&embedded=true`}
@@ -206,6 +268,20 @@ export function PINProfileReports() {
                                                         Missing
                                                     </span>
                                                 )
+                                            ),
+                                            alwaysVisible: true
+                                        },
+                                        {
+                                            key: 'actions',
+                                            content: (
+                                                <Button 
+                                                    onClick={() => runAutomation([report.id])} 
+                                                    size="sm"
+                                                    variant="outline"
+                                                >
+                                                    <Play className="h-3 w-3 mr-1" />
+                                                    Run
+                                                </Button>
                                             ),
                                             alwaysVisible: true
                                         }

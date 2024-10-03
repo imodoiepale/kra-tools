@@ -12,8 +12,8 @@ import 'react-toastify/dist/ReactToastify.css';
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "KRA Tools",
-  description: "Comprehensive tools for KRA automation and management",
+  title: "BCL Tools",
+  description: "Comprehensive tools for BCL automation and management",
 };
 
 export default function RootLayout({

@@ -22,7 +22,7 @@ interface Manufacturer {
 
 export default function ManufacturersDetails() {
     const [isChecking, setIsChecking] = useState(false)
-    const [activeTab, setActiveTab] = useState("start")
+    const [activeTab, setActiveTab] = useState("reports")
     const [shouldStop, setShouldStop] = useState(false)
     const [manufacturers, setManufacturers] = useState<Manufacturer[]>([])
     const [selectedManufacturers, setSelectedManufacturers] = useState<number[]>([])

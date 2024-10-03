@@ -1,7 +1,7 @@
 // components/Sidebar.tsx
 "use client"
 
-import { LayoutDashboard, Key, Wrench, Settings, Factory, FileCheck, FileText, ShieldCheck, CreditCard, FileSignature, Users, FileSpreadsheet, ClipboardCheck, DollarSign, BarChart2, ChevronLeft, ChevronRight, Download } from "lucide-react";
+import { LayoutDashboard, Key, Lock, Wrench, Settings, Factory, FileCheck, FileText, ShieldCheck, CreditCard, FileSignature, Users, FileSpreadsheet, ClipboardCheck, DollarSign, BarChart2, ChevronLeft, ChevronRight, Download } from "lucide-react";
 import Link from "next/link"
 import { usePathname } from 'next/navigation'
 import { useState } from "react"
@@ -13,18 +13,20 @@ import {
 
 const navItems = [
     { href: "/", icon: LayoutDashboard, label: "Dashboard", category: "Main", available: true },
+    { href: "/password-manager", icon: Lock, label: "Password Manager", category: "Main", available: true },
 
     // One-off Tools
     { href: "/password-checker", icon: Key, label: "Password Checker", category: "One-off Tools", available: true },
     { href: "/manufacturers-details", icon: Factory, label: "Manufacturers Details", category: "One-off Tools", available: true },
     { href: "/pin-checker-details", icon: ClipboardCheck, label: "PIN Checker Details (Obligations)", category: "One-off Tools", available: true },
     { href: "/withholding-tax-doc-extractor", icon: FileText, label: "Withholding Tax Doc Extractor", category: "One-off Tools", available: false },
-    { href: "/pin-certificate", icon: ClipboardCheck, label: "PIN Certifiate Extractor", category: "One-off Tools", available: false },
+    { href: "/pin-cert", icon: ClipboardCheck, label: "PIN Certifiate Extractor", category: "One-off Tools", available: true },
     { href: "/pin-profile", icon: ClipboardCheck, label: "PIN Profile Extractor", category: "One-off Tools", available: true },
     { href: "/tcc", icon: ShieldCheck, label: "Tax Compliance Downloader", category: "One-off Tools", available: true },
     { href: "/password-changer", icon: Key, label: "Password Changer", category: "One-off Tools", available: false },
 
     // Monthly Tools
+    { href: "/auto-population", icon: FileSpreadsheet, label: "Auto-Population", category: "Monthly Tools", available: true },
     { href: "/withholding-tax-downloader", icon: Download, label: "Withholding Tax Downloader", category: "Monthly Tools", available: false },
     { href: "/auto-population-downloader", icon: Users, label: "Auto Population Downloader", category: "Monthly Tools", available: false },
     { href: "/liabilities-extractor", icon: FileSpreadsheet, label: "Liabilities Extractor", category: "Monthly Tools", available: false },
@@ -51,7 +53,7 @@ export function Sidebar() {
         <div className="flex h-[150vh]">
             <aside className={`bg-gray-800 text-white transition-all duration-300 ease-in-out ${isExpanded ? 'w-[300px]' : 'w-20'} p-3 hidden md:block relative`}>
                 <div className={`flex items-center mb-6 ${isExpanded ? '' : 'justify-center'}`}>
-                    {isExpanded && <span className="text-lg font-bold">KRA Tools</span>}
+                    {isExpanded && <span className="text-lg font-bold">BCL Tools</span>}
                 </div>
                 <nav className="space-y-1">
                     {categories.map((category) => (
