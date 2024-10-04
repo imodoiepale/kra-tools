@@ -341,7 +341,7 @@ export default function PasswordManager() {
 
     return (
         <div className="p-4 w-full">
-            <div className="bg-blue-500 text-white p-4 rounded mb-4 shadow-md">
+            {/* <div className="bg-blue-500 text-white p-4 rounded mb-4 shadow-md">
                 <h2 className="font-bold text-xl">Missing Tables</h2>
                 <p className="text-xs">The following categories/subcategories do not have linked database tables:</p>
                 <div className="grid grid-cols-4 gap-4 mb-4">
@@ -361,7 +361,7 @@ export default function PasswordManager() {
                         </div>
                     ))}
                 </div>
-            </div>
+            </div> */}
 
             <Card>
                 <CardHeader className="flex flex-row items-center justify-between">
@@ -415,7 +415,7 @@ export default function PasswordManager() {
                     {activeCategory && activeSubCategory && (
                         <div className="mt-6">
                             
-                            <div className="max-h-[520px] overflow-auto">
+                            <div className="max-h-[620px] overflow-auto">
                                 <Table>
                                     <TableHeader>
                                         <TableRow>
