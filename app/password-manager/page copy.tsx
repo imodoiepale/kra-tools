@@ -42,16 +42,40 @@ export default function PasswordManager() {
     const getDefaultColumnSettings = (columns) => {
         const visibleColumns = {};
         const headerNames = {};
-        const columnOrder = [];
-        columns.forEach((column, index) => {
+        columns.forEach(column => {
             visibleColumns[column] = true;
             headerNames[column] = column;
-            columnOrder.push(column);
         });
-        return { visibleColumns, headerNames, columnOrder };
+        return { visibleColumns, headerNames };
     };
 
-    
+    // Function to update column settings in the database
+    const updateColumnSettings = async (category, subcategory, newSettings) => {
+        try {
+            const { data, error } = await supabase
+                .from('category_table_mappings')
+                .update({
+                    column_settings: newSettings
+                })
+                .eq('category', category)
+                .eq('subcategory', subcategory);
+
+            if (error) throw error;
+
+            console.log('Column settings updated successfully');
+
+            // Update local state
+            setColumnSettings(prevSettings => ({
+                ...prevSettings,
+                [`${category}_${subcategory}`]: newSettings
+            }));
+
+        } catch (error) {
+            console.error('Error updating column settings:', error);
+            // Handle error (e.g., show an error message to the user)
+        }
+    };
+
     // Function to handle updating column visibility
     const handleUpdateColumnVisibility = async (category, subcategory, visibleColumns) => {
         try {
@@ -249,98 +273,11 @@ export default function PasswordManager() {
             console.error('Error adding new column:', error);
         }
     };
-
-    const fetchColumnSettings = async (category, subcategory) => {
-        try {
-            const { data, error } = await supabase
-                .from('category_table_mappings')
-                .select('column_settings, column_mappings')
-                .eq('category', category)
-                .eq('subcategory', subcategory)
-                .single();
-
-            if (error) throw error;
-
-            if (data && data.column_mappings) {
-                const defaultSettings = {
-                    visibleColumns: Object.fromEntries(
-                        Object.keys(data.column_mappings).map(col => [col, true])
-                    ),
-                    headerNames: Object.fromEntries(
-                        Object.keys(data.column_mappings).map(col => [col, col])
-                    )
-                };
-
-                const mergedSettings = {
-                    visibleColumns: { ...defaultSettings.visibleColumns, ...(data.column_settings?.visibleColumns || {}) },
-                    headerNames: { ...defaultSettings.headerNames, ...(data.column_settings?.headerNames || {}) }
-                };
-
-                setColumnSettings(prevSettings => ({
-                    ...prevSettings,
-                    [`${category}_${subcategory}`]: mergedSettings
-                }));
-
-                // If there were no existing settings, save the default settings to the database
-                if (!data.column_settings) {
-                    await updateColumnSettings(category, subcategory, mergedSettings);
-                }
-            }
-        } catch (error) {
-            console.error('Error fetching column settings:', error);
-        }
-    };
-
-
-    useEffect(() => {
-        if (activeCategory && activeSubCategory) {
-            fetchColumnSettings(activeCategory, activeSubCategory);
-        }
-    }, [activeCategory, activeSubCategory]);
-
-    const updateColumnSettings = async (category, subcategory, newSettings) => {
-        try {
-            const { error } = await supabase
-                .from('category_table_mappings')
-                .update({ column_settings: newSettings })
-                .eq('category', category)
-                .eq('subcategory', subcategory);
     
-            if (error) throw error;
-    
-            setColumnSettings(prevSettings => ({
-                ...prevSettings,
-                [`${category}_${subcategory}`]: newSettings
-            }));
-    
-            console.log('Column settings updated successfully');
-        } catch (error) {
-            console.error('Error updating column settings:', error);
-            throw error;
-        }
-    };
-
-    const removeCategoryFromState = (category, subcategory) => {
-        setCategories(prevCategories => {
-            const newCategories = { ...prevCategories };
-            if (newCategories[category]) {
-                newCategories[category] = newCategories[category].filter(sub => sub !== subcategory);
-                if (newCategories[category].length === 0) {
-                    delete newCategories[category];
-                }
-            }
-            return newCategories;
-        });
-
-        setColumnSettings(prevSettings => {
-            const newSettings = { ...prevSettings };
-            delete newSettings[`${category}_${subcategory}`];
-            return newSettings;
-        });
-    };
 
     return (
         <div className="p-4 w-full">
+            {/* {missingTables.length > 0 && ( */}
             <div className="bg-blue-500 text-white p-4 rounded mb-4 shadow-md">
                 <h2 className="font-bold text-xl">Missing Tables</h2>
                 <p className="text-xs">The following categories/subcategories do not have linked database tables:</p>
@@ -362,6 +299,7 @@ export default function PasswordManager() {
                     ))}
                 </div>
             </div>
+            {/* )} */}
 
             <Card>
                 <CardHeader className="flex flex-row items-center justify-between">
@@ -381,77 +319,93 @@ export default function PasswordManager() {
                     </div>
                 </CardHeader>
                 <CardContent>
-                    <div className="flex justify-between items-center mb-1">
-                        <Tabs value={activeCategory} onValueChange={setActiveCategory} defaultValue="companies">
-                            <TabsList>
-                                {Object.keys(categories).map(category => (
-                                    <TabsTrigger key={category} value={category}>{category}</TabsTrigger>
-                                ))}
-                            </TabsList>
-                        </Tabs>
-                        <div className="flex justify-between items-center mb-1 gap-4">
-                            <span className="text-sm text-gray-500">
-                                Linked to: {linkedTables[`${activeCategory}_${activeSubCategory}`] || 'Not linked'}
-                            </span>
-                            <Button onClick={() => setAddDialogOpen(true)}>
-                                <Plus className="mr-2 h-4 w-4" />
-                                Add Item
-                            </Button>
-                        </div>
-                    </div>
+                    <Tabs value={activeCategory} onValueChange={setActiveCategory}>
+                        <TabsList>
+                            {Object.keys(categories).map(category => (
+                                <TabsTrigger key={category} value={category}>{category}</TabsTrigger>
+                            ))}
+                        </TabsList>
 
-                    {activeCategory && (
-                        <Tabs value={activeSubCategory} onValueChange={setActiveSubCategory} className="mt-4">
-                            <TabsList>
-                                {categories[activeCategory]?.map(subcategory => (
-                                    <TabsTrigger key={subcategory} value={subcategory}>
-                                        {subcategory}
-                                    </TabsTrigger>
-                                ))}
-                            </TabsList>
-                        </Tabs>
-                    )}
-
-                    {activeCategory && activeSubCategory && (
-                        <div className="mt-6">
-                            
-                            <div className="max-h-[520px] overflow-auto">
-                                <Table>
-                                    <TableHeader>
-                                        <TableRow>
-                                            <TableHead className="sticky top-0 bg-gray-200 text-black">#</TableHead>
-                                            {Object.entries(columnSettings[`${activeCategory}_${activeSubCategory}`]?.visibleColumns || {})
-                                                .filter(([_, isVisible]) => isVisible)
-                                                .map(([column, _]) => (
-                                                    <TableHead key={column} className="sticky top-0 bg-gray-200 text-black">
-                                                        {columnSettings[`${activeCategory}_${activeSubCategory}`]?.headerNames[column] || column}
-                                                    </TableHead>
-                                                ))}
-                                            <TableHead className="sticky top-0 bg-gray-200 text-black">Actions</TableHead>
-                                        </TableRow>
-                                    </TableHeader>
-                                    <TableBody>
-                                        {items[`${activeCategory}_${activeSubCategory}`]?.map((item, index) => (
-                                            <TableRow key={item.id}>
-                                                <TableCell>{index + 1}</TableCell>
-                                                {Object.entries(columnSettings[`${activeCategory}_${activeSubCategory}`]?.visibleColumns || {})
-                                                    .filter(([_, isVisible]) => isVisible)
-                                                    .map(([column, _]) => (
-                                                        <TableCell key={column}>{item[column]}</TableCell>
+                        {Object.entries(categories).map(([category, subcategories]) => (
+                            <TabsContent key={category} value={category}>
+                                <Card>
+                                    <CardHeader className="flex flex-row items-center justify-between">
+                                        <div>
+                                            <CardTitle>{category}</CardTitle>
+                                            <Select value={activeSubCategory} onValueChange={setActiveSubCategory}>
+                                                <SelectTrigger className="w-[200px]">
+                                                    <SelectValue />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    {subcategories.map(sub => (
+                                                        <SelectItem key={sub} value={sub}>{sub}</SelectItem>
                                                     ))}
-                                                <TableCell className="flex gap-4">
-                                                    <Button onClick={() => { setItemToEdit(item); setEditDialogOpen(true); }}>Edit</Button>
-                                                    <Button variant="destructive" onClick={() => { setItemToDelete(item); setDeleteDialogOpen(true); }}>Delete</Button>
-                                                </TableCell>
-                                            </TableRow>
-                                        ))}
-                                    </TableBody>
-                                </Table>
-                            </div>
-                        </div>
-                    )}
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+                                        <div className="flex items-center space-x-2">
+                                            <span className="text-sm text-gray-500">
+                                                Linked to: {linkedTables[`${category}_${activeSubCategory}`] || 'Not linked'}
+                                            </span>
+                                            <Button onClick={() => setAddDialogOpen(true)}>
+                                                <Plus className="mr-2 h-4 w-4" />
+                                                Add Item
+                                            </Button>
+                                        </div>
+                                    </CardHeader>
+
+                                    <CardContent>
+                                        {loading ? (
+                                            <div>Loading...</div>
+                                        ) : (
+                                            <div className="max-h-[400px] overflow-auto">
+                                                <Table>
+                                                    <TableHeader>
+                                                        <TableRow>
+                                                            <TableHead className="sticky top-0 bg-white">#</TableHead>
+                                                            {Object.keys(getCurrentColumnSettings().visibleColumns).map(column => {
+                                                                const settings = getCurrentColumnSettings();
+                                                                if (settings.visibleColumns[column]) {
+                                                                    return (
+                                                                        <TableHead key={column} className="sticky top-0 bg-white">
+                                                                            {settings.headerNames[column] || column}
+                                                                        </TableHead>
+                                                                    );
+                                                                }
+                                                                return null;
+                                                            })}
+                                                            <TableHead className="sticky top-0 bg-white">Actions</TableHead>
+                                                        </TableRow>
+                                                    </TableHeader>
+                                                    <TableBody>
+                                                        {items[`${activeCategory}_${activeSubCategory}`]?.map((item, index) => (
+                                                            <TableRow key={item.id}>
+                                                                <TableCell>{index + 1}</TableCell>
+                                                                {Object.keys(getCurrentColumnSettings().visibleColumns).map(column => {
+                                                                    const settings = getCurrentColumnSettings();
+                                                                    if (settings.visibleColumns[column]) {
+                                                                        return <TableCell key={column}>{item[column]}</TableCell>;
+                                                                    }
+                                                                    return null;
+                                                                })}
+                                                                <TableCell className="flex gap-4">
+                                                                    <Button onClick={() => { setItemToEdit(item); setEditDialogOpen(true); }}>Edit</Button>
+                                                                    <Button variant="destructive" onClick={() => { setItemToDelete(item); setDeleteDialogOpen(true); }}>Delete</Button>
+                                                                </TableCell>
+                                                            </TableRow>
+                                                        ))}
+                                                    </TableBody>
+                                                </Table>
+                                            </div>
+                                        )}
+                                    </CardContent>
+                                </Card>
+                            </TabsContent>
+                        ))}
+                    </Tabs>
                 </CardContent>
             </Card>
+
 
             <AddItemDialog
                 open={addDialogOpen}
@@ -462,16 +416,17 @@ export default function PasswordManager() {
             <SettingsDialog
                 open={settingsDialogOpen}
                 onOpenChange={setSettingsDialogOpen}
+                onAddColumn={handleAddColumn}
                 categories={categories}
                 missingTables={missingTables}
                 dbTables={dbTables}
                 onAddCategory={handleAddCategory}
                 onLinkTable={handleLinkTable}
                 onCreateTable={handleCreateNewTable}
-                columnSettings={columnSettings}
+                onUpdateColumnVisibility={handleUpdateColumnVisibility}
+                onUpdateHeaderNames={handleUpdateHeaderNames}
+                currentSettings={getCurrentColumnSettings()}
                 setColumnSettings={setColumnSettings}
-                updateColumnSettings={updateColumnSettings}
-                removeCategoryFromState={removeCategoryFromState}
             />
 
             <LinkTableDialog
@@ -513,7 +468,7 @@ export default function PasswordManager() {
                 activeSubCategory={activeSubCategory}
                 onFileUpload={handleFileUpload}
                 onDownloadTemplate={downloadTemplate}
-                refreshData={fetchAllDataForAllCategories}
+                refreshData={fetchAllDataForAllCategories} // Add this line
             />
         </div>
     );
