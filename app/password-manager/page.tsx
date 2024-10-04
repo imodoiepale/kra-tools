@@ -353,7 +353,6 @@ export default function PasswordManager() {
             console.error('Error creating new table:', error);
         }
     };
-
     const handleFileUpload = async (event) => {
         const file = event.target.files[0];
         if (file) {
@@ -365,8 +364,8 @@ export default function PasswordManager() {
                 const data = rows.slice(1).map(row => {
                     const obj = {};
                     headers.forEach((header, index) => {
-                        // Check if row[index] is defined before calling trim
-                        obj[header.trim()] = row[index] ? row[index].trim() : ''; // Default to empty string if undefined
+                        // Ensure row[index] is defined and is a string before calling trim
+                        obj[header.trim()] = (row[index] !== undefined && typeof row[index] === 'string') ? row[index].trim() : ''; // Default to empty string if undefined
                     });
                     return obj;
                 });
@@ -387,6 +386,7 @@ export default function PasswordManager() {
             reader.readAsText(file);
         }
     };
+    
     const downloadTemplate = () => {
         const templateData = [
             ['Name', 'Identifier', 'Password', 'Status'], // Header row
