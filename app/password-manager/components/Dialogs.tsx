@@ -10,8 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { supabase } from '@/lib/supabase';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-
-import { DragDropContext, Droppable, Draggable } from 'react-beautiful-dnd';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 
 export function AddItemDialog({ open, onOpenChange, onAddItem }) {
@@ -61,6 +60,8 @@ export function AddItemDialog({ open, onOpenChange, onAddItem }) {
     );
 }
 
+
+
 export function SettingsDialog({
     open,
     onOpenChange,
@@ -71,23 +72,29 @@ export function SettingsDialog({
     onLinkTable,
     onCreateTable,
     columnSettings,
-    setColumnSettings,
     updateColumnSettings,
+    activeCategory,
+    activeSubCategory,
     removeCategoryFromState
 }) {
     const [activeTab, setActiveTab] = useState("categories");
     const [newCategory, setNewCategory] = useState({ name: '', subcategories: '' });
-    const [selectedCategory, setSelectedCategory] = useState('');
-    const [selectedSubcategory, setSelectedSubcategory] = useState('');
+    const [selectedCategory, setSelectedCategory] = useState(activeCategory);
+    const [selectedSubcategory, setSelectedSubcategory] = useState(activeSubCategory);
     const [selectedTable, setSelectedTable] = useState('');
     const [columnMappings, setColumnMappings] = useState({});
     const [dbColumns, setDbColumns] = useState([]);
     const [newColumnName, setNewColumnName] = useState('');
-    const [localColumnSettings, setLocalColumnSettings] = useState({});
-
-    // New state for category deletion
+    const [localColumnSettings, setLocalColumnSettings] = useState({
+        visibleColumns: {},
+        headerNames: {},
+        columnOrder: []
+    });
+    const [isSaving, setIsSaving] = useState(false);
+    const [saveError, setSaveError] = useState(null);
     const [categoryToDelete, setCategoryToDelete] = useState('');
     const [subcategoryToDelete, setSubcategoryToDelete] = useState('');
+
 
     useEffect(() => {
         if (selectedCategory && selectedSubcategory) {
@@ -105,7 +112,7 @@ export function SettingsDialog({
     const fetchColumnMappings = async () => {
         const { data, error } = await supabase
             .from('category_table_mappings')
-            .select('column_mappings, table_name')
+            .select('column_mappings, table_name, column_settings')
             .eq('category', selectedCategory)
             .eq('subcategory', selectedSubcategory)
             .single();
@@ -117,6 +124,17 @@ export function SettingsDialog({
 
         setColumnMappings(data.column_mappings || {});
         setSelectedTable(data.table_name || '');
+
+        const currentSettings = data.column_settings || {};
+        const defaultColumns = ['index', 'name', 'identifier', 'password', 'status'];
+
+        const mergedSettings = {
+            visibleColumns: { index: true, ...currentSettings.visibleColumns },
+            headerNames: { index: 'Index', ...currentSettings.headerNames },
+            columnOrder: ['index', ...(currentSettings.columnOrder || defaultColumns.slice(1))]
+        };
+
+        setLocalColumnSettings(mergedSettings);
     };
 
     const fetchTableColumns = async () => {
@@ -169,71 +187,24 @@ export function SettingsDialog({
         });
     };
 
-
-    const handleAddColumn = async () => {
+    const handleAddColumn = () => {
         if (!newColumnName) return;
 
-        try {
-            const { data, error } = await supabase
-                .from('category_table_mappings')
-                .select('table_name, column_mappings')
-                .eq('category', selectedCategory)
-                .eq('subcategory', selectedSubcategory)
-                .single();
+        setLocalColumnSettings(prev => ({
+            ...prev,
+            visibleColumns: {
+                ...prev.visibleColumns,
+                [newColumnName]: true
+            },
+            headerNames: {
+                ...prev.headerNames,
+                [newColumnName]: newColumnName
+            },
+            columnOrder: [...prev.columnOrder, newColumnName]
+        }));
 
-            if (error) throw error;
-
-            const { table_name, column_mappings } = data;
-
-            // Add the new column to the actual database table
-            const { error: alterTableError } = await supabase.rpc('add_column_to_table', {
-                p_table_name: table_name,
-                p_column_name: newColumnName.toLowerCase(),
-                p_data_type: 'text'
-            });
-
-            if (alterTableError) throw alterTableError;
-
-            // Update column mappings
-            const updatedColumnMappings = {
-                ...column_mappings,
-                [newColumnName]: newColumnName.toLowerCase()
-            };
-
-            // Update the category_table_mappings with the new column_mappings
-            const { error: updateError } = await supabase
-                .from('category_table_mappings')
-                .update({ column_mappings: updatedColumnMappings })
-                .eq('category', selectedCategory)
-                .eq('subcategory', selectedSubcategory);
-
-            if (updateError) throw updateError;
-
-            // Update local state
-            setColumnMappings(updatedColumnMappings);
-            setDbColumns([...dbColumns, newColumnName.toLowerCase()]);
-
-            // Update column settings
-            const currentSettings = columnSettings[`${selectedCategory}_${selectedSubcategory}`] || {};
-            const newSettings = {
-                ...currentSettings,
-                visibleColumns: {
-                    ...currentSettings.visibleColumns,
-                    [newColumnName]: true  // Set new column to visible by default
-                },
-                headerNames: {
-                    ...currentSettings.headerNames,
-                    [newColumnName]: newColumnName
-                }
-            };
-            updateColumnSettings(selectedCategory, selectedSubcategory, newSettings);
-
-            setNewColumnName('');
-        } catch (error) {
-            console.error('Error adding new column:', error);
-        }
+        setNewColumnName('');
     };
-
 
     const handleDeleteCategory = async () => {
         if (!categoryToDelete || !subcategoryToDelete) return;
@@ -293,46 +264,114 @@ export function SettingsDialog({
         }
     };
 
-    // const handleHeaderNameChange = (column, newName) => {
-    //     const currentSettings = columnSettings[`${selectedCategory}_${selectedSubcategory}`] || {};
-    //     const newSettings = {
-    //         ...currentSettings,
-    //         headerNames: {
-    //             ...currentSettings.headerNames,
-    //             [column]: newName
-    //         }
-    //     };
-    //     updateColumnSettings(selectedCategory, selectedSubcategory, newSettings);
-    // };
-
-    const handleVisibilityChange = (column) => {
-        setLocalColumnSettings(prevSettings => ({
-            ...prevSettings,
+    const handleVisibilityChange = (column, isVisible) => {
+        setLocalColumnSettings(prev => ({
+            ...prev,
             visibleColumns: {
-                ...prevSettings.visibleColumns,
-                [column]: !prevSettings.visibleColumns[column]
-            }
+                ...prev.visibleColumns,
+                [column]: isVisible
+            },
+            columnOrder: isVisible
+                ? [...new Set([...prev.columnOrder, column])]
+                : prev.columnOrder.filter(col => col !== column)
         }));
     };
 
     const handleHeaderNameChange = (column, newName) => {
-        setLocalColumnSettings(prevSettings => ({
-            ...prevSettings,
+        setLocalColumnSettings(prev => ({
+            ...prev,
             headerNames: {
-                ...prevSettings.headerNames,
+                ...prev.headerNames,
                 [column]: newName
             }
         }));
     };
 
-    const [isSaving, setIsSaving] = useState(false);
-    const [saveError, setSaveError] = useState(null);
+    const handleOrderChange = (column, newOrder) => {
+        setLocalColumnSettings(prev => {
+            const newColumnOrder = prev.columnOrder.filter(col => col !== column);
+            newColumnOrder.splice(newOrder - 1, 0, column);
+            return { ...prev, columnOrder: newColumnOrder };
+        });
+    };
+
+    const fetchColumnSettings = async () => {
+        try {
+            const { data, error } = await supabase
+                .from('category_table_mappings')
+                .select('column_settings, table_name')
+                .eq('category', selectedCategory)
+                .eq('subcategory', selectedSubcategory)
+                .single();
+
+            if (error) throw error;
+
+            console.log('Fetched data:', data); // Log the fetched data for debugging
+
+            const currentSettings = data?.column_settings || {};
+            console.log('Current settings:', currentSettings); // Log the current settings
+
+            const defaultColumns = ['index', 'name', 'identifier', 'password', 'status'];
+
+            const mergedSettings = {
+                visibleColumns: { index: true, ...currentSettings.visibleColumns },
+                headerNames: { index: 'Index', ...currentSettings.headerNames },
+                columnOrder: ['index', ...(currentSettings.columnOrder || defaultColumns.slice(1))]
+            };
+
+            console.log('Merged settings:', mergedSettings); // Log the merged settings
+
+            setLocalColumnSettings(mergedSettings);
+            setSelectedTable(data?.table_name || '');
+
+            // Fetch all columns for the table
+            if (data?.table_name) {
+                const { data: columns, error: columnsError } = await supabase.rpc('get_table_columns', {
+                    input_table_name: data.table_name
+                });
+
+                if (columnsError) throw columnsError;
+
+                setDbColumns(columns.map(col => col.column_name));
+            }
+        } catch (error) {
+            console.error('Error fetching category settings:', error);
+            setLocalColumnSettings({
+                visibleColumns: {},
+                headerNames: {},
+                columnOrder: []
+            });
+            setDbColumns([]);
+        }
+    };
+
+    useEffect(() => {
+        if (selectedCategory && selectedSubcategory) {
+            fetchColumnSettings();
+        }
+    }, [selectedCategory, selectedSubcategory]);
 
     const handleSaveChanges = async () => {
         setIsSaving(true);
         setSaveError(null);
         try {
-            await updateColumnSettings(selectedCategory, selectedSubcategory, localColumnSettings);
+            const updatedSettings = {
+                visibleColumns: localColumnSettings.visibleColumns,
+                headerNames: localColumnSettings.headerNames,
+                columnOrder: localColumnSettings.columnOrder
+            };
+
+            const { error } = await supabase
+                .from('category_table_mappings')
+                .update({ column_settings: updatedSettings })
+                .eq('category', selectedCategory)
+                .eq('subcategory', selectedSubcategory);
+
+            if (error) throw error;
+
+            // Call the updateColumnSettings callback
+            updateColumnSettings(selectedCategory, selectedSubcategory, updatedSettings);
+
             alert('Changes saved successfully');
         } catch (error) {
             console.error('Error saving changes:', error);
@@ -342,39 +381,34 @@ export function SettingsDialog({
         }
     };
 
-    useEffect(() => {
-        if (selectedCategory && selectedSubcategory) {
-            const currentSettings = columnSettings[`${selectedCategory}_${selectedSubcategory}`] || {
-                visibleColumns: {},
-                headerNames: {}
-            };
-            setLocalColumnSettings(currentSettings);
-        }
-    }, [selectedCategory, selectedSubcategory, columnSettings]);
-
-    const onDragEnd = (result) => {
-        if (!result.destination) {
-            return;
-        }
-
-        const newColumnOrder = Array.from(localColumnSettings.columnOrder);
-        const [reorderedItem] = newColumnOrder.splice(result.source.index, 1);
-        newColumnOrder.splice(result.destination.index, 0, reorderedItem);
-
-        setLocalColumnSettings(prevSettings => ({
-            ...prevSettings,
-            columnOrder: newColumnOrder
-        }));
-    };
-
-
-
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="max-w-4xl">
                 <DialogHeader>
                     <DialogTitle>Settings</DialogTitle>
                 </DialogHeader>
+                <div className="flex space-x-4 mb-4">
+                    <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+                        <SelectTrigger className="w-[180px]">
+                            <SelectValue placeholder="Select category" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {Object.keys(categories).map(category => (
+                                <SelectItem key={category} value={category}>{category}</SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                    <Select value={selectedSubcategory} onValueChange={setSelectedSubcategory}>
+                        <SelectTrigger className="w-[180px]">
+                            <SelectValue placeholder="Select subcategory" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {categories[selectedCategory]?.map(subcategory => (
+                                <SelectItem key={subcategory} value={subcategory}>{subcategory}</SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                </div>
                 <Tabs defaultValue={activeTab} onValueChange={setActiveTab}>
                     <TabsList>
                         <TabsTrigger value="categories">Categories</TabsTrigger>
@@ -427,87 +461,53 @@ export function SettingsDialog({
                     </TabsContent>
                     <TabsContent value="columns">
                         <div className="space-y-4">
-                            <div className="flex space-x-4">
-                                <div>
-                                    <Label>Category</Label>
-                                    <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-                                        <SelectTrigger>
-                                            <SelectValue placeholder="Select category" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {Object.keys(categories).map(category => (
-                                                <SelectItem key={category} value={category}>{category}</SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                                <div>
-                                    <Label>Subcategory</Label>
-                                    <Select value={selectedSubcategory} onValueChange={setSelectedSubcategory}>
-                                        <SelectTrigger>
-                                            <SelectValue placeholder="Select subcategory" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {categories[selectedCategory]?.map(subcategory => (
-                                                <SelectItem key={subcategory} value={subcategory}>{subcategory}</SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                                <div>
-                                    <Label>Linked Table</Label>
-                                    <Select value={selectedTable} onValueChange={setSelectedTable}>
-                                        <SelectTrigger>
-                                            <SelectValue placeholder="Select table" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {dbTables.map(table => (
-                                                <SelectItem key={table} value={table}>{table}</SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                            </div>
-                            <div className="space-y-2">
-                                {dbColumns.map((dbColumn) => {
-                                    const categoryColumn = Object.entries(columnMappings).find(([_, value]) => value === dbColumn)?.[0];
-                                    const isLinked = !!categoryColumn;
-
-                                    return (
-                                        <div key={dbColumn} className="flex items-center space-x-2">
-                                            <Checkbox
-                                                checked={isLinked && (localColumnSettings.visibleColumns?.[categoryColumn] ?? true)}
-                                                onCheckedChange={(checked) => {
-                                                    if (isLinked) {
-                                                        handleVisibilityChange(categoryColumn);
-                                                    } else if (checked) {
-                                                        handleColumnMappingChange(dbColumn, dbColumn);
-                                                    }
-                                                }}
-                                            />
-                                            <Input
-                                                value={isLinked ? localColumnSettings.headerNames?.[categoryColumn] || categoryColumn : dbColumn}
-                                                onChange={(e) => isLinked && handleHeaderNameChange(categoryColumn, e.target.value)}
-                                                className="w-1/3"
-                                                disabled={!isLinked}
-                                            />
-                                            <Select
-                                                value={categoryColumn || ''}
-                                                onValueChange={(value) => handleColumnMappingChange(value, dbColumn)}
-                                            >
-                                                <SelectTrigger>
-                                                    <SelectValue placeholder={isLinked ? categoryColumn : 'Unlinked'} />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    {Object.keys(columnMappings).map(col => (
-                                                        <SelectItem key={col} value={col}>{col}</SelectItem>
-                                                    ))}
-                                                </SelectContent>
-                                            </Select>
-                                        </div>
-                                    );
-                                })}
-                            </div>
+                            <Table>
+                                <TableHeader>
+                                    <TableRow>
+                                        <TableHead>Order</TableHead>
+                                        <TableHead>Visible</TableHead>
+                                        <TableHead>Column Name</TableHead>
+                                        <TableHead>Display Name</TableHead>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                    {dbColumns.map((column, index) => {
+                                        const isVisible = localColumnSettings.visibleColumns[column] !== false;
+                                        const order = localColumnSettings.columnOrder.indexOf(column) + 1;
+                                        return (
+                                            <TableRow key={column} className={isVisible ? '' : 'opacity-50'}>
+                                                <TableCell>
+                                                    <Input
+                                                        type="number"
+                                                        min="1"
+                                                        max={dbColumns.length}
+                                                        value={order || ''}
+                                                        onChange={(e) => handleOrderChange(column, parseInt(e.target.value, 10))}
+                                                        className="w-16"
+                                                        disabled={!isVisible}
+                                                    />
+                                                </TableCell>
+                                                <TableCell>
+                                                    <Checkbox
+                                                        checked={isVisible}
+                                                        onCheckedChange={(checked) => handleVisibilityChange(column, checked)}
+                                                        disabled={column === 'index'}
+                                                    />
+                                                </TableCell>
+                                                <TableCell>{column}</TableCell>
+                                                <TableCell>
+                                                    <Input
+                                                        value={localColumnSettings.headerNames[column] || column}
+                                                        onChange={(e) => handleHeaderNameChange(column, e.target.value)}
+                                                        placeholder="Display Name"
+                                                        disabled={!isVisible}
+                                                    />
+                                                </TableCell>
+                                            </TableRow>
+                                        );
+                                    })}
+                                </TableBody>
+                            </Table>
                             <div className="flex items-center space-x-2">
                                 <Input
                                     placeholder="New column name"

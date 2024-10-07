@@ -531,6 +531,7 @@ const renderSummaryView = () => (
         <Table>
             <TableHeader>
                 <TableRow>
+                    <TableHead className="font-bold text-center">#</TableHead>
                     <TableHead onClick={() => handleSummarySort('company')}>
                         Company <ArrowUpDown className="ml-2 h-4 w-4" />
                     </TableHead>
@@ -546,7 +547,7 @@ const renderSummaryView = () => (
                 </TableRow>
             </TableHeader>
             <TableBody>
-                {allCompanyData.map((company, index) => {
+                {allCompanyData.sort((a, b) => a.company_name.localeCompare(b.company_name)).map((company, index) => {
                     const extractionDates = company.extraction_data ? Object.keys(company.extraction_data) : [];
                     const latestExtractionDate = extractionDates.length > 0 ?
                         new Date(Math.max(...extractionDates.map(date => new Date(company.extraction_data[date].extractionDate)))).toLocaleDateString() :
@@ -554,6 +555,7 @@ const renderSummaryView = () => (
                     const totalAmount = calculateOverallTotal(company.extraction_data);
                     return (
                         <TableRow key={company.company_name} className={index % 2 === 0 ? 'bg-white' : 'bg-blue-50'}>
+                            <TableCell className="font-bold text-center">{index + 1}</TableCell>
                             <TableCell>{company.company_name}</TableCell>
                             <TableCell>{latestExtractionDate}</TableCell>
                             <TableCell>{extractionDates.length}</TableCell>

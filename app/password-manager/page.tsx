@@ -2,13 +2,14 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase'
+import { supabase } from '@/lib/supabase';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Settings, Plus, Upload } from 'lucide-react';
+import { Settings, Plus, Upload, ArrowUpDown, Search, Download } from 'lucide-react';
+import { Input } from "@/components/ui/input";
 
 import { useCategories, useItems, useTables } from './hooks/hooks';
 import { handleFileUpload, downloadTemplate } from './utils/csvUtils';
@@ -39,6 +40,92 @@ export default function PasswordManager() {
     const [selectedCategoryForLinking, setSelectedCategoryForLinking] = useState(null);
     const [columnSettings, setColumnSettings] = useState({});
 
+    const [dbColumns, setDbColumns] = useState([]);
+    const [localColumnSettings, setLocalColumnSettings] = useState({
+        visibleColumns: {},
+        headerNames: {},
+        columnOrder: []
+    });
+    const [sortConfig, setSortConfig] = useState({ key: null, direction: 'ascending' });
+    const [searchTerm, setSearchTerm] = useState('');
+
+
+
+    // Function to handle sorting
+    const handleSort = (key) => {
+        let direction = 'ascending';
+        if (sortConfig.key === key && sortConfig.direction === 'ascending') {
+            direction = 'descending';
+        }
+        setSortConfig({ key, direction });
+    };
+
+    // Function to handle searching
+    const handleSearch = (event) => {
+        setSearchTerm(event.target.value);
+    };
+
+    // Function to handle exporting
+    const handleExport = () => {
+        const currentItems = items[`${activeCategory}_${activeSubCategory}`] || [];
+        const csvContent = [
+            Object.keys(currentItems[0] || {}).join(','),
+            ...currentItems.map(item => Object.values(item).join(','))
+        ].join('\n');
+
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        if (link.download !== undefined) {
+            const url = URL.createObjectURL(blob);
+            link.setAttribute('href', url);
+            link.setAttribute('download', `${activeCategory}_${activeSubCategory}_export.csv`);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+    };
+
+
+
+    // Function to update column order
+    const updateColumnOrder = (newOrder) => {
+        const currentSettings = columnSettings[`${activeCategory}_${activeSubCategory}`];
+        const newSettings = {
+            ...currentSettings,
+            columnOrder: newOrder
+        };
+        setColumnSettings(prevSettings => ({
+            ...prevSettings,
+            [`${activeCategory}_${activeSubCategory}`]: newSettings
+        }));
+    };
+
+    // Sort and filter items
+    // const getSortedAndFilteredItems = () => {
+    //     let currentItems = items[`${activeCategory}_${activeSubCategory}`] || [];
+
+    //     // Apply search filter
+    //     if (searchTerm) {
+    //         currentItems = currentItems.filter(item =>
+    //             Object.values(item).some(value =>
+    //                 String(value).toLowerCase().includes(searchTerm.toLowerCase())
+    //             )
+    //         );
+    //     }
+
+    //     // Apply sorting
+    //     if (sortConfig.key) {
+    //         currentItems.sort((a, b) => {
+    //             if (a[sortConfig.key] < b[sortConfig.key]) return sortConfig.direction === 'ascending' ? -1 : 1;
+    //             if (a[sortConfig.key] > b[sortConfig.key]) return sortConfig.direction === 'ascending' ? 1 : -1;
+    //             return 0;
+    //         });
+    //     }
+
+    //     return currentItems;
+    // };
+
     const getDefaultColumnSettings = (columns) => {
         const visibleColumns = {};
         const headerNames = {};
@@ -51,7 +138,7 @@ export default function PasswordManager() {
         return { visibleColumns, headerNames, columnOrder };
     };
 
-    
+
     // Function to handle updating column visibility
     const handleUpdateColumnVisibility = async (category, subcategory, visibleColumns) => {
         try {
@@ -111,49 +198,59 @@ export default function PasswordManager() {
     };
 
     // Function to fetch category settings
-    const fetchCategorySettings = async (category, subcategory) => {
+    const fetchCategorySettings = async () => {
         try {
             const { data, error } = await supabase
                 .from('category_table_mappings')
-                .select('column_settings, column_mappings, table_name')
-                .eq('category', category)
-                .eq('subcategory', subcategory)
+                .select('column_settings, table_name')
+                .eq('category', selectedCategory)
+                .eq('subcategory', selectedSubcategory)
                 .single();
 
             if (error) throw error;
 
-            if (data) {
-                const { column_settings, column_mappings, table_name } = data;
+            // Provide default values if data is undefined
+            const currentSettings = data?.column_settings || {};
+            const defaultColumns = ['index', 'name', 'identifier', 'password', 'status'];
 
-                // Fetch all columns from the linked table
-                const { data: tableColumns, error: tableError } = await supabase
-                    .rpc('get_table_columns', { input_table_name: table_name });
+            const mergedSettings = {
+                visibleColumns: { index: true, ...currentSettings.visibleColumns },
+                headerNames: { index: 'Index', ...currentSettings.headerNames },
+                columnOrder: ['index', ...(currentSettings.columnOrder || defaultColumns.slice(1))]
+            };
 
-                if (tableError) throw tableError;
+            // Ensure all columns have a visibility and header name setting
+            mergedSettings.columnOrder.forEach(column => {
+                if (!mergedSettings.visibleColumns.hasOwnProperty(column)) {
+                    mergedSettings.visibleColumns[column] = true;
+                }
+                if (!mergedSettings.headerNames.hasOwnProperty(column)) {
+                    mergedSettings.headerNames[column] = column.charAt(0).toUpperCase() + column.slice(1);
+                }
+            });
 
-                const allColumns = tableColumns.map(col => col.column_name);
+            setLocalColumnSettings(mergedSettings);
+            setSelectedTable(data?.table_name || '');
 
-                const defaultSettings = getDefaultColumnSettings(allColumns);
-                const settings = column_settings || defaultSettings;
-
-                // Ensure all columns from the table are present in the settings
-                allColumns.forEach(column => {
-                    if (!settings.visibleColumns.hasOwnProperty(column)) {
-                        settings.visibleColumns[column] = true;
-                    }
-                    if (!settings.headerNames.hasOwnProperty(column)) {
-                        settings.headerNames[column] = column;
-                    }
+            // Fetch all columns for the table
+            if (data?.table_name) {
+                const { data: columns, error: columnsError } = await supabase.rpc('get_table_columns', {
+                    input_table_name: data.table_name
                 });
 
-                setColumnSettings(prevSettings => ({
-                    ...prevSettings,
-                    [`${category}_${subcategory}`]: settings
-                }));
+                if (columnsError) throw columnsError;
+
+                setDbColumns(columns.map(col => col.column_name));
             }
         } catch (error) {
             console.error('Error fetching category settings:', error);
-            // Handle error (e.g., use default settings)
+            // Set default values in case of error
+            setLocalColumnSettings({
+                visibleColumns: {},
+                headerNames: {},
+                columnOrder: []
+            });
+            setDbColumns([]);
         }
     };
 
@@ -168,8 +265,9 @@ export default function PasswordManager() {
     const getCurrentColumnSettings = () => {
         const defaultColumns = ['name', 'identifier', 'password', 'status'];
         const defaultSettings = {
-            visibleColumns: Object.fromEntries(defaultColumns.map(col => [col, true])),
-            headerNames: Object.fromEntries(defaultColumns.map(col => [col, col.charAt(0).toUpperCase() + col.slice(1)]))
+            visibleColumns: Object.fromEntries(Object.keys(column_mappings).map(key => [key, true])),
+            headerNames: { ...column_mappings },
+            columnOrder: ['index', 'name', ...Object.keys(column_mappings).filter(key => key !== 'name')]
         };
 
         const currentSettings = columnSettings[`${activeCategory}_${activeSubCategory}`];
@@ -250,45 +348,103 @@ export default function PasswordManager() {
         }
     };
 
-    const fetchColumnSettings = async (category, subcategory) => {
+    useEffect(() => {
+        if (activeCategory && activeSubCategory) {
+            fetchColumnSettings();
+        }
+    }, [activeCategory, activeSubCategory]);
+
+    const fetchColumnSettings = async () => {
         try {
             const { data, error } = await supabase
                 .from('category_table_mappings')
-                .select('column_settings, column_mappings')
-                .eq('category', category)
-                .eq('subcategory', subcategory)
+                .select('column_settings, table_name')
+                .eq('category', activeCategory)
+                .eq('subcategory', activeSubCategory)
                 .single();
 
             if (error) throw error;
 
-            if (data && data.column_mappings) {
-                const defaultSettings = {
-                    visibleColumns: Object.fromEntries(
-                        Object.keys(data.column_mappings).map(col => [col, true])
-                    ),
-                    headerNames: Object.fromEntries(
-                        Object.keys(data.column_mappings).map(col => [col, col])
-                    )
-                };
+            console.log('Fetched data:', data); // Log the fetched data for debugging
 
-                const mergedSettings = {
-                    visibleColumns: { ...defaultSettings.visibleColumns, ...(data.column_settings?.visibleColumns || {}) },
-                    headerNames: { ...defaultSettings.headerNames, ...(data.column_settings?.headerNames || {}) }
-                };
+            const currentSettings = data?.column_settings || {};
+            console.log('Current settings:', currentSettings); // Log the current settings
 
-                setColumnSettings(prevSettings => ({
-                    ...prevSettings,
-                    [`${category}_${subcategory}`]: mergedSettings
-                }));
+            const defaultColumns = ['index', 'name', 'identifier', 'password', 'status'];
 
-                // If there were no existing settings, save the default settings to the database
-                if (!data.column_settings) {
-                    await updateColumnSettings(category, subcategory, mergedSettings);
-                }
+            const mergedSettings = {
+                visibleColumns: { index: true, ...currentSettings.visibleColumns },
+                headerNames: { index: 'Index', ...currentSettings.headerNames },
+                columnOrder: ['index', ...(currentSettings.columnOrder || defaultColumns.slice(1))]
+            };
+
+            console.log('Merged settings:', mergedSettings); // Log the merged settings
+
+            setLocalColumnSettings(mergedSettings);
+            setColumnSettings(prevSettings => ({
+                ...prevSettings,
+                [`${activeCategory}_${activeSubCategory}`]: mergedSettings
+            }));
+
+            // Fetch all columns for the table
+            if (data?.table_name) {
+                const { data: columns, error: columnsError } = await supabase.rpc('get_table_columns', {
+                    input_table_name: data.table_name
+                });
+
+                if (columnsError) throw columnsError;
+
+                setDbColumns(columns.map(col => col.column_name));
             }
         } catch (error) {
-            console.error('Error fetching column settings:', error);
+            console.error('Error fetching category settings:', error);
+            setLocalColumnSettings({
+                visibleColumns: {},
+                headerNames: {},
+                columnOrder: []
+            });
+            setDbColumns([]);
         }
+    };
+
+    const getCurrentColumnOrder = () => {
+        const currentSettings = columnSettings[`${activeCategory}_${activeSubCategory}`];
+        if (currentSettings && currentSettings.columnOrder) {
+            return currentSettings.columnOrder;
+        }
+        // Fallback to default order if no custom order is set
+        return ['index', 'name', 'identifier', 'password', 'status'];
+    };
+
+    const getSortedAndFilteredItems = () => {
+        let currentItems = items[`${activeCategory}_${activeSubCategory}`] || [];
+
+        // Apply search filter
+        if (searchTerm) {
+            currentItems = currentItems.filter(item =>
+                Object.values(item).some(value =>
+                    String(value).toLowerCase().includes(searchTerm.toLowerCase())
+                )
+            );
+        }
+
+        // Apply sorting
+        if (sortConfig.key) {
+            currentItems.sort((a, b) => {
+                if (a[sortConfig.key] < b[sortConfig.key]) return sortConfig.direction === 'ascending' ? -1 : 1;
+                if (a[sortConfig.key] > b[sortConfig.key]) return sortConfig.direction === 'ascending' ? 1 : -1;
+                return 0;
+            });
+        }
+
+        return currentItems;
+    };
+
+    const updateColumnSettings = (category, subcategory, newSettings) => {
+        setColumnSettings(prevSettings => ({
+            ...prevSettings,
+            [`${category}_${subcategory}`]: newSettings
+        }));
     };
 
 
@@ -298,27 +454,7 @@ export default function PasswordManager() {
         }
     }, [activeCategory, activeSubCategory]);
 
-    const updateColumnSettings = async (category, subcategory, newSettings) => {
-        try {
-            const { error } = await supabase
-                .from('category_table_mappings')
-                .update({ column_settings: newSettings })
-                .eq('category', category)
-                .eq('subcategory', subcategory);
-    
-            if (error) throw error;
-    
-            setColumnSettings(prevSettings => ({
-                ...prevSettings,
-                [`${category}_${subcategory}`]: newSettings
-            }));
-    
-            console.log('Column settings updated successfully');
-        } catch (error) {
-            console.error('Error updating column settings:', error);
-            throw error;
-        }
-    };
+
 
     const removeCategoryFromState = (category, subcategory) => {
         setCategories(prevCategories => {
@@ -374,6 +510,10 @@ export default function PasswordManager() {
                             <Upload className="mr-2 h-4 w-4" />
                             Upload CSV
                         </Button>
+                        <Button onClick={handleExport} variant="outline">
+                            <Download className="mr-2 h-4 w-4" />
+                            Export CSV
+                        </Button>
                         <Button onClick={() => setSettingsDialogOpen(true)} variant="outline">
                             <Settings className="mr-2 h-4 w-4" />
                             Settings
@@ -414,30 +554,42 @@ export default function PasswordManager() {
 
                     {activeCategory && activeSubCategory && (
                         <div className="mt-6">
-                            
+                            <div className="mb-4">
+                                <Input
+                                    placeholder="Search..."
+                                    value={searchTerm}
+                                    onChange={handleSearch}
+                                    className="max-w-sm"
+                                />
+                            </div>
                             <div className="max-h-[620px] overflow-auto">
                                 <Table>
                                     <TableHeader>
                                         <TableRow>
-                                            <TableHead className="sticky top-0 bg-gray-200 text-black">#</TableHead>
-                                            {Object.entries(columnSettings[`${activeCategory}_${activeSubCategory}`]?.visibleColumns || {})
-                                                .filter(([_, isVisible]) => isVisible)
-                                                .map(([column, _]) => (
-                                                    <TableHead key={column} className="sticky top-0 bg-gray-200 text-black">
-                                                        {columnSettings[`${activeCategory}_${activeSubCategory}`]?.headerNames[column] || column}
+                                            {getCurrentColumnOrder()
+                                                .filter(column => localColumnSettings.visibleColumns[column] !== false)
+                                                .map((column) => (
+                                                    <TableHead
+                                                        key={column}
+                                                        className="sticky top-0 bg-gray-200 text-black cursor-pointer"
+                                                        onClick={() => handleSort(column)}
+                                                    >
+                                                        {localColumnSettings.headerNames[column] || column}
+                                                        <ArrowUpDown className="ml-2 h-4 w-4 inline" />
                                                     </TableHead>
                                                 ))}
                                             <TableHead className="sticky top-0 bg-gray-200 text-black">Actions</TableHead>
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
-                                        {items[`${activeCategory}_${activeSubCategory}`]?.map((item, index) => (
+                                        {getSortedAndFilteredItems().map((item, index) => (
                                             <TableRow key={item.id}>
-                                                <TableCell>{index + 1}</TableCell>
-                                                {Object.entries(columnSettings[`${activeCategory}_${activeSubCategory}`]?.visibleColumns || {})
-                                                    .filter(([_, isVisible]) => isVisible)
-                                                    .map(([column, _]) => (
-                                                        <TableCell key={column}>{item[column]}</TableCell>
+                                                {getCurrentColumnOrder()
+                                                    .filter(column => localColumnSettings.visibleColumns[column] !== false)
+                                                    .map((column) => (
+                                                        <TableCell key={column}>
+                                                            {column === 'index' ? index + 1 : item[column]}
+                                                        </TableCell>
                                                     ))}
                                                 <TableCell className="flex gap-4">
                                                     <Button onClick={() => { setItemToEdit(item); setEditDialogOpen(true); }}>Edit</Button>
@@ -469,9 +621,9 @@ export default function PasswordManager() {
                 onLinkTable={handleLinkTable}
                 onCreateTable={handleCreateNewTable}
                 columnSettings={columnSettings}
-                setColumnSettings={setColumnSettings}
                 updateColumnSettings={updateColumnSettings}
-                removeCategoryFromState={removeCategoryFromState}
+                activeCategory={activeCategory}
+                activeSubCategory={activeSubCategory}
             />
 
             <LinkTableDialog
