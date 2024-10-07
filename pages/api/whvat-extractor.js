@@ -102,7 +102,7 @@ async function executeWHVATExtraction(startMonth, startYear, endMonth, endYear, 
             }
 
             const browser = await chromium.launch({
-                headless: false,
+                headless: true,
                 executablePath: chromePath
             });
             const context = await browser.newContext();
