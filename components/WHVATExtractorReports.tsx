@@ -300,7 +300,7 @@ export function WHVATExtractorReports() {
         );
     };
 
-     const exportToExcel = async (range) => {
+    const exportToExcel = async (range) => {
         if (!filteredData) return;
 
         const workbook = new ExcelJS.Workbook();
@@ -347,18 +347,17 @@ export function WHVATExtractorReports() {
     };
 
     const renderDetailedView = () => (
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-4 gap-4 h-[600px]" >
             <div className="col-span-1">
-                <ScrollArea className="h-[calc(100vh-2rem)]">
+                <ScrollArea className="h-[600px]">
                     {companies.map((company) => (
                         <div
                             key={company.company_name}
                             onClick={() => setSelectedCompany(company.company_name)}
-                            className={`p-2 cursor-pointer transition-colors duration-200 text-xs ${
-                                selectedCompany === company.company_name
+                            className={`p-2 cursor-pointer transition-colors duration-200 text-xs ${selectedCompany === company.company_name
                                     ? 'bg-blue-500 text-white font-bold'
                                     : 'hover:bg-blue-100'
-                            }`}
+                                }`}
                         >
                             {company.company_name}
                         </div>
@@ -446,7 +445,7 @@ export function WHVATExtractorReports() {
                                     <Button onClick={() => setShowAllData(!showAllData)} variant="outline" className="whitespace-nowrap">
                                         {showAllData ? "Hide All Data" : "Show All Data"}
                                     </Button>
-                                </div>  
+                                </div>
                                 {renderAllDataTable()}
                             </TabsContent>
                             <TabsContent value="monthWise">
@@ -478,110 +477,110 @@ export function WHVATExtractorReports() {
                                     </Button>
                                 </div>
                                 <ScrollArea className="h-[calc(100vh-20rem)] overflow-auto">
-                                {filteredData && Object.entries(filteredData).map(([month, data]) => (
-                                    <div key={month}>
-                                        <h3 className="text-lg font-bold mb-2">{month.split('-').reverse().join('-')}</h3>
-                                        {renderMonthTable(data, month)}
-                                    </div>
-                                ))}
-                            </ScrollArea>
-                        </TabsContent>
-                        <TabsContent value="totals">
-                            <ScrollArea className="h-[calc(100vh-20rem)] overflow-auto">
-                                <Table>
-                                    <TableHeader>
-                                        <TableRow>
-                                            <TableHead>Month</TableHead>
-                                            <TableHead>Total</TableHead>
-                                        </TableRow>
-                                    </TableHeader>
-                                    <TableBody>
-                                        {filteredData && Object.entries(filteredData).map(([month, data]) => {
-                                            const [year, monthNum] = month.split('-');
-                                            const monthName = new Date(year, monthNum - 1).toLocaleString('default', { month: 'long' });
-                                            const total = calculateTotal(data);
-                                            return (
-                                                <TableRow key={month}>
-                                                    <TableCell>{`${monthName} ${year}`}</TableCell>
-                                                    <TableCell>
-                                                        {data.tableData && data.tableData.length > 0
-                                                            ? <span className="font-bold text-green-600">{formatAmount(total)}</span>
-                                                            : (
-                                                                <span className="font-bold text-red-600">
-                                                                    No records found
-                                                                </span>
-                                                            )}
-                                                    </TableCell>
-                                                </TableRow>
-                                            );
-                                        })}
-                                    </TableBody>
-                                </Table>
-                            </ScrollArea>
-                        </TabsContent>
-                    </Tabs>
-                </>
-            )}
+                                    {filteredData && Object.entries(filteredData).map(([month, data]) => (
+                                        <div key={month}>
+                                            <h3 className="text-lg font-bold mb-2">{month.split('-').reverse().join('-')}</h3>
+                                            {renderMonthTable(data, month)}
+                                        </div>
+                                    ))}
+                                </ScrollArea>
+                            </TabsContent>
+                            <TabsContent value="totals">
+                                <ScrollArea className="h-[calc(100vh-20rem)] overflow-auto">
+                                    <Table>
+                                        <TableHeader>
+                                            <TableRow>
+                                                <TableHead>Month</TableHead>
+                                                <TableHead>Total</TableHead>
+                                            </TableRow>
+                                        </TableHeader>
+                                        <TableBody>
+                                            {filteredData && Object.entries(filteredData).map(([month, data]) => {
+                                                const [year, monthNum] = month.split('-');
+                                                const monthName = new Date(year, monthNum - 1).toLocaleString('default', { month: 'long' });
+                                                const total = calculateTotal(data);
+                                                return (
+                                                    <TableRow key={month}>
+                                                        <TableCell>{`${monthName} ${year}`}</TableCell>
+                                                        <TableCell>
+                                                            {data.tableData && data.tableData.length > 0
+                                                                ? <span className="font-bold text-green-600">{formatAmount(total)}</span>
+                                                                : (
+                                                                    <span className="font-bold text-red-600">
+                                                                        No records found
+                                                                    </span>
+                                                                )}
+                                                        </TableCell>
+                                                    </TableRow>
+                                                );
+                                            })}
+                                        </TableBody>
+                                    </Table>
+                                </ScrollArea>
+                            </TabsContent>
+                        </Tabs>
+                    </>
+                )}
+            </div>
         </div>
-    </div>
-);
+    );
 
-const renderSummaryView = () => (
-    <ScrollArea className="h-[calc(100vh-10rem)] overflow-auto">
-        <Table>
-            <TableHeader>
-                <TableRow>
-                    <TableHead className="font-bold text-center">#</TableHead>
-                    <TableHead onClick={() => handleSummarySort('company')}>
-                        Company <ArrowUpDown className="ml-2 h-4 w-4" />
-                    </TableHead>
-                    <TableHead onClick={() => handleSummarySort('latestExtractionDate')}>
-                        Latest Extraction Date <ArrowUpDown className="ml-2 h-4 w-4" />
-                    </TableHead>
-                    <TableHead onClick={() => handleSummarySort('numberOfExtractions')}>
-                        Number of Extractions <ArrowUpDown className="ml-2 h-4 w-4" />
-                    </TableHead>
-                    <TableHead onClick={() => handleSummarySort('totalAmount')}>
-                        Total Amount <ArrowUpDown className="ml-2 h-4 w-4" />
-                    </TableHead>
-                </TableRow>
-            </TableHeader>
-            <TableBody>
-                {allCompanyData.sort((a, b) => a.company_name.localeCompare(b.company_name)).map((company, index) => {
-                    const extractionDates = company.extraction_data ? Object.keys(company.extraction_data) : [];
-                    const latestExtractionDate = extractionDates.length > 0 ?
-                        new Date(Math.max(...extractionDates.map(date => new Date(company.extraction_data[date].extractionDate)))).toLocaleDateString() :
-                        'N/A';
-                    const totalAmount = calculateOverallTotal(company.extraction_data);
-                    return (
-                        <TableRow key={company.company_name} className={index % 2 === 0 ? 'bg-white' : 'bg-blue-50'}>
-                            <TableCell className="font-bold text-center">{index + 1}</TableCell>
-                            <TableCell>{company.company_name}</TableCell>
-                            <TableCell>{latestExtractionDate}</TableCell>
-                            <TableCell>{extractionDates.length}</TableCell>
-                            <TableCell className="font-bold text-green-600">{formatAmount(totalAmount)}</TableCell>
-                        </TableRow>
-                    );
-                })}
-            </TableBody>
-        </Table>
-    </ScrollArea>
-);
+    const renderSummaryView = () => (
+        <ScrollArea className="h-[650px] overflow-auto">
+            <Table>
+                <TableHeader>
+                    <TableRow>
+                        <TableHead className="font-bold text-center">#</TableHead>
+                        <TableHead onClick={() => handleSummarySort('company')}>
+                            Company <ArrowUpDown className="ml-2 h-4 w-4" />
+                        </TableHead>
+                        <TableHead onClick={() => handleSummarySort('latestExtractionDate')}>
+                            Latest Extraction Date <ArrowUpDown className="ml-2 h-4 w-4" />
+                        </TableHead>
+                        <TableHead onClick={() => handleSummarySort('numberOfExtractions')}>
+                            Number of Extractions <ArrowUpDown className="ml-2 h-4 w-4" />
+                        </TableHead>
+                        <TableHead onClick={() => handleSummarySort('totalAmount')}>
+                            Total Amount <ArrowUpDown className="ml-2 h-4 w-4" />
+                        </TableHead>
+                    </TableRow>
+                </TableHeader>
+                <TableBody>
+                    {allCompanyData.sort((a, b) => a.company_name.localeCompare(b.company_name)).map((company, index) => {
+                        const extractionDates = company.extraction_data ? Object.keys(company.extraction_data) : [];
+                        const latestExtractionDate = extractionDates.length > 0 ?
+                            new Date(Math.max(...extractionDates.map(date => new Date(company.extraction_data[date].extractionDate)))).toLocaleDateString() :
+                            'N/A';
+                        const totalAmount = calculateOverallTotal(company.extraction_data);
+                        return (
+                            <TableRow key={company.company_name} className={index % 2 === 0 ? 'bg-white' : 'bg-blue-50'}>
+                                <TableCell className="font-bold text-center">{index + 1}</TableCell>
+                                <TableCell>{company.company_name}</TableCell>
+                                <TableCell>{latestExtractionDate}</TableCell>
+                                <TableCell>{extractionDates.length}</TableCell>
+                                <TableCell className="font-bold text-green-600">{formatAmount(totalAmount)}</TableCell>
+                            </TableRow>
+                        );
+                    })}
+                </TableBody>
+            </Table>
+        </ScrollArea>
+    );
 
-return (
-    <Card className="w-full">
-        <CardHeader>
-            <CardTitle className="text-blue-700">WH VAT Extractor Reports</CardTitle>
-        </CardHeader>
-        <CardContent>
-            <Tabs value={view} onValueChange={setView} className="mb-4">
-                <TabsList>
-                    <TabsTrigger value="summary">Summary</TabsTrigger>
-                    <TabsTrigger value="detailed">Detailed</TabsTrigger>
-                </TabsList>
-            </Tabs>
-            {view === 'summary' ? renderSummaryView() : renderDetailedView()}
-        </CardContent>
-    </Card>
-);
+    return (
+        <Card className="w-full ">
+            <CardHeader>
+                <CardTitle className="text-blue-700">WH VAT Extractor Reports</CardTitle>
+            </CardHeader>
+            <CardContent>
+                <Tabs value={view} onValueChange={setView} className="mb-4">
+                    <TabsList>
+                        <TabsTrigger value="summary">Summary</TabsTrigger>
+                        <TabsTrigger value="detailed">Detailed</TabsTrigger>
+                    </TabsList>
+                </Tabs>
+                {view === 'summary' ? renderSummaryView() : renderDetailedView()}
+            </CardContent>
+        </Card>
+    );
 }

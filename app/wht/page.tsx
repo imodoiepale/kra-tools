@@ -12,7 +12,7 @@ export default function WHVATExtractor() {
     const [activeTab, setActiveTab] = useState("reports");
 
     return (
-        <div className="p-4 w-full">
+        <div className="p-4 w-full mb-4">
             <Card>
                 <CardHeader>
                     <CardTitle>Withholding VAT/Tax Extractor</CardTitle>
