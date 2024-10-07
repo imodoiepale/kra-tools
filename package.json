@@ -55,6 +55,7 @@
     "lucide-react": "^0.446.0",
     "next": "14.2.13",
     "next-themes": "^0.3.0",
+    "pdf.js-extract": "^0.2.1",
     "playwright": "^1.47.2",
     "react": "^18",
     "react-beautiful-dnd": "^13.1.1",
