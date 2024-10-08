@@ -1,7 +1,7 @@
 // components/Sidebar.tsx
 "use client"
 
-import { LayoutDashboard, Key, Lock, Wrench, Settings, Factory, FileCheck, FileText, ShieldCheck, CreditCard, FileSignature, Users, FileSpreadsheet, ClipboardCheck, DollarSign, BarChart2, ChevronLeft, ChevronRight, Download } from "lucide-react";
+import { LayoutDashboard, Key, Lock, Settings, Factory, FileCheck, FileText, ShieldCheck, CreditCard, FileSignature, Users, FileSpreadsheet, ClipboardCheck, DollarSign, BarChart2, ChevronLeft, ChevronRight, Download } from "lucide-react";
 import Link from "next/link"
 import { usePathname } from 'next/navigation'
 import { useState } from "react"
@@ -14,6 +14,7 @@ import {
 const navItems = [
     { href: "/", icon: LayoutDashboard, label: "Dashboard", category: "Main", available: true },
     { href: "/password-manager", icon: Lock, label: "Password Manager", category: "Main", available: true },
+    { href: "/checklist/file-management", icon: FileCheck, label: "Checklist", category: "Main", available: true },
 
     // One-off Tools
     { href: "/password-checker", icon: Key, label: "Password Checker", category: "One-off Tools", available: true },
