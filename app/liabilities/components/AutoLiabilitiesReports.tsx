@@ -204,7 +204,7 @@ export function AutoLiabilitiesReports() {
     });
 
     const renderSummaryView = () => (
-        <ScrollArea className="h-[600px]">
+        <ScrollArea className="h-[500px]">
             <Table>
                 <TableHeader>
                     {table.getHeaderGroups().map((headerGroup) => (
@@ -251,7 +251,7 @@ export function AutoLiabilitiesReports() {
 
     const renderDetailedView = () => (
         <div className="grid grid-cols-4 gap-2 xs:gap-1">
-            <div className="col-span-1"> 
+            <div className="col-span-1">
                 <ScrollArea className="h-[550px] xs:h-[300px] border rounded-lg">
                     {data.map((company) => (
                         <div
@@ -573,7 +573,7 @@ export function AutoLiabilitiesReports() {
                         {renderDetailedView()}
                     </TabsContent>
                 </Tabs>
-                <div className="flex items-center justify-between mt-4">
+                <div className="flex items-center justify-between mt-2">
                     <div>
                         <Button
                             variant="outline"
@@ -609,9 +609,9 @@ export function AutoLiabilitiesReports() {
                             <SelectValue placeholder={table.getState().pagination.pageSize} />
                         </SelectTrigger>
                         <SelectContent>
-                            {[10, 25, 50].map((pageSize) => (
+                            {[10, 25, 50, 100].map((pageSize) => (
                                 <SelectItem key={pageSize} value={pageSize.toString()}>
-                                    Show {pageSize}
+                                    {pageSize}
                                 </SelectItem>
                             ))}
                         </SelectContent>
