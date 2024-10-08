@@ -9,8 +9,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 // Main Page Component
 export default function MainPage() {
     return (
-        <div className="p-6">
-            <h1 className="text-3xl font-bold mb-6">Company Management System</h1>
+        <div className="p-4">
+            <h1 className="text-xl font-bold mb-2">Company Management System</h1>
             <Tabs defaultValue="company-list">
                 <TabsList>
                     <TabsTrigger value="company-list">Company List</TabsTrigger>

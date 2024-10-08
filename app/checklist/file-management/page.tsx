@@ -1,8 +1,6 @@
 // @ts-nocheck
 "use client"
 
-
-
 import React, { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -20,14 +18,14 @@ export default function ClientFileManagement() {
     const [checklist, setChecklist] = useState({});
     const [selectedDate, setSelectedDate] = useState(new Date());
     const [searchTerm, setSearchTerm] = useState('');
-    const [sortColumn, setSortColumn] = useState('');
-    const [sortDirection, setSortDirection] = useState('asc');
+    const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
         fetchData();
     }, [selectedDate]);
 
     const fetchData = async () => {
+        setIsLoading(true);
         try {
             const [clientsResult, checklistResult] = await Promise.all([
                 supabase.from('PasswordChecker').select('id, company_name, kra_pin').order('id'),
@@ -52,28 +50,12 @@ export default function ClientFileManagement() {
         } catch (error) {
             console.error('Error fetching data:', error);
             toast.error(error.message);
+        } finally {
+            setIsLoading(false);
         }
     };
 
-    const handleSort = (column) => {
-        if (sortColumn === column) {
-            setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
-        } else {
-            setSortColumn(column);
-            setSortDirection('asc');
-        }
-    };
-
-    const sortedClients = [...clients].sort((a, b) => {
-        if (sortColumn) {
-            const aValue = a[sortColumn].toLowerCase();
-            const bValue = b[sortColumn].toLowerCase();
-            return sortDirection === 'asc' ? aValue.localeCompare(bValue) : bValue.localeCompare(aValue);
-        }
-        return 0;
-    });
-
-    const filteredClients = sortedClients.filter(client =>
+    const filteredClients = clients.filter(client =>
         client.company_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         client.kra_pin.toLowerCase().includes(searchTerm.toLowerCase())
     );
@@ -135,15 +117,16 @@ export default function ClientFileManagement() {
                     <TabsTrigger value="allData">All Data</TabsTrigger>
                 </TabsList>
                 <TabsContent value="monthly">
-                    <MonthlyTable
-                        filteredClients={filteredClients}
-                        checklist={checklist}
-                        selectedDate={selectedDate}
-                        handleSort={handleSort}
-                        sortColumn={sortColumn}
-                        sortDirection={sortDirection}
-                        updateClientStatus={updateClientStatus}
-                    />
+                    {isLoading ? (
+                        <div>Loading...</div>
+                    ) : (
+                        <MonthlyTable
+                            clients={filteredClients}
+                            checklist={checklist}
+                            selectedDate={selectedDate}
+                            updateClientStatus={updateClientStatus}
+                        />
+                    )}
                 </TabsContent>
                 <TabsContent value="detailed">
                     <DetailedView
