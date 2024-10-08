@@ -33,7 +33,7 @@ export default function RootLayout({
                 <Navbar />
                 <div className="overflow-auto">
                   {children}
-                  <Toaster />
+                  {/* <Toaster /> */}
                   <ToastContainer />
                 </div>
               </div>
