@@ -10,7 +10,7 @@ import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMe
 import { ArrowUpDown, Download, MoreHorizontal, Play, RefreshCw } from "lucide-react";
 import * as ExcelJS from 'exceljs';
 import { supabase } from '@/lib/supabase';
-import { Checkbox } from './ui/checkbox';
+import { Checkbox } from '../../../components/ui/checkbox';
 
 export function AutoPopulationReports() {
     const [reports, setReports] = useState([]);

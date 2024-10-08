@@ -1,22 +1,36 @@
 // @ts-nocheck
-"use client"
+"use client";
 
 import React, { useState } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { PINProfileStart } from '@/app/pin-profile/components/PINProfileStart';
-import { PINProfileRunning } from '@/app/pin-profile/components/PINProfileRunning';
-import { PINProfileReports } from '@/app/pin-profile/components/PINProfileReports';
+import { AutoLiabilitiesStart } from './components/AutoLiabilitiesStart';
+import { AutoLiabilitiesRunning } from './components/AutoLiabilitiesRunning';
+import { AutoLiabilitiesReports } from './components/AutoLiabilitiesReports';
 
-export default function PINProfileExtractor() {
+export default function LiabilityExtractorPage() {
     const [activeTab, setActiveTab] = useState("reports");
+    const [shouldStop, setShouldStop] = useState(false);
+
+    const handleStart = () => {
+        setActiveTab("running");
+        setShouldStop(false);
+    };
+
+    const handleStop = () => {
+        setShouldStop(true);
+    };
+
+    const handleComplete = () => {
+        setActiveTab("reports");
+    };
 
     return (
         <div className="p-4 w-full">
             <Card>
                 <CardHeader>
-                    <CardTitle>KRA PIN Profile Extractor</CardTitle>
-                    <CardDescription>Extract and manage KRA PIN Profiles for companies</CardDescription>
+                    <CardTitle>Liability Extractor</CardTitle>
+                    <CardDescription>Extract and manage liability information for companies</CardDescription>
                 </CardHeader>
                 <CardContent>
                     <Tabs value={activeTab} onValueChange={setActiveTab}>
@@ -26,13 +40,13 @@ export default function PINProfileExtractor() {
                             <TabsTrigger value="reports">Reports</TabsTrigger>
                         </TabsList>
                         <TabsContent value="start">
-                            <PINProfileStart onStart={() => setActiveTab("running")} />
+                            <AutoLiabilitiesStart onStart={handleStart} onStop={handleStop} />
                         </TabsContent>
                         <TabsContent value="running">
-                            <PINProfileRunning onComplete={() => setActiveTab("reports")} />
+                            <AutoLiabilitiesRunning onComplete={handleComplete} shouldStop={shouldStop} />
                         </TabsContent>
                         <TabsContent value="reports">
-                            <PINProfileReports />
+                            <AutoLiabilitiesReports />
                         </TabsContent>
                     </Tabs>
                 </CardContent>

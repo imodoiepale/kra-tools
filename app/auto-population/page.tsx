@@ -5,9 +5,9 @@
 import React, { useState } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { AutoPopulationStart } from '@/components/AutoPopulationStart';
-import { AutoPopulationRunning } from '@/components/AutoPopulationRunning';
-import { AutoPopulationReports } from '@/components/AutoPopulationReports';
+import { AutoPopulationStart } from '@/app/auto-population/components/AutoPopulationStart';
+import { AutoPopulationRunning } from '@/app/auto-population/components/AutoPopulationRunning';
+import { AutoPopulationReports } from '@/app/auto-population/components/AutoPopulationReports';
 
 export default function AutoPopulation() {
   const [activeTab, setActiveTab] = useState("reports");

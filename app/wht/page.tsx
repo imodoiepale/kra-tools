@@ -4,9 +4,9 @@
 import React, { useState } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { WHVATExtractorStart } from '@/components/WHVATExtractorStart';
-import { WHVATExtractorRunning } from '@/components/WHVATExtractorRunning';
-import { WHVATExtractorReports } from '@/components/WHVATExtractorReports';
+import { WHVATExtractorStart } from '@/app/wht/WHVATExtractorStart';
+import { WHVATExtractorRunning } from '@/app/wht/WHVATExtractorRunning';
+import { WHVATExtractorReports } from '@/app/wht/WHVATExtractorReports';
 
 export default function WHVATExtractor() {
     const [activeTab, setActiveTab] = useState("reports");

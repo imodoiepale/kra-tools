@@ -19,18 +19,18 @@ const navItems = [
     { href: "/password-checker", icon: Key, label: "Password Checker", category: "One-off Tools", available: true },
     { href: "/manufacturers-details", icon: Factory, label: "Manufacturers Details", category: "One-off Tools", available: true },
     { href: "/pin-checker-details", icon: ClipboardCheck, label: "PIN Checker Details (Obligations)", category: "One-off Tools", available: true },
-    { href: "/wht", icon: FileText, label: "Withholding VAT Extractor", category: "One-off Tools", available: true },
+    { href: "/whv", icon: FileText, label: "Withholding VAT Extractor", category: "One-off Tools", available: true },
     { href: "/pin-cert", icon: ClipboardCheck, label: "PIN Certifiate Extractor", category: "One-off Tools", available: true },
     { href: "/pin-profile", icon: ClipboardCheck, label: "PIN Profile Extractor", category: "One-off Tools", available: true },
     { href: "/tcc", icon: ShieldCheck, label: "Tax Compliance Downloader", category: "One-off Tools", available: true },
     { href: "/password-changer", icon: Key, label: "Password Changer", category: "One-off Tools", available: false },
 
     // Monthly Tools
-    { href: "/auto-population", icon: FileSpreadsheet, label: "Auto-Population", category: "Monthly Tools", available: true },
+    { href: "/auto-population", icon: Users, label: "Auto-Population", category: "Monthly Tools", available: true },
+    { href: "/liabilities", icon: FileSpreadsheet, label: "Liabilities Extractor", category: "Monthly Tools", available: true },
     { href: "/withholding-tax-downloader", icon: Download, label: "Withholding Tax Downloader", category: "Monthly Tools", available: false },
-    { href: "/auto-population-downloader", icon: Users, label: "Auto Population Downloader", category: "Monthly Tools", available: false },
-    { href: "/liabilities-extractor", icon: FileSpreadsheet, label: "Liabilities Extractor", category: "Monthly Tools", available: false },
-    { href: "/withholding-vat-extractor", icon: DollarSign, label: "Withholding VAT Extractor", category: "Monthly Tools", available: false },
+    // { href: "/auto-population-downloader", icon: Users, label: "Auto Population Downloader", category: "Monthly Tools", available: false },
+    // { href: "/wht", icon: DollarSign, label: "Withholding VAT Extractor", category: "Monthly Tools", available: false },
     { href: "/ledger-downloader", icon: BarChart2, label: "Ledger Downloader", category: "Monthly Tools", available: false },
 
     // Suggested New Tools

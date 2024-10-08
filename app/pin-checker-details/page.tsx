@@ -6,8 +6,8 @@ import { useState, useEffect } from 'react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { PinCheckerDetailsRunning } from '@/components/PinCheckerDetailsRunning'
-import { PinCheckerDetailsReports } from '@/components/PinCheckerDetailsReports'
+import { PinCheckerDetailsRunning } from '@/app/pin-checker-details/components/PinCheckerDetailsRunning'
+import { PinCheckerDetailsReports } from '@/app/pin-checker-details/components/PinCheckerDetailsReports'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"

@@ -4,9 +4,9 @@
 import React, { useState } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { PINCertificateStart } from '@/components/PINCertificateStart';
-import { PINCertificateRunning } from '@/components/PINCertificateRunning';
-import { PINCertificateReports } from '@/components/PINCertificateReports';
+import { PINCertificateStart } from '@/app/pin-cert/components/PINCertificateStart';
+import { PINCertificateRunning } from '@/app/pin-cert/components/PINCertificateRunning';
+import { PINCertificateReports } from '@/app/pin-cert/components/PINCertificateReports';
 
 export default function PINCertificateExtractor() {
     const [activeTab, setActiveTab] = useState("reports");
