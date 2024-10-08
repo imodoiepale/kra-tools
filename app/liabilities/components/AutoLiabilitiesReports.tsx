@@ -39,7 +39,7 @@ export function AutoLiabilitiesReports() {
     const [sorting, setSorting] = useState([]);
     const [pagination, setPagination] = useState({
         pageIndex: 0,
-        pageSize: 10,
+        pageSize: 100,
     });
     const [selectedCompanies, setSelectedCompanies] = useState([]);
     const [exportOptions, setExportOptions] = useState({
