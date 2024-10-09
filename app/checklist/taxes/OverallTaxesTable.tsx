@@ -23,7 +23,7 @@ const columnHelper = createColumnHelper();
 
 const TaxStatus = ({ status }) => {
     if (!status || status === "No obligation") {
-        return <Badge variant="outline" className="bg-yellow-100 text-yellow-800">MISSING</Badge>;
+        return <Badge variant="outline" className="bg-amber-400 text-yellow-800">Missing</Badge>;
     }
     switch (status.toLowerCase()) {
         case 'registered':
@@ -39,6 +39,8 @@ const TaxStatus = ({ status }) => {
 
 export default function OverallTaxesTable({ companies }) {
     const [globalFilter, setGlobalFilter] = useState('');
+    const [statusFilter, setStatusFilter] = useState('all');
+
 
     const columns = useMemo(() => [
         columnHelper.accessor('index', {
@@ -64,6 +66,10 @@ export default function OverallTaxesTable({ companies }) {
         columnHelper.accessor('rent_income_mri_status', {
             cell: info => <TaxStatus status={info.getValue()} />,
             header: 'MRI',
+        }),
+        columnHelper.accessor('turnover_tax_status', {
+            cell: info => <TaxStatus status={info.getValue()} />,
+            header: 'Turnover Tax',
         }),
         columnHelper.accessor('nssf_status', {
             cell: info => <TaxStatus status={info.getValue()} />,
@@ -145,24 +151,16 @@ export default function OverallTaxesTable({ companies }) {
 
     return (
         <div>
-            <Tabs defaultValue="all" onValueChange={setStatusFilter}>
-                <TabsList>
-                    <TabsTrigger value="all">All</TabsTrigger>
-                    <TabsTrigger value="Registered">Registered</TabsTrigger>
-                    <TabsTrigger value="Cancelled">Cancelled</TabsTrigger>
-                    <TabsTrigger value="Dormant">Dormant</TabsTrigger>
-                </TabsList>
-            </Tabs>
             <div className="flex justify-between items-center my-4">
                 <Input
-                    placeholder="Search companies..."
+                    placeholder="Search..."
                     value={globalFilter}
                     onChange={(e) => setGlobalFilter(e.target.value)}
-                    className="max-w-sm"
+                    className="w-64"
                 />
-                <Button onClick={exportToExcel}>
+                <Button onClick={exportToExcel} size="sm">
                     <FileDown className="mr-2 h-4 w-4" />
-                    Export to Excel
+                    Export
                 </Button>
             </div>
             <ScrollArea className="h-[600px]">
@@ -220,3 +218,4 @@ export default function OverallTaxesTable({ companies }) {
         </div>
     );
 }
+
