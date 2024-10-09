@@ -101,15 +101,8 @@ export default function ClientFileManagement() {
     };
 
     return (
-        <div className="space-y-6 p-6">
+        <div className="">
             <Toaster position="top-right" />
-            <div className="flex justify-between items-center">
-                <h1 className="text-3xl font-bold">Client File Management</h1>
-            </div>
-            <div className="flex space-x-4 items-end">
-                <SearchBar searchTerm={searchTerm} setSearchTerm={setSearchTerm} />
-                <ExportDialog filteredClients={filteredClients} checklist={checklist} selectedDate={selectedDate} />
-            </div>
             <Tabs defaultValue="monthly">
                 <TabsList>
                     <TabsTrigger value="monthly">Monthly View</TabsTrigger>

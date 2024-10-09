@@ -260,13 +260,6 @@ export default function CompanyListTable() {
         }),
     ];
 
-
-      const filteredCompanies = companies.filter(company =>
-        Object.values(company).some(value =>
-            String(value).toLowerCase().includes(searchQuery.toLowerCase())
-        )
-    );
-
     const table = useReactTable({
         data: companies,
         columns,
