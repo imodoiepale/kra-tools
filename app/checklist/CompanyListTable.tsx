@@ -1,11 +1,12 @@
 // @ts-nocheck
 "use client"
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
     useReactTable,
     getCoreRowModel,
     getSortedRowModel,
+    getFilteredRowModel,
     flexRender,
     createColumnHelper,
 } from '@tanstack/react-table';
@@ -143,7 +144,7 @@ const StatusBadge = ({ status }) => {
 // Main CompanyListTable component
 export default function CompanyListTable() {
     const [companies, setCompanies] = useState([]);
-    const [searchQuery, setSearchQuery] = useState('');
+    const [globalFilter, setGlobalFilter] = useState('');
 
     useEffect(() => {
         fetchCompanies();
@@ -267,10 +268,21 @@ export default function CompanyListTable() {
     );
 
     const table = useReactTable({
-        data: filteredCompanies,
+        data: companies,
         columns,
         getCoreRowModel: getCoreRowModel(),
         getSortedRowModel: getSortedRowModel(),
+        getFilteredRowModel: getFilteredRowModel(),
+        globalFilterFn: (row, columnId, filterValue) => {
+            const searchValue = filterValue.toLowerCase();
+            return Object.values(row.original).some(value => 
+                String(value).toLowerCase().includes(searchValue)
+            );
+        },
+        state: {
+            globalFilter,
+        },
+        onGlobalFilterChange: setGlobalFilter,
     });
 
     const exportToExcel = async () => {
@@ -304,17 +316,17 @@ export default function CompanyListTable() {
 
     return (
         <div>
-            <div className="flex justify-end items-center mb-4">
+            <div className="flex justify-between items-center mb-4">
+                <Input
+                    placeholder="Search companies..."
+                    value={globalFilter}
+                    onChange={(e) => setGlobalFilter(e.target.value)}
+                    className="max-w-sm"
+                />
                 <Button onClick={exportToExcel}>
                     <FileDown className="mr-2 h-4 w-4" />
                     Export to Excel
                 </Button>
-                <Input
-                    placeholder="Search companies..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-1/5"
-                />
             </div>
             <ScrollArea className="h-[800px]">
                 <Table>
