@@ -1,3 +1,4 @@
+
 // @ts-nocheck
 "use client"
 
@@ -11,7 +12,6 @@ import {
     createColumnHelper,
 } from '@tanstack/react-table';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -19,28 +19,26 @@ import { FileDown, Edit } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import ExcelJS from 'exceljs';
 
+
 const columnHelper = createColumnHelper();
 
-const TaxStatus = ({ status }) => {
-    if (!status || status === "No obligation") {
-        return <Badge variant="outline" className="bg-amber-400 text-yellow-800">Missing</Badge>;
-    }
-    switch (status.toLowerCase()) {
-        case 'registered':
-            return <Badge className="bg-green-500">Registered</Badge>;
-        case 'cancelled':
-            return <Badge className="bg-red-500">Cancelled</Badge>;
-        case 'dormant':
-            return <Badge className="bg-blue-500">Dormant</Badge>;
-        default:
-            return <span>{status}</span>;
-    }
+const formatDate = (dateString) => {
+    if (!dateString || dateString === "No obligation") return dateString;
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '.');
 };
 
-export default function OverallTaxesTable({ companies }) {
-    const [globalFilter, setGlobalFilter] = useState('');
-    const [statusFilter, setStatusFilter] = useState('all');
+const TaxStatus = ({ status }) => {
+    return <Badge className="bg-green-500">Registered</Badge>;
+};
 
+export default function VATTable({ companies }) {
+    const [globalFilter, setGlobalFilter] = useState('');
+
+    const filteredCompanies = useMemo(() => {
+        return companies.filter(company => company.vat_status?.toLowerCase() === 'registered')
+            .map((company, index) => ({ ...company, index: index + 1 }));
+    }, [companies]);
 
     const columns = useMemo(() => [
         columnHelper.accessor('index', {
@@ -57,35 +55,27 @@ export default function OverallTaxesTable({ companies }) {
         }),
         columnHelper.accessor('vat_status', {
             cell: info => <TaxStatus status={info.getValue()} />,
-            header: 'VAT',
+            header: 'Status',
         }),
-        columnHelper.accessor('paye_status', {
-            cell: info => <TaxStatus status={info.getValue()} />,
-            header: 'PAYE',
+        columnHelper.accessor('vat_effective_from', {
+            cell: info => formatDate(info.getValue()),
+            header: 'Effective From',
         }),
-        columnHelper.accessor('rent_income_mri_status', {
-            cell: info => <TaxStatus status={info.getValue()} />,
-            header: 'MRI',
+        columnHelper.accessor('vat_effective_to', {
+            cell: info => formatDate(info.getValue()),
+            header: 'Effective To',
         }),
-        columnHelper.accessor('turnover_tax_status', {
-            cell: info => <TaxStatus status={info.getValue()} />,
-            header: 'Turnover Tax',
-        }),
-        columnHelper.accessor('resident_individual_status', {
-            cell: info => <TaxStatus status={info.getValue()} />,
-            header: 'Individual',
-        }),
-        columnHelper.accessor('nssf_status', {
-            cell: info => <TaxStatus status={info.getValue()} />,
-            header: 'NSSF',
-        }),
-        columnHelper.accessor('nhif_status', {
-            cell: info => <TaxStatus status={info.getValue()} />,
-            header: 'NHIF',
-        }),
-        columnHelper.accessor('housing_levy_status', {
-            cell: info => <TaxStatus status={info.getValue()} />,
-            header: 'Housing Levy',
+        columnHelper.accessor('last_checked_at', {
+            cell: info => {
+                const date = new Date(info.getValue());
+                return (
+                    <div>
+                        <div>{formatDate(info.getValue())}</div>
+                        <div>{date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })}</div>
+                    </div>
+                );
+            },
+            header: 'Last Checked',
         }),
         columnHelper.accessor('actions', {
             cell: info => (
@@ -97,15 +87,8 @@ export default function OverallTaxesTable({ companies }) {
         }),
     ], []);
 
-    const data = useMemo(() => 
-        companies.map((company, index) => ({
-            ...company,
-            index: index + 1
-        })),
-    [companies]);
-
     const table = useReactTable({
-        data,
+        data: filteredCompanies,
         columns,
         getCoreRowModel: getCoreRowModel(),
         getSortedRowModel: getSortedRowModel(),
@@ -117,38 +100,32 @@ export default function OverallTaxesTable({ companies }) {
     });
 
     const handleEdit = (company) => {
-        // Implement edit functionality
         console.log('Edit company:', company);
     };
 
     const exportToExcel = async () => {
         const workbook = new ExcelJS.Workbook();
-        const worksheet = workbook.addWorksheet('Overall Taxes');
+        const worksheet = workbook.addWorksheet('VAT Tax Data');
 
-        // Add headers
-        worksheet.addRow(['Company Name', 'KRA PIN', 'VAT', 'PAYE', 'MRI', 'NSSF', 'NHIF', 'Housing Levy']);
+        worksheet.addRow(['Company Name', 'KRA PIN', 'Status', 'Effective From', 'Effective To', 'Last Checked']);
 
-        // Add data
-        companies.forEach((company) => {
+        filteredCompanies.forEach((company) => {
             worksheet.addRow([
                 company.company_name,
                 company.kra_pin,
                 company.vat_status,
-                company.paye_status,
-                company.rent_income_mri_status,
-                company.nssf_status,
-                company.nhif_status,
-                company.housing_levy_status,
+                formatDate(company.vat_effective_from),
+                formatDate(company.vat_effective_to),
+                formatDate(company.last_checked_at),
             ]);
         });
 
-        // Generate Excel file
         const buffer = await workbook.xlsx.writeBuffer();
         const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
-        link.download = 'overall_taxes.xlsx';
+        link.download = 'vat_tax_data.xlsx';
         link.click();
         URL.revokeObjectURL(url);
     };
@@ -157,14 +134,14 @@ export default function OverallTaxesTable({ companies }) {
         <div>
             <div className="flex justify-between items-center my-4">
                 <Input
-                    placeholder="Search..."
+                    placeholder="Search companies..."
                     value={globalFilter}
                     onChange={(e) => setGlobalFilter(e.target.value)}
-                    className="w-64"
+                    className="max-w-sm"
                 />
-                <Button onClick={exportToExcel} size="sm">
+                <Button onClick={exportToExcel}>
                     <FileDown className="mr-2 h-4 w-4" />
-                    Export
+                    Export to Excel
                 </Button>
             </div>
             <ScrollArea className="h-[600px]">
@@ -197,29 +174,18 @@ export default function OverallTaxesTable({ companies }) {
                         ))}
                     </TableHeader>
                     <TableBody>
-                        {table.getRowModel().rows.map((row, rowIndex) => {
-                            const isGroupRow = row.depth === 0;
-                            return (
-                                <React.Fragment key={row.id}>
-                                    {isGroupRow && rowIndex > 0 && (
-                                        <TableRow>
-                                            <TableCell colSpan={columns.length} className="bg-yellow-100 h-2"></TableCell>
-                                        </TableRow>
-                                    )}
-                                    <TableRow className={isGroupRow ? 'bg-gray-100' : row.index % 2 === 0 ? 'bg-blue-50' : 'bg-white'}>
-                                        {row.getVisibleCells().map(cell => (
-                                            <TableCell key={cell.id}>
-                                                {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                                            </TableCell>
-                                        ))}
-                                    </TableRow>
-                                </React.Fragment>
-                            );
-                        })}
+                        {table.getRowModel().rows.map(row => (
+                            <TableRow key={row.id} className={row.index % 2 === 0 ? 'bg-blue-50' : 'bg-white'}>
+                                {row.getVisibleCells().map(cell => (
+                                    <TableCell key={cell.id}>
+                                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                                    </TableCell>
+                                ))}
+                            </TableRow>
+                        ))}
                     </TableBody>
                 </Table>
             </ScrollArea>
         </div>
     );
 }
-

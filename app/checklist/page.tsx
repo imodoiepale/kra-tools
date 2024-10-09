@@ -5,7 +5,7 @@
 import React, { useState, useEffect } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import CompanyListTable from './CompanyListTable';
+import CompanyListTable from './taxes/components/CompanyListTable';
 import { supabase } from '@/lib/supabase';
 import ClientFileManagement from './file-management/page';
 import TaxesPage from './taxes/page';
@@ -74,7 +74,6 @@ export default function MainPage() {
 
     return (
         <div className="p-4">
-            <h1 className="text-xl font-bold mb-2">Company Management System</h1>
             <Tabs defaultValue="company-list">
                 <TabsList>
                     <TabsTrigger value="company-list">Company List</TabsTrigger>
@@ -88,54 +87,21 @@ export default function MainPage() {
                     />
                 </TabsContent>
                 <TabsContent value="checklist">
-                    <ChecklistTabs />
+                    <Tabs defaultValue="taxes">
+                        <TabsList>
+                            <TabsTrigger value="taxes">Taxes Checklist</TabsTrigger>
+                            <TabsTrigger value="client-files">Client Files Management</TabsTrigger>
+                        </TabsList>
+                        <TabsContent value="taxes">
+                            <TaxesPage />
+                        </TabsContent>
+                        <TabsContent value="client-files">
+                            <ClientFileManagement />
+                        </TabsContent>
+                    </Tabs>
                 </TabsContent>
             </Tabs>
         </div>
     );
 }
 
-// Checklist Tabs Component
-function ChecklistTabs() {
-    return (
-        <Tabs defaultValue="taxes">
-            <TabsList>
-                <TabsTrigger value="client-files">Client Files Management</TabsTrigger>
-                <TabsTrigger value="taxes">Taxes Checklist</TabsTrigger>
-                <TabsTrigger value="overall">Overall Checklist</TabsTrigger>
-            </TabsList>
-            <TabsContent value="client-files">
-                <ClientFileManagement />
-            </TabsContent>
-            <TabsContent value="taxes">
-                <TaxesPage />
-            </TabsContent>
-            <TabsContent value="overall">
-                <OverallChecklist />
-            </TabsContent>
-        </Tabs>
-    );
-}
-
-// Overall Checklist Component
-function OverallChecklist() {
-    return (
-        <div>
-            <h3 className="text-xl font-semibold mb-4">Overall Checklist</h3>
-            <Tabs defaultValue="summary">
-                <TabsList>
-                    <TabsTrigger value="summary">Summary</TabsTrigger>
-                    <TabsTrigger value="detailed">Detailed</TabsTrigger>
-                </TabsList>
-                <TabsContent value="summary">
-                    <h4 className="text-lg font-medium mb-2">Summary Checklist</h4>
-                    {/* Add summary checklist content here */}
-                </TabsContent>
-                <TabsContent value="detailed">
-                    <h4 className="text-lg font-medium mb-2">Detailed Checklist</h4>
-                    {/* Add detailed checklist content here */}
-                </TabsContent>
-            </Tabs>
-        </div>
-    );
-}

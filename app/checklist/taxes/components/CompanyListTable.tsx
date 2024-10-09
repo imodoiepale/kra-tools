@@ -321,7 +321,7 @@ export default function CompanyListTable() {
                     Export to Excel
                 </Button>
             </div>
-            <ScrollArea className="h-[800px]">
+            <ScrollArea className="h-[750px]">
                 <Table>
                     <TableHeader>
                         {table.getHeaderGroups().map(headerGroup => (
