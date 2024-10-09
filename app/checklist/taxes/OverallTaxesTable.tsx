@@ -71,6 +71,10 @@ export default function OverallTaxesTable({ companies }) {
             cell: info => <TaxStatus status={info.getValue()} />,
             header: 'Turnover Tax',
         }),
+        columnHelper.accessor('resident_individual_status', {
+            cell: info => <TaxStatus status={info.getValue()} />,
+            header: 'Individual',
+        }),
         columnHelper.accessor('nssf_status', {
             cell: info => <TaxStatus status={info.getValue()} />,
             header: 'NSSF',
