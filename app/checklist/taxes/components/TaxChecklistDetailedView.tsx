@@ -1,6 +1,6 @@
 // @ts-nocheck
 "use client"
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { format, subMonths } from 'date-fns';
@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Eye } from "lucide-react";
 import { Skeleton } from '@/components/ui/skeleton';
 import Image from 'next/image';
+import * as ExcelJS from 'exceljs';
+import { saveAs } from 'file-saver';
 
 const formatDate = (dateString) => {
     if (!dateString) return '-';
@@ -100,6 +102,71 @@ export default function TaxChecklistDetailedView({ companies, checklist, taxType
     const taxCategoryLabel = getTaxCategoryLabel(taxType);
     const taxAmountField = getTaxAmountField(taxType);
 
+    const exportToExcel = useCallback(async () => {
+        if (!selectedCompany) return;
+
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet(selectedCompany);
+
+        // Add headers
+        const headers = ['Month', 'ITAX Submission', 'Submitted By', 'Client Payment Date', `${taxCategoryLabel} Amount`, 'Advice'];
+        worksheet.addRow(headers);
+
+        // Style headers
+        const headerRow = worksheet.getRow(1);
+        headerRow.font = { bold: true };
+        headerRow.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: 'FFFFFF00' } // Yellow background
+        };
+
+        // Add data
+        months.forEach(({ monthKey, year, date }) => {
+            const monthData = checklist[selectedCompany]?.taxes?.[taxType]?.[year]?.[monthKey] || {};
+            worksheet.addRow([
+                format(date, 'MMMM yyyy'),
+                formatDate(monthData.itaxSubmitDate),
+                monthData.submittedBy || '-',
+                formatDate(monthData.clientPaymentDate),
+                monthData[taxAmountField] 
+                    ? `Ksh ${parseFloat(monthData[taxAmountField]).toFixed(2)}` 
+                    : '-',
+                monthData.receiptUrl ? 'Receipt uploaded' : (monthData.advice || '-')
+            ]);
+        });
+
+        // Auto-fit columns
+        worksheet.columns.forEach(column => {
+            let maxLength = 0;
+            column.eachCell({ includeEmpty: true }, cell => {
+                const columnLength = cell.value ? cell.value.toString().length : 10;
+                if (columnLength > maxLength) {
+                    maxLength = columnLength;
+                }
+            });
+            column.width = maxLength < 10 ? 10 : maxLength;
+        });
+
+        // Add borders to all cells
+        worksheet.eachRow({ includeEmpty: true }, row => {
+            row.eachCell({ includeEmpty: true }, cell => {
+                cell.border = {
+                    top: { style: 'thin' },
+                    left: { style: 'thin' },
+                    bottom: { style: 'thin' },
+                    right: { style: 'thin' }
+                };
+            });
+        });
+
+        // Generate Excel file
+        const buffer = await workbook.xlsx.writeBuffer();
+        const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        saveAs(blob, `${selectedCompany.toUpperCase()}-${taxType.toUpperCase()}-${format(selectedDate, 'MMMM.yyyy').toUpperCase()}.xlsx`);
+
+    }, [selectedCompany, checklist, taxType, taxCategoryLabel, taxAmountField, months, selectedDate]);
+
     return (
         <div className="flex space-x-4">
             <div className="w-1/4">
@@ -123,7 +190,14 @@ export default function TaxChecklistDetailedView({ companies, checklist, taxType
                 </ScrollArea>
             </div>
             <div className="w-3/4">
-                <h2 className="text-lg font-bold mb-2">Detailed View</h2>
+                <div className="flex justify-between items-center mb-1">
+                    <h2 className="text-2xl font-bold">Detailed View</h2>
+                    {selectedCompany && (
+                        <Button onClick={exportToExcel} className="mb-4">
+                            Export to Excel
+                        </Button>
+                    )}
+                </div>
                 <ScrollArea className="h-[600px] border rounded-lg shadow-lg">
                     <Table>
                         <TableHeader>
