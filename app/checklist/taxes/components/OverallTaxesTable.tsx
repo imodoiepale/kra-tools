@@ -160,7 +160,7 @@ export default function OverallTaxesTable({ companies: initialCompanies }) {
     const [dialogOpen, setDialogOpen] = useState(false);
     const [editCompany, setEditCompany] = useState(null);
 
-    const fetchCompanies = async () => {
+    const fetchCompanies = useCallback(async () => {
         const { data, error } = await supabase
             .from('PinCheckerDetails')
             .select('*');
@@ -170,7 +170,11 @@ export default function OverallTaxesTable({ companies: initialCompanies }) {
         } else {
             setCompanies(data);
         }
-    };
+    }, []);
+
+    useEffect(() => {
+        fetchCompanies();
+    }, [fetchCompanies]);
 
     const updateCompanyField = async (companyId, field, newValue) => {
         const toastId = toast.loading('Saving changes...');
@@ -183,16 +187,16 @@ export default function OverallTaxesTable({ companies: initialCompanies }) {
             if (error) throw error;
 
             toast.success('Changes saved successfully!', { id: toastId });
-            fetchCompanies(); // Refresh the data
+            await fetchCompanies(); // Refresh the data
         } catch (error) {
             console.error('Error saving changes:', error);
             toast.error('Failed to save changes. Please try again.', { id: toastId });
         }
     };
 
-    const toggleLock = (companyId, currentLockStatus) => {
+    const toggleLock = async (companyId, currentLockStatus) => {
         const newLockStatus = !currentLockStatus;
-        updateCompanyField(companyId, 'is_locked', newLockStatus);
+        await updateCompanyField(companyId, 'is_locked', newLockStatus);
     };
 
     const EditDialog = ({ company }) => {
@@ -213,7 +217,7 @@ export default function OverallTaxesTable({ companies: initialCompanies }) {
                     }
                 }
                 toast.success('Changes saved successfully!', { id: toastId });
-                fetchCompanies(); // Refresh the data
+                await fetchCompanies(); // Refresh the data
                 setDialogOpen(false);
             } catch (error) {
                 console.error('Error saving changes:', error);

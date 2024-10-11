@@ -12,7 +12,7 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { CheckCircle, XCircle } from "lucide-react";
+import { CheckCircle, XCircle, Upload, Eye } from "lucide-react";
 import { format } from 'date-fns';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogClose } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -60,31 +60,12 @@ const UpdateDialog = ({ title, initialValue, onUpdate, type, companyName, taxTyp
         }
     };
 
-    const ViewReceiptDialog = ({ url }) => (
-        <Dialog>
-            <DialogTrigger asChild>
-                <Button variant="outline" size="sm">
-                    <Eye className="mr-2 h-4 w-4" />
-                    View Receipt
-                </Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-[800px] sm:max-h-[800px]">
-                <DialogHeader>
-                    <DialogTitle>Receipt View</DialogTitle>
-                </DialogHeader>
-                <div className="mt-4 h-full">
-                    <iframe src={url} className="w-full h-[600px]" />
-                </div>
-            </DialogContent>
-        </Dialog>
-    );
-
     return (
         <Dialog>
             <DialogTrigger asChild>
                 <Button variant="ghost" size="sm">
                     {type === 'advice' ? (
-                        initialValue?.advice ? <CheckCircle className="h-5 w-5 text-green-500" /> : <XCircle className="h-5 w-5 text-red-500" />
+                        initialValue?.advice || initialValue?.receiptUrl ? <CheckCircle className="h-5 w-5 text-green-500" /> : <XCircle className="h-5 w-5 text-red-500" />
                     ) : (
                         initialValue || <XCircle className="h-5 w-5 text-red-500" />
                     )}
@@ -152,6 +133,25 @@ const UpdateDialog = ({ title, initialValue, onUpdate, type, companyName, taxTyp
         </Dialog>
     );
 };
+
+const ViewReceiptDialog = ({ url }) => (
+    <Dialog>
+        <DialogTrigger asChild>
+            <Button variant="outline" size="sm">
+                <Eye className="mr-2 h-4 w-4" />
+                View Receipt
+            </Button>
+        </DialogTrigger>
+        <DialogContent className="sm:max-w-[800px] sm:max-h-[800px]">
+            <DialogHeader>
+                <DialogTitle>Receipt View</DialogTitle>
+            </DialogHeader>
+            <div className="mt-4 h-full">
+                <iframe src={url} className="w-full h-[600px]" />
+            </div>
+        </DialogContent>
+    </Dialog>
+);
 
 const formatDate = (dateString) => {
     if (!dateString || dateString === "No obligation") return dateString;
@@ -322,7 +322,6 @@ export default function TaxChecklistMonthlyView({ companies, checklist: initialC
         }
     };
 
-
     const columns = useMemo(() => [
         columnHelper.accessor('index', {
             cell: info => info.getValue(),
@@ -458,33 +457,38 @@ export default function TaxChecklistMonthlyView({ companies, checklist: initialC
             id: 'advice',
             cell: info => {
                 const value = info.getValue();
+                const receiptUrl = localChecklist[info.row.original.company_name]?.taxes?.[taxType]?.[year]?.[month]?.receiptUrl;
                 return (
                     <div className="max-w-xs truncate hover:whitespace-normal">
-                        <UpdateDialog
-                            title="Advice"
-                            initialValue={value || ""}
-                            onUpdate={(newValue) => handleUpdate(info.row.original.company_name, year, month, newValue)}
-                            type="advice"
-                            companyName={info.row.original.company_name}
-                            taxType={taxType}
-                            year={year}
-                            month={month}
-                        >
-                            {value?.advice ? (
-                                <Button variant="ghost" size="sm">
-                                    {value.receiptPath ? 'View Receipt' : value.advice}
-                                </Button>
-                            ) : (
-                                <XCircle className="h-5 w-5 text-red-500" />
-                            )}
-                        </UpdateDialog>
+                        {receiptUrl ? (
+                            <ViewReceiptDialog url={receiptUrl} />
+                        ) : (
+                            <UpdateDialog
+                                title="Advice"
+                                initialValue={value || ""}
+                                onUpdate={(newValue) => handleUpdate(info.row.original.company_name, year, month, newValue)}
+                                type="advice"
+                                companyName={info.row.original.company_name}
+                                taxType={taxType}
+                                year={year}
+                                month={month}
+                            >
+                                {value ? (
+                                    <Button variant="ghost" size="sm">
+                                        {value}
+                                    </Button>
+                                ) : (
+                                    <XCircle className="h-5 w-5 text-red-500" />
+                                )}
+                            </UpdateDialog>
+                        )}
                     </div>
                 );
             },
             header: 'Advice',
             size: 200,
         }),
-    ], [year, month, localChecklist, taxType, handleUpdate]);
+    ], [year, month, localChecklist, taxType, handleUpdate, taxCategoryLabel]);
 
     const data = useMemo(() =>
         companies.map((company, index) => ({
