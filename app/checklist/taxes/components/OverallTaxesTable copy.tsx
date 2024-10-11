@@ -1,7 +1,7 @@
 // @ts-nocheck
 "use client"
 
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import {
     useReactTable,
     getCoreRowModel,
@@ -258,10 +258,10 @@ export default function OverallTaxesTable({ companies: initialCompanies }) {
                         ) : (
                             <div className="mt-1">
                                 <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${localCompany[`${tax}_status`] === 'Registered' ? 'bg-green-100 text-green-700' :
-                                        localCompany[`${tax}_status`] === 'Cancelled' ? 'bg-red-100 text-red-700' :
-                                            localCompany[`${tax}_status`] === 'Dormant' ? 'bg-blue-100 text-blue-700' :
-                                                localCompany[`${tax}_status`] === 'No Obligation' ? 'bg-purple-100 text-red-500' :
-                                                    'bg-yellow-100 text-yellow-700'
+                                    localCompany[`${tax}_status`] === 'Cancelled' ? 'bg-red-100 text-red-700' :
+                                        localCompany[`${tax}_status`] === 'Dormant' ? 'bg-blue-100 text-blue-700' :
+                                            localCompany[`${tax}_status`] === 'No Obligation' ? 'bg-purple-100 text-red-500' :
+                                                'bg-yellow-100 text-yellow-700'
                                     }`}>
                                     {localCompany[`${tax}_status`] || 'No Obligation'}
                                 </span>
