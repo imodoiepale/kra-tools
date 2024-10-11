@@ -35,7 +35,7 @@ export default function TaxesPage() {
     const fetchAllData = async () => {
         setIsLoading(true);
         try {
-            const [passwordCheckerResult, pinCheckerDetailsResult, checklistResult] = await Promise.all([
+            const [passwordCheckerResult, pinCheckerDetailsResult, checklistResult, companyMainListResult] = await Promise.all([
                 supabase
                     .from('PasswordChecker')
                     .select('id, company_name, kra_pin')
@@ -46,14 +46,21 @@ export default function TaxesPage() {
                     .order('id', { ascending: true }),
                 supabase
                     .from('checklist')
-                    .select('*')
+                    .select('*'),
+                supabase
+                    .from('companyMainList')
+                    .select('company_name, status')
             ]);
 
             if (passwordCheckerResult.error) throw passwordCheckerResult.error;
             if (pinCheckerDetailsResult.error) throw pinCheckerDetailsResult.error;
             if (checklistResult.error) throw checklistResult.error;
+            if (companyMainListResult.error) throw companyMainListResult.error;
 
-            const combinedCompanies = passwordCheckerResult.data.map(pcData => {
+            const activeCompanies = companyMainListResult.data.filter(company => company.status === 'active');
+            const activeCompanyNames = activeCompanies.map(company => company.company_name);
+
+            const combinedCompanies = passwordCheckerResult.data.filter(pcData => activeCompanyNames.includes(pcData.company_name)).map(pcData => {
                 const detailsData = pinCheckerDetailsResult.data.find(pcdData => pcdData.id === pcData.id);
                 return { ...pcData, ...detailsData };
             });
