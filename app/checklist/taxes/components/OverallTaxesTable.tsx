@@ -19,6 +19,8 @@ import { FileDown, Edit } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import ExcelJS from 'exceljs';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog"; // Import Dialog components
+import { Select, SelectTrigger, SelectContent, SelectItem } from "@/components/ui/select";
 
 const columnHelper = createColumnHelper();
 
@@ -116,9 +118,40 @@ const TotalsRow = ({ totals }) => (
     </TableRow>
 );
 
+const EditDialog = () => (
+    <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogTrigger asChild>
+            <Button variant="ghost" size="sm">Edit</Button>
+        </DialogTrigger>
+        <DialogContent>
+            <h2>{editCompany?.company_name}</h2>
+            <div>
+                {Object.entries(editCompany).map(([tax, status], index) => (
+                    <div key={index} className="flex items-center">
+                        <span className="mr-2">{String.fromCharCode(8482 + index)}. {tax.replace('_', ' ')}</span>
+                        <input type="checkbox" disabled checked={status === 'registered'} />
+                        <Select defaultValue={status} className="ml-2">
+                            <SelectTrigger>
+                                <span>{status}</span>
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="active">Active</SelectItem>
+                                <SelectItem value="inactive">Inactive</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
+                ))}
+            </div>
+        </DialogContent>
+    </Dialog>
+);
+
+
 export default function OverallTaxesTable({ companies }) {
     const [globalFilter, setGlobalFilter] = useState('');
     const [statusFilter, setStatusFilter] = useState('all');
+    const [dialogOpen, setDialogOpen] = useState(false);
+    const [editCompany, setEditCompany] = useState(null);
 
     const columns = useMemo(() => [
         columnHelper.accessor('index', {
@@ -163,9 +196,7 @@ export default function OverallTaxesTable({ companies }) {
         }),
         columnHelper.accessor('actions', {
             cell: info => (
-                <Button variant="ghost" size="sm" onClick={() => handleEdit(info.row.original)}>
-                    <Edit className="h-4 w-4" />
-                </Button>
+                <EditDialog />
             ),
             header: 'Actions',
         }),
@@ -191,8 +222,9 @@ export default function OverallTaxesTable({ companies }) {
     });
 
     const handleEdit = (company) => {
-        // Implement edit functionality
-        console.log('Edit company:', company);
+        // Open dialog with company data
+        setEditCompany(company); // Set the company to be edited
+        setDialogOpen(true); // Open the dialog
     };
 
     const exportToExcel = async () => {
@@ -275,7 +307,7 @@ export default function OverallTaxesTable({ companies }) {
                             <TotalsRow totals={totals} />
                         </TableHeader>
                         <TableBody>
-                            
+
                             {table.getRowModel().rows.map((row, rowIndex) => {
                                 const isGroupRow = row.depth === 0;
                                 return (
