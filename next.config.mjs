@@ -4,6 +4,9 @@ const nextConfig = {
     // experimental: {
     //   serverActions: false,
     // },
+    images: {
+      domains: ['zyszsqgdlrpnunkegipk.supabase.co'],
+    },
   }
 
 

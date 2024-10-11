@@ -20,6 +20,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from 'react-hot-toast';
 import { supabase } from '@/lib/supabase';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import Image from 'next/image';
 
 const columnHelper = createColumnHelper();
 
@@ -147,7 +148,14 @@ const ViewReceiptDialog = ({ url }) => (
                 <DialogTitle>Receipt View</DialogTitle>
             </DialogHeader>
             <div className="mt-4 h-full">
-                <iframe src={url} className="w-full h-[600px]" />
+                <div className="w-full h-[600px] relative">
+                    <Image
+                        src={url}
+                        alt="Receipt"
+                        layout="fill"
+                        objectFit="contain"
+                    />
+                </div>
             </div>
         </DialogContent>
     </Dialog>
@@ -276,9 +284,9 @@ const updateTaxStatus = async (companyName, year, month, status, taxType, compan
 };
 
 const formatAmount = (amount) => {
-    return `Ksh ${Number(amount).toLocaleString('en-US', { 
-        minimumFractionDigits: 2, 
-        maximumFractionDigits: 2 
+    return `Ksh ${Number(amount).toLocaleString('en-US', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
     })}`;
 };
 

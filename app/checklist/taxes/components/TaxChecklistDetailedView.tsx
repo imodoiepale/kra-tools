@@ -54,12 +54,11 @@ const ViewReceiptDialog = ({ url }) => (
                 <DialogTitle>Receipt View</DialogTitle>
             </DialogHeader>
             <div className="mt-4 h-full">
-                <iframe src={url} className="w-full h-[600px]" />
+                <iframe src={url} className="w-full h-[600px]" style={{ objectFit: 'contain' }} />
             </div>
         </DialogContent>
     </Dialog>
 );
-
 export default function TaxChecklistDetailedView({ companies, checklist, taxType, selectedDate }) {
     const [selectedCompany, setSelectedCompany] = useState(null);
 
