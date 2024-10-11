@@ -7,6 +7,8 @@ import { format, subMonths } from 'date-fns';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Eye } from "lucide-react";
+import { Skeleton } from '@/components/ui/skeleton';
+import Image from 'next/image';
 
 const formatDate = (dateString) => {
     if (!dateString) return '-';
@@ -41,24 +43,43 @@ const getTaxAmountField = (taxType) => {
     return fields[taxType] || `${taxType}Amount`;
 };
 
-const ViewReceiptDialog = ({ url }) => (
-    <Dialog>
-        <DialogTrigger asChild>
-            <Button variant="outline" size="sm">
-                <Eye className="mr-2 h-4 w-4" />
-                View Receipt
-            </Button>
-        </DialogTrigger>
-        <DialogContent className="sm:max-w-[800px] sm:max-h-[800px]">
-            <DialogHeader>
-                <DialogTitle>Receipt View</DialogTitle>
-            </DialogHeader>
-            <div className="mt-4 h-full">
-                <iframe src={url} className="w-full h-[600px]" style={{ objectFit: 'contain' }} />
-            </div>
-        </DialogContent>
-    </Dialog>
-);
+const ViewReceiptDialog = ({ url }) => {
+    const [isLoading, setIsLoading] = useState(true);
+
+    return (
+        <Dialog>
+            <DialogTrigger asChild>
+                <Button variant="outline" size="sm">
+                    <Eye className="mr-2 h-4 w-4" />
+                    View Receipt
+                </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[800px] sm:max-h-[800px]">
+                <DialogHeader>
+                    <DialogTitle>Receipt View</DialogTitle>
+                </DialogHeader>
+                <div className="mt-4 h-full">
+                    <div className="w-full h-[600px] relative">
+                        {isLoading && (
+                            <div className="absolute inset-0 flex items-center justify-center">
+                                <Skeleton className="w-full h-full" />
+                            </div>
+                        )}
+                        <Image
+                            src={url}
+                            alt="Receipt"
+                            layout="fill"
+                            objectFit="contain"
+                            sizes="(max-width: 800px) 100vw, 800px"
+                            onLoad={() => setIsLoading(false)}
+                        />
+                    </div>
+                </div>
+            </DialogContent>
+        </Dialog>
+    );
+};
+
 export default function TaxChecklistDetailedView({ companies, checklist, taxType, selectedDate }) {
     const [selectedCompany, setSelectedCompany] = useState(null);
 

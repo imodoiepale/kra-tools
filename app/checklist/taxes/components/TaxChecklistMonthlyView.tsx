@@ -21,6 +21,8 @@ import { toast } from 'react-hot-toast';
 import { supabase } from '@/lib/supabase';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import Image from 'next/image';
+import { Skeleton } from "@/components/ui/skeleton"
+
 
 const columnHelper = createColumnHelper();
 
@@ -135,31 +137,42 @@ const UpdateDialog = ({ title, initialValue, onUpdate, type, companyName, taxTyp
     );
 };
 
-const ViewReceiptDialog = ({ url }) => (
-    <Dialog>
-        <DialogTrigger asChild>
-            <Button variant="outline" size="sm">
-                <Eye className="mr-2 h-4 w-4" />
-                View Receipt
-            </Button>
-        </DialogTrigger>
-        <DialogContent className="sm:max-w-[800px] sm:max-h-[800px]">
-            <DialogHeader>
-                <DialogTitle>Receipt View</DialogTitle>
-            </DialogHeader>
-            <div className="mt-4 h-full">
-                <div className="w-full h-[600px] relative">
-                    <Image
-                        src={url}
-                        alt="Receipt"
-                        layout="fill"
-                        objectFit="contain"
-                    />
+const ViewReceiptDialog = ({ url }) => {
+    const [isLoading, setIsLoading] = useState(true);
+
+    return (
+        <Dialog>
+            <DialogTrigger asChild>
+                <Button variant="outline" size="sm">
+                    <Eye className="mr-2 h-4 w-4" />
+                    View Receipt
+                </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[800px] sm:max-h-[800px]">
+                <DialogHeader>
+                    <DialogTitle>Receipt View</DialogTitle>
+                </DialogHeader>
+                <div className="mt-4 h-full">
+                    <div className="w-full h-[600px] relative">
+                        {isLoading && (
+                            <div className="absolute inset-0 flex items-center justify-center">
+                                <Skeleton className="w-full h-full" />
+                            </div>
+                        )}
+                        <Image
+                            src={url}
+                            alt="Receipt"
+                            layout="fill"
+                            objectFit="contain"
+                            sizes="(max-width: 800px) 100vw, 800px"
+                            onLoad={() => setIsLoading(false)}
+                        />
+                    </div>
                 </div>
-            </div>
-        </DialogContent>
-    </Dialog>
-);
+            </DialogContent>
+        </Dialog>
+    );
+};
 
 const formatDate = (dateString) => {
     if (!dateString || dateString === "No obligation") return dateString;
