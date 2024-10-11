@@ -19,22 +19,72 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from 'react-hot-toast';
 import { supabase } from '@/lib/supabase';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const columnHelper = createColumnHelper();
 
-const UpdateDialog = ({ title, initialValue, onUpdate, type }) => {
+const UpdateDialog = ({ title, initialValue, onUpdate, type, companyName, taxType, year, month }) => {
     const [value, setValue] = React.useState(initialValue);
+    const [uploadedFile, setUploadedFile] = React.useState(null);
 
-    const handleUpdate = () => {
-        onUpdate(value);
+    const handleUpdate = async () => {
+        if (type === 'advice') {
+            if (uploadedFile) {
+                const filePath = `${companyName}/Taxes/${taxType}/${year}/${month}/${uploadedFile.name}`;
+                const { data, error } = await supabase.storage
+                    .from('kra-documents')
+                    .upload(filePath, uploadedFile);
+
+                if (error) {
+                    toast.error('Failed to upload file');
+                    return;
+                }
+
+                const { data: { publicUrl } } = supabase.storage
+                    .from('kra-documents')
+                    .getPublicUrl(filePath);
+
+                onUpdate({ advice: 'Receipt uploaded', receiptPath: filePath, receiptUrl: publicUrl });
+            } else {
+                onUpdate({ advice: value });
+            }
+        } else {
+            onUpdate(value);
+        }
     };
+
+    const handleFileChange = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            setUploadedFile(file);
+        }
+    };
+
+    const ViewReceiptDialog = ({ url }) => (
+        <Dialog>
+            <DialogTrigger asChild>
+                <Button variant="outline" size="sm">
+                    <Eye className="mr-2 h-4 w-4" />
+                    View Receipt
+                </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[800px] sm:max-h-[800px]">
+                <DialogHeader>
+                    <DialogTitle>Receipt View</DialogTitle>
+                </DialogHeader>
+                <div className="mt-4 h-full">
+                    <iframe src={url} className="w-full h-[600px]" />
+                </div>
+            </DialogContent>
+        </Dialog>
+    );
 
     return (
         <Dialog>
             <DialogTrigger asChild>
                 <Button variant="ghost" size="sm">
                     {type === 'advice' ? (
-                        initialValue ? <CheckCircle className="h-5 w-5 text-green-500" /> : <XCircle className="h-5 w-5 text-red-500" />
+                        initialValue?.advice ? <CheckCircle className="h-5 w-5 text-green-500" /> : <XCircle className="h-5 w-5 text-red-500" />
                     ) : (
                         initialValue || <XCircle className="h-5 w-5 text-red-500" />
                     )}
@@ -60,18 +110,39 @@ const UpdateDialog = ({ title, initialValue, onUpdate, type }) => {
                             placeholder="Enter amount"
                         />
                     ) : type === 'advice' ? (
-                        <Textarea
-                            value={value}
-                            onChange={(e) => setValue(e.target.value)}
-                            placeholder="Enter advice"
-                            rows={4}
-                        />
+                        <Tabs defaultValue="message">
+                            <TabsList>
+                                <TabsTrigger value="message">Paste Message</TabsTrigger>
+                                <TabsTrigger value="upload">Upload Receipt</TabsTrigger>
+                            </TabsList>
+                            <TabsContent value="message">
+                                <Textarea
+                                    value={value?.advice || ''}
+                                    onChange={(e) => setValue({ ...value, advice: e.target.value })}
+                                    placeholder="Enter advice"
+                                    rows={4}
+                                />
+                            </TabsContent>
+                            <TabsContent value="upload">
+                                <Input
+                                    type="file"
+                                    onChange={handleFileChange}
+                                    accept="image/*,application/pdf"
+                                />
+                                {uploadedFile && (
+                                    <p className="mt-2 text-sm text-gray-500">File selected: {uploadedFile.name}</p>
+                                )}
+                            </TabsContent>
+                        </Tabs>
                     ) : (
                         <Input
                             value={value}
                             onChange={(e) => setValue(e.target.value)}
                             placeholder="Enter value"
                         />
+                    )}
+                    {initialValue?.receiptUrl && (
+                        <ViewReceiptDialog url={initialValue.receiptUrl} />
                     )}
                     <DialogClose asChild>
                         <Button onClick={handleUpdate}>Update</Button>
@@ -389,23 +460,31 @@ export default function TaxChecklistMonthlyView({ companies, checklist: initialC
                 const value = info.getValue();
                 return (
                     <div className="max-w-xs truncate hover:whitespace-normal">
-                        {value ? value : (
-                            <UpdateDialog
-                                title="Advice"
-                                initialValue=""
-                                onUpdate={(newValue) => handleUpdate(info.row.original.company_name, year, month, { advice: newValue })}
-                                type="advice"
-                            >
+                        <UpdateDialog
+                            title="Advice"
+                            initialValue={value || ""}
+                            onUpdate={(newValue) => handleUpdate(info.row.original.company_name, year, month, newValue)}
+                            type="advice"
+                            companyName={info.row.original.company_name}
+                            taxType={taxType}
+                            year={year}
+                            month={month}
+                        >
+                            {value?.advice ? (
+                                <Button variant="ghost" size="sm">
+                                    {value.receiptPath ? 'View Receipt' : value.advice}
+                                </Button>
+                            ) : (
                                 <XCircle className="h-5 w-5 text-red-500" />
-                            </UpdateDialog>
-                        )}
+                            )}
+                        </UpdateDialog>
                     </div>
                 );
             },
             header: 'Advice',
             size: 200,
         }),
-    ], [year, month, localChecklist, taxType, handleUpdate, taxCategoryLabel]);
+    ], [year, month, localChecklist, taxType, handleUpdate]);
 
     const data = useMemo(() =>
         companies.map((company, index) => ({

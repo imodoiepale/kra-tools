@@ -39,7 +39,7 @@ const TaxStatus = ({ status }) => {
         case 'dormant':
             return <div className="flex justify-center"><Badge className="bg-blue-500 text-[10px]">Dormant</Badge></div>;
         default:
-            return <div className="flex justify-center"><span className="text-[10px]">{status}</span></div>;
+            return <div className="flex justify-center"><Badge variant="outline" className="bg-red-600 text-white text-[10px]">No Obligation</Badge></div>;
     }
 };
 
@@ -247,7 +247,7 @@ export default function OverallTaxesTable({ companies: initialCompanies }) {
                                     <SelectItem value="Registered">Registered</SelectItem>
                                     <SelectItem value="Cancelled">Cancelled</SelectItem>
                                     <SelectItem value="Dormant">Dormant</SelectItem>
-                                    <SelectItem value="">No Obligation</SelectItem>
+                                    <SelectItem value="No Obligation">No Obligation</SelectItem>
                                     <SelectItem value="Missing">Missing</SelectItem>
                                 </SelectContent>
                             </Select>

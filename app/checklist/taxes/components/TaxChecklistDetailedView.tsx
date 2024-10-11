@@ -1,10 +1,12 @@
 // @ts-nocheck
 "use client"
-
 import React, { useState, useMemo } from 'react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { format, subMonths } from 'date-fns';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Eye } from "lucide-react";
 
 const formatDate = (dateString) => {
     if (!dateString) return '-';
@@ -38,6 +40,25 @@ const getTaxAmountField = (taxType) => {
     };
     return fields[taxType] || `${taxType}Amount`;
 };
+
+const ViewReceiptDialog = ({ url }) => (
+    <Dialog>
+        <DialogTrigger asChild>
+            <Button variant="outline" size="sm">
+                <Eye className="mr-2 h-4 w-4" />
+                View Receipt
+            </Button>
+        </DialogTrigger>
+        <DialogContent className="sm:max-w-[800px] sm:max-h-[800px]">
+            <DialogHeader>
+                <DialogTitle>Receipt View</DialogTitle>
+            </DialogHeader>
+            <div className="mt-4 h-full">
+                <iframe src={url} className="w-full h-[600px]" />
+            </div>
+        </DialogContent>
+    </Dialog>
+);
 
 export default function TaxChecklistDetailedView({ companies, checklist, taxType, selectedDate }) {
     const [selectedCompany, setSelectedCompany] = useState(null);
@@ -111,7 +132,13 @@ export default function TaxChecklistDetailedView({ companies, checklist, taxType
                                                 ? `Ksh ${parseFloat(monthData[taxAmountField]).toFixed(2)}` 
                                                 : '-'}
                                         </TableCell>
-                                        <TableCell className="">{monthData.advice || '-'}</TableCell>
+                                        <TableCell className="text-center">
+                                            {monthData.receiptUrl ? (
+                                                <ViewReceiptDialog url={monthData.receiptUrl} />
+                                            ) : (
+                                                monthData.advice || '-'
+                                            )}
+                                        </TableCell>
                                     </TableRow>
                                 );
                             })}
