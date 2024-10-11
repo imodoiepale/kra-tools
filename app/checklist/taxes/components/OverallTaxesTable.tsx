@@ -154,8 +154,8 @@ const TotalsRow = ({ totals }) => (
     </TableRow>
 );
 
-export default function OverallTaxesTable({ companies }) {
-    const [localCompanies, setLocalCompanies] = useState(companies);
+export default function OverallTaxesTable({ companies: initialCompanies }) {
+    const [companies, setCompanies] = useState(initialCompanies);
     const [globalFilter, setGlobalFilter] = useState('');
     const [dialogOpen, setDialogOpen] = useState(false);
     const [editCompany, setEditCompany] = useState(null);
@@ -221,16 +221,6 @@ export default function OverallTaxesTable({ companies }) {
             }
         };
 
-        const handleClose = () => {
-            if (hasChanges) {
-                if (window.confirm('You have unsaved changes. Are you sure you want to close?')) {
-                    setDialogOpen(false);
-                }
-            } else {
-                setDialogOpen(false);
-            }
-        };
-
         const taxTypes = [
             'vat', 'paye', 'rent_income_mri', 'turnover_tax', 'resident_individual',
             'nssf', 'nhif', 'housing_levy', 'nita'
@@ -257,7 +247,7 @@ export default function OverallTaxesTable({ companies }) {
                                     <SelectItem value="Registered">Registered</SelectItem>
                                     <SelectItem value="Cancelled">Cancelled</SelectItem>
                                     <SelectItem value="Dormant">Dormant</SelectItem>
-                                    <SelectItem value="No Obligation">No Obligation</SelectItem>
+                                    <SelectItem value=" ">No Obligation</SelectItem>
                                     <SelectItem value="Missing">Missing</SelectItem>
                                 </SelectContent>
                             </Select>
@@ -305,7 +295,7 @@ export default function OverallTaxesTable({ companies }) {
         );
 
         return (
-            <Dialog open={dialogOpen} onOpenChange={handleClose}>
+            <Dialog open={dialogOpen} >
                 <DialogContent className="max-w-5xl p-4 bg-white rounded-lg shadow-lg max-h-screen overflow-hidden flex flex-col">
                     <DialogHeader>
                         <DialogTitle className="text-xl font-bold text-gray-900">{localCompany?.company_name || 'Company Name'}</DialogTitle>
@@ -447,7 +437,7 @@ export default function OverallTaxesTable({ companies }) {
         onGlobalFilterChange: setGlobalFilter,
     });
 
-    const totals = useMemo(() => calculateTotals(localCompanies), [localCompanies]);
+    const totals = useMemo(() => calculateTotals(companies), [companies]);
 
     return (
         <div>
