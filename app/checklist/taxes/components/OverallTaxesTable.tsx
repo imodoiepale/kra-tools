@@ -247,7 +247,7 @@ export default function OverallTaxesTable({ companies: initialCompanies }) {
                                     <SelectItem value="Registered">Registered</SelectItem>
                                     <SelectItem value="Cancelled">Cancelled</SelectItem>
                                     <SelectItem value="Dormant">Dormant</SelectItem>
-                                    <SelectItem value=" ">No Obligation</SelectItem>
+                                    <SelectItem value="">No Obligation</SelectItem>
                                     <SelectItem value="Missing">Missing</SelectItem>
                                 </SelectContent>
                             </Select>
