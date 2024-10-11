@@ -1,7 +1,7 @@
 // @ts-nocheck
 "use client"
 
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import {
     useReactTable,
     getCoreRowModel,
@@ -156,25 +156,24 @@ const TotalsRow = ({ totals }) => (
 
 export default function OverallTaxesTable({ companies: initialCompanies }) {
     const [companies, setCompanies] = useState(initialCompanies);
+    const [isLoading, setIsLoading] = useState(false);
     const [globalFilter, setGlobalFilter] = useState('');
     const [dialogOpen, setDialogOpen] = useState(false);
     const [editCompany, setEditCompany] = useState(null);
 
     const fetchCompanies = useCallback(async () => {
-        const { data, error } = await supabase
-            .from('PinCheckerDetails')
-            .select('*');
-        if (error) {
-            console.error('Error fetching companies:', error);
-            toast.error('Failed to refresh data. Please try again.');
-        } else {
+        setIsLoading(true);
+        try {
+            const { data, error } = await supabase.from('PinCheckerDetails').select('*');
+            if (error) throw error;
             setCompanies(data);
+        } catch (error) {
+            console.error('Error fetching companies:', error);
+            toast.error('Failed to refresh data. Using existing data.');
+        } finally {
+            setIsLoading(false);
         }
     }, []);
-
-    useEffect(() => {
-        fetchCompanies();
-    }, [fetchCompanies]);
 
     const updateCompanyField = async (companyId, field, newValue) => {
         const toastId = toast.loading('Saving changes...');
@@ -182,12 +181,18 @@ export default function OverallTaxesTable({ companies: initialCompanies }) {
             const { data, error } = await supabase
                 .from('PinCheckerDetails')
                 .update({ [field]: newValue })
-                .eq('id', companyId);
+                .eq('id', companyId)
+                .select();
 
             if (error) throw error;
 
+            setCompanies(prevCompanies => 
+                prevCompanies.map(company => 
+                    company.id === companyId ? { ...company, [field]: newValue } : company
+                )
+            );
+
             toast.success('Changes saved successfully!', { id: toastId });
-            await fetchCompanies(); // Refresh the data
         } catch (error) {
             console.error('Error saving changes:', error);
             toast.error('Failed to save changes. Please try again.', { id: toastId });
@@ -217,8 +222,11 @@ export default function OverallTaxesTable({ companies: initialCompanies }) {
                     }
                 }
                 toast.success('Changes saved successfully!', { id: toastId });
-                await fetchCompanies(); // Refresh the data
                 setDialogOpen(false);
+                // Update the companies state with the new data
+                setCompanies(prevCompanies => 
+                    prevCompanies.map(c => c.id === company.id ? localCompany : c)
+                );
             } catch (error) {
                 console.error('Error saving changes:', error);
                 toast.error('Failed to save changes. Please try again.', { id: toastId });
@@ -422,15 +430,16 @@ export default function OverallTaxesTable({ companies: initialCompanies }) {
         setDialogOpen(true);
     };
 
-    const data = useMemo(() =>
+    const data = useMemo(() => 
         companies.map((company, index) => ({
             ...company,
             index: index + 1
         })),
-        [companies]);
+        [companies]
+    );
 
     const table = useReactTable({
-        data: data,
+        data,
         columns,
         getCoreRowModel: getCoreRowModel(),
         getSortedRowModel: getSortedRowModel(),
@@ -440,8 +449,6 @@ export default function OverallTaxesTable({ companies: initialCompanies }) {
         },
         onGlobalFilterChange: setGlobalFilter,
     });
-
-    const totals = useMemo(() => calculateTotals(companies), [companies]);
 
     return (
         <div>
@@ -488,7 +495,6 @@ export default function OverallTaxesTable({ companies: initialCompanies }) {
                                     ))}
                                 </TableRow>
                             ))}
-                            <TotalsRow totals={totals} />
                         </TableHeader>
                         <TableBody>
                             {table.getRowModel().rows.map((row, index) => (
