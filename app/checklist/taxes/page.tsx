@@ -1,7 +1,7 @@
 // @ts-nocheck
 "use client"
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { supabase } from '@/lib/supabase';
@@ -21,52 +21,77 @@ const taxTypes = [
 ];
 
 export default function TaxesPage() {
-    const [companies, setCompanies] = useState([]);
+    const [data, setData] = useState({
+        companies: [],
+        checklist: {},
+    });
     const [activeTab, setActiveTab] = useState("overall");
     const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
-        fetchCompanies();
+        fetchAllData();
     }, []);
 
-    const fetchCompanies = useCallback(async () => {
+    const fetchAllData = async () => {
         setIsLoading(true);
-        console.log("Fetching companies...");
-
         try {
-            // Fetch data from PasswordChecker
-            const { data: passwordCheckerData, error: passwordCheckerError } = await supabase
-                .from('PasswordChecker')
-                .select('id, company_name, kra_pin')
-                .order('id', { ascending: true });
+            const [passwordCheckerResult, pinCheckerDetailsResult, checklistResult] = await Promise.all([
+                supabase
+                    .from('PasswordChecker')
+                    .select('id, company_name, kra_pin')
+                    .order('id', { ascending: true }),
+                supabase
+                    .from('PinCheckerDetails')
+                    .select('*')
+                    .order('id', { ascending: true }),
+                supabase
+                    .from('checklist')
+                    .select('*')
+            ]);
 
-            if (passwordCheckerError) throw passwordCheckerError;
+            if (passwordCheckerResult.error) throw passwordCheckerResult.error;
+            if (pinCheckerDetailsResult.error) throw pinCheckerDetailsResult.error;
+            if (checklistResult.error) throw checklistResult.error;
 
-            // Fetch data from PinCheckerDetails
-            const { data: pinCheckerDetailsData, error: pinCheckerDetailsError } = await supabase
-                .from('PinCheckerDetails')
-                .select('*')
-                .order('id', { ascending: true });
+            const combinedCompanies = passwordCheckerResult.data.map(pcData => {
+                const detailsData = pinCheckerDetailsResult.data.find(pcdData => pcdData.id === pcData.id);
+                return { ...pcData, ...detailsData };
+            });
 
-            if (pinCheckerDetailsError) throw pinCheckerDetailsError;
-
-            // Combine the data
-            const combinedData = passwordCheckerData.map(pcData => {
-                const detailsData = pinCheckerDetailsData.find(pcdData => pcdData.id === pcData.id);
-                return {
-                    ...pcData,
-                    ...detailsData
+            const checklistMap = {};
+            checklistResult.data.forEach(item => {
+                checklistMap[item.company_name] = {
+                    ...item,
+                    taxes: item.taxes || {}
                 };
             });
 
-            console.log("Companies fetched:", combinedData.length);
-            setCompanies(combinedData);
+            setData({
+                companies: combinedCompanies,
+                checklist: checklistMap,
+            });
         } catch (error) {
-            console.error('Error fetching company data:', error);
+            console.error('Error fetching data:', error);
         } finally {
             setIsLoading(false);
         }
-    }, []);
+    };
+
+    const memoizedTaxTypeComponents = useMemo(() => {
+        return taxTypes.slice(1).map(tax => (
+            <TabsContent key={tax.key} value={tax.key}>
+                <TaxTypeComponent
+                    taxType={tax.key}
+                    companies={data.companies}
+                    checklist={data.checklist}
+                />
+            </TabsContent>
+        ));
+    }, [data.companies, data.checklist]);
+
+    if (isLoading) {
+        return <div>Loading all tax data...</div>;
+    }
 
     return (
         <div className="">
@@ -79,23 +104,10 @@ export default function TaxesPage() {
                     ))}
                 </TabsList>
                 <ScrollArea className="h-[calc(100vh-200px)]">
-                    {isLoading ? (
-                        <div>Loading...</div>
-                    ) : (
-                        <>
-                            <TabsContent value="overall">
-                                <OverallTaxesTable companies={companies} />
-                            </TabsContent>
-                            {taxTypes.slice(1).map(tax => (
-                                <TabsContent key={tax.key} value={tax.key}>
-                                    <TaxTypeComponent
-                                        taxType={tax.key}
-                                        companies={companies}
-                                    />
-                                </TabsContent>
-                            ))}
-                        </>
-                    )}
+                    <TabsContent value="overall">
+                        <OverallTaxesTable companies={data.companies} />
+                    </TabsContent>
+                    {memoizedTaxTypeComponents}
                 </ScrollArea>
             </Tabs>
         </div>
