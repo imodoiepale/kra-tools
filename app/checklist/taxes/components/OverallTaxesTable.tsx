@@ -15,12 +15,15 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { FileDown, Edit } from "lucide-react";
+
+import { FileDown, Edit, Lock, Unlock } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import ExcelJS from 'exceljs';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog"; // Import Dialog components
+
+import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectTrigger, SelectContent, SelectItem } from "@/components/ui/select";
+import { supabase } from '@/lib/supabase';
 
 const columnHelper = createColumnHelper();
 
@@ -50,6 +53,7 @@ const calculateTotals = (companies) => {
         nssf: { total: 0, registered: 0, cancelled: 0, dormant: 0, missing: 0 },
         nhif: { total: 0, registered: 0, cancelled: 0, dormant: 0, missing: 0 },
         housing_levy: { total: 0, registered: 0, cancelled: 0, dormant: 0, missing: 0 },
+        nita: { total: 0, registered: 0, cancelled: 0, dormant: 0, missing: 0 },
     };
 
     companies.forEach(company => {
@@ -68,7 +72,8 @@ const calculateTotals = (companies) => {
 
 const TotalsRow = ({ totals }) => (
     <TableRow className='sticky top-0'>
-        <TableCell colSpan={2} className="font-bold">Totals</TableCell>
+
+        <TableCell colSpan={3} className="font-bold">Totals</TableCell>
         {Object.entries(totals).map(([tax, counts]) => (
             <TableCell key={tax}>
                 <TooltipProvider>
@@ -118,40 +123,77 @@ const TotalsRow = ({ totals }) => (
     </TableRow>
 );
 
-const EditDialog = () => (
-    <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogTrigger asChild>
-            <Button variant="ghost" size="sm">Edit</Button>
-        </DialogTrigger>
-        <DialogContent>
-            <h2>{editCompany?.company_name}</h2>
-            <div>
-                {Object.entries(editCompany).map(([tax, status], index) => (
-                    <div key={index} className="flex items-center">
-                        <span className="mr-2">{String.fromCharCode(8482 + index)}. {tax.replace('_', ' ')}</span>
-                        <input type="checkbox" disabled checked={status === 'registered'} />
-                        <Select defaultValue={status} className="ml-2">
-                            <SelectTrigger>
-                                <span>{status}</span>
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="active">Active</SelectItem>
-                                <SelectItem value="inactive">Inactive</SelectItem>
-                            </SelectContent>
-                        </Select>
-                    </div>
-                ))}
-            </div>
-        </DialogContent>
-    </Dialog>
-);
-
-
 export default function OverallTaxesTable({ companies }) {
     const [globalFilter, setGlobalFilter] = useState('');
     const [statusFilter, setStatusFilter] = useState('all');
     const [dialogOpen, setDialogOpen] = useState(false);
     const [editCompany, setEditCompany] = useState(null);
+
+    const updateCompanyStatus = async (companyId, newStatus) => {
+        const { data, error } = await supabase
+            .from('companies')
+            .update({ vat_status: newStatus })
+            .eq('id', companyId);
+    
+        if (error) {
+            console.error('Error updating company status:', error);
+        } else {
+            console.log('Company status updated successfully:', data);
+        }
+    };
+
+    const toggleLock = async (companyId, currentLockStatus) => {
+        const newLockStatus = !currentLockStatus;
+        const { data, error } = await supabase
+            .from('companies')
+            .update({ is_locked: newLockStatus })
+            .eq('id', companyId);
+    
+        if (error) {
+            console.error('Error updating lock status:', error);
+        } else {
+            console.log('Lock status updated successfully:', data);
+            // Update the local state to reflect the change
+            setCompanies(companies.map(company => 
+                company.id === companyId ? {...company, is_locked: newLockStatus} : company
+            ));
+        }
+    };
+
+    const EditDialog = ({ company }) => (
+        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+            <DialogTrigger asChild>
+                <Button variant="ghost" size="sm" onClick={() => handleEdit(company)}>Edit</Button>
+            </DialogTrigger>
+            <DialogContent>
+                <h2>{company?.company_name || 'Company Name'}</h2>
+                <div>
+                    {company ? (
+                        <div>
+                            {['vat_status', 'paye_status', 'rent_income_mri_status', 'nssf_status', 'nhif_status', 'housing_levy_status', 'nita_status'].map((statusField) => (
+                                <div key={statusField} className="flex items-center mb-2">
+                                    <span className="mr-2">{statusField.replace(/_/g, ' ').replace('status', '')}:</span>
+                                    <Select defaultValue={company[statusField]} className="ml-2">
+                                        <SelectTrigger>
+                                            <span>{company[statusField]}</span>
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="registered">Registered</SelectItem>
+                                            <SelectItem value="cancelled">Cancelled</SelectItem>
+                                            <SelectItem value="dormant">Dormant</SelectItem>
+                                            <SelectItem value="missing">Missing</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <p>No company data available.</p>
+                    )}
+                </div>
+            </DialogContent>
+        </Dialog>
+    );
 
     const columns = useMemo(() => [
         columnHelper.accessor('index', {
@@ -161,6 +203,19 @@ export default function OverallTaxesTable({ companies }) {
         columnHelper.accessor('company_name', {
             cell: info => info.getValue(),
             header: 'Company Name',
+        }),
+        columnHelper.accessor('is_locked', {
+            cell: info => (
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => toggleLock(info.row.original.id, info.getValue())}
+                    disabled={info.getValue()}
+                >
+                    {info.getValue() ? <Lock size={16} /> : <Unlock size={16} />}
+                </Button>
+            ),
+            header: 'Lock',
         }),
         columnHelper.accessor('vat_status', {
             cell: info => <TaxStatus status={info.getValue()} />,
@@ -194,9 +249,20 @@ export default function OverallTaxesTable({ companies }) {
             cell: info => <TaxStatus status={info.getValue()} />,
             header: 'Housing Levy',
         }),
+        columnHelper.accessor('nita_status', {
+            cell: info => <TaxStatus status={info.getValue()} />,
+            header: 'NITA',
+        }),
         columnHelper.accessor('actions', {
             cell: info => (
-                <EditDialog />
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleEdit(info.row.original)}
+                    disabled={info.row.original.is_locked}
+                >
+                    Edit
+                </Button>
             ),
             header: 'Actions',
         }),
@@ -222,19 +288,16 @@ export default function OverallTaxesTable({ companies }) {
     });
 
     const handleEdit = (company) => {
-        // Open dialog with company data
-        setEditCompany(company); // Set the company to be edited
-        setDialogOpen(true); // Open the dialog
+        setEditCompany(company);
+        setDialogOpen(true);
     };
 
     const exportToExcel = async () => {
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet('Overall Taxes');
 
-        // Add headers
-        worksheet.addRow(['Company Name', 'KRA PIN', 'VAT', 'PAYE', 'MRI', 'NSSF', 'NHIF', 'Housing Levy']);
+        worksheet.addRow(['Company Name', 'KRA PIN', 'VAT', 'PAYE', 'MRI', 'NSSF', 'NHIF', 'Housing Levy', 'NITA']);
 
-        // Add data
         companies.forEach((company) => {
             worksheet.addRow([
                 company.company_name,
@@ -245,10 +308,10 @@ export default function OverallTaxesTable({ companies }) {
                 company.nssf_status,
                 company.nhif_status,
                 company.housing_levy_status,
+                company.nita_status,
             ]);
         });
 
-        // Generate Excel file
         const buffer = await workbook.xlsx.writeBuffer();
         const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
         const url = URL.createObjectURL(blob);
@@ -326,6 +389,7 @@ export default function OverallTaxesTable({ companies }) {
                     </Table>
                 </TooltipProvider>
             </ScrollArea>
+            {editCompany && <EditDialog company={editCompany} />}
         </div>
     );
 }
