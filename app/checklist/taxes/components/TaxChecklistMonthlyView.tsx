@@ -22,6 +22,9 @@ import { supabase } from '@/lib/supabase';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import Image from 'next/image';
 import { Skeleton } from "@/components/ui/skeleton"
+import ExcelJS from 'exceljs';
+import { saveAs } from 'file-saver';
+
 
 
 const columnHelper = createColumnHelper();
@@ -217,6 +220,69 @@ const formatDate = (dateString) => {
 
     return `${day}/${month}/${year}`;
 };
+
+const exportToExcel = async () => {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Tax Checklist');
+
+    // Add headers
+    const headers = ['#', 'Company Name', 'Obligation Date', 'ITAX Submission Date', 'Submitted By', 'Client Payment Date', `${taxCategoryLabel} Amount`, 'Advice'];
+    worksheet.addRow(headers);
+
+    // Style headers
+    const headerRow = worksheet.getRow(1);
+    headerRow.font = { bold: true };
+    headerRow.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFFFFF00' } // Yellow background
+    };
+
+    // Add data
+    data.forEach((company, index) => {
+        const taxData = localChecklist[company.company_name]?.taxes?.[taxType]?.[year]?.[month];
+        worksheet.addRow([
+            index + 1,
+            company.company_name,
+            formatDate(company[`${taxType}_effective_from`] || taxData?.obligationDate),
+            formatDate(taxData?.itaxSubmitDate),
+            taxData?.submittedBy || '',
+            formatDate(taxData?.clientPaymentDate),
+            taxData ? formatAmount(taxData[taxAmountField]) : '',
+            taxData?.advice || (taxData?.receiptUrl ? 'Receipt uploaded' : '')
+        ]);
+    });
+
+    // Auto-fit columns
+    worksheet.columns.forEach(column => {
+        let maxLength = 0;
+        column.eachCell({ includeEmpty: true }, cell => {
+            const columnLength = cell.value ? cell.value.toString().length : 10;
+            if (columnLength > maxLength) {
+                maxLength = columnLength;
+            }
+        });
+        column.width = maxLength < 10 ? 10 : maxLength;
+    });
+
+    // Add borders to all cells
+    worksheet.eachRow({ includeEmpty: true }, row => {
+        row.eachCell({ includeEmpty: true }, cell => {
+            cell.border = {
+                top: { style: 'thin' },
+                left: { style: 'thin' },
+                bottom: { style: 'thin' },
+                right: { style: 'thin' }
+            };
+        });
+    });
+
+    // Generate Excel file
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    saveAs(blob, `tax_checklist_${taxType}_${format(selectedDate, 'MMMM_yyyy')}.xlsx`);
+};
+
 
 const getTaxCategoryLabel = (taxType) => {
     const labels = {
@@ -529,9 +595,14 @@ export default function TaxChecklistMonthlyView({ companies, checklist: initialC
 
     return (
         <div>
-            <h2 className="text-md font-bold mb-4 uppercase">
-                Checklist - {format(selectedDate, 'MMMM yyyy')}
-            </h2>
+            <div className="flex justify-between items-center mb-1">
+                <h2 className="text-md font-bold uppercase">
+                    Checklist - {format(selectedDate, 'MMMM yyyy')}
+                </h2>
+                <Button onClick={exportToExcel}>
+                    Export to Excel
+                </Button>
+            </div>
             <ScrollArea className="h-[600px]">
                 <Table>
                     <TableHeader>
@@ -582,3 +653,4 @@ export default function TaxChecklistMonthlyView({ companies, checklist: initialC
         </div>
     );
 }
+

@@ -9,6 +9,7 @@ import TaxChecklistAllDataView from './TaxChecklistAllDataView';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'react-hot-toast';
 
+
 const MemoizedTaxChecklistMonthlyView = React.memo(TaxChecklistMonthlyView);
 const MemoizedTaxChecklistDetailedView = React.memo(TaxChecklistDetailedView);
 const MemoizedTaxChecklistAllDataView = React.memo(TaxChecklistAllDataView);
@@ -68,6 +69,8 @@ export default function TaxChecklistComponent({ companies, checklist, taxType })
         }
     };
 
+
+
     return (
         <div>
             <Tabs value={activeView} onValueChange={setActiveView}>
@@ -102,6 +105,7 @@ export default function TaxChecklistComponent({ companies, checklist, taxType })
                     />
                 </TabsContent>
             </Tabs>
+           
         </div>
     );
 }
