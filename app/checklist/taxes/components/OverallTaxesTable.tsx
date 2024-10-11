@@ -29,17 +29,17 @@ const columnHelper = createColumnHelper();
 
 const TaxStatus = ({ status }) => {
     if (!status || status === "No obligation") {
-        return <Badge variant="outline" className="bg-amber-400 text-yellow-800">Missing</Badge>;
+        return <div className="flex justify-center"><Badge variant="outline" className="bg-red-600 text-white text-[10px]">No Obligation</Badge></div>;
     }
     switch (status.toLowerCase()) {
         case 'registered':
-            return <Badge className="bg-green-500">Registered</Badge>;
+            return <div className="flex justify-center"><Badge className="bg-green-500 text-[10px]">Registered</Badge></div>;
         case 'cancelled':
-            return <Badge className="bg-red-500">Cancelled</Badge>;
+            return <div className="flex justify-center"><Badge className="bg-red-500 text-[10px]">Cancelled</Badge></div>;
         case 'dormant':
-            return <Badge className="bg-blue-500">Dormant</Badge>;
+            return <div className="flex justify-center"><Badge className="bg-blue-500 text-[10px]">Dormant</Badge></div>;
         default:
-            return <span>{status}</span>;
+            return <div className="flex justify-center"><span className="text-[10px]">{status}</span></div>;
     }
 };
 
@@ -240,16 +240,16 @@ export default function OverallTaxesTable({ companies }) {
 
         const uneditableTaxes = ['vat', 'paye', 'rent_income_mri', 'turnover_tax', 'resident_individual'];
 
-        
+
         const TaxCard = ({ tax, editable }) => (
-            <div className={`bg-white shadow-sm rounded-md p-2 w-full text-xs border border-black ${editable ? 'border-l-4 border-l-green-500' : 'border-l-4 border-l-red-500'}`}>
+            <div className={`bg-white shadow-sm rounded-md p-2 w-full text-xs border border-black ${editable ? 'border-l-4 border-l-green-500 border-b-2 border-b-green-500' : 'border-l-4 border-l-red-500 border-b-2 border-b-red-500'}`}>
                 <h4 className="font-semibold capitalize mb-1 text-gray-800 text-sm">{tax.replace(/_/g, ' ')}</h4>
                 <div className="grid grid-cols-3 gap-2 items-center">
                     <div>
                         <label className="text-xs font-medium text-gray-600 block">Status</label>
                         {editable ? (
                             <Select
-                                value={localCompany[`${tax}_status`] || 'missing'}
+                                value={localCompany[`${tax}_status`] || 'Missing'}
                                 onValueChange={(newValue) => handleFieldChange(`${tax}_status`, newValue)}
                             >
                                 <SelectTrigger className="w-full h-7 text-xs">
@@ -259,19 +259,19 @@ export default function OverallTaxesTable({ companies }) {
                                     <SelectItem value="Registered">Registered</SelectItem>
                                     <SelectItem value="Cancelled">Cancelled</SelectItem>
                                     <SelectItem value="Dormant">Dormant</SelectItem>
+                                    <SelectItem value="No Obligation">No Obligation</SelectItem>
                                     <SelectItem value="Missing">Missing</SelectItem>
                                 </SelectContent>
                             </Select>
                         ) : (
                             <div className="mt-1">
-                                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
-                                    localCompany[`${tax}_status`] === 'Registered' ? 'bg-green-100 text-green-700' :
-                                    localCompany[`${tax}_status`] === 'Cancelled' ? 'bg-red-100 text-red-700' :
-                                    localCompany[`${tax}_status`] === 'Dormant' ? 'bg-blue-100 text-blue-700' :
-                                    localCompany[`${tax}_status`] === 'No Obligation' ? 'bg-purple-100 text-purple-700' :
-                                    'bg-yellow-100 text-yellow-700'
-                                }`}>
-                                    {localCompany[`${tax}_status`] || 'Missing'}
+                                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${localCompany[`${tax}_status`] === 'Registered' ? 'bg-green-100 text-green-700' :
+                                        localCompany[`${tax}_status`] === 'Cancelled' ? 'bg-red-100 text-red-700' :
+                                            localCompany[`${tax}_status`] === 'Dormant' ? 'bg-blue-100 text-blue-700' :
+                                                localCompany[`${tax}_status`] === 'No Obligation' ? 'bg-purple-100 text-red-500' :
+                                                    'bg-yellow-100 text-yellow-700'
+                                    }`}>
+                                    {localCompany[`${tax}_status`] || 'No Obligation'}
                                 </span>
                             </div>
                         )}
@@ -347,7 +347,7 @@ export default function OverallTaxesTable({ companies }) {
             </Dialog>
         );
     };
-    
+
     const columns = useMemo(() => [
         columnHelper.accessor('index', {
             cell: info => info.getValue(),
@@ -434,7 +434,7 @@ export default function OverallTaxesTable({ companies }) {
         [companies]);
 
     const table = useReactTable({
-        data: localCompanies,
+        data: data,
         columns,
         getCoreRowModel: getCoreRowModel(),
         getSortedRowModel: getSortedRowModel(),
@@ -463,7 +463,7 @@ export default function OverallTaxesTable({ companies }) {
                     </Button>
                 </div>
             </div>
-            <ScrollArea className="h-[600px]">
+            <ScrollArea className="h-[750px]">
                 <TooltipProvider>
                     <Table>
                         <TableHeader>
