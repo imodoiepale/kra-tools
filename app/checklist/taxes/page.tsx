@@ -49,7 +49,7 @@ export default function TaxesPage() {
                     .select('*'),
                 supabase
                     .from('companyMainList')
-                    .select('company_name, status')
+                    .select('*')
             ]);
 
             if (passwordCheckerResult.error) throw passwordCheckerResult.error;
@@ -57,10 +57,7 @@ export default function TaxesPage() {
             if (checklistResult.error) throw checklistResult.error;
             if (companyMainListResult.error) throw companyMainListResult.error;
 
-            const activeCompanies = companyMainListResult.data.filter(company => company.status === 'active');
-            const activeCompanyNames = activeCompanies.map(company => company.company_name);
-
-            const combinedCompanies = passwordCheckerResult.data.filter(pcData => activeCompanyNames.includes(pcData.company_name)).map(pcData => {
+            const combinedCompanies = passwordCheckerResult.data.map(pcData => {
                 const detailsData = pinCheckerDetailsResult.data.find(pcdData => pcdData.id === pcData.id);
                 return { ...pcData, ...detailsData };
             });
@@ -73,8 +70,13 @@ export default function TaxesPage() {
                 };
             });
 
+            const activeCompanies = combinedCompanies.filter(company => {
+                const companyMainListData = companyMainListResult.data.find(cmlData => cmlData.company_name === company.company_name);
+                return companyMainListData && companyMainListData.status === 'active';
+            });
+
             setData({
-                companies: combinedCompanies,
+                companies: activeCompanies,
                 checklist: checklistMap,
             });
         } catch (error) {
