@@ -108,7 +108,7 @@ export default function TaxChecklistDetailedView({ companies, checklist, taxType
                                         <TableCell>{formatDate(monthData.clientPaymentDate)}</TableCell>
                                         <TableCell>
                                             {monthData[taxAmountField] 
-                                                ? `KES ${parseFloat(monthData[taxAmountField]).toFixed(2)}` 
+                                                ? `Ksh ${parseFloat(monthData[taxAmountField]).toFixed(2)}` 
                                                 : '-'}
                                         </TableCell>
                                         <TableCell className="">{monthData.advice || '-'}</TableCell>

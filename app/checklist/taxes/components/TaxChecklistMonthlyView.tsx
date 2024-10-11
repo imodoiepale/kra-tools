@@ -205,9 +205,11 @@ const updateTaxStatus = async (companyName, year, month, status, taxType, compan
 };
 
 const formatAmount = (amount) => {
-    return `Ksh ${Number(amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    return `Ksh ${Number(amount).toLocaleString('en-US', { 
+        minimumFractionDigits: 2, 
+        maximumFractionDigits: 2 
+    })}`;
 };
-
 
 export default function TaxChecklistMonthlyView({ companies, checklist: initialChecklist, taxType, selectedDate }) {
     const [localChecklist, setLocalChecklist] = useState(initialChecklist);
@@ -306,7 +308,7 @@ export default function TaxChecklistMonthlyView({ companies, checklist: initialC
                     </UpdateDialog>
                 );
             },
-            header: 'ITAX Submission Date',
+            header: <div className="text-center">ITAX Submission Date</div>,
             size: 120,
         }),
         columnHelper.accessor(row => localChecklist[row.company_name]?.taxes?.[taxType]?.[year]?.[month]?.submittedBy, {
@@ -366,14 +368,19 @@ export default function TaxChecklistMonthlyView({ companies, checklist: initialC
                         onUpdate={(newValue) => handleUpdate(info.row.original.company_name, year, month, { [taxAmountField]: parseFloat(newValue) })}
                         type="amount"
                     >
-                        {value !== undefined ? 
-                            <span className="text-green-600 font-medium">{formatAmount(value)}</span> : 
-                            <XCircle className="h-5 w-5 text-red-500" />
-                        }
+                        {value !== undefined ? (
+                            <Button variant="ghost" size="sm">
+                                <span className="text-green-600 font-medium">Ksh {parseFloat(value).toFixed(2)}</span>
+                            </Button>
+                        ) : (
+                            <Button variant="ghost" size="sm">
+                                <XCircle className="h-5 w-5 text-red-500" />
+                            </Button>
+                        )}
                     </UpdateDialog>
                 );
             },
-            header: `${taxCategoryLabel}`,
+            header: <div className="text-center">{taxCategoryLabel} Amount</div>,
             size: 120,
         }),
         columnHelper.accessor(row => localChecklist[row.company_name]?.taxes?.[taxType]?.[year]?.[month]?.advice, {
