@@ -160,17 +160,21 @@ export default function OverallTaxesTable({ companies }) {
     const [dialogOpen, setDialogOpen] = useState(false);
     const [editCompany, setEditCompany] = useState(null);
 
+    const fetchCompanies = async () => {
+        const { data, error } = await supabase
+            .from('PinCheckerDetails')
+            .select('*');
+        if (error) {
+            console.error('Error fetching companies:', error);
+            toast.error('Failed to refresh data. Please try again.');
+        } else {
+            setCompanies(data);
+        }
+    };
+
     const updateCompanyField = async (companyId, field, newValue) => {
         const toastId = toast.loading('Saving changes...');
         try {
-            // Update local state
-            setLocalCompanies(prev =>
-                prev.map(company =>
-                    company.id === companyId ? { ...company, [field]: newValue } : company
-                )
-            );
-
-            // Update database
             const { data, error } = await supabase
                 .from('PinCheckerDetails')
                 .update({ [field]: newValue })
@@ -179,17 +183,10 @@ export default function OverallTaxesTable({ companies }) {
             if (error) throw error;
 
             toast.success('Changes saved successfully!', { id: toastId });
-            console.log('Updated company:', data);
+            fetchCompanies(); // Refresh the data
         } catch (error) {
             console.error('Error saving changes:', error);
             toast.error('Failed to save changes. Please try again.', { id: toastId });
-
-            // Revert local state if db update failed
-            setLocalCompanies(prev =>
-                prev.map(company =>
-                    company.id === companyId ? { ...company, [field]: company[field] } : company
-                )
-            );
         }
     };
 
@@ -216,6 +213,7 @@ export default function OverallTaxesTable({ companies }) {
                     }
                 }
                 toast.success('Changes saved successfully!', { id: toastId });
+                fetchCompanies(); // Refresh the data
                 setDialogOpen(false);
             } catch (error) {
                 console.error('Error saving changes:', error);
@@ -331,17 +329,21 @@ export default function OverallTaxesTable({ companies }) {
                         </div>
                     </div>
                     <div className="mt-4 flex justify-end space-x-3">
-                        <Button variant="outline" onClick={handleClose} className="px-4 py-2 text-sm">
-                            Cancel
-                        </Button>
-                        <Button
-                            onClick={handleSave}
-                            disabled={!hasChanges}
-                            className="bg-green-500 text-white hover:bg-green-600 px-4 py-2 text-sm"
-                        >
-                            <Save className="mr-2 h-4 w-4" />
-                            Save Changes
-                        </Button>
+                        <DialogClose asChild>
+                            <Button variant="outline" className="px-4 py-2 text-sm">
+                                Cancel
+                            </Button>
+                        </DialogClose>
+                        <DialogClose asChild>
+                            <Button
+                                onClick={handleSave}
+                                disabled={!hasChanges}
+                                className="bg-green-500 text-white hover:bg-green-600 px-4 py-2 text-sm"
+                            >
+                                <Save className="mr-2 h-4 w-4" />
+                                Save Changes
+                            </Button>
+                        </DialogClose>
                     </div>
                 </DialogContent>
             </Dialog>
