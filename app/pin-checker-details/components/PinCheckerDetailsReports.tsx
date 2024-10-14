@@ -252,8 +252,38 @@ export function PinCheckerDetailsReports() {
     }
 
     const formatDate = (dateString: string) => {
+        if (!dateString) return '';
+        
+        // Try parsing the date
         const date = new Date(dateString);
-        return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '.');
+        
+        // Check if the date is valid
+        if (isNaN(date.getTime())) {
+            // If parsing fails, try to handle common formats
+            const parts = dateString.split(/[-/.]/);
+            if (parts.length === 3) {
+                // Assume yyyy-mm-dd, dd-mm-yyyy, or mm-dd-yyyy
+                const [a, b, c] = parts;
+                if (a.length === 4) {
+                    // yyyy-mm-dd
+                    date.setFullYear(parseInt(a), parseInt(b) - 1, parseInt(c));
+                } else if (c.length === 4) {
+                    // dd-mm-yyyy or mm-dd-yyyy
+                    date.setFullYear(parseInt(c), parseInt(b) - 1, parseInt(a));
+                }
+            } else {
+                // If we can't parse it, return the original string
+                return dateString;
+            }
+        }
+        
+        // Format the date
+        const day = date.getDate().toString().padStart(2, '0');
+        // const month = date.toLocaleString('en-GB', { month: 'short' });
+        const month = (date.getMonth() + 1).toString().padStart(2, '0');
+        const year = date.getFullYear();
+        
+        return `${day}.${month}.${year}`;
     }
 
     const sortedDetails = React.useMemo(() => {
