@@ -31,7 +31,7 @@ interface ExtractionFile {
 interface ExtractionRecord {
     id: number;
     company_name: string;
-    last_updated_at: string;
+    updated_at: string;
     files: ExtractionFile[];
 }
 
@@ -43,7 +43,7 @@ export function PentasoftExtractionReports() {
     const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
     const [visibleColumns, setVisibleColumns] = useState({
         company_name: true,
-        last_updated_at: true,
+        updated_at: true,
         paye: true,
         nssf: true,
         nhif: true,
@@ -103,7 +103,7 @@ export function PentasoftExtractionReports() {
         filteredReports.forEach((report) => {
             const row = [
                 report.company_name,
-                new Date(report.last_updated_at).toLocaleString(),
+                new Date(report.updated_at).toLocaleString(),
                 findFile(report.files, 'PAYE')?.name || 'Missing',
                 findFile(report.files, 'N.S.S.F')?.name || 'Missing',
                 findFile(report.files, 'NHIF')?.name || 'Missing',
@@ -246,7 +246,7 @@ export function PentasoftExtractionReports() {
                             .from('pentasoft_extractions')
                             .update({
                                 files: updatedFiles,
-                                last_updated_at: new Date().toISOString()
+                                updated_at: new Date().toISOString()
                             })
                             .eq('id', existingFileEntry.id);
 
@@ -257,7 +257,7 @@ export function PentasoftExtractionReports() {
                             .insert({
                                 company_name: companyName,
                                 files: filteredUploadedFiles.map(file => ({ ...file, extractionDate: date })),
-                                last_updated_at: new Date().toISOString()
+                                updated_at: new Date().toISOString()
                             });
 
                         if (insertError) throw insertError;
@@ -342,7 +342,7 @@ export function PentasoftExtractionReports() {
                                     {[
                                         { key: 'index', label: 'Index', alwaysVisible: true },
                                         { key: 'company_name', label: 'Company Name' },
-                                        { key: 'last_updated_at', label: 'Last Updated At' },
+                                        { key: 'updated_at', label: 'Last Updated At' },
                                         { key: 'paye', label: 'PAYE' },
                                         { key: 'nssf', label: 'NSSF' },
                                         { key: 'nhif', label: 'NHIF' },
@@ -370,9 +370,9 @@ export function PentasoftExtractionReports() {
                                     <TableRow key={report.id} className={index % 2 === 0 ? 'bg-white' : 'bg-blue-50'}>
                                         <TableCell>{index + 1}</TableCell>
                                         {visibleColumns.company_name && <TableCell>{report.company_name}</TableCell>}
-                                        {visibleColumns.last_updated_at && (
+                                        {visibleColumns.updated_at && (
                                             <TableCell>
-                                                {new Date(report.last_updated_at).toLocaleString()}
+                                                {new Date(report.updated_at).toLocaleString()}
                                             </TableCell>
                                         )}
                                         {visibleColumns.paye && <TableCell>{renderFileButton(findFile(report.files, 'PAYE'))}</TableCell>}
@@ -430,7 +430,7 @@ export function PentasoftExtractionReports() {
                                                 <TableBody>
                                                     <TableRow>
                                                         <TableCell className="text-xs p-1 whitespace-nowrap">
-                                                            {new Date(selectedCompany.last_updated_at).toLocaleString()}
+                                                            {new Date(selectedCompany.updated_at).toLocaleString()}
                                                         </TableCell>
                                                         <TableCell className="text-xs p-1 text-center">{renderFileButton(findFile(selectedCompany.files, 'PAYE'))}</TableCell>
                                                         <TableCell className="text-xs p-1 text-center">{renderFileButton(findFile(selectedCompany.files, 'N.S.S.F'))}</TableCell>
