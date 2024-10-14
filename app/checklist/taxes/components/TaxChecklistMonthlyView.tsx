@@ -363,7 +363,7 @@ const updateTaxStatus = async (companyName, year, month, status, taxType, compan
 };
 
 const formatAmount = (amount) => {
-    if (amount === undefined || amount === null) return '';
+if (amount === undefined || amount === null) return '';
     return `Ksh ${Number(amount).toLocaleString('en-US', {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2
