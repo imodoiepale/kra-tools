@@ -261,19 +261,31 @@ export function PinCheckerDetailsReports() {
             let aValue: any = a[sortField as keyof PinCheckerDetail];
             let bValue: any = b[sortField as keyof PinCheckerDetail];
 
+            // Handle special cases for last_checked_date and last_checked_time
             if (sortField === 'last_checked_date') {
-                aValue = new Date(a.last_checked_at);
-                bValue = new Date(b.last_checked_at);
+                aValue = new Date(a.last_checked_at).toLocaleDateString();
+                bValue = new Date(b.last_checked_at).toLocaleDateString();
             } else if (sortField === 'last_checked_time') {
                 aValue = new Date(a.last_checked_at).toLocaleTimeString();
                 bValue = new Date(b.last_checked_at).toLocaleTimeString();
+            } else if (sortField.endsWith('_status')) {
+                // For status fields, use a custom sorting order
+                const statusOrder = ['Registered', 'Active', 'Suspended', 'Cancelled', 'No Obligation'];
+                aValue = statusOrder.indexOf(aValue || 'No Obligation');
+                bValue = statusOrder.indexOf(bValue || 'No Obligation');
+            } else if (sortField.endsWith('_from') || sortField.endsWith('_to')) {
+                // For date fields, convert to Date objects for comparison
+                aValue = aValue ? new Date(aValue) : new Date(0);
+                bValue = bValue ? new Date(bValue) : new Date(0);
             }
 
+            // Perform the comparison
             if (aValue < bValue) return sortOrder === 'asc' ? -1 : 1;
             if (aValue > bValue) return sortOrder === 'asc' ? 1 : -1;
             return 0;
         });
     }, [details, sortField, sortOrder]);
+
 
     const SortableHeader: React.FC<{ field: SortField; children: React.ReactNode }> = ({ field, children }) => (
         <Button variant="ghost" onClick={() => handleSort(field)} className="h-8 px-2">
