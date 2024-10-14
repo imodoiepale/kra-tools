@@ -9,7 +9,6 @@ import { Input } from "@/components/ui/input";
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { ArrowUpDown, Download, MoreHorizontal, RefreshCw, Upload } from "lucide-react";
 import * as ExcelJS from 'exceljs';
-import { Checkbox } from '@/components/ui/checkbox';
 import { createClient } from '@supabase/supabase-js';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 
@@ -32,7 +31,7 @@ interface ExtractionFile {
 interface ExtractionRecord {
     id: number;
     company_name: string;
-    extraction_date: string;
+    last_updated_at: string;
     files: ExtractionFile[];
 }
 
@@ -44,7 +43,7 @@ export function PentasoftExtractionReports() {
     const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
     const [visibleColumns, setVisibleColumns] = useState({
         company_name: true,
-        extraction_date: true,
+        last_updated_at: true,
         paye: true,
         nssf: true,
         nhif: true,
@@ -65,17 +64,15 @@ export function PentasoftExtractionReports() {
         try {
             const { data: reportsData, error } = await supabase
                 .from('pentasoft_extractions')
-                .select('*'); // Adjust the select statement based on the fields you need
-    
+                .select('*');
+
             if (error) throw error;
-    
-            // Set the fetched reports to state
+
             setReports(reportsData);
         } catch (error) {
             console.error('Error fetching reports:', error);
         }
     };
-    
 
     const handleSort = (column: string) => {
         if (sortColumn === column) {
@@ -100,13 +97,13 @@ export function PentasoftExtractionReports() {
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet('Pentasoft Extraction Reports');
 
-        const headers = ['Company Name', 'Extraction Date', 'PAYE', 'NSSF', 'NHIF', 'NITA', 'Housing Levy'];
+        const headers = ['Company Name', 'Last Updated At', 'PAYE', 'NSSF', 'NHIF', 'NITA', 'Housing Levy'];
         worksheet.addRow(headers);
 
         filteredReports.forEach((report) => {
             const row = [
                 report.company_name,
-                new Date(report.extraction_date).toLocaleString(),
+                new Date(report.last_updated_at).toLocaleString(),
                 findFile(report.files, 'PAYE')?.name || 'Missing',
                 findFile(report.files, 'N.S.S.F')?.name || 'Missing',
                 findFile(report.files, 'NHIF')?.name || 'Missing',
@@ -152,14 +149,13 @@ export function PentasoftExtractionReports() {
             const file = files[i];
             const fileName = file.name;
 
-            // Regex to extract company name, report type, and date from filename
             const regex = /^(.*?)-\s*(.*?)\s+(\d{2}\.\d{2}\.\d{4})(\.\w+)?$/;
             const match = fileName.match(regex);
 
             if (match) {
-                const companyName = match[1].trim(); // Extract company name
-                const reportType = match[2].trim();  // Extract report type
-                const extractionDate = match[3].trim(); // Extract date (dd.mm.yyyy)
+                const companyName = match[1].trim();
+                const reportType = match[2].trim();
+                const extractionDate = match[3].trim();
 
                 previews.push({
                     fileName,
@@ -177,135 +173,100 @@ export function PentasoftExtractionReports() {
         setIsPreviewOpen(true);
     };
 
-
     const handleFileUpload = async () => {
         setIsUploading(true);
-    
+
         try {
-            // Create a map to store files by company
             const companyFilesMap = {};
-    
-            // Gather all the files per company
+
             for (const preview of filesPreviews) {
                 const file = Array.from(fileInputRef.current!.files!).find(f => f.name === preview.fileName);
-                if (!file) continue; // Skip if the file is not found
-    
+                if (!file) continue;
+
                 const extractionDate = new Date(preview.extractionDate);
-                const monthYearFolder = `${extractionDate.toLocaleString('default', { month: 'long' })} ${extractionDate.getFullYear()}`; // Format: "March 2024"
-    
+                const monthYearFolder = `${extractionDate.toLocaleString('default', { month: 'long' })} ${extractionDate.getFullYear()}`;
+
                 if (!companyFilesMap[preview.companyName]) {
                     companyFilesMap[preview.companyName] = {
                         files: [],
-                        extractionDate: monthYearFolder, // Store the extraction date
+                        extractionDate: monthYearFolder,
                     };
                 }
-    
-                // Check if the specific file already exists in the database
-                const { data: existingFiles, error: fetchError } = await supabase
-                    .from('pentasoft_extractions')
-                    .select('*')
-                    .eq('company_name', preview.companyName);
-    
-                if (fetchError) throw fetchError;
-    
-                const fileExists = existingFiles?.some(existingEntry => 
-                    existingEntry.files.some(fileObj => fileObj.name === preview.reportType)
-                );
-    
-                // Skip if the file already exists in the database
-                if (fileExists) {
-                    console.log(`File already exists in the database: ${preview.fileName}. Skipping upload.`);
-                    continue; // Skip to the next file
-                }
-    
-                // Check if the file already exists in Supabase Storage
-                const { data: storageFiles, error: storageCheckError } = await supabase.storage
-                    .from(STORAGE_BUCKET)
-                    .list(`${preview.companyName}/${monthYearFolder}/`, { limit: 1000 }); // List files in the month/year folder
-    
-                if (storageCheckError) throw storageCheckError;
-    
-                const storageFileExists = storageFiles.some(storageFileEntry => 
-                    storageFileEntry.name === preview.fileName
-                );
-    
-                // Skip if the file already exists in storage
-                if (storageFileExists) {
-                    console.log(`File already exists in storage: ${preview.fileName}. Skipping upload.`);
-                    continue; // Skip to the next file
-                }
-    
-                // Add file to the map for upload
+
                 companyFilesMap[preview.companyName].files.push({
                     file,
                     reportType: preview.reportType,
                     fullPath: preview.fullPath,
+                    extractionDate: preview.extractionDate,
                 });
             }
-    
-            // Now handle uploads and database inserts/updates concurrently
+
             const uploadPromises = Object.entries(companyFilesMap).map(async ([companyName, { files, extractionDate }]) => {
-                // Prepare an array to hold the upload and database insert/update operations
-                const fileUploadPromises = files.map(async ({ file, reportType, fullPath }) => {
-                    // Upload file to Supabase Storage in the company/month/year structure
-                    const { data, error: uploadError } = await supabase.storage
-                        .from(STORAGE_BUCKET)
-                        .upload(`${companyName}/${extractionDate}/${file.name}`, file, {
-                            contentType: file.type,
-                        });
-    
-                    if (uploadError) {
-                        console.error(`Error uploading ${file.name}:`, uploadError);
-                        return null; // Return null on error
-                    }
-    
-                    return { name: reportType, path: data.path, fullPath }; // Return upload info
-                });
-    
-                // Wait for all file uploads to complete
-                const uploadedFiles = await Promise.all(fileUploadPromises);
-    
-                // Check if this company already exists in the database
                 const { data: existingFiles, error: fetchError } = await supabase
                     .from('pentasoft_extractions')
                     .select('*')
                     .eq('company_name', companyName);
-    
+
                 if (fetchError) throw fetchError;
-    
-                if (existingFiles && existingFiles.length > 0) {
-                    // If the company already exists, update its files
-                    const existingFileEntry = existingFiles[0]; // Assume only one entry exists per company
-    
-                    const updatedFiles = [
-                        ...existingFileEntry.files,
-                        ...uploadedFiles.filter(file => file !== null).map(file => ({ ...file, extractionDate })) // Include extraction date
-                    ]; 
-    
-                    // Update the existing entry in Supabase table
-                    const { error: updateError } = await supabase
-                        .from('pentasoft_extractions')
-                        .update({ files: updatedFiles })
-                        .eq('id', existingFileEntry.id); // Update the correct entry
-    
-                    if (updateError) throw updateError;
-                } else {
-                    // If no existing entry for this company, create a new one
-                    const { error: insertError } = await supabase
-                        .from('pentasoft_extractions')
-                        .insert({
-                            company_name: companyName,
-                            files: uploadedFiles.filter(file => file !== null).map(file => ({ ...file, extractionDate })) // Include extraction date
-                        });
-    
-                    if (insertError) throw insertError;
+
+                const filesByDate = {};
+                for (const fileInfo of files) {
+                    if (!filesByDate[fileInfo.extractionDate]) {
+                        filesByDate[fileInfo.extractionDate] = [];
+                    }
+                    filesByDate[fileInfo.extractionDate].push(fileInfo);
+                }
+
+                for (const [date, dateFiles] of Object.entries(filesByDate)) {
+                    const uploadedFiles = await Promise.all(dateFiles.map(async ({ file, reportType, fullPath }) => {
+                        const { data, error: uploadError } = await supabase.storage
+                            .from(STORAGE_BUCKET)
+                            .upload(`${companyName}/${extractionDate}/${file.name}`, file, {
+                                contentType: file.type,
+                            });
+
+                        if (uploadError) {
+                            console.error(`Error uploading ${file.name}:`, uploadError);
+                            return null;
+                        }
+
+                        return { name: reportType, path: data.path, fullPath };
+                    }));
+
+                    const filteredUploadedFiles = uploadedFiles.filter(file => file !== null);
+
+                    if (existingFiles && existingFiles.length > 0) {
+                        const existingFileEntry = existingFiles[0];
+                        const updatedFiles = [
+                            ...existingFileEntry.files.filter(file => file.extractionDate !== date),
+                            ...filteredUploadedFiles.map(file => ({ ...file, extractionDate: date }))
+                        ];
+
+                        const { error: updateError } = await supabase
+                            .from('pentasoft_extractions')
+                            .update({
+                                files: updatedFiles,
+                                last_updated_at: new Date().toISOString()
+                            })
+                            .eq('id', existingFileEntry.id);
+
+                        if (updateError) throw updateError;
+                    } else {
+                        const { error: insertError } = await supabase
+                            .from('pentasoft_extractions')
+                            .insert({
+                                company_name: companyName,
+                                files: filteredUploadedFiles.map(file => ({ ...file, extractionDate: date })),
+                                last_updated_at: new Date().toISOString()
+                            });
+
+                        if (insertError) throw insertError;
+                    }
                 }
             });
-    
-            // Execute all upload promises concurrently
+
             await Promise.all(uploadPromises);
-    
-            // Refresh the reports after successful uploads
+
             await fetchReports();
             setIsPreviewOpen(false);
             setFilesPreviews([]);
@@ -315,7 +276,6 @@ export function PentasoftExtractionReports() {
             setIsUploading(false);
         }
     };
-    
 
     return (
         <Tabs defaultValue="summary">
@@ -382,7 +342,7 @@ export function PentasoftExtractionReports() {
                                     {[
                                         { key: 'index', label: 'Index', alwaysVisible: true },
                                         { key: 'company_name', label: 'Company Name' },
-                                        { key: 'extraction_date', label: 'Extraction Date' },
+                                        { key: 'last_updated_at', label: 'Last Updated At' },
                                         { key: 'paye', label: 'PAYE' },
                                         { key: 'nssf', label: 'NSSF' },
                                         { key: 'nhif', label: 'NHIF' },
@@ -410,7 +370,11 @@ export function PentasoftExtractionReports() {
                                     <TableRow key={report.id} className={index % 2 === 0 ? 'bg-white' : 'bg-blue-50'}>
                                         <TableCell>{index + 1}</TableCell>
                                         {visibleColumns.company_name && <TableCell>{report.company_name}</TableCell>}
-                                        {visibleColumns.extraction_date && <TableCell>{report.extraction_date}</TableCell>}
+                                        {visibleColumns.last_updated_at && (
+                                            <TableCell>
+                                                {new Date(report.last_updated_at).toLocaleString()}
+                                            </TableCell>
+                                        )}
                                         {visibleColumns.paye && <TableCell>{renderFileButton(findFile(report.files, 'PAYE'))}</TableCell>}
                                         {visibleColumns.nssf && <TableCell>{renderFileButton(findFile(report.files, 'N.S.S.F'))}</TableCell>}
                                         {visibleColumns.nhif && <TableCell>{renderFileButton(findFile(report.files, 'NHIF'))}</TableCell>}
@@ -430,8 +394,8 @@ export function PentasoftExtractionReports() {
                             <React.Fragment key={report.id}>
                                 <div
                                     className={`p-2 cursor-pointer transition-colors duration-200 text-xs uppercase ${selectedCompany?.id === report.id
-                                        ? 'bg-blue-500 text-white font-bold'
-                                        : 'hover:bg-blue-100'
+                                            ? 'bg-blue-500 text-white font-bold'
+                                            : 'hover:bg-blue-100'
                                         }`}
                                     onClick={() => setSelectedCompany(report)}
                                 >
@@ -455,7 +419,7 @@ export function PentasoftExtractionReports() {
                                             <Table>
                                                 <TableHeader>
                                                     <TableRow>
-                                                        <TableHead className="text-xs">Extraction Date</TableHead>
+                                                        <TableHead className="text-xs">Last Updated At</TableHead>
                                                         <TableHead className="text-xs text-center">PAYE</TableHead>
                                                         <TableHead className="text-xs text-center">NSSF</TableHead>
                                                         <TableHead className="text-xs text-center">NHIF</TableHead>
@@ -466,7 +430,7 @@ export function PentasoftExtractionReports() {
                                                 <TableBody>
                                                     <TableRow>
                                                         <TableCell className="text-xs p-1 whitespace-nowrap">
-                                                            {new Date(selectedCompany.extraction_date)}
+                                                            {new Date(selectedCompany.last_updated_at).toLocaleString()}
                                                         </TableCell>
                                                         <TableCell className="text-xs p-1 text-center">{renderFileButton(findFile(selectedCompany.files, 'PAYE'))}</TableCell>
                                                         <TableCell className="text-xs p-1 text-center">{renderFileButton(findFile(selectedCompany.files, 'N.S.S.F'))}</TableCell>
@@ -490,7 +454,6 @@ export function PentasoftExtractionReports() {
                         <DialogTitle>Preview of Files to Upload</DialogTitle>
                     </DialogHeader>
 
-                    {/* Scrollable content */}
                     <ScrollArea className="h-[400px] mt-4 text-[9px]">
                         <p className="mb-2">Storage Bucket: {STORAGE_BUCKET}</p>
                         <Table>
