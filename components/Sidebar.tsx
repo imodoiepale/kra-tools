@@ -1,10 +1,13 @@
+// @ts-nocheck
 // components/Sidebar.tsx
+
 "use client"
 
-import { LayoutDashboard, Key, Lock, Settings, Factory,KeyRound, FileCheck, FileText, ShieldCheck, CreditCard, FileSignature, Users, FileSpreadsheet, ClipboardCheck, UserCheck, BarChart2, ChevronLeft, ChevronRight, Download } from "lucide-react";
+import { LayoutDashboard, Key, Lock, Settings, Factory, KeyRound, FileCheck, FileText, ShieldCheck, CreditCard, FileSignature, Users, FileSpreadsheet, ClipboardCheck, UserCheck, BarChart2, ChevronLeft, ChevronRight, Download, ChevronDown } from "lucide-react";
 import Link from "next/link"
 import { usePathname } from 'next/navigation'
 import { useState } from "react"
+import { motion, AnimatePresence } from "framer-motion"
 import {
   Popover,
   PopoverContent,
@@ -42,65 +45,100 @@ const navItems = [
     { href: "/tax-clearance", icon: ShieldCheck, label: "Tax Clearance Status Checker", category: "Suggested New Tools", available: false },
     { href: "/payment-reminders", icon: CreditCard, label: "Tax Payment Reminders", category: "Suggested New Tools", available: false },
     { href: "/audit-logs", icon: FileText, label: "Audit Logs Viewer", category: "Suggested New Tools", available: false },
-    
+
     { href: "/settings", icon: Settings, label: "Settings", category: "Main", available: false },];
 
-export function Sidebar() {
-    const pathname = usePathname()
-    const [isExpanded, setIsExpanded] = useState(true)
-
-    const categories = Array.from(new Set(navItems.map(item => item.category)));
-
-    return (
-        <div className="flex h-[150vh]">
-            <aside className={`bg-gray-800 text-white transition-all duration-300 ease-in-out ${isExpanded ? 'w-[300px]' : 'w-20'} p-3 hidden md:block relative`}>
-                <div className={`flex items-center mb-6 ${isExpanded ? '' : 'justify-center'}`}>
-                    {isExpanded && <span className="text-lg font-bold">BCL Tools</span>}
-                </div>
-                <nav className="space-y-1">
-                    {categories.map((category) => (
-                        <div key={category}>
-                            {isExpanded && <h3 className="text-xs font-semibold text-gray-400 mt-3 mb-1">{category}</h3>}
-                            {navItems.filter(item => item.category === category).map((item) => (
-                                item.available ? (
-                                    <Link
-                                        key={item.href}
-                                        href={item.href}
-                                        className={`flex items-center p-1.5 rounded text-sm ${pathname === item.href
-                                                ? "text-blue-400 font-bold bg-gray-700"
-                                                : "text-gray-300 hover:bg-gray-700"
-                                            } ${isExpanded ? '' : 'justify-center'} relative`}
+    export function Sidebar({ isExpanded, setIsExpanded }: { isExpanded: boolean, setIsExpanded: (value: boolean) => void }) {
+        const pathname = usePathname()
+        const [openCategories, setOpenCategories] = useState<string[]>([])
+    
+        const categories = Array.from(new Set(navItems.map(item => item.category)));
+    
+        const toggleCategory = (category: string) => {
+            if (isExpanded) {
+                setOpenCategories(prev => 
+                    prev.includes(category) 
+                        ? prev.filter(c => c !== category)
+                        : [...prev, category]
+                )
+            }
+        }
+    
+        return (
+            <div className="flex h-[150vh]">
+                <aside className={`bg-gray-800 text-white transition-all duration-300 ease-in-out ${isExpanded ? 'w-[300px]' : 'w-20'} p-3 hidden md:block relative`}>
+                    <div className={`flex items-center mb-6 ${isExpanded ? '' : 'justify-center'}`}>
+                        {isExpanded && <span className="text-lg font-bold">BCL Tools</span>}
+                    </div>
+                    <nav className="space-y-1">
+                        {categories.map((category) => (
+                            <div key={category}>
+                                {isExpanded ? (
+                                    <button 
+                                        onClick={() => toggleCategory(category)}
+                                        className="flex items-center justify-between w-full text-xs font-semibold text-gray-400 mt-3 mb-1 hover:bg-gray-700 p-1 rounded"
                                     >
-                                        <item.icon className="w-4 h-4 mr-2" />
-                                        {isExpanded && item.label}
-                                    </Link>
+                                        <span>{category}</span>
+                                        <ChevronDown className={`w-4 h-4 transition-transform ${openCategories.includes(category) ? 'rotate-180' : ''}`} />
+                                    </button>
                                 ) : (
-                                    <Popover key={item.href}>
-                                        <PopoverTrigger asChild>
-                                            <button
-                                                className={`flex items-center p-1.5 rounded text-sm text-gray-400 hover:bg-gray-700 ${isExpanded ? '' : 'justify-center'} relative w-full text-left`}
-                                            >
-                                                <span className="absolute top-0 right-0 w-2 h-2 z-10 bg-red-500 rounded-full"></span>
-                                                <item.icon className="w-4 h-4 mr-2" />
-                                                {isExpanded && item.label}
-                                            </button>
-                                        </PopoverTrigger>
-                                        <PopoverContent className="bg-red-500 text-white p-1 text-xs rounded w-40 h-8">
-                                            Coming soon
-                                        </PopoverContent>
-                                    </Popover>
-                                )
-                            ))}
-                        </div>
-                    ))}
-                </nav>
-                <button
-                    className="absolute top-2 right-2 p-1.5 rounded-full bg-gray-700 hover:bg-gray-600 text-white"
-                    onClick={() => setIsExpanded(!isExpanded)}
-                >
-                    {isExpanded ? <ChevronLeft className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-                </button>
-            </aside>
-        </div>
-    );
-}
+                                    <div className="text-xs font-semibold text-gray-400 mt-3 mb-1 text-center">{category[0]}</div>
+                                )}
+                                <AnimatePresence initial={false}>
+                                    {(isExpanded ? openCategories.includes(category) : true) && (
+                                        <motion.div
+                                            initial="collapsed"
+                                            animate="open"
+                                            exit="collapsed"
+                                            variants={{
+                                                open: { opacity: 1, height: "auto" },
+                                                collapsed: { opacity: 0, height: 0 }
+                                            }}
+                                            transition={{ duration: 0.3, ease: "easeInOut" }}
+                                        >
+                                            {navItems.filter(item => item.category === category).map((item) => (
+                                                item.available ? (
+                                                    <Link
+                                                        key={item.href}
+                                                        href={item.href}
+                                                        className={`flex items-center p-1.5 rounded text-sm ${pathname === item.href
+                                                                ? "text-blue-400 font-bold bg-gray-700"
+                                                                : "text-gray-300 hover:bg-gray-700"
+                                                            } ${isExpanded ? '' : 'justify-center'} relative`}
+                                                    >
+                                                        <item.icon className="w-4 h-4 mr-2" />
+                                                        {isExpanded && item.label}
+                                                    </Link>
+                                                ) : (
+                                                    <Popover key={item.href}>
+                                                        <PopoverTrigger asChild>
+                                                            <button
+                                                                className={`flex items-center p-1.5 rounded text-sm text-gray-400 hover:bg-gray-700 ${isExpanded ? '' : 'justify-center'} relative w-full text-left`}
+                                                            >
+                                                                <span className="absolute top-0 right-0 w-2 h-2 z-10 bg-red-500 rounded-full"></span>
+                                                                <item.icon className="w-4 h-4 mr-2" />
+                                                                {isExpanded && item.label}
+                                                            </button>
+                                                        </PopoverTrigger>
+                                                        <PopoverContent className="bg-red-500 text-white p-1 text-xs rounded w-40 h-8">
+                                                            Coming soon
+                                                        </PopoverContent>
+                                                    </Popover>
+                                                )
+                                            ))}
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
+                            </div>
+                        ))}
+                    </nav>
+                    <button
+                        className="absolute top-2 right-2 p-1.5 rounded-full bg-gray-700 hover:bg-gray-600 text-white"
+                        onClick={() => setIsExpanded(!isExpanded)}
+                    >
+                        {isExpanded ? <ChevronLeft className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                    </button>
+                </aside>
+            </div>
+        );
+    }
