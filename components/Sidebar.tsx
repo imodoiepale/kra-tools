@@ -1,7 +1,7 @@
 // components/Sidebar.tsx
 "use client"
 
-import { LayoutDashboard, Key, Lock, Settings, Factory, FileCheck, FileText, ShieldCheck, CreditCard, FileSignature, Users, FileSpreadsheet, ClipboardCheck, DollarSign, BarChart2, ChevronLeft, ChevronRight, Download } from "lucide-react";
+import { LayoutDashboard, Key, Lock, Settings, Factory,KeyRound, FileCheck, FileText, ShieldCheck, CreditCard, FileSignature, Users, FileSpreadsheet, ClipboardCheck, UserCheck, BarChart2, ChevronLeft, ChevronRight, Download } from "lucide-react";
 import Link from "next/link"
 import { usePathname } from 'next/navigation'
 import { useState } from "react"
@@ -24,7 +24,8 @@ const navItems = [
     { href: "/pin-cert", icon: ClipboardCheck, label: "PIN Certifiate Extractor", category: "One-off Tools", available: true },
     { href: "/pin-profile", icon: ClipboardCheck, label: "PIN Profile Extractor", category: "One-off Tools", available: true },
     { href: "/tcc", icon: ShieldCheck, label: "Tax Compliance Downloader", category: "One-off Tools", available: true },
-    { href: "/password-changer", icon: Key, label: "Password Changer", category: "One-off Tools", available: false },
+    { href: "/name-extractor", icon: UserCheck, label: "Tax Payer Name Extractor", category: "One-off Tools", available: false },
+    { href: "/password-changer", icon: KeyRound, label: "Password Changer", category: "One-off Tools", available: false },
 
     // Monthly Tools
     { href: "/auto-population", icon: Users, label: "Auto-Population", category: "Monthly Tools", available: true },
