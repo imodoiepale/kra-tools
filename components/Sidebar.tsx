@@ -14,6 +14,7 @@ import {
 const navItems = [
     { href: "/", icon: LayoutDashboard, label: "Dashboard", category: "Main", available: true },
     { href: "/password-manager", icon: Lock, label: "Password Manager", category: "Main", available: true },
+    { href: "/pass-checker+pass-manager", icon: Lock, label: "Both", category: "Main", available: true },
     { href: "/checklist", icon: FileCheck, label: "Checklist", category: "Main", available: true },
 
     // One-off Tools
