@@ -32,6 +32,7 @@ interface Manufacturer {
 
 export function ManufacturersDetailsReports() {
   const [manufacturers, setManufacturers] = useState<Manufacturer[]>([])
+  const [searchTerm, setSearchTerm] = useState('')
   const [editingManufacturer, setEditingManufacturer] = useState<Manufacturer | null>(null)
   const [visibleColumns, setVisibleColumns] = useState({
     company_name: true,
@@ -114,6 +115,8 @@ export function ManufacturersDetailsReports() {
   const toggleColumnVisibility = (column: string) => {
     setVisibleColumns(prev => ({ ...prev, [column]: !prev[column] }))
   }
+
+
 
   const exportToExcel = async () => {
     const workbook = new ExcelJS.Workbook()
@@ -207,6 +210,13 @@ export function ManufacturersDetailsReports() {
     }
     return 0
   })
+  
+  const filteredManufacturers = sortedManufacturers.filter(manufacturer =>
+    Object.values(manufacturer).some(value =>
+      value.toString().toLowerCase().includes(searchTerm.toLowerCase())
+    )
+  )
+
 
   const requestSort = (key: string) => {
     let direction = 'ascending'
@@ -248,9 +258,18 @@ export function ManufacturersDetailsReports() {
           <Button variant="destructive" onClick={handleDeleteAll} size="sm">Delete All</Button>
         </div>
       </div>
+      <div className="">
+        <Input
+          placeholder="Search Manufacturers..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="max-w-sm"
+        />
+      </div>
+
       <div className="rounded-md border">
         <div className="overflow-x-auto">
-          <div className="max-h-[calc(100vh-300px)] overflow-y-auto">
+          <div className="max-h-[calc(100vh-340px)] overflow-y-auto">
             <Table className="text-[11px] pb-2 text-black">
               <TableHeader>
                 <TableRow>
@@ -273,7 +292,7 @@ export function ManufacturersDetailsReports() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {sortedManufacturers.map((manufacturer, index) => (
+                {filteredManufacturers.map((manufacturer, index) => (
                   <TableRow key={manufacturer.id} className={`h-8 ${index % 2 === 0 ? 'bg-white' : 'bg-blue-50'}`}>
                     <TableCell className="text-center font-bold">{index + 1}</TableCell>
                     {Object.entries(visibleColumns).map(([column, isVisible]) => (
