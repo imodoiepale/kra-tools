@@ -245,6 +245,16 @@ async function uploadFilesToSupabase(files, companyName) {
             return null;
         }
 
+        if (file.path === null) {
+            return {
+                name: file.name,
+                path: null,
+                fullPath: null,
+                originalName: null,
+                type: null
+            };
+        }
+
         try {
             const fileContent = await fsPromises.readFile(absolutePath);
             const fileName = path.basename(file.path);
