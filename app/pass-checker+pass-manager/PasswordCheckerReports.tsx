@@ -177,17 +177,38 @@ export default function PasswordCheckerReports() {
     companies.forEach((company, index) => {
       const row = [
         '', // Empty cell in column A
-        index + 1,
-        company.name,
-        company.identifier,
-        company.password,
-        company.status,
-        company.last_checked ? new Date(company.last_checked).toLocaleString() : 'Missing'
-      ]
-      if (activeTab === 'nhif' || activeTab === 'nssf') row.push(company.code || 'Missing')
-      if (activeTab === 'ecitizen') row.push(company.director || 'Missing')
-      
-      worksheet.addRow(row);
+        index + 1, // Index in B
+        company.company_name, // Company Name in C
+        company.kra_pin, // KRA PIN in D
+        company.kra_password, // KRA Password in E
+        company.status, // Status in F
+        company.last_checked ? new Date(company.last_checked).toLocaleString() : 'Missing' // Last Checked in G
+      ]);
+  
+      // Center-align the index column (column B)
+      row.getCell(2).alignment = { horizontal: 'center' };
+  
+      // Set status cell background color
+      const statusCell = row.getCell(6); // Status is in column F (6th column)
+      if (company.status.toLowerCase() === 'Valid') {
+        statusCell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FF90EE90' } // Light green for valid
+        };
+      } else if (company.status.toLowerCase() === 'invalid') {
+        statusCell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFFF6347' } // Tomato red for invalid
+        };
+      } else {
+        statusCell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFFFD700' } // Gold for other statuses
+        };
+      }
     });
   
     // Auto-fit columns and add styling

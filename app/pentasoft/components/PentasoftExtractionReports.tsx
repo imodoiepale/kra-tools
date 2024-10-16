@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { ArrowUpDown, Download, MoreHorizontal, RefreshCw, Upload } from "lucide-react";
+import { ArrowUpDown, Download, MoreHorizontal, RefreshCw, Upload, Search } from "lucide-react";
 import * as ExcelJS from 'exceljs';
 import { createClient } from '@supabase/supabase-js';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -32,7 +32,12 @@ interface ExtractionRecord {
     id: number;
     company_name: string;
     updated_at: string;
-    files: ExtractionFile[];
+    files: {
+        [monthYear: string]: {
+            files: ExtractionFile[];
+            extraction_date: string;
+        }
+    };
 }
 
 export function PentasoftExtractionReports() {
@@ -55,6 +60,7 @@ export function PentasoftExtractionReports() {
     const [isPreviewOpen, setIsPreviewOpen] = useState(false);
     const [filesPreviews, setFilesPreviews] = useState<FilePreview[]>([]);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const [companySearchTerm, setCompanySearchTerm] = useState('');
 
     useEffect(() => {
         fetchReports();
@@ -64,7 +70,8 @@ export function PentasoftExtractionReports() {
         try {
             const { data: reportsData, error } = await supabase
                 .from('pentasoft_extractions')
-                .select('*');
+                .select('*')
+                .order('id');
 
             if (error) throw error;
 
@@ -104,11 +111,11 @@ export function PentasoftExtractionReports() {
             const row = [
                 report.company_name,
                 new Date(report.updated_at).toLocaleString(),
-                findFile(report.files, 'PAYE')?.name || 'Missing',
-                findFile(report.files, 'N.S.S.F')?.name || 'Missing',
-                findFile(report.files, 'NHIF')?.name || 'Missing',
-                findFile(report.files, 'NITA')?.name || 'Missing',
-                findFile(report.files, 'HOUSE LEVY')?.name || 'Missing',
+                findFile(report.files, 'P10 MONTHLY - PAYE')?.name || 'Missing',
+                findFile(report.files, 'N.S.S.F MONTHLY')?.name || 'Missing',
+                findFile(report.files, 'NHIF MONTHL')?.name || 'Missing',
+                findFile(report.files, 'NITA REVIEW')?.name || 'Missing',
+                findFile(report.files, 'HOUSE LEVY PREVIEW')?.name || 'Missing',
             ];
             worksheet.addRow(row);
         });
@@ -121,11 +128,29 @@ export function PentasoftExtractionReports() {
         link.click();
     };
 
-    const findFile = (files: ExtractionFile[], type: string) => {
-        return files.find(file => file.name.includes(type));
+    const findFile = (files: ExtractionRecord['files'], type: string) => {
+        if (!files) return undefined;
+
+        // Get the most recent month
+        const mostRecentMonth = Object.keys(files).sort().pop();
+        if (!mostRecentMonth) return undefined;
+
+        const monthFiles = files[mostRecentMonth].files;
+        return monthFiles.find(file => file.name.includes(type));
     };
 
-    const renderFileButton = (file: ExtractionFile | undefined) => {
+
+    const renderFileButton = (files: ExtractionFile[] | ExtractionRecord['files'], type: string) => {
+        let file: ExtractionFile | undefined;
+
+        if (Array.isArray(files)) {
+            // This is for the detailed view
+            file = files.find(f => f.name.includes(type));
+        } else {
+            // This is for the summary view
+            file = findFile(files, type);
+        }
+
         if (!file) return <span className="text-red-500 font-bold">Missing</span>;
         return (
             <Button
@@ -277,6 +302,11 @@ export function PentasoftExtractionReports() {
         }
     };
 
+    const filteredCompanies = reports.filter(report =>
+        report.company_name.toLowerCase().includes(companySearchTerm.toLowerCase())
+    );
+
+
     return (
         <Tabs defaultValue="summary">
             <TabsList>
@@ -375,11 +405,11 @@ export function PentasoftExtractionReports() {
                                                 {new Date(report.updated_at).toLocaleString()}
                                             </TableCell>
                                         )}
-                                        {visibleColumns.paye && <TableCell>{renderFileButton(findFile(report.files, 'PAYE'))}</TableCell>}
-                                        {visibleColumns.nssf && <TableCell>{renderFileButton(findFile(report.files, 'N.S.S.F'))}</TableCell>}
-                                        {visibleColumns.nhif && <TableCell>{renderFileButton(findFile(report.files, 'NHIF'))}</TableCell>}
-                                        {visibleColumns.nita && <TableCell>{renderFileButton(findFile(report.files, 'NITA'))}</TableCell>}
-                                        {visibleColumns.house_levy && <TableCell>{renderFileButton(findFile(report.files, 'HOUSE LEVY'))}</TableCell>}
+                                        {visibleColumns.paye && <TableCell>{renderFileButton(report.files, 'P10 MONTHLY - PAYE')}</TableCell>}
+                                        {visibleColumns.nssf && <TableCell>{renderFileButton(report.files, 'N.S.S.F MONTHLY')}</TableCell>}
+                                        {visibleColumns.nhif && <TableCell>{renderFileButton(report.files, 'NHIF MONTHL')}</TableCell>}
+                                        {visibleColumns.nita && <TableCell>{renderFileButton(report.files, 'NITA REVIEW')}</TableCell>}
+                                        {visibleColumns.house_levy && <TableCell>{renderFileButton(report.files, 'HOUSE LEVY PREVIEW')}</TableCell>}
                                     </TableRow>
                                 ))}
                             </TableBody>
@@ -389,24 +419,35 @@ export function PentasoftExtractionReports() {
             </TabsContent>
             <TabsContent value="detailed">
                 <div className="flex space-x-8 mb-4">
-                    <ScrollArea className="h-[600px] w-85 rounded-md border">
-                        {reports.map((report, index) => (
-                            <React.Fragment key={report.id}>
-                                <div
-                                    className={`p-2 cursor-pointer transition-colors duration-200 text-xs uppercase ${selectedCompany?.id === report.id
-                                            ? 'bg-blue-500 text-white font-bold'
-                                            : 'hover:bg-blue-100'
-                                        }`}
-                                    onClick={() => setSelectedCompany(report)}
-                                >
-                                    {report.company_name}
-                                </div>
-                                {index < reports.length - 1 && (
-                                    <div className="border-b border-gray-200"></div>
-                                )}
-                            </React.Fragment>
-                        ))}
-                    </ScrollArea>
+                    <div className="w-85">
+                        <div className="relative mb-2">
+                            <Input
+                                placeholder="Search companies..."
+                                value={companySearchTerm}
+                                onChange={(e) => setCompanySearchTerm(e.target.value)}
+                                className="pl-8 text-xs"
+                            />
+                            <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                        </div>
+                        <ScrollArea className="h-[600px] rounded-md border">
+                            {filteredCompanies.map((report, index) => (
+                                <React.Fragment key={report.id}>
+                                    <div
+                                        className={`p-2 cursor-pointer transition-colors duration-200 text-xs uppercase ${selectedCompany?.id === report.id
+                                                ? 'bg-blue-500 text-white font-bold'
+                                                : 'hover:bg-blue-100'
+                                            }`}
+                                        onClick={() => setSelectedCompany(report)}
+                                    >
+                                        {report.company_name}
+                                    </div>
+                                    {index < filteredCompanies.length - 1 && (
+                                        <div className="border-b border-gray-200"></div>
+                                    )}
+                                </React.Fragment>
+                            ))}
+                        </ScrollArea>
+                    </div>
                     <div className="flex-1">
                         {selectedCompany && (
                             <Card className="shadow-lg">
@@ -419,7 +460,8 @@ export function PentasoftExtractionReports() {
                                             <Table>
                                                 <TableHeader>
                                                     <TableRow>
-                                                        <TableHead className="text-xs">Last Updated At</TableHead>
+                                                        <TableHead className="text-xs text-center">Index</TableHead>
+                                                        <TableHead className="text-xs">Month</TableHead>
                                                         <TableHead className="text-xs text-center">PAYE</TableHead>
                                                         <TableHead className="text-xs text-center">NSSF</TableHead>
                                                         <TableHead className="text-xs text-center">NHIF</TableHead>
@@ -428,16 +470,27 @@ export function PentasoftExtractionReports() {
                                                     </TableRow>
                                                 </TableHeader>
                                                 <TableBody>
-                                                    <TableRow>
-                                                        <TableCell className="text-xs p-1 whitespace-nowrap">
-                                                            {new Date(selectedCompany.updated_at).toLocaleString()}
-                                                        </TableCell>
-                                                        <TableCell className="text-xs p-1 text-center">{renderFileButton(findFile(selectedCompany.files, 'PAYE'))}</TableCell>
-                                                        <TableCell className="text-xs p-1 text-center">{renderFileButton(findFile(selectedCompany.files, 'N.S.S.F'))}</TableCell>
-                                                        <TableCell className="text-xs p-1 text-center">{renderFileButton(findFile(selectedCompany.files, 'NHIF'))}</TableCell>
-                                                        <TableCell className="text-xs p-1 text-center">{renderFileButton(findFile(selectedCompany.files, 'NITA'))}</TableCell>
-                                                        <TableCell className="text-xs p-1 text-center">{renderFileButton(findFile(selectedCompany.files, 'HOUSE LEVY'))}</TableCell>
-                                                    </TableRow>
+                                                    {Object.entries(selectedCompany.files || {}).map(([monthYear, extraction], index) => (
+                                                        <TableRow key={monthYear}>
+                                                            <TableCell className="text-xs p-1 text-center">{index + 1}</TableCell>
+                                                            <TableCell className="text-xs p-1 whitespace-nowrap">{monthYear}</TableCell>
+                                                            <TableCell className="text-xs p-1 text-center">
+                                                                {renderFileButton(extraction.files, 'P10 MONTHLY - PAYE')}
+                                                            </TableCell>
+                                                            <TableCell className="text-xs p-1 text-center">
+                                                                {renderFileButton(extraction.files, 'N.S.S.F MONTHLY')}
+                                                            </TableCell>
+                                                            <TableCell className="text-xs p-1 text-center">
+                                                                {renderFileButton(extraction.files, 'NHIF MONTHL')}
+                                                            </TableCell>
+                                                            <TableCell className="text-xs p-1 text-center">
+                                                                {renderFileButton(extraction.files, 'NITA REVIEW')}
+                                                            </TableCell>
+                                                            <TableCell className="text-xs p-1 text-center">
+                                                                {renderFileButton(extraction.files, 'HOUSE LEVY PREVIEW')}
+                                                            </TableCell>
+                                                        </TableRow>
+                                                    ))}
                                                 </TableBody>
                                             </Table>
                                         </div>
