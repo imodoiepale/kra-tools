@@ -54,7 +54,6 @@ export default function CheckerManager() {
 
     const [isChecking, setIsChecking] = useState(false);
     const [activeTab, setActiveTab] = useState("PasswordCheckerReports");
-    const [progress, setProgress] = useState(0);
     const [status, setStatus] = useState("Not Started");
     const [companies, setCompanies] = useState([]);
 
@@ -460,72 +459,13 @@ export default function CheckerManager() {
 
 
 
-    const handleStartCheck = async () => {
-        if (isChecking) {
-            alert('An automation is already running. Please wait for it to complete or stop it before starting a new one.');
-            return;
-        }
-
-        try {
-            const response = await fetch('/api/password-checker', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    action: "start",
-                    runOption,
-                    selectedIds: runOption === 'selected' ? selectedCompanies : []
-                })
-            })
-
-            if (!response.ok) throw new Error('API request failed')
-
-            const data = await response.json()
-            console.log('Password check started:', data)
-            setIsChecking(true)
-            setStatus("Running")
-            setActiveTab("running")
-        } catch (error) {
-            console.error('Error starting password check:', error)
-            alert('Failed to start password check. Please try again.')
-        }
-    }
-
-    const handleStopCheck = async () => {
-        if (!isChecking) {
-            alert('There is no automation currently running.');
-            return;
-        }
-
-        try {
-            const response = await fetch('/api/password-checker', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ action: "stop" })
-            })
-
-            if (!response.ok) throw new Error('Failed to stop automation')
-
-            const data = await response.json()
-            console.log('Automation stopped:', data)
-            setIsChecking(false)
-            setStatus("Stopped")
-            alert('Automation stopped successfully.')
-        } catch (error) {
-            console.error('Error stopping automation:', error)
-            alert('Failed to stop automation. Please try again.')
-        }
-    }
 
     return (
         <div className="p-4 w-full">
             <Card>
                 <CardHeader className="flex flex-row items-center justify-between">
                     <div>
-                        <CardTitle>Password Manager</CardTitle>
+                        <h3 className="text-lg font-medium">Password Check Reports</h3>
                         <CardDescription>Manage passwords for different categories</CardDescription>
                     </div>
                     <div className="space-x-2">
@@ -544,15 +484,7 @@ export default function CheckerManager() {
                     </div>
                 </CardHeader>
                 <CardContent>
-                    <div className="flex justify-between items-center mb-1">
-                        <Tabs value={activeCategory} onValueChange={setActiveCategory} defaultValue="companies">
-                            <TabsList>
-                                {Object.keys(categories).map(category => (
-                                    <TabsTrigger key={category} value={category}>{category}</TabsTrigger>
-                                ))}
-                            </TabsList>
-                        </Tabs>
-                        <div className="flex justify-between items-center mb-1 gap-4">
+                        <div className="flex justify-end items-center mb-3 gap-4">
                             <span className="text-sm text-gray-500">
                                 Linked to: {linkedTables[`${activeCategory}_${activeSubCategory}`] || 'Not linked'}
                             </span>
@@ -561,39 +493,8 @@ export default function CheckerManager() {
                                 Add Item
                             </Button>
                         </div>
-                    </div>
-
-                    <Tabs defaultValue="reports" >
-                        <TabsList>
-                            <TabsTrigger value="start">Start</TabsTrigger>
-                            <TabsTrigger value="running">Running</TabsTrigger>
-                            <TabsTrigger value="reports">Reports</TabsTrigger>
-                        </TabsList>
-                        <TabsContent value="start">
-                            <Start
-                                companies={companies}
-                                isChecking={isChecking}
-                                handleStartCheck={handleStartCheck}
-                                handleStopCheck={handleStopCheck}
-                            />
-                        </TabsContent>
-                        <TabsContent value="running">
-                            <PasswordCheckerRunning
-                                progress={progress}
-                                status={status}
-                                isChecking={isChecking}
-                                handleStopCheck={handleStopCheck}
-                                onComplete={() => {
-                                    setActiveTab("Reports");
-                                    setIsChecking(false);
-                                    setStatus("Completed");
-                                }}
-                            />
-                        </TabsContent>
-                        <TabsContent value="reports">
-                            <PasswordCheckerReports/>
-                        </TabsContent>
-                    </Tabs>
+                    <PasswordCheckerReports/>
+            
                 </CardContent>
             </Card>
 

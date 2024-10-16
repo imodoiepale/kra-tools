@@ -1,6 +1,6 @@
 // components/PasswordCheckerReports.tsx
 // @ts-nocheck
-import { useEffect, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { supabase } from '@/lib/supabase'
 import { Button } from "@/components/ui/button"
@@ -9,52 +9,85 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Trash2, Download } from 'lucide-react'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger, SheetClose } from "@/components/ui/sheet"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import ExcelJS from 'exceljs'
-
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import Start from './Start';
+import PasswordCheckerRunning from './PasswordCheckerRunning';
 interface Company {
   id: number
-  company_name: string
-  kra_pin: string
-  kra_password: string
+  name: string
+  identifier: string
+  password: string
   status: string
-  last_checked: string
+  last_checked?: string
+  code?: string
+  director?: string
 }
 
-export  default function PasswordCheckerReports() {
+export default function PasswordCheckerReports() {
   const [editingCompany, setEditingCompany] = useState<Company | null>(null)
   const [newCompany, setNewCompany] = useState<Partial<Company>>({
-    company_name: '',
-    kra_pin: '',
-    kra_password: '',
+    name: '',
+    identifier: '',
+    password: '',
   })
-  const [activeTab, setActiveTab] = useState('PasswordChecker')
+  const [activeTab, setActiveTab] = useState('kra')
   const [companies, setCompanies] = useState<Company[]>([])
+  const [sortConfig, setSortConfig] = useState({ key: null, direction: 'ascending' });
+  const [searchTerm, setSearchTerm] = useState('');
+
+  const [isChecking, setIsChecking] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [status, setStatus] = useState("Not Started");
 
   useEffect(() => {
-    const fetchReports = async () => {
-      const { data, error } = await supabase
-        .from(activeTab)
-        .select('*')
-        .order('id')
-  
-      if (error) {
-        console.error(`Error fetching reports from ${activeTab}:`, error)
-      } else {
-        setCompanies(data || [])
-      }
-    }
-  
     fetchReports()
   }, [activeTab])
+
+  const fetchReports = async () => {
+    let tableName = ''
+    switch (activeTab) {
+      case 'kra':
+        tableName = 'PasswordChecker'
+        break
+      case 'nssf':
+        tableName = 'nssf_companies'
+        break
+      case 'nhif':
+        tableName = 'nhif_companies'
+        break
+      case 'ecitizen':
+        tableName = 'ecitizen_companies'
+        break
+      case 'quickbooks':
+        tableName = 'quickbooks_companies'
+        break
+      default:
+        tableName = 'PasswordChecker'
+    }
+
+    const { data, error } = await supabase
+      .from(tableName)
+      .select('*')
+      .order('id')
+
+    if (error) {
+      console.error(`Error fetching reports from ${tableName}:`, error)
+    } else {
+      setCompanies(data || [])
+    }
+  }
+
   const handleEdit = (company: Company) => {
     setEditingCompany(company)
   }
 
   const handleSave = async (updatedCompany: Company) => {
     const { id, ...updateData } = updatedCompany
+    let tableName = getTableName()
+
     const { error } = await supabase
-      .from('PasswordChecker')
+      .from(tableName)
       .update(updateData)
       .eq('id', id)
 
@@ -67,8 +100,10 @@ export  default function PasswordCheckerReports() {
   }
 
   const handleDelete = async (id: number) => {
+    let tableName = getTableName()
+
     const { error } = await supabase
-      .from('PasswordChecker')
+      .from(tableName)
       .delete()
       .eq('id', id)
 
@@ -80,8 +115,10 @@ export  default function PasswordCheckerReports() {
   }
 
   const handleDeleteAll = async () => {
+    let tableName = getTableName()
+
     const { error } = await supabase
-      .from('PasswordChecker')
+      .from(tableName)
       .delete()
       .neq('id', 0)  // This will delete all rows
 
@@ -93,8 +130,10 @@ export  default function PasswordCheckerReports() {
   }
 
   const handleAddCompany = async () => {
+    let tableName = getTableName()
+
     const { data, error } = await supabase
-      .from('PasswordChecker')
+      .from(tableName)
       .insert([newCompany])
       .select()
 
@@ -103,9 +142,9 @@ export  default function PasswordCheckerReports() {
     } else {
       setCompanies([...companies, data[0]])
       setNewCompany({
-        company_name: '',
-        kra_pin: '',
-        kra_password: '',
+        name: '',
+        identifier: '',
+        password: '',
       })
     }
   }
@@ -114,8 +153,10 @@ export  default function PasswordCheckerReports() {
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('Password Check Reports');
   
-    // Add headers starting from B2
-    const headers = ['Index', 'Company Name', 'KRA PIN', 'KRA Password', 'Status', 'Last Checked'];
+    // Add headers
+    const headers = ['Index', 'Name', 'Identifier', 'Password', 'Status', 'Last Checked']
+    if (activeTab === 'nhif' || activeTab === 'nssf') headers.push('Code')
+    if (activeTab === 'ecitizen') headers.push('Director')
     
     worksheet.addRow([]); // Create empty first row
     const headerRow = worksheet.getRow(2);
@@ -132,45 +173,24 @@ export  default function PasswordCheckerReports() {
       };
     });
   
-    // Add data starting from row 3 (B3 onwards)
+    // Add data
     companies.forEach((company, index) => {
-      const row = worksheet.addRow([
+      const row = [
         '', // Empty cell in column A
-        index + 1, // Index in B
-        company.company_name, // Company Name in C
-        company.kra_pin, // KRA PIN in D
-        company.kra_password, // KRA Password in E
-        company.status, // Status in F
-        company.last_checked ? new Date(company.last_checked).toLocaleString() : 'Missing' // Last Checked in G
-      ]);
-  
-      // Center-align the index column (column B)
-      row.getCell(2).alignment = { horizontal: 'center' };
-  
-      // Set status cell background color
-      const statusCell = row.getCell(6); // Status is in column F (6th column)
-      if (company.status.toLowerCase() === 'valid') {
-        statusCell.fill = {
-          type: 'pattern',
-          pattern: 'solid',
-          fgColor: { argb: 'FF90EE90' } // Light green for valid
-        };
-      } else if (company.status.toLowerCase() === 'invalid') {
-        statusCell.fill = {
-          type: 'pattern',
-          pattern: 'solid',
-          fgColor: { argb: 'FFFF6347' } // Tomato red for invalid
-        };
-      } else {
-        statusCell.fill = {
-          type: 'pattern',
-          pattern: 'solid',
-          fgColor: { argb: 'FFFFD700' } // Gold for other statuses
-        };
-      }
+        index + 1,
+        company.name,
+        company.identifier,
+        company.password,
+        company.status,
+        company.last_checked ? new Date(company.last_checked).toLocaleString() : 'Missing'
+      ]
+      if (activeTab === 'nhif' || activeTab === 'nssf') row.push(company.code || 'Missing')
+      if (activeTab === 'ecitizen') row.push(company.director || 'Missing')
+      
+      worksheet.addRow(row);
     });
   
-    // Auto-fit columns based on their content
+    // Auto-fit columns and add styling
     worksheet.columns.forEach((column) => {
       let maxLength = 0;
       column.eachCell({ includeEmpty: true }, (cell) => {
@@ -179,21 +199,7 @@ export  default function PasswordCheckerReports() {
           maxLength = cellLength;
         }
       });
-      column.width = maxLength + 2; // Add padding for better readability
-    });
-  
-    // Add borders to all cells, except column A (empty column)
-    worksheet.eachRow({ includeEmpty: true }, (row) => {
-      row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
-        if (colNumber > 1) { // Skip borders for column A
-          cell.border = {
-            top: { style: 'thin' },
-            left: { style: 'thin' },
-            bottom: { style: 'thin' },
-            right: { style: 'thin' }
-          };
-        }
-      });
+      column.width = maxLength + 2;
     });
   
     // Generate Excel file
@@ -204,19 +210,68 @@ export  default function PasswordCheckerReports() {
     // Trigger download
     const link = document.createElement('a');
     link.href = url;
-    link.download = 'password_check_reports.xlsx';
+    link.download = `${activeTab}_password_check_reports.xlsx`;
     link.click();
   
-    // Clean up
     URL.revokeObjectURL(url);
   };
-  
 
+  const getTableName = () => {
+    switch (activeTab) {
+      case 'kra':
+        return 'PasswordChecker'
+      case 'nssf':
+        return 'nssf_companies'
+      case 'nhif':
+        return 'nhif_companies'
+      case 'ecitizen':
+        return 'ecitizen_companies'
+      case 'quickbooks':
+        return 'quickbooks_companies'
+      default:
+        return 'PasswordChecker'
+    }
+  }
+
+
+const handleStopCheck = async () => {
+    if (!isChecking) {
+        alert('There is no automation currently running.');
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/password-checker', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ action: "stop" })
+        })
+
+        if (!response.ok) throw new Error('Failed to stop automation')
+
+        const data = await response.json()
+        console.log('Automation stopped:', data)
+        setIsChecking(false)
+        setStatus("Stopped")
+        alert('Automation stopped successfully.')
+    } catch (error) {
+        console.error('Error stopping automation:', error)
+        alert('Failed to stop automation. Please try again.')
+    }
+}
   return (
     <div className="space-y-4">
-      <div className="flex justify-between items-center">
-        <h3 className="text-lg font-medium">Password Check Reports</h3>
-        <div className="flex space-x-2">
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList>
+            <TabsTrigger value="kra">KRA</TabsTrigger>
+            <TabsTrigger value="nssf">NSSF</TabsTrigger>
+            <TabsTrigger value="nhif">NHIF</TabsTrigger>
+            <TabsTrigger value="ecitizen">E-Citizen</TabsTrigger>
+            <TabsTrigger value="quickbooks">QuickBooks</TabsTrigger>
+        </TabsList>    
+        <div className="flex justify-end space-x-2">
           <Sheet>
             <SheetTrigger asChild>
               <Button size="sm">Add New Company</Button>
@@ -227,46 +282,50 @@ export  default function PasswordCheckerReports() {
               </SheetHeader>
               <div className="grid gap-4 py-4">
                 <div className="flex flex-col gap-2">
-                  <Label htmlFor="company_name">Company Name</Label>
+                  <Label htmlFor="name">Company Name</Label>
                   <Input
-                    id="company_name"
-                    value={newCompany.company_name}
-                    onChange={(e) => setNewCompany({ ...newCompany, company_name: e.target.value })}
+                    id="name"
+                    value={newCompany.name}
+                    onChange={(e) => setNewCompany({ ...newCompany, name: e.target.value })}
                   />
                 </div>
                 <div className="flex flex-col gap-2">
-                  <Label htmlFor="kra_pin">KRA PIN</Label>
+                  <Label htmlFor="identifier">Identifier</Label>
                   <Input
-                    id="kra_pin"
-                    value={newCompany.kra_pin}
-                    onChange={(e) => setNewCompany({ ...newCompany, kra_pin: e.target.value })}
+                    id="identifier"
+                    value={newCompany.identifier}
+                    onChange={(e) => setNewCompany({ ...newCompany, identifier: e.target.value })}
                   />
                 </div>
                 <div className="flex flex-col gap-2">
-                  <Label htmlFor="kra_password">KRA Password</Label>
+                  <Label htmlFor="password">Password</Label>
                   <Input
-                    id="kra_password"
+                    id="password"
                     type="password"
-                    value={newCompany.kra_password}
-                    onChange={(e) => setNewCompany({ ...newCompany, kra_password: e.target.value })}
+                    value={newCompany.password}
+                    onChange={(e) => setNewCompany({ ...newCompany, password: e.target.value })}
                   />
                 </div>
-                <div className="flex flex-col gap-2">
-                  <Label htmlFor="status">Status</Label>
-                  <Select
-                    id="status"
-                    value={newCompany.status}
-                    onValueChange={(value) => setNewCompany({ ...newCompany, status: value })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select status" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="valid">Valid</SelectItem>
-                      <SelectItem value="invalid">Invalid</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                {(activeTab === 'nhif' || activeTab === 'nssf') && (
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="code">Code</Label>
+                    <Input
+                      id="code"
+                      value={newCompany.code}
+                      onChange={(e) => setNewCompany({ ...newCompany, code: e.target.value })}
+                    />
+                  </div>
+                )}
+                {activeTab === 'ecitizen' && (
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="director">Director</Label>
+                    <Input
+                      id="director"
+                      value={newCompany.director}
+                      onChange={(e) => setNewCompany({ ...newCompany, director: e.target.value })}
+                    />
+                  </div>
+                )}
               </div>
               <SheetClose asChild>
                 <Button size="sm" onClick={handleAddCompany}>Add Company</Button>
@@ -280,98 +339,188 @@ export  default function PasswordCheckerReports() {
           <Button size="sm" variant="destructive" onClick={handleDeleteAll}>
             Delete All
           </Button>
-        </div>
-      </div>
-      <div className="rounded-md border">
-        <div className="overflow-x-auto">
-          <div className="max-h-[calc(100vh-300px)] overflow-y-auto">
-            <Table className="text-sm pb-4">
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="text-center">Index</TableHead>
-                  <TableHead>Company Name</TableHead>
-                  <TableHead className="text-center">KRA PIN</TableHead>
-                  <TableHead className="text-center">KRA Password</TableHead>
-                  <TableHead className="text-center">Status</TableHead>
-                  <TableHead className="text-center">Last Checked</TableHead>
-                  <TableHead className="text-center">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {companies.map((company, index) => (
-                  <TableRow key={company.id} className={`h-10 ${index % 2 === 0 ? 'bg-white' : 'bg-blue-50'}`}>
-                    <TableCell className="text-center">{index + 1}</TableCell>
-                    <TableCell>{company.company_name || <span className="font-bold text-red-600">Missing</span>}</TableCell>
-                    <TableCell className="text-center">{company.kra_pin || <span className="font-bold text-red-600">Missing</span>}</TableCell>
-                    <TableCell className="text-center">{company.kra_password || <span className="font-bold text-red-600">Missing</span>}</TableCell>
-                    <TableCell className="text-center">
-                      <span className={`inline-flex items-center justify-center px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(company.status)}`}>
-                        {company.status || <span className="font-bold text-red-600">Missing</span>}
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-center">{company.last_checked ? new Date(company.last_checked).toLocaleString() : <span className="font-bold text-red-600">Missing</span>}</TableCell>
-                    <TableCell className="text-center">
-                      <div className="flex justify-center space-x-2">
-                        <Dialog>
-                          <DialogTrigger asChild>
-                            <Button variant="outline" size="sm" onClick={() => handleEdit(company)}>Edit</Button>
-                          </DialogTrigger>
-                          <DialogContent className="sm:max-w-[425px]">
-                            <DialogHeader>
-                              <DialogTitle>Edit Company</DialogTitle>
-                            </DialogHeader>
-                            <div className="grid grid-cols-2 gap-4">
-                              <div className="space-y-2">
-                                <Label htmlFor="company_name">Company Name</Label>
-                                <Input
-                                  id="company_name"
-                                  value={editingCompany?.company_name}
-                                  onChange={(e) => setEditingCompany({ ...editingCompany, company_name: e.target.value })}
-                                />
-                              </div>
-                              <div className="space-y-2">
-                                <Label htmlFor="kra_pin">KRA PIN</Label>
-                                <Input
-                                  id="kra_pin"
-                                  value={editingCompany?.kra_pin}
-                                  onChange={(e) => setEditingCompany({ ...editingCompany, kra_pin: e.target.value })}
-                                />
-                              </div>
-                              <div className="space-y-2">
-                                <Label htmlFor="kra_password">KRA Password</Label>
-                                <Input
-                                  id="kra_password"
-                                  value={editingCompany?.kra_password}
-                                  onChange={(e) => setEditingCompany({ ...editingCompany, kra_password: e.target.value })}
-                                />
-                              </div>
-                              <div className="space-y-2">
-                                <Label htmlFor="status">Status</Label>
-                                <Input
-                                  id="status"
-                                  value={editingCompany?.status}
-                                  onChange={(e) => setEditingCompany({ ...editingCompany, status: e.target.value })}
-                                  disabled
-                                />
-                              </div>
-                            </div>
-                            <DialogClose asChild>
-                              <Button onClick={() => handleSave(editingCompany)}>Save Changes</Button>
-                            </DialogClose>
-                          </DialogContent>
-                        </Dialog>
-                        <Button variant="outline" size="sm" onClick={() => handleDelete(company.id)}>
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+        </div>    
+      </Tabs>
+      <Tabs defaultValue="reports">
+        <TabsList>
+          <TabsTrigger value="start">Start</TabsTrigger>
+          <TabsTrigger value="running">Running</TabsTrigger>
+          <TabsTrigger value="reports">Reports</TabsTrigger>
+        </TabsList>
+        <TabsContent value="start">
+          <Start
+            companies={companies}
+            isChecking={isChecking}
+            // handleStartCheck={handleStartCheck}
+            handleStopCheck={handleStopCheck}
+            activeTab={activeTab} 
+          />
+        </TabsContent>
+        <TabsContent value="running">
+          <PasswordCheckerRunning
+            progress={progress}
+            status={status}
+            isChecking={isChecking}
+            handleStopCheck={handleStopCheck}
+            activeTab={activeTab} 
+            onComplete={() => {
+              setActiveTab("Reports")
+              setIsChecking(false)
+              setStatus("Completed")
+            }}
+          />
+        </TabsContent>
+        <TabsContent value="reports">
+          <div className="rounded-md border">
+            <div className="overflow-x-auto">
+              <div className="max-h-[calc(100vh-300px)] overflow-y-auto">
+                <Table className="text-sm pb-4">
+                  <TableHeader>
+                    <TableRow>
+                    <TableHead className="text-center">Index</TableHead>
+                    <TableHead>Name</TableHead>
+                      {activeTab === 'kra' ? (
+                        <>
+                          <TableHead className="text-center">KRA PIN</TableHead>
+                          <TableHead className="text-center">KRA Password</TableHead>
+                        </>
+                      ) : (
+                        <>
+                  
+                      {activeTab === 'nssf' && (
+                        <>
+                         <TableHead className="text-center">NSSF ID</TableHead>
+                        <TableHead className="text-center">NSSF Code</TableHead>
+                        <TableHead className="text-center">NSSF Password</TableHead>
+                        </>
+                      )}
+                      {activeTab === 'nhif' && (
+                        <>
+                         <TableHead className="text-center">NHIF ID</TableHead>
+                         <TableHead className="text-center">NHIF Password</TableHead>
+                        <TableHead className="text-center">NHIF Code</TableHead>
+                        </>
+                      )}
+                      {activeTab === 'ecitizen' && (
+                        <>
+                         <TableHead className="text-center">eCitizen ID</TableHead>
+                         <TableHead className="text-center">eCitizen Password</TableHead>
+                        <TableHead className="text-center">Director</TableHead>
+                        </>
+                      )}
+                       {activeTab === 'quickbooks' && (
+                        <>
+                         <TableHead className="text-center">ID</TableHead>
+                         <TableHead className="text-center">Password</TableHead>
+                        </>
+                      )}
+                        </>
+                      )}
+                          <TableHead className="text-center">Status</TableHead>
+                          <TableHead className="text-center">Last Checked</TableHead>
+                      <TableHead className="text-center">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {companies.map((company, index) => (
+                      <TableRow key={company.id} className={`h-10 ${index % 2 === 0 ? 'bg-white' : 'bg-blue-50'}`}>
+                        {activeTab === 'kra' ? (
+                          <>
+                            <TableCell className="text-center">{company.id}</TableCell>
+                            <TableCell>{company.company_name || <span className="font-bold text-red-600">Missing</span>}</TableCell>
+                            <TableCell className="text-center">{company.kra_pin || <span className="font-bold text-red-600">Missing</span>}</TableCell>
+                            <TableCell className="text-center">{company.kra_password || <span className="font-bold text-red-600">Missing</span>}</TableCell>
+                            <TableCell className="text-center">
+                              <span className={`inline-flex items-center justify-center px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(company.status)}`}>
+                                {company.status || <span className="font-bold text-red-600">Missing</span>}
+                              </span>
+                            </TableCell>
+                            <TableCell className="text-center">{company.last_checked ? new Date(company.last_checked).toLocaleString() : <span className="font-bold text-red-600">Missing</span>}</TableCell>
+                          </>
+                        ) : (
+                          <>
+                            <TableCell className="text-center">{index + 1}</TableCell>
+                            <TableCell>{company.name || <span className="font-bold text-red-600">Missing</span>}</TableCell>
+                            <TableCell className="text-center">{company.identifier || <span className="font-bold text-red-600">Missing</span>}</TableCell>
+                            <TableCell className="text-center">{company.password || <span className="font-bold text-red-600">Missing</span>}</TableCell>
+                            {(activeTab === 'nhif' || activeTab === 'nssf') && (
+                              <TableCell className="text-center">{company.code || <span className="font-bold text-red-600">Missing</span>}</TableCell>
+                            )}
+                            {activeTab === 'ecitizen' && (
+                              <TableCell className="text-center">{company.director || <span className="font-bold text-red-600">Missing</span>}</TableCell>
+                            )}
+                            <TableCell className="text-center">
+                              <span className={`inline-flex items-center justify-center px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(company.status)}`}>
+                                {company.status || <span className="font-bold text-red-600">Missing</span>}
+                              </span>
+                            </TableCell>
+                            <TableCell className="text-center">{company.last_checked ? new Date(company.last_checked).toLocaleString() : <span className="font-bold text-red-600">Missing</span>}</TableCell>
+                          </>
+                        )}
+                        <TableCell className="text-center">
+                          <div className="flex justify-center space-x-2">
+                            <Dialog>
+                              <DialogTrigger asChild>
+                                <Button variant="outline" size="sm" onClick={() => handleEdit(company)}>Edit</Button>
+                              </DialogTrigger>
+                              <DialogContent className="sm:max-w-[425px]">
+                                <DialogHeader>
+                                  <DialogTitle>Edit Company</DialogTitle>
+                                </DialogHeader>
+                                <div className="grid grid-cols-2 gap-4">
+                                  <div className="space-y-2">
+                                    <Label htmlFor="name">Company Name</Label>
+                                    <Input
+                                      id="name"
+                                      value={editingCompany?.name}
+                                      onChange={(e) => setEditingCompany({ ...editingCompany, name: e.target.value })}
+                                    />
+                                  </div>
+                                  <div className="space-y-2">
+                                    <Label htmlFor="kra_pin">KRA PIN</Label>
+                                    <Input
+                                      id="kra_pin"
+                                      value={editingCompany?.kra_pin}
+                                      onChange={(e) => setEditingCompany({ ...editingCompany, kra_pin: e.target.value })}
+                                    />
+                                  </div>
+                                  <div className="space-y-2">
+                                    <Label htmlFor="kra_password">KRA Password</Label>
+                                    <Input
+                                      id="kra_password"
+                                      value={editingCompany?.kra_password}
+                                      onChange={(e) => setEditingCompany({ ...editingCompany, kra_password: e.target.value })}
+                                    />
+                                  </div>
+                                  <div className="space-y-2">
+                                    <Label htmlFor="status">Status</Label>
+                                    <Input
+                                      id="status"
+                                      value={editingCompany?.status}
+                                      onChange={(e) => setEditingCompany({ ...editingCompany, status: e.target.value })}
+                                      disabled
+                                    />
+                                  </div>
+                                </div>
+                                <DialogClose asChild>
+                                  <Button onClick={() => handleSave(editingCompany)}>Save Changes</Button>
+                                </DialogClose>
+                              </DialogContent>
+                            </Dialog>
+                            <Button variant="outline" size="sm" onClick={() => handleDelete(company.id)}>
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
+        </TabsContent>
+      </Tabs>
       <style jsx>{`
         .overflow-x-auto {
           overflow-x: auto

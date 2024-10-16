@@ -2,7 +2,7 @@ import { chromium } from "playwright";
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
-import ExcelJS from "exceljs"; // Import ExcelJS library for Excel manipulation
+import ExcelJS from "exceljs";
 import retry from "async-retry";
 import { createClient } from "@supabase/supabase-js";
 
@@ -12,7 +12,7 @@ const formattedDateTime = `${now.getDate()}.${now.getMonth() + 1}.${now.getFullY
 const downloadFolderPath = path.join(
     os.homedir(),
     "Downloads",
-    `AUTO PASSWORD VALIDATION - NSSF - COMPANIES - ${formattedDateTime}`
+    `AUTO PASSWORD VALIDATION - NHIF - COMPANIES - ${formattedDateTime}`
 );
 fs.mkdir(downloadFolderPath, { recursive: true }).catch(console.error);
 
@@ -22,37 +22,51 @@ const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 let stopRequested = false;
 
-// Function to log in to NSSF portal
-async function loginToNSSF(page, company) {
-    await page.goto("https://eservice.nssfkenya.co.ke/eSF24/faces/login.xhtml");
-    await page.getByLabel('Username:').fill(company.identifier);
-    await page.getByLabel('Password:').fill(company.password);
-    await page.getByRole('button', { name: 'Login' }).click();
-    await page.waitForLoadState("networkidle");
+// Function to log in to NHIF portal
+async function loginToNHIF(page, company) {
+    await page.goto('https://payrollbyproduct.nhif.or.ke/byproduct/');
+    await page.getByRole('link', { name: 'Login' }).click();
 
-    // Check for login error using a more specific selector
-    const loginError = await page.locator('div#heading:has-text("Login Error")').isVisible();
+    await page.waitForLoadState('networkidle');
+
+    const frames = page.frames();
+    let loginFrame;
+    for (const frame of frames) {
+        if (await frame.locator('label:has-text("Employer Code")').count()) {
+            loginFrame = frame;
+            break;
+        }
+    }
+
+    if (!loginFrame) {
+        throw new Error("Login frame not found");
+    }
+
+    await loginFrame.getByLabel('Employer Code').fill(company.identifier);
+    await loginFrame.getByLabel('Password').fill(company.password);
+    await loginFrame.getByRole('button', { name: 'Login' }).click();
+
+    const loginError = await loginFrame.locator('text=Please fill out all the required fields and try again.').isVisible();
     if (loginError) {
-        console.log("Login Error: Invalid account info.");
-        await page.getByRole('button', { name: 'Back' }).click();
+        console.log("Login Error: Please fill out all the required fields and try again.");
         throw new Error("Login Error");
     }
 
     console.log("Login successful");
 }
 
-// Function to log out from NSSF portal
-async function logoutFromNSSF(page) {
+// Function to log out from NHIF portal
+async function logoutFromNHIF(page) {
     await page.getByRole('link', { name: 'Logout' }).click();
-    console.log("Logged out from NSSF portal.");
+    console.log("Logged out from NHIF portal.");
 }
 
 // Function to read company data from Supabase
 const readSupabaseData = async () => {
     try {
-        const { data, error } = await supabase.from("nssf_companies").select("*").order('id');
+        const { data, error } = await supabase.from("nhif_companies").select("*").order('id');
         if (error) {
-            throw new Error(`Error reading data from 'nssf_companies' table: ${error.message}`);
+            throw new Error(`Error reading data from 'nhif_companies' table: ${error.message}`);
         }
         return data;
     } catch (error) {
@@ -64,7 +78,7 @@ const readSupabaseData = async () => {
 const updateSupabaseStatus = async (id, status) => {
     try {
         const { error } = await supabase
-            .from("nssf_companies")
+            .from("nhif_companies")
             .update({ status, updated_at: new Date().toISOString() })
             .eq("id", id);
 
@@ -168,7 +182,7 @@ async function processCompanies(runOption, selectedIds) {
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet("Password Validation");
 
-        const headers = ["Company Name", "NSSF ID", "Password", "Status"];
+        const headers = ["Company Name", "Employer Code", "Password", "Status"];
         const headerRow = worksheet.getRow(3);
         headers.forEach((header, index) => {
             headerRow.getCell(index + 3).value = header;
@@ -191,7 +205,7 @@ async function processCompanies(runOption, selectedIds) {
 
             const company = data[i];
             console.log("COMPANY:", company.name);
-            console.log("NSSF ID:", company.identifier);
+            console.log("Employer Code:", company.identifier);
             console.log("Password:", company.password);
 
             let loginAttempt = 0;
@@ -200,11 +214,11 @@ async function processCompanies(runOption, selectedIds) {
                 if (company.password === null || company.identifier === null) {
                     let status;
                     if (company.password === null && company.identifier === null) {
-                        status = "ID and Password Missing";
+                        status = "Code and Password Missing";
                     } else if (company.password === null) {
                         status = "Password Missing";
                     } else {
-                        status = "ID Missing";
+                        status = "Code Missing";
                     }
                     console.log(`Skipping ${company.name}: ${status}`);
                     const row = worksheet.addRow([
@@ -224,7 +238,7 @@ async function processCompanies(runOption, selectedIds) {
 
                 await retry(async () => {
                     loginAttempt++;
-                    await loginToNSSF(page, company);
+                    await loginToNHIF(page, company);
                 }, {
                     retries: 1,
                     onRetry: async (error) => {
@@ -232,7 +246,7 @@ async function processCompanies(runOption, selectedIds) {
                     }
                 });
 
-                await logoutFromNSSF(page);
+                await logoutFromNHIF(page);
                 await updateSupabaseStatus(company.id, "Valid");
 
                 const row = worksheet.addRow([null, company.name, company.identifier, company.password, "Valid"]);
@@ -273,7 +287,7 @@ async function processCompanies(runOption, selectedIds) {
             await updateAutomationProgress(Math.round(((i + 1) / data.length) * 100), "Running", logs);
         }
 
-        await workbook.xlsx.writeFile(path.join(downloadFolderPath, `PASSWORD VALIDATION - NSSF - COMPANIES.xlsx`));
+        await workbook.xlsx.writeFile(path.join(downloadFolderPath, `PASSWORD VALIDATION - NHIF - COMPANIES.xlsx`));
 
         await context.close();
         await browser.close();
