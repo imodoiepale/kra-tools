@@ -152,18 +152,18 @@ export default function PasswordCheckerReports() {
   const handleDownloadExcel = async () => {
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('Password Check Reports');
-  
+
     // Add headers
     const headers = ['Index', 'Name', 'Identifier', 'Password', 'Status', 'Last Checked']
     if (activeTab === 'nhif' || activeTab === 'nssf') headers.push('Code')
     if (activeTab === 'ecitizen') headers.push('Director')
-    
+
     worksheet.addRow([]); // Create empty first row
     const headerRow = worksheet.getRow(2);
     headers.forEach((header, i) => {
       headerRow.getCell(i + 2).value = header; // Start from column B
     });
-  
+
     headerRow.eachCell((cell) => {
       cell.font = { bold: true };
       cell.fill = {
@@ -172,10 +172,10 @@ export default function PasswordCheckerReports() {
         fgColor: { argb: 'FFFFFF00' }
       };
     });
-  
+
     // Add data
     companies.forEach((company, index) => {
-      const row = [
+      const row = worksheet.addRow([
         '', // Empty cell in column A
         index + 1, // Index in B
         company.company_name, // Company Name in C
@@ -184,33 +184,26 @@ export default function PasswordCheckerReports() {
         company.status, // Status in F
         company.last_checked ? new Date(company.last_checked).toLocaleString() : 'Missing' // Last Checked in G
       ]);
-  
+
       // Center-align the index column (column B)
       row.getCell(2).alignment = { horizontal: 'center' };
-  
+
       // Set status cell background color
       const statusCell = row.getCell(6); // Status is in column F (6th column)
-      if (company.status.toLowerCase() === 'Valid') {
-        statusCell.fill = {
-          type: 'pattern',
-          pattern: 'solid',
-          fgColor: { argb: 'FF90EE90' } // Light green for valid
-        };
-      } else if (company.status.toLowerCase() === 'invalid') {
-        statusCell.fill = {
-          type: 'pattern',
-          pattern: 'solid',
-          fgColor: { argb: 'FFFF6347' } // Tomato red for invalid
-        };
-      } else {
-        statusCell.fill = {
-          type: 'pattern',
-          pattern: 'solid',
-          fgColor: { argb: 'FFFFD700' } // Gold for other statuses
-        };
-      }
+      const statusColor = {
+        'valid': 'FF90EE90', // Light green for valid
+        'invalid': 'FFFF6347', // Tomato red for invalid
+        'default': 'FFFFD700' // Gold for other statuses
+      };
+
+      statusCell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: statusColor[company.status.toLowerCase()] || statusColor.default }
+      };
     });
-  
+
+
     // Auto-fit columns and add styling
     worksheet.columns.forEach((column) => {
       let maxLength = 0;
@@ -222,18 +215,18 @@ export default function PasswordCheckerReports() {
       });
       column.width = maxLength + 2;
     });
-  
+
     // Generate Excel file
     const buffer = await workbook.xlsx.writeBuffer();
     const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     const url = URL.createObjectURL(blob);
-  
+
     // Trigger download
     const link = document.createElement('a');
     link.href = url;
     link.download = `${activeTab}_password_check_reports.xlsx`;
     link.click();
-  
+
     URL.revokeObjectURL(url);
   };
 
@@ -255,43 +248,43 @@ export default function PasswordCheckerReports() {
   }
 
 
-const handleStopCheck = async () => {
+  const handleStopCheck = async () => {
     if (!isChecking) {
-        alert('There is no automation currently running.');
-        return;
+      alert('There is no automation currently running.');
+      return;
     }
 
     try {
-        const response = await fetch('/api/password-checker', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ action: "stop" })
-        })
+      const response = await fetch('/api/password-checker', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ action: "stop" })
+      })
 
-        if (!response.ok) throw new Error('Failed to stop automation')
+      if (!response.ok) throw new Error('Failed to stop automation')
 
-        const data = await response.json()
-        console.log('Automation stopped:', data)
-        setIsChecking(false)
-        setStatus("Stopped")
-        alert('Automation stopped successfully.')
+      const data = await response.json()
+      console.log('Automation stopped:', data)
+      setIsChecking(false)
+      setStatus("Stopped")
+      alert('Automation stopped successfully.')
     } catch (error) {
-        console.error('Error stopping automation:', error)
-        alert('Failed to stop automation. Please try again.')
+      console.error('Error stopping automation:', error)
+      alert('Failed to stop automation. Please try again.')
     }
-}
+  }
   return (
     <div className="space-y-4">
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
-            <TabsTrigger value="kra">KRA</TabsTrigger>
-            <TabsTrigger value="nssf">NSSF</TabsTrigger>
-            <TabsTrigger value="nhif">NHIF</TabsTrigger>
-            <TabsTrigger value="ecitizen">E-Citizen</TabsTrigger>
-            <TabsTrigger value="quickbooks">QuickBooks</TabsTrigger>
-        </TabsList>    
+          <TabsTrigger value="kra">KRA</TabsTrigger>
+          <TabsTrigger value="nssf">NSSF</TabsTrigger>
+          <TabsTrigger value="nhif">NHIF</TabsTrigger>
+          <TabsTrigger value="ecitizen">E-Citizen</TabsTrigger>
+          <TabsTrigger value="quickbooks">QuickBooks</TabsTrigger>
+        </TabsList>
         <div className="flex justify-end space-x-2">
           <Sheet>
             <SheetTrigger asChild>
@@ -360,7 +353,7 @@ const handleStopCheck = async () => {
           <Button size="sm" variant="destructive" onClick={handleDeleteAll}>
             Delete All
           </Button>
-        </div>    
+        </div>
       </Tabs>
       <Tabs defaultValue="reports">
         <TabsList>
@@ -374,7 +367,7 @@ const handleStopCheck = async () => {
             isChecking={isChecking}
             // handleStartCheck={handleStartCheck}
             handleStopCheck={handleStopCheck}
-            activeTab={activeTab} 
+            activeTab={activeTab}
           />
         </TabsContent>
         <TabsContent value="running">
@@ -383,7 +376,7 @@ const handleStopCheck = async () => {
             status={status}
             isChecking={isChecking}
             handleStopCheck={handleStopCheck}
-            activeTab={activeTab} 
+            activeTab={activeTab}
             onComplete={() => {
               setActiveTab("Reports")
               setIsChecking(false)
@@ -398,8 +391,8 @@ const handleStopCheck = async () => {
                 <Table className="text-sm pb-4">
                   <TableHeader>
                     <TableRow>
-                    <TableHead className="text-center">Index</TableHead>
-                    <TableHead>Name</TableHead>
+                      <TableHead className="text-center">Index</TableHead>
+                      <TableHead>Name</TableHead>
                       {activeTab === 'kra' ? (
                         <>
                           <TableHead className="text-center">KRA PIN</TableHead>
@@ -407,38 +400,38 @@ const handleStopCheck = async () => {
                         </>
                       ) : (
                         <>
-                  
-                      {activeTab === 'nssf' && (
-                        <>
-                         <TableHead className="text-center">NSSF ID</TableHead>
-                        <TableHead className="text-center">NSSF Code</TableHead>
-                        <TableHead className="text-center">NSSF Password</TableHead>
+
+                          {activeTab === 'nssf' && (
+                            <>
+                              <TableHead className="text-center">NSSF ID</TableHead>
+                              <TableHead className="text-center">NSSF Code</TableHead>
+                              <TableHead className="text-center">NSSF Password</TableHead>
+                            </>
+                          )}
+                          {activeTab === 'nhif' && (
+                            <>
+                              <TableHead className="text-center">NHIF ID</TableHead>
+                              <TableHead className="text-center">NHIF Password</TableHead>
+                              <TableHead className="text-center">NHIF Code</TableHead>
+                            </>
+                          )}
+                          {activeTab === 'ecitizen' && (
+                            <>
+                              <TableHead className="text-center">eCitizen ID</TableHead>
+                              <TableHead className="text-center">eCitizen Password</TableHead>
+                              <TableHead className="text-center">Director</TableHead>
+                            </>
+                          )}
+                          {activeTab === 'quickbooks' && (
+                            <>
+                              <TableHead className="text-center">ID</TableHead>
+                              <TableHead className="text-center">Password</TableHead>
+                            </>
+                          )}
                         </>
                       )}
-                      {activeTab === 'nhif' && (
-                        <>
-                         <TableHead className="text-center">NHIF ID</TableHead>
-                         <TableHead className="text-center">NHIF Password</TableHead>
-                        <TableHead className="text-center">NHIF Code</TableHead>
-                        </>
-                      )}
-                      {activeTab === 'ecitizen' && (
-                        <>
-                         <TableHead className="text-center">eCitizen ID</TableHead>
-                         <TableHead className="text-center">eCitizen Password</TableHead>
-                        <TableHead className="text-center">Director</TableHead>
-                        </>
-                      )}
-                       {activeTab === 'quickbooks' && (
-                        <>
-                         <TableHead className="text-center">ID</TableHead>
-                         <TableHead className="text-center">Password</TableHead>
-                        </>
-                      )}
-                        </>
-                      )}
-                          <TableHead className="text-center">Status</TableHead>
-                          <TableHead className="text-center">Last Checked</TableHead>
+                      <TableHead className="text-center">Status</TableHead>
+                      <TableHead className="text-center">Last Checked</TableHead>
                       <TableHead className="text-center">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -475,7 +468,7 @@ const handleStopCheck = async () => {
                                 {company.status || <span className="font-bold text-red-600">Missing</span>}
                               </span>
                             </TableCell>
-                            <TableCell className="text-center">{company.last_checked ? new Date(company.last_checked).toLocaleString() : <span className="font-bold text-red-600">Missing</span>}</TableCell>
+                            <TableCell className="text-center">{company.updated_at ? new Date(company.updated_at).toLocaleString() : <span className="font-bold text-red-600">Missing</span>}</TableCell>
                           </>
                         )}
                         <TableCell className="text-center">
@@ -566,15 +559,16 @@ const handleStopCheck = async () => {
 }
 
 function getStatusColor(status: string): string {
-  switch (status) {
-    case 'Valid':
+  const lowerStatus = status.toLowerCase();
+  switch (lowerStatus) {
+    case 'valid':
       return 'bg-green-100 text-green-800'
-    case 'Invalid':
+    case 'invalid':
       return 'bg-red-100 text-red-800'
-    case 'Locked':
-    case 'Password Expired':
+    case 'locked':
+    case 'password expired':
       return 'bg-yellow-100 text-yellow-800'
     default:
-      return 'bg-gray-100 text-gray-800'
+      return 'bg-red-100 text-red-800'
   }
 }
