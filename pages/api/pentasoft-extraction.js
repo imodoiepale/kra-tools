@@ -145,7 +145,7 @@ async function extractReports(runOption, selectedCompanies) {
                     await page.waitForLoadState('networkidle');
 
                     // Check for "NO DATA FOUND!" message
-                    const noDataFound = await page.waitForSelector('b:has-text("NO DATA FOUND!")', { timeout: 5000 }).catch(() => null);
+                    const noDataFound = await page.waitForSelector('b:has-text("NO DATA FOUND!")', { timeout: 1000 }).catch(() => null);
                     
                     if (noDataFound) {
                         console.log(`No data found for ${report.link}`);
