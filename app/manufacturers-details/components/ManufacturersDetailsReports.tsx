@@ -278,7 +278,7 @@ export function ManufacturersDetailsReports() {
                     <TableCell className="text-center font-bold">{index + 1}</TableCell>
                     {Object.entries(visibleColumns).map(([column, isVisible]) => (
                       isVisible && (
-                        <TableCell key={column} className={`${column === 'company_name' ? 'text-left whitespace-nowrap' : 'text-center'}`}>
+                        <TableCell key={column} className={`${column === 'company_name' ? 'text-left whitespace-nowrap font-bold' : 'text-center'}`}>
                           {manufacturer[column] ? (
                             column === 'manufacturer_name' ? manufacturer[column].toUpperCase() : manufacturer[column]
                           ) : (
