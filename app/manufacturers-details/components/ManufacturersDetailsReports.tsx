@@ -250,16 +250,16 @@ export function ManufacturersDetailsReports() {
       </div>
       <div className="rounded-md border">
         <div className="overflow-x-auto">
-          <div className="max-h-[calc(100vh-200px)] overflow-y-auto">
-            <Table className="text-xs pb-2">
+          <div className="max-h-[calc(100vh-300px)] overflow-y-auto">
+            <Table className="text-[11px] pb-2 text-black">
               <TableHeader>
                 <TableRow>
-                  <TableHead className="text-center">Index</TableHead>
+                  <TableHead className="text-center text-black">Index</TableHead>
                   {Object.entries(visibleColumns).map(([column, isVisible]) => (
                     isVisible && (
                       <TableHead
                         key={column}
-                        className="text-center cursor-pointer"
+                        className={`cursor-pointer text-black capitalize ${column === 'company_name' ? 'text-left' : 'text-center'}`}
                         onClick={() => requestSort(column)}
                       >
                         {column.replace(/_/g, ' ').charAt(0).toUpperCase() + column.replace(/_/g, ' ').slice(1)}
@@ -269,16 +269,16 @@ export function ManufacturersDetailsReports() {
                       </TableHead>
                     )
                   ))}
-                  <TableHead className="text-center">Actions</TableHead>
+                  <TableHead className="text-center text-black">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {sortedManufacturers.map((manufacturer, index) => (
                   <TableRow key={manufacturer.id} className={`h-8 ${index % 2 === 0 ? 'bg-white' : 'bg-blue-50'}`}>
-                    <TableCell className="text-center">{index + 1}</TableCell>
+                    <TableCell className="text-center font-bold">{index + 1}</TableCell>
                     {Object.entries(visibleColumns).map(([column, isVisible]) => (
                       isVisible && (
-                        <TableCell key={column} className="text-center">
+                        <TableCell key={column} className={`${column === 'company_name' ? 'text-left whitespace-nowrap' : 'text-center'}`}>
                           {manufacturer[column] ? (
                             column === 'manufacturer_name' ? manufacturer[column].toUpperCase() : manufacturer[column]
                           ) : (
