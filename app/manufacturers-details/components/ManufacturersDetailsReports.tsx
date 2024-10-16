@@ -259,7 +259,7 @@ export function ManufacturersDetailsReports() {
                     isVisible && (
                       <TableHead
                         key={column}
-                        className={`cursor-pointer text-black capitalize ${column === 'company_name' ? 'text-left' : 'text-center'}`}
+                        className={`cursor-pointer text-[12px] text-black font-bold capitalize ${column === 'company_name' ? 'text-left' : 'text-center'}`}
                         onClick={() => requestSort(column)}
                       >
                         {column.replace(/_/g, ' ').charAt(0).toUpperCase() + column.replace(/_/g, ' ').slice(1)}
@@ -269,7 +269,7 @@ export function ManufacturersDetailsReports() {
                       </TableHead>
                     )
                   ))}
-                  <TableHead className="text-center text-black">Actions</TableHead>
+                  <TableHead className="text-center text-[12px] text-black font-bold">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
