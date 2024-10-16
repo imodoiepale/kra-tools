@@ -45,16 +45,19 @@ const TaxStatus = ({ status }) => {
 
 const calculateTotals = (companies) => {
     const totals = {
+        income_tax_company: { total: 0, registered: 0, cancelled: 0, dormant: 0, missing: 0 },
         vat: { total: 0, registered: 0, cancelled: 0, dormant: 0, missing: 0 },
         paye: { total: 0, registered: 0, cancelled: 0, dormant: 0, missing: 0 },
         rent_income_mri: { total: 0, registered: 0, cancelled: 0, dormant: 0, missing: 0 },
         turnover_tax: { total: 0, registered: 0, cancelled: 0, dormant: 0, missing: 0 },
         resident_individual: { total: 0, registered: 0, cancelled: 0, dormant: 0, missing: 0 },
+        wh_vat: { total: 0, registered: 0, cancelled: 0, dormant: 0, missing: 0 },
         nssf: { total: 0, registered: 0, cancelled: 0, dormant: 0, missing: 0 },
         nhif: { total: 0, registered: 0, cancelled: 0, dormant: 0, missing: 0 },
         housing_levy: { total: 0, registered: 0, cancelled: 0, dormant: 0, missing: 0 },
         nita: { total: 0, registered: 0, cancelled: 0, dormant: 0, missing: 0 },
     };
+
 
     companies.forEach(company => {
         Object.keys(totals).forEach(tax => {
@@ -70,16 +73,17 @@ const calculateTotals = (companies) => {
     return totals;
 };
 
-const exportToExcel = async () => {
+const exportToExcel = async (companies) => {
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('Overall Taxes');
 
-    worksheet.addRow(['Company Name', 'KRA PIN', 'VAT', 'PAYE', 'MRI', 'NSSF', 'NHIF', 'Housing Levy', 'NITA']);
+    worksheet.addRow(['Company Name', 'KRA PIN', 'Income Tax Company', 'VAT', 'PAYE', 'MRI', 'NSSF', 'NHIF', 'Housing Levy', 'NITA', 'WH VAT']);
 
     companies.forEach((company) => {
         worksheet.addRow([
             company.company_name,
             company.kra_pin,
+            company.income_tax_company_status,
             company.vat_status,
             company.paye_status,
             company.rent_income_mri_status,
@@ -87,6 +91,7 @@ const exportToExcel = async () => {
             company.nhif_status,
             company.housing_levy_status,
             company.nita_status,
+            company.wh_vat_status,
         ]);
     });
 
@@ -186,8 +191,8 @@ export default function OverallTaxesTable({ companies: initialCompanies }) {
 
             if (error) throw error;
 
-            setCompanies(prevCompanies => 
-                prevCompanies.map(company => 
+            setCompanies(prevCompanies =>
+                prevCompanies.map(company =>
                     company.id === companyId ? { ...company, [field]: newValue } : company
                 )
             );
@@ -224,7 +229,7 @@ export default function OverallTaxesTable({ companies: initialCompanies }) {
                 toast.success('Changes saved successfully!', { id: toastId });
                 setDialogOpen(false);
                 // Update the companies state with the new data
-                setCompanies(prevCompanies => 
+                setCompanies(prevCompanies =>
                     prevCompanies.map(c => c.id === company.id ? localCompany : c)
                 );
             } catch (error) {
@@ -235,10 +240,10 @@ export default function OverallTaxesTable({ companies: initialCompanies }) {
 
         const taxTypes = [
             'vat', 'paye', 'rent_income_mri', 'turnover_tax', 'resident_individual',
-            'nssf', 'nhif', 'housing_levy', 'nita'
+            'nssf', 'nhif', 'housing_levy', 'nita', 'wh_vat'
         ];
 
-        const uneditableTaxes = ['vat', 'paye', 'rent_income_mri', 'turnover_tax', 'resident_individual'];
+        const uneditableTaxes = ['income_tax_company', 'vat', 'paye', 'rent_income_mri', 'turnover_tax', 'resident_individual'];
 
 
         const TaxCard = ({ tax, editable }) => (
@@ -266,10 +271,10 @@ export default function OverallTaxesTable({ companies: initialCompanies }) {
                         ) : (
                             <div className="mt-1">
                                 <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${localCompany[`${tax}_status`] === 'Registered' ? 'bg-green-100 text-green-700' :
-                                        localCompany[`${tax}_status`] === 'Cancelled' ? 'bg-red-100 text-red-700' :
-                                            localCompany[`${tax}_status`] === 'Dormant' ? 'bg-blue-100 text-blue-700' :
-                                                localCompany[`${tax}_status`] === 'No Obligation' ? 'bg-purple-100 text-red-500' :
-                                                    'bg-yellow-100 text-yellow-700'
+                                    localCompany[`${tax}_status`] === 'Cancelled' ? 'bg-red-100 text-red-700' :
+                                        localCompany[`${tax}_status`] === 'Dormant' ? 'bg-blue-100 text-blue-700' :
+                                            localCompany[`${tax}_status`] === 'No Obligation' ? 'bg-purple-100 text-red-500' :
+                                                'bg-yellow-100 text-yellow-700'
                                     }`}>
                                     {localCompany[`${tax}_status`] || 'No Obligation'}
                                 </span>
@@ -361,7 +366,11 @@ export default function OverallTaxesTable({ companies: initialCompanies }) {
             cell: info => info.getValue(),
             header: 'Company Name',
         }),
-
+        
+        columnHelper.accessor('income_tax_company_status', {
+            cell: info => <TaxStatus status={info.getValue()} />,
+            header: 'Income Tax Company',
+        }),
         columnHelper.accessor('vat_status', {
             cell: info => <TaxStatus status={info.getValue()} />,
             header: 'VAT',
@@ -398,6 +407,10 @@ export default function OverallTaxesTable({ companies: initialCompanies }) {
             cell: info => <TaxStatus status={info.getValue()} />,
             header: 'Housing Levy',
         }),
+        columnHelper.accessor('wh_vat_status', {
+            cell: info => <TaxStatus status={info.getValue()} />,
+            header: 'WH VAT',
+        }),
         columnHelper.accessor('actions', {
             cell: info => (
                 <div className="flex space-x-2">
@@ -430,7 +443,7 @@ export default function OverallTaxesTable({ companies: initialCompanies }) {
         setDialogOpen(true);
     };
 
-    const data = useMemo(() => 
+    const data = useMemo(() =>
         companies.map((company, index) => ({
             ...company,
             index: index + 1
