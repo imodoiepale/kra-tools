@@ -254,7 +254,7 @@ export function ManufacturersDetailsReports() {
             <Table className="text-[11px] pb-2 text-black">
               <TableHeader>
                 <TableRow>
-                  <TableHead className="text-center text-black">Index</TableHead>
+                  <TableHead className="text-center text-[12px] text-black font-bold">Index</TableHead>
                   {Object.entries(visibleColumns).map(([column, isVisible]) => (
                     isVisible && (
                       <TableHead
