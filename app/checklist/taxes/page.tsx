@@ -12,6 +12,7 @@ const taxTypes = [
     { key: 'overall', label: 'Overall Taxes' },
     { key: 'income_tax_company', label: 'Income Tax (Company)' },
     { key: 'vat', label: 'VAT' },
+    { key: 'wh_vat', label: 'WH VAT' },
     { key: 'paye', label: 'PAYE' },
     { key: 'nita', label: 'NITA' },
     { key: 'housing_levy', label: 'Housing Levy' },

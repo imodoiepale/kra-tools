@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
+import { format, isValid, parse } from 'date-fns';
 
 const columnHelper = createColumnHelper();
 
@@ -34,6 +35,12 @@ const TaxStatus = ({ status }) => {
         default:
             return <span>{status}</span>;
     }
+};
+
+const formatDate = (dateString) => {
+    if (!dateString) return '';
+    const date = parse(dateString, 'yyyy-MM-dd', new Date());
+    return isValid(date) ? format(date, 'dd/MM/yyyy') : dateString;
 };
 
 export default function RegisteredCompaniesTable({ companies, taxType }) {
@@ -57,7 +64,7 @@ export default function RegisteredCompaniesTable({ companies, taxType }) {
             header: 'Status',
         }),
         columnHelper.accessor(`${taxType}_effective_from`, {
-            cell: info => info.getValue(),
+            cell: info => formatDate(info.getValue()),
             header: 'Effective From',
         }),
     ], [taxType]);
@@ -100,7 +107,12 @@ export default function RegisteredCompaniesTable({ companies, taxType }) {
 
         // Add data
         data.forEach((row) => {
-            worksheet.addRow(columns.map(col => row[col.accessorKey]));
+            worksheet.addRow(columns.map(col => {
+                if (col.accessorKey.includes('_effective_from')) {
+                    return formatDate(row[col.accessorKey]);
+                }
+                return row[col.accessorKey];
+            }));
         });
 
         // Auto-fit columns
