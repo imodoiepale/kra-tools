@@ -584,6 +584,7 @@ return (
       `}</style>
   </div>
 )
+}
 
 
 function getStatusColor(status: string): string {

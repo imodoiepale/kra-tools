@@ -27,7 +27,7 @@ import PasswordCheckerRunning from './PasswordCheckerRunning';
 import PasswordCheckerReports from './PasswordCheckerReports';
 
 export default function CheckerManager() {
-    const { categories, activeCategory, setActiveCategory, activeSubCategory, setActiveSubCategory, handleAddCategory } = useCategories();
+    const { categories, activeCategory, setCategories, setActiveCategory, activeSubCategory, setActiveSubCategory, handleAddCategory } = useCategories();
     const { items, loading, handleAddItem, handleEditItem, handleDeleteItem, fetchAllDataForAllCategories } = useItems(activeCategory, activeSubCategory);
     const { dbTables, linkedTables, missingTables, handleLinkTable, handleCreateNewTable } = useTables(categories);
 
@@ -56,6 +56,7 @@ export default function CheckerManager() {
     const [activeTab, setActiveTab] = useState("PasswordCheckerReports");
     const [status, setStatus] = useState("Not Started");
     const [companies, setCompanies] = useState([]);
+
 
     // Function to handle sorting
     const handleSort = (key) => {
@@ -438,26 +439,20 @@ export default function CheckerManager() {
 
 
 
-    const removeCategoryFromState = (category, subcategory) => {
+    const removeCategoryFromState = (categoryToDelete, subcategoryToDelete) => {
         setCategories(prevCategories => {
             const newCategories = { ...prevCategories };
-            if (newCategories[category]) {
-                newCategories[category] = newCategories[category].filter(sub => sub !== subcategory);
-                if (newCategories[category].length === 0) {
-                    delete newCategories[category];
+            if (newCategories[categoryToDelete]) {
+                newCategories[categoryToDelete] = newCategories[categoryToDelete].filter(
+                    sub => sub !== subcategoryToDelete
+                );
+                if (newCategories[categoryToDelete].length === 0) {
+                    delete newCategories[categoryToDelete];
                 }
             }
             return newCategories;
         });
-
-        setColumnSettings(prevSettings => {
-            const newSettings = { ...prevSettings };
-            delete newSettings[`${category}_${subcategory}`];
-            return newSettings;
-        });
     };
-
-
 
 
     return (
@@ -484,17 +479,17 @@ export default function CheckerManager() {
                     </div>
                 </CardHeader>
                 <CardContent>
-                        <div className="flex justify-end items-center mb-3 gap-4">
-                            <span className="text-sm text-gray-500">
-                                Linked to: {linkedTables[`${activeCategory}_${activeSubCategory}`] || 'Not linked'}
-                            </span>
-                            <Button onClick={() => setAddDialogOpen(true)}>
-                                <Plus className="mr-2 h-4 w-4" />
-                                Add Item
-                            </Button>
-                        </div>
-                    <PasswordCheckerReports/>
-            
+                    <div className="flex justify-end items-center mb-3 gap-4">
+                        <span className="text-sm text-gray-500">
+                            Linked to: {linkedTables[`${activeCategory}_${activeSubCategory}`] || 'Not linked'}
+                        </span>
+                        <Button onClick={() => setAddDialogOpen(true)}>
+                            <Plus className="mr-2 h-4 w-4" />
+                            Add Item
+                        </Button>
+                    </div>
+                    <PasswordCheckerReports />
+
                 </CardContent>
             </Card>
 
@@ -517,6 +512,7 @@ export default function CheckerManager() {
                 updateColumnSettings={updateColumnSettings}
                 activeCategory={activeCategory}
                 activeSubCategory={activeSubCategory}
+                removeCategoryFromState={removeCategoryFromState}
             />
 
             <LinkTableDialog
