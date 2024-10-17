@@ -37,7 +37,7 @@ const navItems = [
     { href: "/withholding-tax-downloader", icon: Download, label: "Withholding Tax Downloader", category: "Monthly Tools", available: false },
     { href: "/pentasoft", icon: Users, label: "Pentasoft Downloader", category: "Monthly Tools", available: true },
     // { href: "/wht", icon: DollarSign, label: "Withholding VAT Extractor", category: "Monthly Tools", available: false },
-    { href: "/ledger-downloader", icon: BarChart2, label: "Ledger Downloader", category: "Monthly Tools", available: true },
+    { href: "/ledger", icon: BarChart2, label: "Ledger Downloader", category: "Monthly Tools", available: true },
 
     // Suggested New Tools
     { href: "/pin-registration", icon: FileSignature, label: "PIN Registration Tool", category: "Suggested New Tools", available: false },

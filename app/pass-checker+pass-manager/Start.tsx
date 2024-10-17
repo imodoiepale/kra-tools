@@ -1,4 +1,3 @@
-// Start.tsx
 // @ts-nocheck
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,11 +8,12 @@ import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
 import { supabase } from '@/lib/supabase';
 
-export default function Start({ companies, handleStopCheck, activeTab, setStatus, isChecking, setIsChecking }) {
+import { usePathname } from 'next/navigation'
+export default function Start({ companies, handleStopCheck, activeTab, setStatus, isChecking, setIsChecking, setActiveTab }) {
   const [selectedCompanies, setSelectedCompanies] = useState([]);
   const [runOption, setRunOption] = useState('all');
   const [automationProgress, setAutomationProgress] = useState(null);
-
+  const pathname = usePathname()
   useEffect(() => {
     fetchAutomationProgress();
   }, []);
@@ -22,6 +22,7 @@ export default function Start({ companies, handleStopCheck, activeTab, setStatus
     const { data, error } = await supabase
       .from('PasswordChecker_AutomationProgress')
       .select('*')
+      .eq('tab', activeTab) // Ensure we fetch progress for the current tab
       .order('last_updated', { ascending: false })
       .limit(1)
       .single();
@@ -36,6 +37,9 @@ export default function Start({ companies, handleStopCheck, activeTab, setStatus
       } else if (data.status === 'Stopped') {
         setIsChecking(false);
         setStatus('Stopped');
+      } else if (data.status === 'Completed') {
+        setIsChecking(false);
+        setStatus('Completed');
       }
     }
   };
@@ -88,11 +92,12 @@ export default function Start({ companies, handleStopCheck, activeTab, setStatus
       console.log(`Password check started for ${activeTab}:`, data);
       setIsChecking(true);
       setStatus("Running");
+      setActiveTab("running"); // Navigate to the running tab
 
       // Update automation progress
       await supabase
         .from('PasswordChecker_AutomationProgress')
-        .upsert({ id: 1, progress: 0, status: 'Running', logs: [] });
+        .upsert({ id: 1, progress: 0, status: 'Running', logs: [], tab: activeTab });
 
       fetchAutomationProgress();
     } catch (error) {
@@ -119,18 +124,23 @@ export default function Start({ companies, handleStopCheck, activeTab, setStatus
     }
 
     try {
-       const response = await fetch(apiEndpoint, {
+      const response = await fetch(apiEndpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ action: "resume" })
+        body: JSON.stringify({ action: "resume", tab: activeTab }) // Include tab in the request
       });
 
-      if (!response.ok) throw new Error('Failed to resume automation');
+      if (!response.ok) {
+        const errorData = await response.json(); // Log the error response
+        console.error('Error response:', errorData);
+        throw new Error('Failed to resume automation');
+      }
 
       setIsChecking(true);
       setStatus("Running");
+      setActiveTab("running"); // Navigate to the running tab
       fetchAutomationProgress();
     } catch (error) {
       console.error('Error resuming automation:', error);
@@ -171,38 +181,6 @@ export default function Start({ companies, handleStopCheck, activeTab, setStatus
                       <TableHead className="w-[50px] sticky top-0 bg-white">Select</TableHead>
                       <TableHead className="sticky top-0 bg-white">#</TableHead>
                       <TableHead className="sticky top-0 bg-white">Company Name</TableHead>
-                      {activeTab === 'kra' && (
-                        <>
-                          <TableHead className="sticky top-0 bg-white">KRA PIN</TableHead>
-                          <TableHead className="sticky top-0 bg-white">KRA Password</TableHead>
-                        </>
-                      )}
-                      {activeTab === 'nssf' && (
-                        <>
-                          <TableHead className="sticky top-0 bg-white">NSSF ID</TableHead>
-                          <TableHead className="sticky top-0 bg-white">NSSF Password</TableHead>
-                        </>
-                      )}
-                      {activeTab === 'nhif' && (
-                        <>
-                          <TableHead className="sticky top-0 bg-white">NHIF ID</TableHead>
-                          <TableHead className="sticky top-0 bg-white">NHIF Password</TableHead>
-                          <TableHead className="sticky top-0 bg-white">NHIF Code</TableHead>
-                        </>
-                      )}
-                      {activeTab === 'ecitizen' && (
-                        <>
-                          <TableHead className="sticky top-0 bg-white">eCitizen ID</TableHead>
-                          <TableHead className="sticky top-0 bg-white">eCitizen Password</TableHead>
-                          <TableHead className="sticky top-0 bg-white">Director</TableHead>
-                        </>
-                      )}
-                      {activeTab === 'quickbooks' && (
-                        <>
-                          <TableHead className="sticky top-0 bg-white">ID</TableHead>
-                          <TableHead className="sticky top-0 bg-white">Password</TableHead>
-                        </>
-                      )}
                       <TableHead className="sticky top-0 bg-white">Status</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -216,25 +194,7 @@ export default function Start({ companies, handleStopCheck, activeTab, setStatus
                           />
                         </TableCell>
                         <TableCell className="text-center">{index + 1}</TableCell>
-                        {activeTab === 'kra' ? (
-                          <>
-                            <TableCell>{company.company_name}</TableCell>
-                            <TableCell>{company.kra_pin || <span className="text-red-500 font-bold">Missing</span>}</TableCell>
-                            <TableCell>{company.kra_password || <span className="text-red-500 font-bold">Missing</span>}</TableCell>
-                          </>
-                        ) : (
-                          <>
-                            <TableCell>{company.name}</TableCell>
-                            <TableCell>{company.identifier || <span className="text-red-500 font-bold">Missing</span>}</TableCell>
-                            <TableCell>{company.password || <span className="text-red-500 font-bold">Missing</span>}</TableCell>
-                          </>
-                        )}
-                        {(activeTab === 'nhif' || activeTab === 'nssf') && (
-                          <TableCell>{company.code || <span className="text-red-500 font-bold">Missing</span>}</TableCell>
-                        )}
-                        {activeTab === 'ecitizen' && (
-                          <TableCell>{company.director || <span className="text-red-500 font-bold">Missing</span>}</TableCell>
-                        )}
+                        <TableCell>{company.name}</TableCell>
                         <TableCell className="">
                           {company.status?.toLowerCase() === 'valid' && <span className="bg-green-500 text-white px-2 py-1 rounded">{company.status}</span>}
                           {company.status?.toLowerCase() === 'invalid' && <span className="bg-red-500 text-white px-2 py-1 rounded">{company.status}</span>}
@@ -260,38 +220,6 @@ export default function Start({ companies, handleStopCheck, activeTab, setStatus
                       <TableRow>
                         <TableHead>#</TableHead>
                         <TableHead>Company Name</TableHead>
-                        {activeTab === 'kra' && (
-                          <>
-                            <TableHead>KRA PIN</TableHead>
-                            <TableHead>KRA Password</TableHead>
-                          </>
-                        )}
-                        {activeTab === 'nssf' && (
-                          <>
-                            <TableHead>NSSF ID</TableHead>
-                            <TableHead>NSSF Password</TableHead>
-                          </>
-                        )}
-                        {activeTab === 'nhif' && (
-                          <>
-                            <TableHead>NHIF ID</TableHead>
-                            <TableHead>NHIF Password</TableHead>
-                            <TableHead>NHIF Code</TableHead>
-                          </>
-                        )}
-                        {activeTab === 'ecitizen' && (
-                          <>
-                            <TableHead>ID</TableHead>
-                            <TableHead>Password</TableHead>
-                            <TableHead>Director</TableHead>
-                          </>
-                        )}
-                        {activeTab === 'quickbooks' && (
-                          <>
-                            <TableHead>ID</TableHead>
-                            <TableHead>Password</TableHead>
-                          </>
-                        )}
                         <TableHead>Status</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -299,25 +227,7 @@ export default function Start({ companies, handleStopCheck, activeTab, setStatus
                       {companies.filter(c => selectedCompanies.includes(c.id)).map((company, index) => (
                         <TableRow key={company.id} className="bg-blue-100">
                           <TableCell className="text-center">{index + 1}</TableCell>
-                          {activeTab === 'kra' ? (
-                            <>
-                              <TableCell>{company.company_name}</TableCell>
-                              <TableCell>{company.kra_pin || <span className="text-red-500 font-bold">Missing</span>}</TableCell>
-                              <TableCell>{company.kra_password || <span className="text-red-500 font-bold">Missing</span>}</TableCell>
-                            </>
-                          ) : (
-                            <>
-                              <TableCell>{company.name}</TableCell>
-                              <TableCell>{company.identifier || <span className="text-red-500 font-bold">Missing</span>}</TableCell>
-                              <TableCell>{company.password || <span className="text-red-500 font-bold">Missing</span>}</TableCell>
-                            </>
-                          )}
-                          {(activeTab === 'nhif' || activeTab === 'nssf') && (
-                            <TableCell>{company.code || <span className="text-red-500 font-bold">Missing</span>}</TableCell>
-                          )}
-                          {activeTab === 'ecitizen' && (
-                            <TableCell>{company.director || <span className="text-red-500 font-bold">Missing</span>}</TableCell>
-                          )}
+                          <TableCell>{company.name}</TableCell>
                           <TableCell className="">
                             {company.status?.toLowerCase() === 'valid' && <span className="bg-green-500 text-white px-2 py-1 rounded">{company.status}</span>}
                             {company.status?.toLowerCase() === 'invalid' && <span className="bg-red-500 text-white px-2 py-1 rounded">{company.status}</span>}
@@ -329,16 +239,17 @@ export default function Start({ companies, handleStopCheck, activeTab, setStatus
                   </Table>
                 </div>
                 <div className="mt-4">
-                <Button
-            onClick={automationProgress?.status === 'Stopped' ? resumeCheck : startCheck}
-            disabled={isChecking && automationProgress?.status !== 'Stopped'}
-          >
-            {isChecking ? 'Running...' : automationProgress?.status === 'Stopped' ? 'Resume' : 'Start Password Check'}
-          </Button>
+                  <Button
+                    onClick={automationProgress?.status === 'Stopped' ? resumeCheck : startCheck}
+                    disabled={isChecking && automationProgress?.status !== 'Stopped'}
+                    className={automationProgress?.status === 'Completed' ? 'bg-green-500 text-white' : ''}
+                  >
+                    {isChecking ? 'Running...' : automationProgress?.status === 'Stopped' ? 'Resume' : 'Start Password Check'}
+                  </Button>
 
-          <Button onClick={() => { handleStopCheck(); setStatus("Stopped"); }} disabled={!isChecking} variant="destructive" className="ml-2">
-            Stop Password Check
-          </Button>
+                  <Button onClick={() => { handleStopCheck(); setStatus("Stopped"); }} disabled={!isChecking} variant="destructive" className="ml-2">
+                    Stop Password Check
+                  </Button>
                 </div>
               </motion.div>
             )}
@@ -350,6 +261,7 @@ export default function Start({ companies, handleStopCheck, activeTab, setStatus
           <Button
             onClick={automationProgress?.status === 'Stopped' ? resumeCheck : startCheck}
             disabled={isChecking && automationProgress?.status !== 'Stopped'}
+            className={automationProgress?.status === 'Completed' ? 'bg-green-500 text-white' : ''}
           >
             {isChecking ? 'Running...' : automationProgress?.status === 'Stopped' ? 'Resume' : 'Start Password Check'}
           </Button>

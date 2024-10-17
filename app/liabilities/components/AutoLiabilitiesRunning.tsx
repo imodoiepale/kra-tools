@@ -21,7 +21,7 @@ export function AutoLiabilitiesRunning({ onComplete }) {
     }, []);
 
     const fetchProgress = async () => {
-        const response = await fetch('/api/auto-liabilities', {
+        const response = await fetch('/api/liability-extractor', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ action: 'progress' })
@@ -38,7 +38,7 @@ export function AutoLiabilitiesRunning({ onComplete }) {
 
     const handleStop = async () => {
         try {
-            const response = await fetch('/api/auto-liabilities', {
+            const response = await fetch('/api/liability-extractor', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ action: 'stop' })

@@ -164,14 +164,13 @@ export default async function handler(req, res) {
     if (action === "resume") {
         const currentProgress = await getAutomationProgress();
         if (currentProgress && currentProgress.status === "Running") {
-          return res.status(400).json({ message: "Automation is already in progress." });
+            return res.status(400).json({ message: "Automation is already in progress." });
         }
-      
+    
         stopRequested = false;
         processCompanies(runOption, selectedIds, currentProgress.progress, currentProgress.logs).catch(console.error);
         return res.status(200).json({ message: "Automation resumed." });
-      }
-      
+    }
 
     return res.status(400).json({ message: "Invalid action." });
 }

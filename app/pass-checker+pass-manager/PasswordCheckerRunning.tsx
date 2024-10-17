@@ -1,6 +1,6 @@
 // PasswordCheckerRunning.tsx
 // @ts-nocheck
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Progress } from "@/components/ui/progress";
 import { supabase } from '@/lib/supabase';
 import {
@@ -17,12 +17,11 @@ interface PasswordCheckerRunningProps {
     onComplete: () => void;
     progress: number;
     status: string;
-    isChecking: boolean;
-    handleStopCheck: () => void;
-    activeTab: string;
+    activeTab: string; // Add activeTab prop
+    setActiveTab: (tab: string) => void; // Add setActiveTab prop
 }
 
-export default function PasswordCheckerRunning({ progress, status, isChecking, handleStopCheck, onComplete, activeTab }: PasswordCheckerRunningProps) {
+export function PasswordCheckerRunning({ onComplete, progress, status, activeTab, setActiveTab }: PasswordCheckerRunningProps) {
     const [logs, setLogs] = useState([]);
     const [totalCompanies, setTotalCompanies] = useState(0);
 
@@ -39,14 +38,13 @@ export default function PasswordCheckerRunning({ progress, status, isChecking, h
 
         const fetchLogs = async () => {
             const { data, error } = await supabase
-                .from('PasswordChecker_AutomationProgress')
+                .from('AutomationProgress')
                 .select('logs')
                 .eq('id', 1)
                 .single();
 
             if (data && data.logs) {
-                const filteredLogs = data.logs.filter(log => log.tab === activeTab);
-                setLogs(filteredLogs);
+                setLogs(data.logs);
             }
         };
 
@@ -59,12 +57,11 @@ export default function PasswordCheckerRunning({ progress, status, isChecking, h
                 {
                     event: '*',
                     schema: 'public',
-                    table: 'PasswordChecker_AutomationProgress',
+                    table: 'AutomationProgress',
                 },
                 (payload) => {
                     if (payload.new && payload.new.logs) {
-                        const filteredLogs = payload.new.logs.filter(log => log.tab === activeTab);
-                        setLogs(filteredLogs);
+                        setLogs(payload.new.logs);
                     }
                 }
             )
@@ -73,13 +70,14 @@ export default function PasswordCheckerRunning({ progress, status, isChecking, h
         return () => {
             supabase.removeChannel(channel);
         };
-    }, [activeTab]);
+    }, []);
 
     useEffect(() => {
         if (status === "Completed") {
             onComplete();
+            setActiveTab("reports"); // Navigate to reports tab when completed
         }
-    }, [status, onComplete]);
+    }, [status, onComplete, setActiveTab]);
 
     return (
         <div className="space-y-4">
@@ -100,38 +98,8 @@ export default function PasswordCheckerRunning({ progress, status, isChecking, h
                             <TableRow>
                                 <TableHead className="sticky top-0 bg-white">#</TableHead>
                                 <TableHead className="sticky top-0 bg-white">Company</TableHead>
-                                {activeTab === 'kra' && (
-                                    <>
-                                        <TableHead className="sticky top-0 bg-white">KRA PIN</TableHead>
-                                        <TableHead className="sticky top-0 bg-white">KRA Password</TableHead>
-                                    </>
-                                )}
-                                {activeTab === 'nssf' && (
-                                    <>
-                                        <TableHead className="sticky top-0 bg-white">NSSF ID</TableHead>
-                                        <TableHead className="sticky top-0 bg-white">NSSF Password</TableHead>
-                                    </>
-                                )}
-                                {activeTab === 'nhif' && (
-                                    <>
-                                        <TableHead className="sticky top-0 bg-white">NHIF ID</TableHead>
-                                        <TableHead className="sticky top-0 bg-white">NHIF Password</TableHead>
-                                        <TableHead className="sticky top-0 bg-white">NHIF Code</TableHead>
-                                    </>
-                                )}
-                                {activeTab === 'ecitizen' && (
-                                    <>
-                                        <TableHead className="sticky top-0 bg-white">eCitizen ID</TableHead>
-                                        <TableHead className="sticky top-0 bg-white">eCitizen Password</TableHead>
-                                        <TableHead className="sticky top-0 bg-white">Director</TableHead>
-                                    </>
-                                )}
-                                {activeTab === 'quickbooks' && (
-                                    <>
-                                        <TableHead className="sticky top-0 bg-white">ID</TableHead>
-                                        <TableHead className="sticky top-0 bg-white">Password</TableHead>
-                                    </>
-                                )}
+                                <TableHead className="sticky top-0 bg-white">KRA PIN</TableHead>
+                                <TableHead className="sticky top-0 bg-white">Password</TableHead>
                                 <TableHead className="sticky top-0 bg-white">Status</TableHead>
                                 <TableHead className="sticky top-0 bg-white">Timestamp</TableHead>
                             </TableRow>
@@ -141,23 +109,8 @@ export default function PasswordCheckerRunning({ progress, status, isChecking, h
                                 <TableRow key={index} className={index % 2 === 0 ? 'bg-white' : 'bg-blue-50'}>
                                     <TableCell>{index + 1}</TableCell>
                                     <TableCell>{log.company_name}</TableCell>
-                                    {activeTab === 'kra' ? (
-                                        <>
-                                            <TableCell>{log.kra_pin}</TableCell>
-                                            <TableCell>{log.kra_password}</TableCell>
-                                        </>
-                                    ) : (
-                                        <>
-                                            <TableCell>{log.identifier}</TableCell>
-                                            <TableCell>{log.password}</TableCell>
-                                        </>
-                                    )}
-                                    {(activeTab === 'nhif' || activeTab === 'nssf') && (
-                                        <TableCell>{log.code}</TableCell>
-                                    )}
-                                    {activeTab === 'ecitizen' && (
-                                        <TableCell>{log.director}</TableCell>
-                                    )}
+                                    <TableCell>{log.kra_pin}</TableCell>
+                                    <TableCell>{log.kra_password}</TableCell>
                                     <TableCell>{log.status}</TableCell>
                                     <TableCell>{new Date(log.timestamp).toLocaleString()}</TableCell>
                                 </TableRow>
