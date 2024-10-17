@@ -19,7 +19,7 @@ interface PasswordCheckerRunningProps {
     status: string;
     isChecking: boolean;
     handleStopCheck: () => void;
-    activeTab: string; // Add activeTab prop
+    activeTab: string;
 }
 
 export default function PasswordCheckerRunning({ progress, status, isChecking, handleStopCheck, onComplete, activeTab }: PasswordCheckerRunningProps) {
@@ -45,7 +45,6 @@ export default function PasswordCheckerRunning({ progress, status, isChecking, h
                 .single();
 
             if (data && data.logs) {
-                // Filter logs based on activeTab
                 const filteredLogs = data.logs.filter(log => log.tab === activeTab);
                 setLogs(filteredLogs);
             }
@@ -74,7 +73,7 @@ export default function PasswordCheckerRunning({ progress, status, isChecking, h
         return () => {
             supabase.removeChannel(channel);
         };
-    }, [activeTab]); // Add activeTab as a dependency
+    }, [activeTab]);
 
     useEffect(() => {
         if (status === "Completed") {

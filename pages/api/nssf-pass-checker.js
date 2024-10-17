@@ -22,23 +22,31 @@ const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 let stopRequested = false;
 
-// Function to log in to NSSF portal
 async function loginToNSSF(page, company) {
-    await page.goto("https://eservice.nssfkenya.co.ke/eSF24/faces/login.xhtml");
-    await page.getByLabel('Username:').fill(company.identifier);
-    await page.getByLabel('Password:').fill(company.password);
-    await page.getByRole('button', { name: 'Login' }).click();
-    await page.waitForLoadState("networkidle");
+    try {
+        await page.goto("https://eservice.nssfkenya.co.ke/eSF24/faces/login.xhtml", { timeout: 60000 });
+        await page.getByLabel('Username:').fill(company.identifier);
+        await page.getByLabel('Password:').fill(company.password);
+        await page.getByRole('button', { name: 'Login' }).click();
+        await page.waitForLoadState("networkidle");
 
-    // Check for login error using a more specific selector
-    const loginError = await page.locator('div#heading:has-text("Login Error")').isVisible();
-    if (loginError) {
-        console.log("Login Error: Invalid account info.");
-        await page.getByRole('button', { name: 'Back' }).click();
-        throw new Error("Login Error");
+        // Check for login error using a more specific selector
+        const loginError = await page.locator('div#heading:has-text("Login Error")').isVisible();
+        if (loginError) {
+            console.log("Login Error: Invalid account info.");
+            await page.getByRole('button', { name: 'Back' }).click();
+            throw new Error("Login Error");
+        }
+
+        console.log("Login successful");
+    } catch (error) {
+        if (error.message.includes("net::ERR_NAME_NOT_RESOLVED") || error.message.includes("Not Found")) {
+            console.log(`Page not found for company ${company.name}, skipping to next company...`);
+            throw new Error("Page Not Found");
+        } else {
+            throw error; // Re-throw other errors
+        }
     }
-
-    console.log("Login successful");
 }
 
 // Function to log out from NSSF portal
@@ -123,6 +131,7 @@ const getAutomationProgress = async () => {
 };
 
 // API handler function
+
 export default async function handler(req, res) {
     if (req.method !== "POST") {
         return res.status(405).json({ message: "Method not allowed" });
@@ -152,12 +161,23 @@ export default async function handler(req, res) {
         processCompanies(runOption, selectedIds).catch(console.error);
         return res.status(200).json({ message: "Automation started." });
     }
+    if (action === "resume") {
+        const currentProgress = await getAutomationProgress();
+        if (currentProgress && currentProgress.status === "Running") {
+          return res.status(400).json({ message: "Automation is already in progress." });
+        }
+      
+        stopRequested = false;
+        processCompanies(runOption, selectedIds, currentProgress.progress, currentProgress.logs).catch(console.error);
+        return res.status(200).json({ message: "Automation resumed." });
+      }
+      
 
     return res.status(400).json({ message: "Invalid action." });
 }
 
-// Main function to process companies
-async function processCompanies(runOption, selectedIds) {
+// Updated main function to process companies
+async function processCompanies(runOption, selectedIds, startProgress = 0, existingLogs = []) {
     try {
         let data = await readSupabaseData();
 
@@ -165,18 +185,33 @@ async function processCompanies(runOption, selectedIds) {
             data = data.filter(company => selectedIds.includes(company.id));
         }
 
+        // If resuming, skip companies that have already been processed
+        if (startProgress > 0) {
+            const processedCount = Math.floor((startProgress / 100) * data.length);
+            data = data.slice(processedCount);
+        }
+
         const workbook = new ExcelJS.Workbook();
-        const worksheet = workbook.addWorksheet("Password Validation");
+        let worksheet;
 
-        const headers = ["Company Name", "NSSF ID", "Password", "Status"];
-        const headerRow = worksheet.getRow(3);
-        headers.forEach((header, index) => {
-            headerRow.getCell(index + 3).value = header;
-            headerRow.getCell(index + 3).font = { bold: true };
-        });
-        headerRow.commit();
+        // If resuming, try to load existing Excel file
+        const excelFilePath = path.join(downloadFolderPath, `PASSWORD VALIDATION - NSSF - COMPANIES.xlsx`);
+        try {
+            await workbook.xlsx.readFile(excelFilePath);
+            worksheet = workbook.getWorksheet("Password Validation");
+        } catch (error) {
+            // If file doesn't exist or can't be read, create a new worksheet
+            worksheet = workbook.addWorksheet("Password Validation");
+            const headers = ["Company Name", "NSSF ID", "Password", "Status"];
+            const headerRow = worksheet.getRow(3);
+            headers.forEach((header, index) => {
+                headerRow.getCell(index + 3).value = header;
+                headerRow.getCell(index + 3).font = { bold: true };
+            });
+            headerRow.commit();
+        }
 
-        let logs = [];
+        let logs = existingLogs;
 
         const browser = await chromium.launch({ headless: false, executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe' });
         const context = await browser.newContext();
@@ -185,7 +220,7 @@ async function processCompanies(runOption, selectedIds) {
         for (let i = 0; i < data.length; i++) {
             if (stopRequested) {
                 console.log("Automation stopped by user request.");
-                await updateAutomationProgress(0, "Stopped", logs);
+                await updateAutomationProgress(startProgress + Math.round(((i) / data.length) * (100 - startProgress)), "Stopped", logs);
                 return;
             }
 
@@ -249,31 +284,40 @@ async function processCompanies(runOption, selectedIds) {
                     timestamp: new Date().toISOString()
                 });
 
-            } catch (error) {
+            }catch (error) {
                 console.error(`An error occurred for ${company.name}:`, error.message);
-                if (loginAttempt > 1) {
-                    console.log(`Skipping company ${company.name} with identifier ${company.identifier} after second failed attempt.`);
+                if (error.message === "Page Not Found") {
+                    console.log(`Skipping company ${company.name} due to page not found error.`);
+                    await updateSupabaseStatus(company.id, "Page Not Found");
+                    const row = worksheet.addRow([null, company.name, company.identifier, company.password, "Page Not Found"]);
+                    row.getCell(6).fill = {
+                        type: "pattern",
+                        pattern: "solid",
+                        fgColor: { argb: "FFFFA500" }, // Orange color for "Page Not Found"
+                    };
+                } else {
+                    // Handle other errors as before
+                    await updateSupabaseStatus(company.id, "Error");
+                    const row = worksheet.addRow([null, company.name, company.identifier, company.password, "Error"]);
+                    row.getCell(6).fill = {
+                        type: "pattern",
+                        pattern: "solid",
+                        fgColor: { argb: "FFFF9999" },
+                    };
                 }
-                await updateSupabaseStatus(company.id, "Error");
-                const row = worksheet.addRow([null, company.name, company.identifier, company.password, "Error"]);
-                row.getCell(6).fill = {
-                    type: "pattern",
-                    pattern: "solid",
-                    fgColor: { argb: "FFFF9999" },
-                };
 
                 logs.push({
                     company_name: company.name,
                     identifier: company.identifier,
-                    status: "Error",
+                    status: error.message === "Page Not Found" ? "Page Not Found" : "Error",
                     timestamp: new Date().toISOString()
                 });
             }
-
-            await updateAutomationProgress(Math.round(((i + 1) / data.length) * 100), "Running", logs);
+            const currentProgress = startProgress + Math.round(((i + 1) / data.length) * (100 - startProgress));
+            await updateAutomationProgress(currentProgress, "Running", logs);
         }
 
-        await workbook.xlsx.writeFile(path.join(downloadFolderPath, `PASSWORD VALIDATION - NSSF - COMPANIES.xlsx`));
+        await workbook.xlsx.writeFile(excelFilePath);
 
         await context.close();
         await browser.close();
@@ -281,6 +325,6 @@ async function processCompanies(runOption, selectedIds) {
         await updateAutomationProgress(100, "Completed", logs);
     } catch (error) {
         console.error("Error in process companies:", error);
-        await updateAutomationProgress(0, "Error", []);
+        await updateAutomationProgress(startProgress, "Error", existingLogs);
     }
 }

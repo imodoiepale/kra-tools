@@ -35,6 +35,7 @@ export default function PasswordCheckerReports() {
   const [companies, setCompanies] = useState<Company[]>([])
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'ascending' });
   const [searchTerm, setSearchTerm] = useState('');
+  const [automationProgress, setAutomationProgress] = useState(null);
 
   const [isChecking, setIsChecking] = useState(false);
   const [progress, setProgress] = useState(0);
