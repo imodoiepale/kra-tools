@@ -52,7 +52,7 @@ export function AddItemDialog({ open, onOpenChange, onAddItem }) {
                     </div>
                 </div>
                 <div className="flex justify-end space-x-2 mt-4">
-                    <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+                    <Button variant="outline" onClick={async () => onOpenChange(false)}>Cancel</Button>
                     <Button onClick={handleSave}>Save</Button>
                 </div>
             </DialogContent>
@@ -166,10 +166,59 @@ export function SettingsDialog({
         onLinkTable(selectedTable, columnMappings, selectedCategory, selectedSubcategory);
     };
 
-    const handleCreateTable = () => {
-        onCreateTable(null, selectedCategory, selectedSubcategory);
+    const handleCreateTable = async (category, subcategory) => {
+        try {
+            // Assuming onCreateTable creates the table and returns the table name
+            const tableName = await onCreateTable(null, category, subcategory);
+    
+            if (!tableName) {
+                throw new Error('Table name not returned from onCreateTable');
+            }
+    
+            console.log('Table created:', tableName);
+    
+            // Insert the new mapping into the category_table_mappings table
+            const { data, error } = await supabase
+                .from('category_table_mappings')
+                .insert({
+                    category,
+                    subcategory,
+                    table_name: tableName,
+                    column_mappings: {
+                        name: 'name',
+                        identifier: 'identifier',
+                        password: 'password',
+                        status: 'status'
+                    },
+                    column_settings: {
+                        visibleColumns: {
+                            name: true,
+                            identifier: true,
+                            password: true,
+                            status: true
+                        },
+                        headerNames: {
+                            name: 'Name',
+                            identifier: 'Identifier',
+                            password: 'Password',
+                            status: 'Status'
+                        },
+                        columnOrder: ['name', 'identifier', 'password', 'status']
+                    }
+                })
+    
+            if (error) {
+                console.error('Error inserting into category_table_mappings:', error);
+                throw error;
+            }
+    
+            console.log('Mapping inserted:', data);
+            alert('Table created and mapping updated successfully.');
+        } catch (error) {
+            console.error('Error creating table and updating mapping:', error);
+            alert(`Error creating table: ${error.message}`);
+        }
     };
-
     const handleColumnMappingChange = (categoryColumn, dbColumn) => {
         setColumnMappings(prev => {
             const newMappings = { ...prev };
@@ -444,12 +493,12 @@ export function SettingsDialog({
                                         <div key={`${category}_${subcategory}`} className="p-2 border rounded flex justify-between items-center">
                                             <span>{category} - {subcategory}</span>
                                             <div className="space-x-2">
-                                                <Button size="sm" onClick={() => {
+                                                <Button size="sm" onClick={async () => {
                                                     setSelectedCategory(category);
                                                     setSelectedSubcategory(subcategory);
                                                     setActiveTab("columns");
                                                 }}>Link</Button>
-                                                <Button size="sm" onClick={() => handleCreateTable(category, subcategory)}>Create</Button>
+                                                <Button size="sm" onClick={async () => handleCreateTable(category, subcategory)}>Create</Button>
                                             </div>
                                         </div>
                                     ))}
@@ -636,7 +685,7 @@ export function LinkTableDialog({ open, onOpenChange, dbTables, onLinkTable }) {
                     )}
                 </div>
                 <div className="flex justify-end space-x-2 mt-4">
-                    <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+                    <Button variant="outline" onClick={async () => onOpenChange(false)}>Cancel</Button>
                     <Button onClick={handleSave}>Link Table</Button>
                 </div>
             </DialogContent>
@@ -671,7 +720,7 @@ export function CreateTableDialog({ open, onOpenChange, onCreateTable, selectedC
                     </div>
                 </div>
                 <div className="flex justify-end space-x-2 mt-4">
-                    <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+                    <Button variant="outline" onClick={async () => onOpenChange(false)}>Cancel</Button>
                     <Button onClick={handleSave}>Create Table</Button>
                 </div>
             </DialogContent>
@@ -711,7 +760,7 @@ export function EditItemDialog({ open, onOpenChange, itemToEdit, onEditItem }) {
                     ))}
                 </div>
                 <div className="flex justify-end space-x-2 mt-4">
-                    <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+                    <Button variant="outline" onClick={async () => onOpenChange(false)}>Cancel</Button>
                     <Button onClick={handleSave}>Save</Button>
                 </div>
             </DialogContent>
@@ -733,7 +782,7 @@ export function DeleteItemDialog({ open, onOpenChange, itemToDelete, onDeleteIte
                 </DialogHeader>
                 <p>Are you sure you want to delete {itemToDelete?.name}?</p>
                 <div className="flex justify-end space-x-2 mt-4">
-                    <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+                    <Button variant="outline" onClick={async () => onOpenChange(false)}>Cancel</Button>
                     <Button onClick={handleDelete}>Delete</Button>
                 </div>
             </DialogContent>
@@ -784,7 +833,7 @@ export function CsvUploadDialog({
                     onChange={handleFileChange}
                     disabled={isUploading}
                 />
-                <Button onClick={() => onDownloadTemplate(activeCategory, activeSubCategory)} disabled={isUploading}>
+                <Button onClick={async () => onDownloadTemplate(activeCategory, activeSubCategory)} disabled={isUploading}>
                     Download Template
                 </Button>
                 {isUploading && <p>Uploading... Please wait.</p>}
@@ -801,7 +850,7 @@ export function CsvUploadDialog({
                     </Alert>
                 )}
                 <div className="flex justify-end space-x-2 mt-4">
-                    <Button variant="outline" onClick={() => onOpenChange(false)}>Close</Button>
+                    <Button variant="outline" onClick={async () => onOpenChange(false)}>Close</Button>
                 </div>
             </DialogContent>
         </Dialog>

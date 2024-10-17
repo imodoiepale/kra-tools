@@ -8,27 +8,61 @@ export function useCategories() {
 
     const handleAddCategory = async (newCategory) => {
         if (!newCategory.name || !newCategory.subcategories) return;
-
+    
         const categoryName = newCategory.name.toUpperCase();
         const subcategoriesList = newCategory.subcategories.split(',').map(s => s.trim());
-
+    
+        console.log('Adding category:', categoryName, 'with subcategories:', subcategoriesList);
+    
         try {
-            await Promise.all(
-                subcategoriesList.map(subcategory => {
+            // Create tables for each subcategory
+            const results = await Promise.all(
+                subcategoriesList.map(async (subcategory) => {
                     const tableName = `${categoryName}_${subcategory}`.toLowerCase();
-                    return supabase.rpc('create_table_if_not_exists', { table_name: tableName });
+                    console.log('Creating table:', tableName);
+                    const { data, error } = await supabase.rpc('create_table_if_not_exists', { table_name: tableName });
+                    if (error) throw error;
+    
+                    // Insert into category_table_mappings
+                    const { error: mappingError } = await supabase
+                        .from('category_table_mappings')
+                        .upsert({
+                            category: categoryName,
+                            subcategory: subcategory,
+                            table_name: tableName,
+                            column_mappings: {
+                                name: 'name',
+                                identifier: 'identifier',
+                                password: 'password',
+                                status: 'status'
+                            },
+                            column_settings: {}
+                        }, {
+                            onConflict: 'category,subcategory'
+                        });
+                    if (mappingError) throw mappingError;
+    
+                    return { tableName, subcategory };
                 })
             );
-
-            setCategories(prev => ({
-                ...prev,
-                [categoryName]: subcategoriesList
-            }));
-
+    
+            console.log('Table creation and mapping results:', results);
+    
+            // Update local state
+            setCategories(prev => {
+                const newCategories = {
+                    ...prev,
+                    [categoryName]: subcategoriesList
+                };
+                console.log('Updated categories:', newCategories);
+                return newCategories;
+            });
+    
             // Refresh the categories from the database
-            fetchCategories();
+            await fetchCategories();
         } catch (error) {
             console.error('Error adding category:', error);
+            alert(`Error adding category: ${error.message || 'Unknown error'}`);
         }
     };
 
@@ -40,6 +74,8 @@ export function useCategories() {
 
             if (error) throw error;
 
+            console.log('Fetched category data:', data);
+
             const categoriesMap = {};
             data.forEach(item => {
                 if (!categoriesMap[item.category]) {
@@ -48,6 +84,7 @@ export function useCategories() {
                 categoriesMap[item.category].push(item.subcategory);
             });
 
+            console.log('Processed categories:', categoriesMap);
             setCategories(categoriesMap);
         } catch (error) {
             console.error('Error fetching categories:', error);
@@ -81,9 +118,12 @@ export function useItems(activeCategory, activeSubCategory) {
     
             if (mappingsError) throw mappingsError;
     
+            console.log('Fetched mappings:', mappings);
+
             const allData = {};
             await Promise.all(
                 mappings.map(async ({ category, subcategory, table_name, column_mappings }) => {
+                    console.log(`Fetching data for ${category}_${subcategory} from table ${table_name}`);
                     const { data, error } = await supabase
                         .from(table_name)
                         .select(`id, ${Object.values(column_mappings).join(',')}`)
@@ -99,16 +139,17 @@ export function useItems(activeCategory, activeSubCategory) {
                         }
                         return mappedItem;
                     });
+                    console.log(`Processed data for ${key}:`, allData[key]);
                 })
             );
             setItems(allData);
+            console.log('All data fetched and processed:', allData);
         } catch (error) {
             console.error('Error fetching all data:', error);
         } finally {
             setLoading(false);
         }
     };
-
     const handleAddItem = async (newItem) => {
         try {
             const { data: mapping, error: mappingError } = await supabase
@@ -247,6 +288,9 @@ export function useTables(categories) {
             if (dbTablesResult.error) throw dbTablesResult.error;
             if (linkedTablesResult.error) throw linkedTablesResult.error;
 
+            console.log('Fetched DB tables:', dbTablesResult.data);
+            console.log('Fetched linked tables:', linkedTablesResult.data);
+
             setDbTables((dbTablesResult.data.map(item => item.table_name) || []).sort());
 
             const tableMap = {};
@@ -254,6 +298,7 @@ export function useTables(categories) {
                 tableMap[`${item.category}_${item.subcategory}`] = item.table_name;
             });
             setLinkedTables(tableMap);
+            console.log('Processed linked tables:', tableMap);
 
             const missing = [];
             Object.entries(categories).forEach(([category, subcategories]) => {
@@ -265,10 +310,12 @@ export function useTables(categories) {
                 });
             });
             setMissingTables(missing);
+            console.log('Missing tables:', missing);
         } catch (error) {
             console.error('Error fetching table data:', error);
         }
     };
+
 
     useEffect(() => {
         fetchAllData();
@@ -298,10 +345,27 @@ export function useTables(categories) {
     const handleCreateNewTable = async (customTableName, category, subcategory) => {
         try {
             const tableName = customTableName || `${category}_${subcategory}`.toLowerCase();
-
-            await supabase.rpc('create_table_if_not_exists', { table_name: tableName });
-
-            await supabase.from('category_table_mappings').upsert({
+            console.log('Creating table:', tableName);
+    
+            const { data: createTableData, error: createTableError } = await supabase.rpc('create_table_if_not_exists', { table_name: tableName });
+            console.log('Create table result:', createTableData);
+            if (createTableError) {
+                console.error('Error creating table:', createTableError);
+                throw createTableError;
+            }
+    
+            // Verify table creation
+            const { data: tableExists, error: tableCheckError } = await supabase
+                .from('information_schema.tables')
+                .select('table_name')
+                .eq('table_name', tableName)
+                .single();
+    
+            if (tableCheckError || !tableExists) {
+                throw new Error('Table creation could not be verified');
+            }
+    
+            const payload = {
                 category: category,
                 subcategory: subcategory,
                 table_name: tableName,
@@ -310,14 +374,32 @@ export function useTables(categories) {
                     identifier: 'identifier',
                     password: 'password',
                     status: 'status'
-                }
-            }, {
-                onConflict: 'category,subcategory'
-            });
-
+                },
+                column_settings: {}
+            };
+            console.log('Upserting payload:', payload);
+    
+            const { data: upsertData, error: upsertError } = await supabase
+                .from('category_table_mappings')
+                .upsert(payload, {
+                    onConflict: 'category,subcategory',
+                    returning: 'minimal'
+                });
+    
+            console.log('Upsert result:', upsertData);
+    
+            if (upsertError) {
+                console.error('Error upserting into category_table_mappings:', upsertError);
+                throw upsertError;
+            }
+    
             await fetchAllData();
+    
+            console.log('Table created and mapping updated successfully.');
+            alert('Table created and mapping updated successfully.');
         } catch (error) {
             console.error('Error creating new table:', error);
+            alert(`Error creating table: ${error.message || 'Unknown error'}`);
         }
     };
 
