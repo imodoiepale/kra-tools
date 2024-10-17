@@ -1,4 +1,3 @@
-// Start.tsx
 // @ts-nocheck
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -36,6 +35,9 @@ export default function Start({ companies, handleStopCheck, activeTab, setStatus
       } else if (data.status === 'Stopped') {
         setIsChecking(false);
         setStatus('Stopped');
+      } else if (data.status === 'Completed') {
+        setIsChecking(false);
+        setStatus('Completed');
       }
     }
   };
@@ -104,38 +106,42 @@ export default function Start({ companies, handleStopCheck, activeTab, setStatus
   const resumeCheck = async () => {
     let apiEndpoint = '';
     switch (activeTab) {
-      case 'nssf':
-        apiEndpoint = '/api/nssf-pass-checker';
-        break;
-      case 'nhif':
-        apiEndpoint = '/api/nhif-pass-checker';
-        break;
-      case 'kra':
-        apiEndpoint = '/api/password-checker';
-        break;
-      default:
-        alert('Invalid tab selected');
-        return;
+        case 'nssf':
+            apiEndpoint = '/api/nssf-pass-checker';
+            break;
+        case 'nhif':
+            apiEndpoint = '/api/nhif-pass-checker';
+            break;
+        case 'kra':
+            apiEndpoint = '/api/password-checker';
+            break;
+        default:
+            alert('Invalid tab selected');
+            return;
     }
 
     try {
-       const response = await fetch(apiEndpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ action: "resume" })
-      });
+        const response = await fetch(apiEndpoint, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ action: "resume" })
+        });
 
-      if (!response.ok) throw new Error('Failed to resume automation');
+        if (!response.ok) {
+            const errorData = await response.json(); // Log the error response
+            console.error('Error response:', errorData);
+            throw new Error('Failed to resume automation');
+        }
 
-      setIsChecking(true);
-      setStatus("Running");
-      fetchAutomationProgress();
+        setIsChecking(true);
+        setStatus("Running");
+        fetchAutomationProgress();
     } catch (error) {
-      console.error('Error resuming automation:', error);
+        console.error('Error resuming automation:', error);
     }
-  };
+};
 
   return (
     <Card>
@@ -329,16 +335,16 @@ export default function Start({ companies, handleStopCheck, activeTab, setStatus
                   </Table>
                 </div>
                 <div className="mt-4">
-                <Button
-            onClick={automationProgress?.status === 'Stopped' ? resumeCheck : startCheck}
-            disabled={isChecking && automationProgress?.status !== 'Stopped'}
-          >
-            {isChecking ? 'Running...' : automationProgress?.status === 'Stopped' ? 'Resume' : 'Start Password Check'}
-          </Button>
+                  <Button
+                    onClick={automationProgress?.status === 'Stopped' ? resumeCheck : startCheck}
+                    disabled={isChecking && automationProgress?.status !== 'Stopped'}
+                    className={automationProgress?.status === 'Completed' ? 'bg-green-500 text-white' : ''}
+                  >
+                   {isChecking ? 'Running...' : automationProgress?.status === 'Stopped' ? 'Resume' : 'Start Password Check'}</Button>
 
-          <Button onClick={() => { handleStopCheck(); setStatus("Stopped"); }} disabled={!isChecking} variant="destructive" className="ml-2">
-            Stop Password Check
-          </Button>
+                  <Button onClick={() => { handleStopCheck(); setStatus("Stopped"); }} disabled={!isChecking} variant="destructive" className="ml-2">
+                    Stop Password Check
+                  </Button>
                 </div>
               </motion.div>
             )}
@@ -350,9 +356,9 @@ export default function Start({ companies, handleStopCheck, activeTab, setStatus
           <Button
             onClick={automationProgress?.status === 'Stopped' ? resumeCheck : startCheck}
             disabled={isChecking && automationProgress?.status !== 'Stopped'}
+            className={automationProgress?.status === 'Completed' ? 'bg-green-500 text-white' : ''}
           >
-            {isChecking ? 'Running...' : automationProgress?.status === 'Stopped' ? 'Resume' : 'Start Password Check'}
-          </Button>
+           {isChecking ? 'Running...' : automationProgress?.status === 'Stopped' ? 'Resume' : 'Start Password Check'}</Button>
 
           <Button onClick={() => { handleStopCheck(); setStatus("Stopped"); }} disabled={!isChecking} variant="destructive" className="ml-2">
             Stop Password Check
