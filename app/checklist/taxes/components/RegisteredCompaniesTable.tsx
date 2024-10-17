@@ -11,6 +11,7 @@ import {
     createColumnHelper,
 } from '@tanstack/react-table';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
@@ -23,7 +24,7 @@ const columnHelper = createColumnHelper();
 
 const TaxStatus = ({ status }) => {
     if (!status || status === "No obligation") {
-        return <Badge variant="outline" className="bg-yellow-100 text-yellow-800">MISSING</Badge>;
+        return <Badge variant="outline" className="bg-yellow-100 text-yellow-800">No Obligation</Badge>;
     }
     switch (status.toLowerCase()) {
         case 'registered':
@@ -70,7 +71,8 @@ export default function RegisteredCompaniesTable({ companies, taxType }) {
     ], [taxType]);
 
     const data = useMemo(() =>
-        companies.filter(company => company[`${taxType}_status`]?.toLowerCase() === 'registered')
+        companies
+            // .filter(company => company[`${taxType}_status`]?.toLowerCase() === 'registered')
             .map((company, index) => ({
                 ...company,
                 index: index + 1,
@@ -145,6 +147,59 @@ export default function RegisteredCompaniesTable({ companies, taxType }) {
         saveAs(blob, 'registered_companies.xlsx');
     };
 
+    const calculateTotals = (companies, taxType) => {
+        const totals = {
+            registered: 0,
+            cancelled: 0,
+            dormant: 0,
+            noObligation: 0,
+            total: 0
+        };
+
+        companies.forEach(company => {
+            totals.total++;
+            const status = company[`${taxType}_status`]?.toLowerCase();
+            if (status === 'registered') totals.registered++;
+            else if (status === 'cancelled') totals.cancelled++;
+            else if (status === 'dormant') totals.dormant++;
+            else totals.noObligation++;
+        });
+
+        return totals;
+    };
+
+
+    const TotalsRow = ({ totals }) => (
+        <>
+            {['Totals', 'Registered', 'Cancelled', 'Dormant', 'No Obligation'].map((rowTitle, index) => (
+                <TableRow key={rowTitle} className={`${index === 0 ? 'sticky top-0' : ''} whitespace-nowrap text-center h-4 bg-yellow-100`}>
+                    <TableCell colSpan={3} className="font-bold text-[10px] text-left h-4">{rowTitle}</TableCell>
+                    <TableCell className="text-center">
+                        <TooltipProvider>
+                            <Tooltip>
+                                <TooltipTrigger>
+                                    <Badge
+                                        className={`${rowTitle === 'Totals' ? 'bg-black text-white' :
+                                            rowTitle === 'Registered' ? 'bg-green-500' :
+                                                rowTitle === 'Cancelled' ? 'bg-red-500' :
+                                                    rowTitle === 'Dormant' ? 'bg-blue-500' : 'bg-amber-400'
+                                            } text-[9px] px-0.5 py-0.5`}
+                                        variant={rowTitle === 'No Obligation' ? 'outline' : 'default'}
+                                    >
+                                        {totals[rowTitle.toLowerCase().replace(' ', '')] || 0}
+                                    </Badge>
+                                </TooltipTrigger>
+                                <TooltipContent className="text-[9px] px-1 py-0.5">{rowTitle}</TooltipContent>
+                            </Tooltip>
+                        </TooltipProvider>
+                    </TableCell>
+                    <TableCell ></TableCell>
+                </TableRow>
+            ))}
+        </>
+    );
+
+
     return (
         <div>
             <div className="flex justify-between items-center my-4">
@@ -181,6 +236,10 @@ export default function RegisteredCompaniesTable({ companies, taxType }) {
                                 ))}
                             </TableRow>
                         ))}
+
+                        <TotalsRow totals={calculateTotals(companies, taxType)} />
+
+
                     </TableHeader>
                     <TableBody>
                         {table.getRowModel().rows.map(row => (

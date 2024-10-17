@@ -29,19 +29,20 @@ const columnHelper = createColumnHelper();
 
 const TaxStatus = ({ status }) => {
     if (!status || status === "No obligation") {
-        return <div className="flex justify-center"><Badge variant="outline" className="bg-red-600 text-white text-[10px]">No Obligation</Badge></div>;
+        return <div className="flex justify-center"><Badge variant="outline" className="bg-red-600 text-white text-[8px] px-1 py-0">No Obligation</Badge></div>;
     }
     switch (status.toLowerCase()) {
         case 'registered':
-            return <div className="flex justify-center"><Badge className="bg-green-500 text-[10px]">Registered</Badge></div>;
+            return <div className="flex justify-center"><Badge className="bg-green-500 text-[8px] px-1 py-0">Registered</Badge></div>;
         case 'cancelled':
-            return <div className="flex justify-center"><Badge className="bg-red-500 text-[10px]">Cancelled</Badge></div>;
+            return <div className="flex justify-center"><Badge className="bg-red-500 text-[8px] px-1 py-0">Cancelled</Badge></div>;
         case 'dormant':
-            return <div className="flex justify-center"><Badge className="bg-blue-500 text-[10px]">Dormant</Badge></div>;
+            return <div className="flex justify-center"><Badge className="bg-blue-500 text-[8px] px-1 py-0">Dormant</Badge></div>;
         default:
-            return <div className="flex justify-center"><Badge variant="outline" className="bg-red-600 text-white text-[10px]">No Obligation</Badge></div>;
+            return <div className="flex justify-center"><Badge variant="outline" className="bg-red-600 text-white text-[8px] px-1 py-0">No Obligation</Badge></div>;
     }
 };
+
 
 const calculateTotals = (companies) => {
     const totals = {
@@ -56,6 +57,7 @@ const calculateTotals = (companies) => {
         nhif: { total: 0, registered: 0, cancelled: 0, dormant: 0, missing: 0 },
         housing_levy: { total: 0, registered: 0, cancelled: 0, dormant: 0, missing: 0 },
         nita: { total: 0, registered: 0, cancelled: 0, dormant: 0, missing: 0 },
+        kebs: { total: 0, registered: 0, cancelled: 0, dormant: 0, missing: 0 },
     };
 
 
@@ -104,59 +106,36 @@ const exportToExcel = async (companies) => {
     link.click();
     URL.revokeObjectURL(url);
 };
-
-
 const TotalsRow = ({ totals }) => (
-    <TableRow className='sticky top-0'>
-
-        <TableCell colSpan={2} className="font-bold">Totals</TableCell>
-        {Object.entries(totals).map(([tax, counts]) => (
-            <TableCell key={tax}>
-                <TooltipProvider>
-                    {counts.total > 0 && (
-                        <Tooltip>
-                            <TooltipTrigger>
-                                <Badge className="bg-black text-white text-[10px] px-1 py-0.5">{counts.total}</Badge>
-                            </TooltipTrigger>
-                            <TooltipContent>Total</TooltipContent>
-                        </Tooltip>
-                    )}
-                    {counts.registered > 0 && (
-                        <Tooltip>
-                            <TooltipTrigger>
-                                <Badge className="bg-green-500 ml-1 text-[10px] px-1 py-0.5">{counts.registered}</Badge>
-                            </TooltipTrigger>
-                            <TooltipContent>Registered</TooltipContent>
-                        </Tooltip>
-                    )}
-                    {counts.cancelled > 0 && (
-                        <Tooltip>
-                            <TooltipTrigger>
-                                <Badge className="bg-red-500 ml-1 text-[10px] px-1 py-0.5">{counts.cancelled}</Badge>
-                            </TooltipTrigger>
-                            <TooltipContent>Cancelled</TooltipContent>
-                        </Tooltip>
-                    )}
-                    {counts.dormant > 0 && (
-                        <Tooltip>
-                            <TooltipTrigger>
-                                <Badge className="bg-blue-500 ml-1 text-[10px] px-1 py-0.5">{counts.dormant}</Badge>
-                            </TooltipTrigger>
-                            <TooltipContent>Dormant</TooltipContent>
-                        </Tooltip>
-                    )}
-                    {counts.missing > 0 && (
-                        <Tooltip>
-                            <TooltipTrigger>
-                                <Badge variant="outline" className="bg-amber-400 text-yellow-800 ml-1 text-[10px] px-1 py-0.5">{counts.missing}</Badge>
-                            </TooltipTrigger>
-                            <TooltipContent>Missing</TooltipContent>
-                        </Tooltip>
-                    )}
-                </TooltipProvider>
-            </TableCell>
+    <>
+        {['Totals', 'Registered', 'Cancelled', 'Dormant', 'No Obligation'].map((rowTitle, index) => (
+            <TableRow key={rowTitle} className={`${index === 0 ? 'sticky top-0' : ''} whitespace-nowrap text-center h-4`}>
+                <TableCell colSpan={2} className="font-bold text-sm  h-4">{rowTitle}</TableCell>
+                {Object.entries(totals).map(([tax, counts]) => {
+                    const statusMap = {
+                        'Totals': { count: counts.total, bgColor: 'bg-black text-white' },
+                        'Registered': { count: counts.registered, bgColor: 'bg-green-500' },
+                        'Cancelled': { count: counts.cancelled, bgColor: 'bg-red-500' },
+                        'Dormant': { count: counts.dormant, bgColor: 'bg-blue-500' },
+                        'No Obligation': { count: counts.missing, bgColor: 'bg-amber-400' },
+                    };
+                    const { count, bgColor } = statusMap[rowTitle];
+                    return (
+                        <TableCell key={tax} className="text-center">
+                            <TooltipProvider>
+                                <Tooltip>
+                                    <TooltipTrigger>
+                                        <Badge className={`${bgColor} text-[9px] px-0.5 py-0.5`} variant={rowTitle === 'No Obligation' ? 'outline' : 'default'}>{count}</Badge>
+                                    </TooltipTrigger>
+                                    <TooltipContent className={`${bgColor} text-[9px] px-1 py-0.5`}>{rowTitle}</TooltipContent>
+                                </Tooltip>
+                            </TooltipProvider>
+                        </TableCell>
+                    );
+                })}
+            </TableRow>
         ))}
-    </TableRow>
+    </>
 );
 
 export default function OverallTaxesTable({ companies: initialCompanies }) {
@@ -363,10 +342,9 @@ export default function OverallTaxesTable({ companies: initialCompanies }) {
             header: '#',
         }),
         columnHelper.accessor('company_name', {
-            cell: info => info.getValue(),
+            cell: info => <span className="text-[10px]">{info.getValue()}</span>,
             header: 'Company Name',
         }),
-        
         columnHelper.accessor('income_tax_company_status', {
             cell: info => <TaxStatus status={info.getValue()} />,
             header: 'Income Tax Company',
@@ -411,26 +389,29 @@ export default function OverallTaxesTable({ companies: initialCompanies }) {
             cell: info => <TaxStatus status={info.getValue()} />,
             header: 'WH VAT',
         }),
+        columnHelper.accessor('kebs_status', {
+            cell: info => <TaxStatus status={info.getValue()} />,
+            header: 'KEBS',
+        }),
         columnHelper.accessor('actions', {
-            cell: info => (
+            cell: ({ row }) => (
                 <div className="flex space-x-2">
                     <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => handleEdit(info.row.original)}
-                        disabled={info.row.original.is_locked}
+                        onClick={() => handleEdit(row.original)}
+                        disabled={row.original.is_locked}
                         className="bg-blue-500 text-white hover:bg-blue-600"
                     >
-                        <Edit size={16} className="mr-1" />
-                        Edit
+                        <Edit size={16} />
                     </Button>
                     <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => toggleLock(info.row.original.id, info.row.original.is_locked)}
-                        className={info.row.original.is_locked ? "bg-green-500 text-white hover:bg-green-600" : "bg-red-500 text-white hover:bg-red-600"}
+                        onClick={() => toggleLock(row.original.id, row.original.is_locked)}
+                        className={row.original.is_locked ? "bg-green-500 text-white hover:bg-green-600" : "bg-red-500 text-white hover:bg-red-600"}
                     >
-                        {info.row.original.is_locked ? <Lock size={16} /> : <Unlock size={16} />}
+                        {row.original.is_locked ? <Lock size={16} /> : <Unlock size={16} />}
                     </Button>
                 </div>
             ),
@@ -479,7 +460,7 @@ export default function OverallTaxesTable({ companies: initialCompanies }) {
                     </Button>
                 </div>
             </div>
-            <ScrollArea className="h-[750px]">
+            <ScrollArea className="h-[700px] w-full rounded-md border">
                 <TooltipProvider>
                     <Table>
                         <TableHeader>
@@ -488,7 +469,7 @@ export default function OverallTaxesTable({ companies: initialCompanies }) {
                                     {headerGroup.headers.map(header => (
                                         <TableHead
                                             key={header.id}
-                                            className="font-bold text-white bg-gray-600"
+                                            className="font-bold text-white bg-gray-600 py-1 px-2 text-center text-[10px]" // Reduced padding
                                         >
                                             {header.isPlaceholder ? null : (
                                                 <div
@@ -506,14 +487,17 @@ export default function OverallTaxesTable({ companies: initialCompanies }) {
                                             )}
                                         </TableHead>
                                     ))}
+
                                 </TableRow>
+
                             ))}
+                            <TotalsRow totals={calculateTotals(companies)} />
                         </TableHeader>
                         <TableBody>
                             {table.getRowModel().rows.map((row, index) => (
                                 <TableRow key={row.id} className={index % 2 === 0 ? 'bg-blue-50' : 'bg-white'}>
                                     {row.getVisibleCells().map(cell => (
-                                        <TableCell key={cell.id}>
+                                        <TableCell key={cell.id} className="py-0.5 px-2 whitespace-nowrap">
                                             {flexRender(cell.column.columnDef.cell, cell.getContext())}
                                         </TableCell>
                                     ))}
