@@ -35,6 +35,7 @@ export default function PasswordCheckerReports() {
   const [companies, setCompanies] = useState<Company[]>([])
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'ascending' });
   const [searchTerm, setSearchTerm] = useState('');
+  const [automationProgress, setAutomationProgress] = useState(null);
 
   const [isChecking, setIsChecking] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -246,35 +247,68 @@ export default function PasswordCheckerReports() {
         return 'PasswordChecker'
     }
   }
-
-
-  const handleStopCheck = async () => {
-    if (!isChecking) {
-      alert('There is no automation currently running.');
-      return;
+  const fetchAutomationProgress = async () => {
+    const { data, error } = await supabase
+      .from('PasswordChecker_AutomationProgress')
+      .select('*')
+      .order('last_updated', { ascending: false })
+      .limit(1)
+      .single();
+  
+    if (error) {
+      console.error('Error fetching automation progress:', error);
+    } else if (data) {
+      setAutomationProgress(data);
+      if (data.status === 'Running') {
+        setIsChecking(true);
+        setStatus('Running');
+      } else if (data.status === 'Stopped') {
+        setIsChecking(false);
+        setStatus('Stopped');
+      }
     }
-
+  };
+  
+  const handleStopCheck = async () => {
+    let apiEndpoint = '';
+    switch (activeTab) {
+      case 'nssf':
+        apiEndpoint = '/api/nssf-pass-checker';
+        break;
+      case 'nhif':
+        apiEndpoint = '/api/nhif-pass-checker';
+        break;
+      case 'kra':
+        apiEndpoint = '/api/password-checker';
+        break;
+      default:
+        alert('Invalid tab selected');
+        return;
+    }
     try {
-      const response = await fetch('/api/password-checker', {
+      const response = await fetch(apiEndpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ action: "stop" })
-      })
-
-      if (!response.ok) throw new Error('Failed to stop automation')
-
-      const data = await response.json()
-      console.log('Automation stopped:', data)
-      setIsChecking(false)
-      setStatus("Stopped")
-      alert('Automation stopped successfully.')
+      });
+  
+      if (!response.ok) throw new Error('Failed to stop automation');
+  
+      setIsChecking(false);
+      setStatus("Stopped");
+      await supabase
+        .from('PasswordChecker_AutomationProgress')
+        .update({ status: 'Stopped' })
+        .eq('id', 1);
+      
+      fetchAutomationProgress();
     } catch (error) {
-      console.error('Error stopping automation:', error)
-      alert('Failed to stop automation. Please try again.')
+      console.error('Error stopping automation:', error);
     }
-  }
+  };
+  
   return (
     <div className="space-y-4">
       <Tabs value={activeTab} onValueChange={setActiveTab}>
@@ -363,25 +397,23 @@ export default function PasswordCheckerReports() {
         </TabsList>
         <TabsContent value="start">
           <Start
-            companies={companies}
-            isChecking={isChecking}
+            companies={companies}            
+        isChecking={isChecking}
+        setIsChecking={setIsChecking}
             // handleStartCheck={handleStartCheck}
             handleStopCheck={handleStopCheck}
             activeTab={activeTab}
+            setStatus={setStatus}
           />
         </TabsContent>
         <TabsContent value="running">
           <PasswordCheckerRunning
-            progress={progress}
-            status={status}
-            isChecking={isChecking}
-            handleStopCheck={handleStopCheck}
-            activeTab={activeTab}
-            onComplete={() => {
-              setActiveTab("Reports")
-              setIsChecking(false)
-              setStatus("Completed")
-            }}
+           progress={progress}
+           status={status}
+           isChecking={isChecking}
+           handleStopCheck={handleStopCheck}
+           activeTab={activeTab}
+           onComplete={() => setStatus("Completed")}
           />
         </TabsContent>
         <TabsContent value="reports">
