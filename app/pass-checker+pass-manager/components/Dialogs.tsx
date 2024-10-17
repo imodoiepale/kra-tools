@@ -11,46 +11,181 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { supabase } from '@/lib/supabase';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 
 export function AddItemDialog({ open, onOpenChange, onAddItem }) {
     const [newItem, setNewItem] = useState({ name: '', identifier: '', password: '', status: 'Pending' });
+    const [companies, setCompanies] = useState([]);
+    const [selectedCompany, setSelectedCompany] = useState(null);
+    const [selectedCompanies, setSelectedCompanies] = useState([]);
+    const [activeTab, setActiveTab] = useState("select-one");
+
+    useEffect(() => {
+        fetchCompanies();
+    }, []);
+
+    const fetchCompanies = async () => {
+        try {
+            const { data, error } = await supabase
+                .from('PasswordChecker')
+                .select('id, company_name, kra_pin, kra_password')
+                .order('company_name');
+
+            if (error) throw error;
+            setCompanies(data);
+        } catch (error) {
+            console.error('Error fetching companies:', error);
+        }
+    };
+
+    const handleCompanySelect = (companyId) => {
+        const company = companies.find(c => c.id === companyId);
+        if (company) {
+            setNewItem({
+                name: company.company_name,
+                identifier: company.kra_pin,
+                password: company.kra_password,
+                status: 'Pending'
+            });
+            setSelectedCompany(companyId);
+        }
+    };
+
+    const handleMultipleSelect = (companyId) => {
+        setSelectedCompanies(prev => {
+            const isSelected = prev.some(c => c.id === companyId);
+            if (isSelected) {
+                return prev.filter(c => c.id !== companyId);
+            } else {
+                const company = companies.find(c => c.id === companyId);
+                return [...prev, company];
+            }
+        });
+    };
 
     const handleSave = () => {
-        onAddItem(newItem);
+        if (activeTab === "select-one") {
+            onAddItem(newItem);
+        } else {
+            selectedCompanies.forEach(company => {
+                onAddItem({
+                    name: company.company_name,
+                    identifier: "Missing",
+                    password:"Missing",
+                    status: 'Pending'
+                });
+            });
+        }
         onOpenChange(false);
         setNewItem({ name: '', identifier: '', password: '', status: 'Pending' });
+        setSelectedCompany(null);
+        setSelectedCompanies([]);
     };
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent>
+            <DialogContent className="max-w-4xl">
                 <DialogHeader>
-                    <DialogTitle>Add New Item</DialogTitle>
+                    <DialogTitle>Add New Item(s)</DialogTitle>
                 </DialogHeader>
-                <div className="space-y-4">
-                    <div>
-                        <Label>Name</Label>
-                        <Input
-                            value={newItem.name}
-                            onChange={(e) => setNewItem({ ...newItem, name: e.target.value })}
-                        />
-                    </div>
-                    <div>
-                        <Label>Identifier</Label>
-                        <Input
-                            value={newItem.identifier}
-                            onChange={(e) => setNewItem({ ...newItem, identifier: e.target.value })}
-                        />
-                    </div>
-                    <div>
-                        <Label>Password</Label>
-                        <Input
-                            value={newItem.password}
-                            onChange={(e) => setNewItem({ ...newItem, password: e.target.value })}
-                        />
-                    </div>
-                </div>
+                <Tabs value={activeTab} onValueChange={setActiveTab}>
+                    <TabsList>
+                        <TabsTrigger value="select-one">Select One</TabsTrigger>
+                        <TabsTrigger value="add-multiple">Add Multiple</TabsTrigger>
+                    </TabsList>
+                    <TabsContent value="select-one">
+                        <div className="space-y-4">
+                            <div>
+                                <Label>Select Company</Label>
+                                <Select onValueChange={handleCompanySelect} value={selectedCompany}>
+                                    <SelectTrigger>
+                                        <SelectValue placeholder="Select a company" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {companies.map(company => (
+                                            <SelectItem key={company.id} value={company.id}>
+                                                {company.company_name}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <div>
+                                <Label>Name</Label>
+                                <Input
+                                    value={newItem.name}
+                                    onChange={(e) => setNewItem({ ...newItem, name: e.target.value })}
+                                />
+                            </div>
+                            <div>
+                                <Label>Identifier</Label>
+                                <Input
+                                    value={newItem.identifier}
+                                    onChange={(e) => setNewItem({ ...newItem, identifier: e.target.value })}
+                                />
+                            </div>
+                            <div>
+                                <Label>Password</Label>
+                                <Input
+                                    value={newItem.password}
+                                    onChange={(e) => setNewItem({ ...newItem, password: e.target.value })}
+                                />
+                            </div>
+                        </div>
+                    </TabsContent>
+                    <TabsContent value="add-multiple">
+                        <div className="flex space-x-4">
+                            <div className="w-1/2">
+                                <h3 className="text-lg font-semibold mb-2">Available Companies</h3>
+                                <ScrollArea className="h-[400px] border rounded">
+                                    <Table>
+                                        <TableHeader>
+                                            <TableRow>
+                                                <TableHead className="w-[50px]">Select</TableHead>
+                                                <TableHead>Company Name</TableHead>
+                                            </TableRow>
+                                        </TableHeader>
+                                        <TableBody>
+                                            {companies.map((company, index) => (
+                                                <TableRow key={company.id} className={index % 2 === 0 ? 'bg-blue-50' : 'bg-white'}>
+                                                    <TableCell>
+                                                        <Checkbox
+                                                            checked={selectedCompanies.some(c => c.id === company.id)}
+                                                            onCheckedChange={() => handleMultipleSelect(company.id)}
+                                                        />
+                                                    </TableCell>
+                                                    <TableCell>{company.company_name}</TableCell>
+                                                </TableRow>
+                                            ))}
+                                        </TableBody>
+                                    </Table>
+                                </ScrollArea>
+                            </div>
+                            <div className="w-1/2">
+                                <h3 className="text-lg font-semibold mb-2">Selected Companies</h3>
+                                <ScrollArea className="h-[400px] border rounded">
+                                    <Table>
+                                        <TableHeader>
+                                            <TableRow>
+                                                <TableHead>#</TableHead>
+                                                <TableHead>Company Name</TableHead>
+                                            </TableRow>
+                                        </TableHeader>
+                                        <TableBody>
+                                            {selectedCompanies.map((company, index) => (
+                                                <TableRow key={company.id} className={index % 2 === 0 ? 'bg-blue-50' : 'bg-white'}>
+                                                    <TableCell>{index + 1}</TableCell>
+                                                    <TableCell>{company.company_name}</TableCell>
+                                                </TableRow>
+                                            ))}
+                                        </TableBody>
+                                    </Table>
+                                </ScrollArea>
+                            </div>
+                        </div>
+                    </TabsContent>
+                </Tabs>
                 <div className="flex justify-end space-x-2 mt-4">
                     <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
                     <Button onClick={handleSave}>Save</Button>
@@ -59,8 +194,6 @@ export function AddItemDialog({ open, onOpenChange, onAddItem }) {
         </Dialog>
     );
 }
-
-
 
 export function SettingsDialog({
     open,
@@ -166,10 +299,59 @@ export function SettingsDialog({
         onLinkTable(selectedTable, columnMappings, selectedCategory, selectedSubcategory);
     };
 
-    const handleCreateTable = () => {
-        onCreateTable(null, selectedCategory, selectedSubcategory);
-    };
+    const handleCreateTable = async (category, subcategory) => {
+        try {
+            // Assuming onCreateTable creates the table and returns the table name
+            const tableName = await onCreateTable(null, category, subcategory);
 
+            if (!tableName) {
+                throw new Error('Table name not returned from onCreateTable');
+            }
+
+            console.log('Table created:', tableName);
+
+            // Insert the new mapping into the category_table_mappings table
+            const { data, error } = await supabase
+                .from('category_table_mappings')
+                .insert({
+                    category,
+                    subcategory,
+                    table_name: tableName,
+                    column_mappings: {
+                        name: 'name',
+                        identifier: 'identifier',
+                        password: 'password',
+                        status: 'status'
+                    },
+                    column_settings: {
+                        visibleColumns: {
+                            name: true,
+                            identifier: true,
+                            password: true,
+                            status: true
+                        },
+                        headerNames: {
+                            name: 'Name',
+                            identifier: 'Identifier',
+                            password: 'Password',
+                            status: 'Status'
+                        },
+                        columnOrder: ['name', 'identifier', 'password', 'status']
+                    }
+                })
+
+            if (error) {
+                console.error('Error inserting into category_table_mappings:', error);
+                throw error;
+            }
+
+            console.log('Mapping inserted:', data);
+            alert('Table created and mapping updated successfully.');
+        } catch (error) {
+            console.error('Error creating table and updating mapping:', error);
+            alert(`Error creating table: ${error.message}`);
+        }
+    };
     const handleColumnMappingChange = (categoryColumn, dbColumn) => {
         setColumnMappings(prev => {
             const newMappings = { ...prev };
@@ -226,7 +408,11 @@ export function SettingsDialog({
 
             if (deleteMappingError) throw deleteMappingError;
 
-            removeCategoryFromState(categoryToDelete, subcategoryToDelete);
+            if (typeof removeCategoryFromState === 'function') {
+                removeCategoryFromState(categoryToDelete, subcategoryToDelete);
+            } else {
+                console.warn('removeCategoryFromState is not a function. Category state may not be updated.');
+            }
 
             setCategoryToDelete('');
             setSubcategoryToDelete('');
@@ -444,12 +630,12 @@ export function SettingsDialog({
                                         <div key={`${category}_${subcategory}`} className="p-2 border rounded flex justify-between items-center">
                                             <span>{category} - {subcategory}</span>
                                             <div className="space-x-2">
-                                                <Button size="sm" onClick={() => {
+                                                <Button size="sm" onClick={async () => {
                                                     setSelectedCategory(category);
                                                     setSelectedSubcategory(subcategory);
                                                     setActiveTab("columns");
                                                 }}>Link</Button>
-                                                <Button size="sm" onClick={() => handleCreateTable(category, subcategory)}>Create</Button>
+                                                <Button size="sm" onClick={async () => handleCreateTable(category, subcategory)}>Create</Button>
                                             </div>
                                         </div>
                                     ))}
@@ -636,7 +822,7 @@ export function LinkTableDialog({ open, onOpenChange, dbTables, onLinkTable }) {
                     )}
                 </div>
                 <div className="flex justify-end space-x-2 mt-4">
-                    <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+                    <Button variant="outline" onClick={async () => onOpenChange(false)}>Cancel</Button>
                     <Button onClick={handleSave}>Link Table</Button>
                 </div>
             </DialogContent>
@@ -671,7 +857,7 @@ export function CreateTableDialog({ open, onOpenChange, onCreateTable, selectedC
                     </div>
                 </div>
                 <div className="flex justify-end space-x-2 mt-4">
-                    <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+                    <Button variant="outline" onClick={async () => onOpenChange(false)}>Cancel</Button>
                     <Button onClick={handleSave}>Create Table</Button>
                 </div>
             </DialogContent>
@@ -711,7 +897,7 @@ export function EditItemDialog({ open, onOpenChange, itemToEdit, onEditItem }) {
                     ))}
                 </div>
                 <div className="flex justify-end space-x-2 mt-4">
-                    <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+                    <Button variant="outline" onClick={async () => onOpenChange(false)}>Cancel</Button>
                     <Button onClick={handleSave}>Save</Button>
                 </div>
             </DialogContent>
@@ -733,7 +919,7 @@ export function DeleteItemDialog({ open, onOpenChange, itemToDelete, onDeleteIte
                 </DialogHeader>
                 <p>Are you sure you want to delete {itemToDelete?.name}?</p>
                 <div className="flex justify-end space-x-2 mt-4">
-                    <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+                    <Button variant="outline" onClick={async () => onOpenChange(false)}>Cancel</Button>
                     <Button onClick={handleDelete}>Delete</Button>
                 </div>
             </DialogContent>
@@ -784,7 +970,7 @@ export function CsvUploadDialog({
                     onChange={handleFileChange}
                     disabled={isUploading}
                 />
-                <Button onClick={() => onDownloadTemplate(activeCategory, activeSubCategory)} disabled={isUploading}>
+                <Button onClick={async () => onDownloadTemplate(activeCategory, activeSubCategory)} disabled={isUploading}>
                     Download Template
                 </Button>
                 {isUploading && <p>Uploading... Please wait.</p>}
@@ -801,7 +987,7 @@ export function CsvUploadDialog({
                     </Alert>
                 )}
                 <div className="flex justify-end space-x-2 mt-4">
-                    <Button variant="outline" onClick={() => onOpenChange(false)}>Close</Button>
+                    <Button variant="outline" onClick={async () => onOpenChange(false)}>Close</Button>
                 </div>
             </DialogContent>
         </Dialog>
