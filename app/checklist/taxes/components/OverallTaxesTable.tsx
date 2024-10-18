@@ -109,8 +109,8 @@ const exportToExcel = async (companies) => {
 const TotalsRow = ({ totals }) => (
     <>
         {['Totals', 'Registered', 'Cancelled', 'Dormant', 'No Obligation'].map((rowTitle, index) => (
-            <TableRow key={rowTitle} className={`${index === 0 ? 'sticky top-0' : ''} whitespace-nowrap text-center h-4`}>
-                <TableCell colSpan={2} className="font-bold text-sm  h-4">{rowTitle}</TableCell>
+            <TableRow key={rowTitle} className={`${index === 0 ? 'sticky top-0' : ''} whitespace-nowrap text-center h-4 bg-yellow-100`}>
+                <TableCell colSpan={2} className="font-bold text-[10px] text-left h-4">{rowTitle}</TableCell>
                 {Object.entries(totals).map(([tax, counts]) => {
                     const statusMap = {
                         'Totals': { count: counts.total, bgColor: 'bg-black text-white' },
@@ -133,6 +133,7 @@ const TotalsRow = ({ totals }) => (
                         </TableCell>
                     );
                 })}
+                <TableCell colSpan={1} className="font-bold text-[10px]  h-4"></TableCell>
             </TableRow>
         ))}
     </>
