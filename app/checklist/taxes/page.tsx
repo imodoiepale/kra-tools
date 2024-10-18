@@ -14,13 +14,15 @@ const taxTypes = [
     { key: 'vat', label: 'VAT' },
     { key: 'wh_vat', label: 'WH VAT' },
     { key: 'paye', label: 'PAYE' },
-    { key: 'nita', label: 'NITA' },
-    { key: 'housing_levy', label: 'Housing Levy' },
     { key: 'resident_individual', label: 'Resident Individual' },
     { key: 'rent_income_mri', label: 'Rent Income (MRI)' },
     { key: 'turnover_tax', label: 'Turnover Tax' },
+    { key: 'nita', label: 'NITA' },
+    { key: 'nhif', label: 'NHIF' },
+    { key: 'nssf', label: 'NSSF' },
+    { key: 'housing_levy', label: 'Housing Levy' },
+    { key: 'kebs', label: 'KEBS' },
 ];
-
 export default function TaxesPage() {
     const [data, setData] = useState({
         companies: [],
