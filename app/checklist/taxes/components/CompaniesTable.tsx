@@ -46,7 +46,7 @@ const formatDate = (dateString) => {
         for (let dateFormat of formats) {
             date = parse(dateString, dateFormat, new Date());
             if (isValid(date)) {
-                return format(date, 'dd.MM.yyyy');
+                return format(date, 'dd/MM/yyyy');
             }
         }
 
@@ -302,12 +302,12 @@ export default function CompaniesTable({ companies, taxType, tableType }) {
                 { label: 'Dormant', bgColor: 'bg-blue-100', count: totals.dormant }
             ].map(row => (
                 <TableRow key={row.label} className={`${row.bgColor}`} style={{ height: '20px' }}>
-                    <TableCell className="font-bold uppercase text-xs p-0" style={{ height: '20px' }}>{row.label}</TableCell>
-                    <TableCell className="text-center text-xs p-0" style={{ height: '20px' }}></TableCell>
-                    <TableCell className="text-center text-xs p-0" style={{ height: '20px' }}></TableCell>
-                    <TableCell className="text-center text-xs p-0" style={{ height: '20px' }}>{row.count}</TableCell>
+                    <TableCell className="font-bold uppercase text-xs P-1" style={{ height: '20px' }}>{row.label}</TableCell>
+                    <TableCell className="text-center text-xs P-1" style={{ height: '20px' }}></TableCell>
+                    <TableCell className="text-center text-xs P-1" style={{ height: '20px' }}></TableCell>
+                    <TableCell className="text-center text-xs P-1" style={{ height: '20px' }}>{row.count}</TableCell>
                     {columns.length > 4 && Array(columns.length - 4).fill().map((_, index) => (
-                        <TableCell key={index} className="text-center text-xs p-0" style={{ height: '20px' }}></TableCell>
+                        <TableCell key={index} className="text-center text-xs P-1" style={{ height: '20px' }}></TableCell>
                     ))}
                 </TableRow>
             ))}
@@ -316,7 +316,7 @@ export default function CompaniesTable({ companies, taxType, tableType }) {
 
     return (
         <div>
-            <div className="flex justify-between items-center my-4">
+            <div className="flex justify-between items-center my-2">
                 <Input
                     placeholder="Search companies..."
                     value={globalFilter}

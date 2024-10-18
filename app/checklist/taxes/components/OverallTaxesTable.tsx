@@ -46,20 +46,19 @@ const TaxStatus = ({ status }) => {
 
 const calculateTotals = (companies) => {
     const totals = {
-        income_tax_company: { total: 0, registered: 0, cancelled: 0, dormant: 0, missing: 0 },
-        vat: { total: 0, registered: 0, cancelled: 0, dormant: 0, missing: 0 },
-        paye: { total: 0, registered: 0, cancelled: 0, dormant: 0, missing: 0 },
-        rent_income_mri: { total: 0, registered: 0, cancelled: 0, dormant: 0, missing: 0 },
-        turnover_tax: { total: 0, registered: 0, cancelled: 0, dormant: 0, missing: 0 },
-        resident_individual: { total: 0, registered: 0, cancelled: 0, dormant: 0, missing: 0 },
-        wh_vat: { total: 0, registered: 0, cancelled: 0, dormant: 0, missing: 0 },
-        nssf: { total: 0, registered: 0, cancelled: 0, dormant: 0, missing: 0 },
-        nhif: { total: 0, registered: 0, cancelled: 0, dormant: 0, missing: 0 },
-        housing_levy: { total: 0, registered: 0, cancelled: 0, dormant: 0, missing: 0 },
-        nita: { total: 0, registered: 0, cancelled: 0, dormant: 0, missing: 0 },
-        kebs: { total: 0, registered: 0, cancelled: 0, dormant: 0, missing: 0 },
+        income_tax_company: { total: 0, registered: 0, cancelled: 0, dormant: 0, missing: 0, toBeRegistered: 0 },
+        vat: { total: 0, registered: 0, cancelled: 0, dormant: 0, missing: 0, toBeRegistered: 0 },
+        paye: { total: 0, registered: 0, cancelled: 0, dormant: 0, missing: 0, toBeRegistered: 0 },
+        rent_income_mri: { total: 0, registered: 0, cancelled: 0, dormant: 0, missing: 0, toBeRegistered: 0 },
+        turnover_tax: { total: 0, registered: 0, cancelled: 0, dormant: 0, missing: 0, toBeRegistered: 0 },
+        resident_individual: { total: 0, registered: 0, cancelled: 0, dormant: 0, missing: 0, toBeRegistered: 0 },
+        wh_vat: { total: 0, registered: 0, cancelled: 0, dormant: 0, missing: 0, toBeRegistered: 0 },
+        nssf: { total: 0, registered: 0, cancelled: 0, dormant: 0, missing: 0, toBeRegistered: 0 },
+        nhif: { total: 0, registered: 0, cancelled: 0, dormant: 0, missing: 0, toBeRegistered: 0 },
+        housing_levy: { total: 0, registered: 0, cancelled: 0, dormant: 0, missing: 0, toBeRegistered: 0 },
+        nita: { total: 0, registered: 0, cancelled: 0, dormant: 0, missing: 0, toBeRegistered: 0 },
+        kebs: { total: 0, registered: 0, cancelled: 0, dormant: 0, missing: 0, toBeRegistered: 0 },
     };
-
 
     companies.forEach(company => {
         Object.keys(totals).forEach(tax => {
@@ -68,6 +67,7 @@ const calculateTotals = (companies) => {
             if (status === 'registered') totals[tax].registered++;
             else if (status === 'cancelled') totals[tax].cancelled++;
             else if (status === 'dormant') totals[tax].dormant++;
+            else if (status === 'to be registered') totals[tax].toBeRegistered++;
             else totals[tax].missing++;
         });
     });
@@ -108,38 +108,28 @@ const exportToExcel = async (companies) => {
 };
 const TotalsRow = ({ totals }) => (
     <>
-        {['Totals', 'Registered', 'Cancelled', 'Dormant', 'No Obligation'].map((rowTitle, index) => (
-            <TableRow key={rowTitle} className={`${index === 0 ? 'sticky top-0' : ''} whitespace-nowrap text-center h-4 bg-yellow-100`}>
-                <TableCell colSpan={2} className="font-bold text-[10px] text-left h-4">{rowTitle}</TableCell>
-                {Object.entries(totals).map(([tax, counts]) => {
-                    const statusMap = {
-                        'Totals': { count: counts.total, bgColor: 'bg-black text-white' },
-                        'Registered': { count: counts.registered, bgColor: 'bg-green-500' },
-                        'Cancelled': { count: counts.cancelled, bgColor: 'bg-red-500' },
-                        'Dormant': { count: counts.dormant, bgColor: 'bg-blue-500' },
-                        'No Obligation': { count: counts.missing, bgColor: 'bg-amber-400' },
-                    };
-                    const { count, bgColor } = statusMap[rowTitle];
-                    return (
-                        <TableCell key={tax} className="text-center">
-                            <TooltipProvider>
-                                <Tooltip>
-                                    <TooltipTrigger>
-                                        <Badge className={`${bgColor} text-[9px] px-0.5 py-0.5`} variant={rowTitle === 'No Obligation' ? 'outline' : 'default'}>{count}</Badge>
-                                    </TooltipTrigger>
-                                    <TooltipContent className={`${bgColor} text-[9px] px-1 py-0.5`}>{rowTitle}</TooltipContent>
-                                </Tooltip>
-                            </TooltipProvider>
-                        </TableCell>
-                    );
-                })}
-                <TableCell colSpan={1} className="font-bold text-[10px]  h-4"></TableCell>
+        {[
+            { label: 'Total', bgColor: 'bg-blue-100', counts: Object.fromEntries(Object.entries(totals).map(([key, value]) => [key, value.total])) },
+            { label: 'Registered', bgColor: 'bg-green-100', counts: Object.fromEntries(Object.entries(totals).map(([key, value]) => [key, value.registered])) },
+            { label: 'To Be Registered', bgColor: 'bg-yellow-100', counts: Object.fromEntries(Object.entries(totals).map(([key, value]) => [key, value.toBeRegistered || 0])) },
+            { label: 'No Obligation', bgColor: 'bg-amber-100', counts: Object.fromEntries(Object.entries(totals).map(([key, value]) => [key, value.missing])) },
+            { label: 'Cancelled', bgColor: 'bg-red-100', counts: Object.fromEntries(Object.entries(totals).map(([key, value]) => [key, value.cancelled])) },
+            { label: 'Dormant', bgColor: 'bg-blue-100', counts: Object.fromEntries(Object.entries(totals).map(([key, value]) => [key, value.dormant])) }
+        ].map(row => (
+            <TableRow key={row.label} className={`${row.bgColor} border-b`} style={{ height: '16px' }}>
+                <TableCell colSpan={2} className="font-bold uppercase text-xs px-2 col-span-2" style={{ height: '16px' }}>{row.label}</TableCell>
+
+
+                {Object.entries(row.counts).map(([tax, count], index) => (
+                    <TableCell key={tax} className={`text-center text-xs p-0 ${tax === 'resident_individual' ? 'border-r-2 border-black' : ''}`} style={{ height: '16px' }}>
+                        {count}
+                    </TableCell>
+                ))}
+                <TableCell className="font-bold uppercase text-xs px-2 col-span-2" style={{ height: '16px' }}>{row.label}</TableCell>
             </TableRow>
         ))}
     </>
-);
-
-export default function OverallTaxesTable({ companies: initialCompanies }) {
+);export default function OverallTaxesTable({ companies: initialCompanies }) {
     const [companies, setCompanies] = useState(initialCompanies);
     const [isLoading, setIsLoading] = useState(false);
     const [globalFilter, setGlobalFilter] = useState('');
@@ -189,9 +179,14 @@ export default function OverallTaxesTable({ companies: initialCompanies }) {
         await updateCompanyField(companyId, 'is_locked', newLockStatus);
     };
 
-    const EditDialog = ({ company }) => {
+    const EditDialog = ({ company, isOpen, onClose, onSave }) => {
         const [localCompany, setLocalCompany] = useState(company);
         const [hasChanges, setHasChanges] = useState(false);
+
+        useEffect(() => {
+            setLocalCompany(company);
+            setHasChanges(false);
+        }, [company]);
 
         const handleFieldChange = (field, value) => {
             setLocalCompany(prev => ({ ...prev, [field]: value }));
@@ -201,17 +196,9 @@ export default function OverallTaxesTable({ companies: initialCompanies }) {
         const handleSave = async () => {
             const toastId = toast.loading('Saving changes...');
             try {
-                for (const [key, value] of Object.entries(localCompany)) {
-                    if (value !== company[key]) {
-                        await updateCompanyField(company.id, key, value);
-                    }
-                }
+                await onSave(localCompany);
                 toast.success('Changes saved successfully!', { id: toastId });
-                setDialogOpen(false);
-                // Update the companies state with the new data
-                setCompanies(prevCompanies =>
-                    prevCompanies.map(c => c.id === company.id ? localCompany : c)
-                );
+                onClose();
             } catch (error) {
                 console.error('Error saving changes:', error);
                 toast.error('Failed to save changes. Please try again.', { id: toastId });
@@ -220,11 +207,10 @@ export default function OverallTaxesTable({ companies: initialCompanies }) {
 
         const taxTypes = [
             'vat', 'paye', 'rent_income_mri', 'turnover_tax', 'resident_individual',
-            'nssf', 'nhif', 'housing_levy', 'nita', 'wh_vat'
+            'nssf', 'nhif', 'housing_levy', 'nita', 'wh_vat', 'kebs'
         ];
 
         const uneditableTaxes = ['income_tax_company', 'vat', 'paye', 'rent_income_mri', 'turnover_tax', 'resident_individual'];
-
 
         const TaxCard = ({ tax, editable }) => (
             <div className={`bg-white shadow-sm rounded-md p-2 w-full text-xs border border-black ${editable ? 'border-l-4 border-l-green-500 border-b-2 border-b-green-500' : 'border-l-4 border-l-red-500 border-b-2 border-b-red-500'}`}>
@@ -292,7 +278,7 @@ export default function OverallTaxesTable({ companies: initialCompanies }) {
         );
 
         return (
-            <Dialog open={dialogOpen} >
+            <Dialog open={isOpen} onOpenChange={onClose}>
                 <DialogContent className="max-w-5xl p-4 bg-white rounded-lg shadow-lg max-h-screen overflow-hidden flex flex-col">
                     <DialogHeader>
                         <DialogTitle className="text-xl font-bold text-gray-900">{localCompany?.company_name || 'Company Name'}</DialogTitle>
@@ -316,34 +302,36 @@ export default function OverallTaxesTable({ companies: initialCompanies }) {
                         </div>
                     </div>
                     <div className="mt-4 flex justify-end space-x-3">
-                        <DialogClose asChild>
-                            <Button variant="outline" className="px-4 py-2 text-sm">
-                                Cancel
-                            </Button>
-                        </DialogClose>
-                        <DialogClose asChild>
-                            <Button
-                                onClick={handleSave}
-                                disabled={!hasChanges}
-                                className="bg-green-500 text-white hover:bg-green-600 px-4 py-2 text-sm"
-                            >
-                                <Save className="mr-2 h-4 w-4" />
-                                Save Changes
-                            </Button>
-                        </DialogClose>
+                        <Button variant="outline" onClick={onClose} className="px-4 py-2 text-sm">
+                            Cancel
+                        </Button>
+                        <Button
+                            onClick={handleSave}
+                            disabled={!hasChanges}
+                            className="bg-green-500 text-white hover:bg-green-600 px-4 py-2 text-sm"
+                        >
+                            <Save className="mr-2 h-4 w-4" />
+                            Save Changes
+                        </Button>
                     </div>
                 </DialogContent>
             </Dialog>
         );
     };
 
+    const handleCloseDialog = () => {
+        setDialogOpen(false);
+        setEditCompany(null);
+    };
+
+
     const columns = useMemo(() => [
         columnHelper.accessor('index', {
-            cell: info => info.getValue(),
+            cell: info => <span className="font-bold text-[10px]">{info.getValue()}</span>,
             header: '#',
         }),
         columnHelper.accessor('company_name', {
-            cell: info => <span className="text-[10px]">{info.getValue()}</span>,
+            cell  : info => <span className="text-[10px]">{info.getValue()}</span>,
             header: 'Company Name',
         }),
         columnHelper.accessor('income_tax_company_status', {
@@ -424,6 +412,22 @@ export default function OverallTaxesTable({ companies: initialCompanies }) {
         setEditCompany(company);
         setDialogOpen(true);
     };
+    const handleSaveCompany = async (updatedCompany) => {
+        try {
+            for (const [key, value] of Object.entries(updatedCompany)) {
+                if (value !== editCompany[key]) {
+                    await updateCompanyField(updatedCompany.id, key, value);
+                }
+            }
+            setCompanies(prevCompanies =>
+                prevCompanies.map(c => c.id === updatedCompany.id ? updatedCompany : c)
+            );
+            handleCloseDialog(); // Close the dialog after successful save
+        } catch (error) {
+            console.error('Error saving company:', error);
+            toast.error('Failed to save changes. Please try again.');
+        }
+    };
 
     const data = useMemo(() =>
         companies.map((company, index) => ({
@@ -461,7 +465,7 @@ export default function OverallTaxesTable({ companies: initialCompanies }) {
                     </Button>
                 </div>
             </div>
-            <ScrollArea className="h-[700px] w-full rounded-md border">
+            <ScrollArea className="h-[650px] w-full rounded-md border">
                 <TooltipProvider>
                     <Table>
                         <TableHeader>
@@ -498,7 +502,13 @@ export default function OverallTaxesTable({ companies: initialCompanies }) {
                             {table.getRowModel().rows.map((row, index) => (
                                 <TableRow key={row.id} className={index % 2 === 0 ? 'bg-blue-50' : 'bg-white'}>
                                     {row.getVisibleCells().map(cell => (
-                                        <TableCell key={cell.id} className="py-0.5 px-2 whitespace-nowrap">
+                                        <TableCell
+                                            key={cell.id}
+                                            className={`py-0.5 px-2 whitespace-nowrap ${cell.column.id === 'nssf_status'
+                                                    ? 'border-l-2 border-black'
+                                                    : ''
+                                                }`}
+                                        >
                                             {flexRender(cell.column.columnDef.cell, cell.getContext())}
                                         </TableCell>
                                     ))}
@@ -508,7 +518,13 @@ export default function OverallTaxesTable({ companies: initialCompanies }) {
                     </Table>
                 </TooltipProvider>
             </ScrollArea>
-            {editCompany && <EditDialog company={editCompany} />}
+            {editCompany &&
+                <EditDialog
+                    company={editCompany}
+                    isOpen={dialogOpen}
+                    onClose={handleCloseDialog}
+                    onSave={handleSaveCompany}
+                />}
         </div>
     );
 }

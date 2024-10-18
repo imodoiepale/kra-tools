@@ -113,12 +113,12 @@ export default function TaxesPage() {
                         </TabsTrigger>
                     ))}
                 </TabsList>
-                <ScrollArea className="h-[calc(100vh-200px)]">
+                {/* <ScrollArea className="h-[calc(100vh-200px)]"> */}
                     <TabsContent value="overall">
                         <OverallTaxesTable companies={data.companies} />
                     </TabsContent>
                     {memoizedTaxTypeComponents}
-                </ScrollArea>
+                {/* </ScrollArea> */}
             </Tabs>
         </div>
     );
