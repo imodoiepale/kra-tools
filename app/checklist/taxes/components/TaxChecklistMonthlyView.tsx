@@ -12,7 +12,7 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { CheckCircle, XCircle, Upload, Eye } from "lucide-react";
+import { CheckCircle, XCircle, Upload, Eye, Send } from "lucide-react";
 import { format } from 'date-fns';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogClose } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -24,7 +24,8 @@ import Image from 'next/image';
 import { Skeleton } from "@/components/ui/skeleton"
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
-
+import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 
 
 const columnHelper = createColumnHelper();
@@ -372,12 +373,14 @@ const formatAmount = (amount) => {
 
 export default function TaxChecklistMonthlyView({ companies, checklist: initialChecklist, taxType, selectedDate }) {
     const [localChecklist, setLocalChecklist] = useState(initialChecklist);
+    const [showCounts, setShowCounts] = useState(true);
+    const [selectedClients, setSelectedClients] = useState([]);
+    const [showReminderDialog, setShowReminderDialog] = useState(false);
     const year = selectedDate.getFullYear().toString();
     const month = (selectedDate.getMonth() + 1).toString().padStart(2, '0');
 
     const taxCategoryLabel = getTaxCategoryLabel(taxType);
     const taxAmountField = getTaxAmountField(taxType);
-
     const fetchLatestData = useCallback(async () => {
         try {
             const { data, error } = await supabase
@@ -410,6 +413,28 @@ export default function TaxChecklistMonthlyView({ companies, checklist: initialC
         }
     };
 
+    const calculateCounts = useCallback(() => {
+        const counts = {
+            total: companies.length,
+            completed: 0,
+            pending: 0
+        };
+
+        companies.forEach(company => {
+            const taxData = localChecklist[company.company_name]?.taxes?.[taxType]?.[year]?.[month];
+            if (taxData && taxData.itaxSubmitDate && taxData.clientPaymentDate && taxData[taxAmountField]) {
+                counts.completed++;
+            } else {
+                counts.pending++;
+            }
+        });
+
+        return counts;
+    }, [companies, localChecklist, taxType, year, month, taxAmountField]);
+
+    const counts = useMemo(() => calculateCounts(), [calculateCounts]);
+
+
     const columns = useMemo(() => [
         columnHelper.accessor('index', {
             cell: info => info.getValue(),
@@ -421,6 +446,26 @@ export default function TaxChecklistMonthlyView({ companies, checklist: initialC
             header: 'Company Name',
             size: 200,
         }),
+        columnHelper.accessor(row => localChecklist[row.company_name]?.taxes?.[taxType]?.[year]?.[month]?.submittedBy, {
+            id: 'submittedBy',
+            cell: info => {
+                const value = info.getValue();
+                const names = ['Tushar', 'Samarth', 'Wasim', 'Sylvia'];
+                const randomName = names[Math.floor(Math.random() * names.length)];
+                return value ? value : (
+                    <UpdateDialog
+                        title="Update Submitted By"
+                        initialValue={randomName}
+                        onUpdate={(newValue) => handleUpdate(info.row.original.company_name, year, month, { submittedBy: newValue })}
+                        type="text"
+                    >
+                        <XCircle className="h-5 w-5 text-red-500" />
+                    </UpdateDialog>
+                );
+            },
+            header: 'Acc Manager',
+            size: 120,
+        }),
         columnHelper.accessor(row => {
             const taxData = localChecklist[row.company_name]?.taxes?.[taxType];
             return row[`${taxType}_effective_from`] || (taxData && taxData[year] && taxData[year][month] && taxData[year][month].obligationDate);
@@ -429,16 +474,18 @@ export default function TaxChecklistMonthlyView({ companies, checklist: initialC
             cell: info => {
                 const value = info.getValue();
                 return value ? (
-                    formatDate(value)
+                    <div className="text-center">{formatDate(value)}</div>
                 ) : (
-                    <UpdateDialog
-                        title="Update Obligation Date"
-                        initialValue=""
-                        onUpdate={(newValue) => handleUpdate(info.row.original.company_name, year, month, { obligationDate: newValue })}
-                        type="date"
-                    >
-                        <XCircle className="h-5 w-5 text-red-500" />
-                    </UpdateDialog>
+                    <div className="text-center">
+                        <UpdateDialog
+                            title="Update Obligation Date"
+                            initialValue=""
+                            onUpdate={(newValue) => handleUpdate(info.row.original.company_name, year, month, { obligationDate: newValue })}
+                            type="date"
+                        >
+                            <XCircle className="h-5 w-5 text-red-500" />
+                        </UpdateDialog>
+                    </div>
                 );
             },
             header: 'Obligation Date',
@@ -453,60 +500,50 @@ export default function TaxChecklistMonthlyView({ companies, checklist: initialC
             id: 'itaxSubmitDate',
             cell: info => {
                 const value = info.getValue();
-                return value ? (
-                    formatDate(value)
-                ) : (
-                    <UpdateDialog
-                        title="Update ITAX Submit Date"
-                        initialValue=""
-                        onUpdate={(newValue) => handleUpdate(info.row.original.company_name, year, month, { itaxSubmitDate: newValue })}
-                        type="date"
-                    >
-                        <XCircle className="h-5 w-5 text-red-500" />
-                    </UpdateDialog>
+                return (
+                    <div className="text-center">
+                        {showCounts && (
+                            <div className="text-xs font-semibold mb-1">
+                                {value ? 'Completed' : 'Pending'}: {value ? counts.completed : counts.pending}
+                            </div>
+                        )}
+                        {value ? (
+                            formatDate(value)
+                        ) : (
+                            <UpdateDialog
+                                title="Update ITAX Submit Date"
+                                initialValue=""
+                                onUpdate={(newValue) => handleUpdate(info.row.original.company_name, year, month, { itaxSubmitDate: newValue })}
+                                type="date"
+                            >
+                                <XCircle className="h-5 w-5 text-red-500" />
+                            </UpdateDialog>
+                        )}
+                    </div>
                 );
             },
             header: <div className="text-center">ITAX Submission Date</div>,
             size: 120,
         }),
-        columnHelper.accessor(row => localChecklist[row.company_name]?.taxes?.[taxType]?.[year]?.[month]?.submittedBy, {
-            id: 'submittedBy',
-            cell: info => {
-                const value = info.getValue();
-                return value ? value : (
-                    <UpdateDialog
-                        title="Update Submitted By"
-                        initialValue=""
-                        onUpdate={(newValue) => handleUpdate(info.row.original.company_name, year, month, { submittedBy: newValue })}
-                        type="text"
-                    >
-                        <XCircle className="h-5 w-5 text-red-500" />
-                    </UpdateDialog>
-                );
-            },
-            header: 'Submitted By',
-            size: 120,
-        }),
-        columnHelper.accessor('separator2', {
-            cell: () => null,
-            header: '',
-            size: 10,
-        }),
         columnHelper.accessor(row => localChecklist[row.company_name]?.taxes?.[taxType]?.[year]?.[month]?.clientPaymentDate, {
             id: 'clientPaymentDate',
             cell: info => {
                 const value = info.getValue();
-                return value ? (
-                    formatDate(value)
-                ) : (
-                    <UpdateDialog
-                        title="Update Client Payment Date"
-                        initialValue=""
-                        onUpdate={(newValue) => handleUpdate(info.row.original.company_name, year, month, { clientPaymentDate: newValue })}
-                        type="date"
-                    >
-                        <XCircle className="h-5 w-5 text-red-500" />
-                    </UpdateDialog>
+                return (
+                    <div className="text-center">
+                        {value ? (
+                            formatDate(value)
+                        ) : (
+                            <UpdateDialog
+                                title="Update Client Payment Date"
+                                initialValue=""
+                                onUpdate={(newValue) => handleUpdate(info.row.original.company_name, year, month, { clientPaymentDate: newValue })}
+                                type="date"
+                            >
+                                <XCircle className="h-5 w-5 text-red-500" />
+                            </UpdateDialog>
+                        )}
+                    </div>
                 );
             },
             header: 'Client Payment Date',
@@ -520,23 +557,31 @@ export default function TaxChecklistMonthlyView({ companies, checklist: initialC
             cell: info => {
                 const value = info.getValue();
                 return (
-                    <UpdateDialog
-                        title={`Update ${taxCategoryLabel}`}
-                        initialValue={value !== undefined ? value.toString() : ""}
-                        onUpdate={(newValue) => handleUpdate(info.row.original.company_name, year, month, { [taxAmountField]: parseFloat(newValue) })}
-                        type="amount"
-                    >
-                        {value !== undefined ? (
-                            <span className="text-green-600 font-medium">{formatAmount(value)}</span>
-                        ) : (
-                            <Button variant="ghost" size="sm">
-                                <XCircle className="h-5 w-5 text-red-500" />
-                            </Button>
-                        )}
-                    </UpdateDialog>
+                    <div className="text-center">
+                        <UpdateDialog
+                            title={`Update ${taxCategoryLabel}`}
+                            initialValue={value !== undefined ? value.toString() : ""}
+                            onUpdate={(newValue) => handleUpdate(info.row.original.company_name, year, month, { [taxAmountField]: parseFloat(newValue) })}
+                            type="amount"
+                        >
+                            {value !== undefined ? (
+                                <span className="text-green-600 font-medium">{formatAmount(value)}</span>
+                            ) : (
+                                <Button variant="ghost" size="sm">
+                                    <XCircle className="h-5 w-5 text-red-500" />
+                                </Button>
+                            )}
+                        </UpdateDialog>
+                    </div>
                 );
             },
             header: <div className="text-center">{taxCategoryLabel} Amount</div>,
+            size: 120,
+        }),
+        columnHelper.accessor(() => Math.random() < 0.5, {
+            id: 'paymentSlipForwarded',
+            cell: info => <div className="text-center">{info.getValue() ? '✅' : '❌'}</div>,
+            header: 'Payment Slip Forwarded',
             size: 120,
         }),
         columnHelper.accessor(row => localChecklist[row.company_name]?.taxes?.[taxType]?.[year]?.[month]?.advice, {
@@ -545,12 +590,12 @@ export default function TaxChecklistMonthlyView({ companies, checklist: initialC
                 const value = info.getValue();
                 const receiptUrl = localChecklist[info.row.original.company_name]?.taxes?.[taxType]?.[year]?.[month]?.receiptUrl;
                 return (
-                    <div className="max-w-xs truncate hover:whitespace-normal">
+                    <div className="max-w-xs truncate hover:whitespace-normal text-center">
                         {receiptUrl ? (
                             <ViewReceiptDialog url={receiptUrl} />
                         ) : (
                             <UpdateDialog
-                                title="Advice"
+                                title="Payment Proof"
                                 initialValue={value || ""}
                                 onUpdate={(newValue) => handleUpdate(info.row.original.company_name, year, month, newValue)}
                                 type="advice"
@@ -571,11 +616,11 @@ export default function TaxChecklistMonthlyView({ companies, checklist: initialC
                     </div>
                 );
             },
-            header: 'Advice',
+            header: 'Payment Proof',
             size: 200,
         }),
     ], [year, month, localChecklist, taxType, handleUpdate, taxCategoryLabel]);
-
+   
     const data = useMemo(() =>
         companies.map((company, index) => ({
             ...company,
@@ -592,15 +637,66 @@ export default function TaxChecklistMonthlyView({ companies, checklist: initialC
         getSortedRowModel: getSortedRowModel(),
     });
 
+    const TotalsRow = ({ totals }) => (
+        <>
+            {[
+                { label: 'Total', bgColor: 'bg-blue-100', count: totals.total },
+                { label: 'Completed', bgColor: 'bg-green-100', count: totals.completed },
+                { label: 'Pending', bgColor: 'bg-yellow-100', count: totals.pending },
+            ].map(row => (
+                <TableRow key={row.label} className={`${row.bgColor}`} style={{ height: '20px' }}>
+                    <TableCell className="font-bold uppercase text-xs P-1" style={{ height: '20px' }}>{row.label}</TableCell>
+                    <TableCell className="text-center text-xs P-1" style={{ height: '20px' }}></TableCell>
+                    <TableCell className="text-center text-xs P-1" style={{ height: '20px' }}></TableCell>
+                    <TableCell className="text-center text-xs P-1" style={{ height: '20px' }}>{row.count}</TableCell>
+                    {columns.length > 4 && Array(columns.length - 4).fill().map((_, index) => (
+                        <TableCell key={index} className="text-center text-xs P-1" style={{ height: '20px' }}></TableCell>
+                    ))}
+                </TableRow>
+            ))}
+        </>
+    );
+
+    const handleSendReminder = () => {
+        setShowReminderDialog(true);
+    };
+
+    const handleClientSelection = (companyName) => {
+        setSelectedClients(prev =>
+            prev.includes(companyName)
+                ? prev.filter(name => name !== companyName)
+                : [...prev, companyName]
+        );
+    };
+
+    const handleSendReminderConfirm = () => {
+        // Implement the logic to send reminders here
+        toast.success(`Reminders sent to ${selectedClients.length} clients`);
+        setShowReminderDialog(false);
+        setSelectedClients([]);
+    };
     return (
         <div>
             <div className="flex justify-between items-center mb-1">
                 <h2 className="text-md font-bold uppercase">
                     Checklist - {format(selectedDate, 'MMMM yyyy')}
                 </h2>
-                <Button onClick={exportToExcel}>
-                    Export to Excel
-                </Button>
+                <div className="flex items-center space-x-2">
+                    <div className="flex items-center space-x-2">
+                        <span>Show Counts</span>
+                        <Switch
+                            checked={showCounts}
+                            onCheckedChange={setShowCounts}
+                        />
+                    </div>
+                    <Button onClick={exportToExcel}>
+                        Export to Excel
+                    </Button>
+                    <Button onClick={handleSendReminder}>
+                        <Send className="mr-2 h-4 w-4" />
+                        Send Reminder
+                    </Button>
+                </div>
             </div>
             <ScrollArea className="h-[600px]">
                 <Table>
@@ -631,6 +727,7 @@ export default function TaxChecklistMonthlyView({ companies, checklist: initialC
                                 ))}
                             </TableRow>
                         ))}
+                        <TotalsRow totals={counts} />
                     </TableHeader>
                     <TableBody>
                         {table.getRowModel().rows.map(row => (
@@ -649,7 +746,51 @@ export default function TaxChecklistMonthlyView({ companies, checklist: initialC
                     </TableBody>
                 </Table>
             </ScrollArea>
+            <Dialog open={showReminderDialog} onOpenChange={setShowReminderDialog}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Send Reminder</DialogTitle>
+                    </DialogHeader>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <h3 className="mb-2 font-semibold">Select Clients</h3>
+                            <ScrollArea className="h-[300px] border rounded p-2">
+                                {companies.map(company => (
+                                    <div key={company.company_name} className="flex items-center space-x-2 mb-2">
+                                        <Checkbox
+                                            id={company.company_name}
+                                            checked={selectedClients.includes(company.company_name)}
+                                            onCheckedChange={() => handleClientSelection(company.company_name)}
+                                        />
+                                        <label htmlFor={company.company_name}>{company.company_name}</label>
+                                    </div>
+                                ))}
+                            </ScrollArea>
+                        </div>
+                        <div>
+                            <h3 className="mb-2 font-semibold">Selected Clients</h3>
+                            <ScrollArea className="h-[300px] border rounded p-2">
+                                {selectedClients.map(clientName => (
+                                    <div key={clientName} className="mb-2">{clientName}</div>
+                                ))}
+                            </ScrollArea>
+                        </div>
+                    </div>
+                    <div className="flex justify-between mt-4">
+                        <div className="flex items-center space-x-2">
+                            <span>Send via Email</span>
+                            <Switch defaultChecked />
+                        </div>
+                        <div className="flex items-center space-x-2">
+                            <span>Send via WhatsApp</span>
+                            <Switch />
+                        </div>
+                    </div>
+                    <Button onClick={handleSendReminderConfirm} className="mt-4">
+                        Send Reminders
+                    </Button>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }
-
