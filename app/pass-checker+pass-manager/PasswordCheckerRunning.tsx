@@ -21,7 +21,7 @@ interface PasswordCheckerRunningProps {
     setActiveTab: (tab: string) => void; // Add setActiveTab prop
 }
 
-export function PasswordCheckerRunning({ onComplete, progress, status, activeTab, setActiveTab }: PasswordCheckerRunningProps) {
+export default function PasswordCheckerRunning({ onComplete, progress, status, activeTab, setActiveTab }: PasswordCheckerRunningProps) {
     const [logs, setLogs] = useState([]);
     const [totalCompanies, setTotalCompanies] = useState(0);
 
