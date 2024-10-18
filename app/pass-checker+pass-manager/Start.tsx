@@ -64,9 +64,12 @@ export default function Start({ companies, handleStopCheck, activeTab, setStatus
       case 'nhif':
         apiEndpoint = '/api/nhif-pass-checker';
         break;
-      case 'kra':
-        apiEndpoint = '/api/password-checker';
-        break;
+        case 'kra':
+          apiEndpoint = '/api/password-checker';
+          break;      
+          case 'ecitizen':
+          apiEndpoint = '/api/ecitizen-pass-checker';
+          break;
       default:
         alert('Invalid tab selected');
         return;
@@ -118,6 +121,9 @@ export default function Start({ companies, handleStopCheck, activeTab, setStatus
       case 'kra':
         apiEndpoint = '/api/password-checker';
         break;
+        case 'ecitizen':
+          apiEndpoint = '/api/ecitizen-pass-checker';
+          break;
       default:
         alert('Invalid tab selected');
         return;
