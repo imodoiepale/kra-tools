@@ -3,8 +3,8 @@
 
 import React, { useState, useMemo } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import CompaniesTable from './CompaniesTable';
 import TaxChecklistComponent from './TaxChecklistComponent';
+import CompaniesTable from './CompaniesTable';
 
 export default function TaxTypeComponent({ taxType, companies, checklist }) {
     const [activeSubTab, setActiveSubTab] = useState("all");
