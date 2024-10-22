@@ -64,7 +64,7 @@ const fetchResults = async () => {
             const { data, error } = await supabase
                 .from('ledger_extractions')
                 .select('*')
-                .order('extraction_date', { ascending: false });
+                .order('updated_at', { ascending: false });
 
             if (error) throw error;
             setData(data);
@@ -118,7 +118,7 @@ const fetchResults = async () => {
             },
         },
         {
-            accessorKey: 'extraction_date',
+            accessorKey: 'updated_at',
             header: ({ column }) => {
                 return (
                     <Button
@@ -130,7 +130,7 @@ const fetchResults = async () => {
                     </Button>
                 )
             },
-            cell: ({ row }) => new Date(row.getValue('extraction_date')).toLocaleString(),
+            cell: ({ row }) => new Date(row.getValue('updated_at')).toLocaleString(),
         },
         // {
         //     accessorKey: 'income_tax',
@@ -322,24 +322,26 @@ const fetchResults = async () => {
             </div>
         </div>
     );
-const renderTaxTable = (company, taxType) => {
-    if (!company || !company.ledger_data) {
-        return (
-            <Table>
-                <TableBody>
-                    <TableRow>
-                        <TableCell colSpan={7} className="text-left uppercase font-bold text-yellow-500 bg-yellow-100">
-                            No data available for {taxType}
-                        </TableCell>
-                    </TableRow>
-                </TableBody>
-            </Table>
+    const renderTaxTable = (company, taxType) => {
+        if (!company || !company.ledger_data) {
+            return (
+                <Table>
+                    <TableBody>
+                        <TableRow>
+                            <TableCell colSpan={7} className="text-left uppercase font-bold text-yellow-500 bg-yellow-100">
+                                No data available for {taxType}
+                            </TableCell>
+                        </TableRow>
+                    </TableBody>
+                </Table>
+            );
+        }
+    
+        const relevantData = company.ledger_data.filter(entry => 
+            entry.tax_obligation && entry.tax_obligation.toLowerCase().includes(taxType.toLowerCase())
         );
-    }
-
-    const relevantData = company.ledger_data.filter(entry => 
-        entry.tax_obligation && entry.tax_obligation.toLowerCase().includes(taxType.toLowerCase())
-    );
+    
+        const total = calculateTotal(company, taxType);
         return (
             <Table>
                 <TableHeader>
@@ -387,7 +389,7 @@ const renderTaxTable = (company, taxType) => {
                   table.getRowModel().rows.forEach((row, index) => {
                       const rowData = columns.map(col => {
                           if (col.accessorKey === 'index') return index + 1;
-                          if (col.accessorKey === 'extraction_date') return new Date(row.original.extraction_date).toLocaleString();
+                          if (col.accessorKey === 'updated_at') return new Date(row.original.updated_at).toLocaleString();
                           if (['income_tax', 'vat', 'paye'].includes(col.accessorKey)) {
                               return formatAmount(calculateTotal(row.original, col.accessorKey));
                           }

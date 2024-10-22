@@ -217,10 +217,18 @@ async function configureGeneralLedger(page) {
 }
 
 async function extractTableData(page, worksheet, company) {
-  const sectionB2TableLocator = await page.locator("#gridGeneralLedgerDtlsTbl");
-  
-  if (sectionB2TableLocator) {
-    const sectionB2Table = await sectionB2TableLocator;
+  try {
+    // Wait for table to be visible
+    await page.waitForSelector("#gridGeneralLedgerDtlsTbl", { state: 'visible', timeout: 30000 });
+    
+    const sectionB2TableLocator = await page.locator("#gridGeneralLedgerDtlsTbl");
+    
+    if (!sectionB2TableLocator) {
+      console.log("Table not found.");
+      return;
+    }
+
+    // Add company info to worksheet
     const companyNameRow = worksheet.addRow([
       "",
       `${company.company_name}`,
@@ -228,60 +236,135 @@ async function extractTableData(page, worksheet, company) {
     ]);
     highlightCells(companyNameRow, "B", "O", "FFADD8E6", true);
 
-    const sectionB2TableContent = await sectionB2Table.evaluate(table => {
-      const rows = Array.from(table.querySelectorAll("tr"));
+    // Extract table data with explicit wait and validation
+    const sectionB2TableContent = await page.evaluate(() => {
+      const table = document.querySelector("#gridGeneralLedgerDtlsTbl");
+      if (!table) return [];
+      
+      const rows = Array.from(table.querySelectorAll("tr:not(.ui-jqgrid-labels)"));
       return rows.map(row => {
         const cells = Array.from(row.querySelectorAll("td"));
-        return cells.map(cell => cell.innerText.trim());
-      });
+        return cells.map(cell => cell.textContent.trim());
+      }).filter(row => row.length > 0 && row.some(cell => cell !== "")); // Filter out empty rows
     });
 
-    if (sectionB2TableContent.length <= 1) {
+    console.log("Extracted table content:", sectionB2TableContent); // Debug log
+
+    if (!sectionB2TableContent || sectionB2TableContent.length <= 1) {
+      console.log("No records found for", company.company_name);
       const noRecordsRow = worksheet.addRow(["", "", "No records found"]);
       highlightCells(noRecordsRow, "C", "0", "FFFF0000", true);
-    } else {
-      const sectionB2TableContent_Header = worksheet.addRow([
-        "", "", "", "Sr.No.", "Tax Obligation", "Tax Period", "Transaction Date",
-        "Reference Number", "Particulars", "Transaction Type", "Debit(ksh)", "Credit(ksh)",
-      ]);
-      highlightCells(sectionB2TableContent_Header, "D", "O", "FFADD8E", true);
-
-      sectionB2TableContent
-        .filter(row => row.some(cell => cell.trim() !== ""))
-        .forEach(row => {
-          worksheet.addRow(["", "", ...row]);
+      
+      // Update database with empty ledger
+      await supabase.from("ledger_extractions")
+        .upsert({
+          company_name: company.company_name,
+          ledger_data: [],
+          extraction_date: new Date().toISOString(),
+          status: 'completed',
+          progress: 100
+        }, {
+          onConflict: 'company_name'
         });
-      worksheet.addRow();
-
-      // Save extracted data to the database
-      const ledgerData = sectionB2TableContent.map(row => ({
-        sr_no: row[3],
-        tax_obligation: row[4],
-        tax_period: row[5],
-        transaction_date: row[6],
-        reference_number: row[7],
-        particulars: row[8],
-        transaction_type: row[9],
-        debit: row[10],
-        credit: row[11],
-      }));
-
-      await saveLedgerDataToDB(company.company_name, ledgerData);
+      
+      return;
     }
 
+    // Add headers to worksheet
+    const sectionB2TableContent_Header = worksheet.addRow([
+      "", "", "", "Sr.No.", "Tax Obligation", "Tax Period", "Transaction Date",
+      "Reference Number", "Particulars", "Transaction Type", "Debit(ksh)", "Credit(ksh)",
+    ]);
+    highlightCells(sectionB2TableContent_Header, "D", "O", "FFADD8E", true);
+
+    // Process data rows
+    sectionB2TableContent.forEach(row => {
+      worksheet.addRow(["", "", ...row]);
+    });
+    worksheet.addRow();
+
+    // Transform and validate data for database
+    const ledgerData = sectionB2TableContent
+      .map(row => {
+        // Ensure row has enough elements
+        if (row.length < 12) {
+          console.log("Invalid row data:", row);
+          return null;
+        }
+
+        return {
+          sr_no: row[1] || '',
+          tax_obligation: row[2] || '',
+          tax_period: row[3] || '',
+          transaction_date: row[4] || '',
+          reference_number: row[5] || '',
+          particulars: row[6] || '',
+          transaction_type: row[7] || '',
+          debit: row[8]?.replace(/[^0-9.-]/g, '') || '0',
+          credit: row[9]?.replace(/[^0-9.-]/g, '') || '0'
+
+        };
+      })
+      .filter(Boolean); // Remove null entries
+
+    console.log("Processed ledger data:", ledgerData); // Debug log
+
+    // Save to database with retry logic
+    let retryCount = 0;
+    const maxRetries = 3;
+
+    while (retryCount < maxRetries) {
+      try {
+        const { data, error } = await supabase
+          .from("ledger_extractions")
+          .upsert({
+            company_name: company.company_name,
+            ledger_data: ledgerData,
+            extraction_date: new Date().toISOString(),
+            status: 'completed',
+            progress: 100
+          }, {
+            onConflict: 'company_name'
+          });
+
+        if (error) {
+          console.error("Database error:", error);
+          throw error;
+        }
+        
+        console.log(`Successfully saved ledger data for ${company.company_name}`);
+        break;
+      } catch (error) {
+        retryCount++;
+        console.error(`Attempt ${retryCount} failed:`, error);
+        if (retryCount === maxRetries) throw error;
+        await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+      }
+    }
+
+    // Adjust column widths
     worksheet.columns.forEach((column, columnIndex) => {
       let maxLength = 0;
-      for (let rowIndex = 2; rowIndex <= worksheet.rowCount; rowIndex++) {
-        const cell = worksheet.getCell(rowIndex, columnIndex + 1);
+      worksheet.getColumn(columnIndex + 1).eachCell(cell => {
         const cellLength = cell.value ? cell.value.toString().length : 0;
-        if (cellLength > maxLength) {
-          maxLength = cellLength;
-        }
-      }
+        maxLength = Math.max(maxLength, cellLength);
+      });
       worksheet.getColumn(columnIndex + 1).width = maxLength + 2;
     });
-  } else {
-    console.log("Table not found.");
+
+  } catch (error) {
+    console.error(`Error extracting data for ${company.company_name}:`, error);
+    // Update status to error in database
+    await supabase.from("ledger_extractions")
+      .upsert({
+        company_name: company.company_name,
+        status: 'error',
+        progress: 0,
+        updated_at: new Date().toISOString()
+      }, {
+        onConflict: 'company_name'
+      });
+    throw error;
   }
 }
 
