@@ -40,39 +40,66 @@ export function AutoLiabilitiesStart({ onStart, onStop }) {
             setCompanies(data as Company[] || []);
         }
     };
-
     const handleStartCheck = async () => {
         setIsChecking(true);
         try {
+          // Update all selected companies' status to 'queued'
+          const companiesToProcess = runOption === 'selected' 
+            ? companies.filter(c => selectedCompanies.includes(c.id))
+            : companies;
+    
+          for (const company of companiesToProcess) {
+            await supabase
+              .from('ledger_extractions')
+              .upsert({
+                company_name: company.company_name,
+                status: 'queued',
+                progress: 0,
+                updated_at: new Date().toISOString()
+              }, {
+                onConflict: 'company_name'
+              });
+          }
+    
+          const response = await fetch('/api/ledgers', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'start',
+              runOption,
+              companyIds: runOption === 'selected' ? selectedCompanies : []
+            })
+          });
+    
+          if (!response.ok) throw new Error('API request failed');
+          onStart();
+        } catch (error) {
+          console.error('Error starting extraction:', error);
+          alert('Failed to start extraction. Please try again.');
+        } finally {
+          setIsChecking(false);
+        }
+
+    };
+    const handleStopCheck = async () => {
+        try {
             const response = await fetch('/api/ledgers', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    action: 'start',
-                    runOption,
-                    companyIds: runOption === 'selected' ? selectedCompanies : []
-                })
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'stop' })
             });
-
-            if (!response.ok) throw new Error('API request failed');
-
-            const data = await response.json();
-            console.log('Ledger extraction started:', data);
-            onStart();
+            if (response.ok) {
+                onStop();
+                alert('All automations have been stopped.');
+            } else {
+                throw new Error('Failed to stop automations');
+            }
         } catch (error) {
-            console.error('Error starting Ledger extraction:', error);
-            alert('Failed to start Ledger extraction. Please try again.');
-        } finally {
-            setIsChecking(false);
+            console.error('Error stopping automations:', error);
+            alert('Failed to stop automations. Please try again.');
         }
     };
-
-    const handleStopCheck = () => {
-        onStop();
-        alert('Stopping all automations...');
-    };
+    
 
     const handleCheckboxChange = (id: number) => {
         setSelectedCompanies(prev =>

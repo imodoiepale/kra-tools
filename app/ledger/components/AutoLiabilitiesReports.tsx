@@ -322,27 +322,24 @@ const fetchResults = async () => {
             </div>
         </div>
     );
-    const renderTaxTable = (company, taxType) => {
-        const relevantData = company.ledger_data.filter(entry => 
-            entry.tax_obligation && entry.tax_obligation.toLowerCase().includes(taxType.toLowerCase())
+const renderTaxTable = (company, taxType) => {
+    if (!company || !company.ledger_data) {
+        return (
+            <Table>
+                <TableBody>
+                    <TableRow>
+                        <TableCell colSpan={7} className="text-left uppercase font-bold text-yellow-500 bg-yellow-100">
+                            No data available for {taxType}
+                        </TableCell>
+                    </TableRow>
+                </TableBody>
+            </Table>
         );
+    }
 
-        const total = calculateTotal(company, taxType);
-
-        if (relevantData.length === 0) {
-            return (
-                <Table>
-                    <TableBody>
-                        <TableRow>
-                            <TableCell colSpan={7} className="text-left uppercase font-bold text-green-500 bg-green-100">
-                                No records found for {taxType}
-                            </TableCell>
-                        </TableRow>
-                    </TableBody>
-                </Table>
-            );
-        }
-
+    const relevantData = company.ledger_data.filter(entry => 
+        entry.tax_obligation && entry.tax_obligation.toLowerCase().includes(taxType.toLowerCase())
+    );
         return (
             <Table>
                 <TableHeader>
@@ -378,174 +375,177 @@ const fetchResults = async () => {
         );
     };
 
+      const exportToExcel = async () => {
+          try {
+              const workbook = new ExcelJS.Workbook();
 
-    const exportToExcel = async () => {
-        try {
-            const workbook = new ExcelJS.Workbook();
+              const addSummarySheet = (wb) => {
+                  const sheet = wb.addWorksheet('Summary');
+                  const headers = columns.map(col => typeof col.header === 'function' ? col.accessorKey : col.header);
+                  sheet.addRow(headers);
 
-            const addSummarySheet = (wb) => {
-                const sheet = wb.addWorksheet('Summary');
-                const headers = columns.map(col => typeof col.header === 'function' ? col.accessorKey : col.header);
-                sheet.addRow(headers);
+                  table.getRowModel().rows.forEach((row, index) => {
+                      const rowData = columns.map(col => {
+                          if (col.accessorKey === 'index') return index + 1;
+                          if (col.accessorKey === 'extraction_date') return new Date(row.original.extraction_date).toLocaleString();
+                          if (['income_tax', 'vat', 'paye'].includes(col.accessorKey)) {
+                              return formatAmount(calculateTotal(row.original, col.accessorKey));
+                          }
+                          return row.original[col.accessorKey] || '';
+                      });
+                      sheet.addRow(rowData);
+                  });
+              };
 
-                table.getRowModel().rows.forEach((row, index) => {
-                    const rowData = columns.map(col => {
-                        if (col.accessorKey === 'index') return index + 1;
-                        if (col.accessorKey === 'extraction_date') return new Date(row.original.extraction_date).toLocaleString();
-                        if (['income_tax', 'vat', 'paye'].includes(col.accessorKey)) {
-                            return formatAmount(calculateTotal(row.original, col.accessorKey));
-                        }
-                        return row.original[col.accessorKey] || '';
-                    });
-                    sheet.addRow(rowData);
-                });
-            };
+              const addDetailedSheet = (wb, company, taxType, sheetIndex) => {
+                  const sheetName = `${company.company_name} - ${taxType} (${sheetIndex})`;
+                  const sheet = wb.addWorksheet(sheetName);
+                  const data = company.ledger_data[taxType];
+                  if (data && data.headers && data.rows) {
+                      sheet.addRow(data.headers);
+                      data.rows.forEach(row => {
+                          const sanitizedRow = row.map(cell => cell !== null && cell !== undefined ? String(cell) : '');
+                          sheet.addRow(sanitizedRow);
+                      });
+                  }
+              };
 
-            const addDetailedSheet = (wb, company, taxType) => {
-                const sheet = wb.addWorksheet(`${company.company_name} - ${taxType}`);
-                const data = company.ledger_data[taxType];
-                if (data && data.headers && data.rows) {
-                    sheet.addRow(data.headers);
-                    data.rows.forEach(row => {
-                        const sanitizedRow = row.map(cell => cell !== null && cell !== undefined ? String(cell) : '');
-                        sheet.addRow(sanitizedRow);
-                    });
-                }
-            };
+              if (exportOptions.view === 'summary') {
+                  addSummarySheet(workbook);
+              } else if (exportOptions.view === 'detailed') {
+                  const companiesToExport = exportOptions.companyOption === 'all'
+                      ? data
+                      : data.filter(company => exportOptions.selectedCompanies.includes(company.id));
 
-            if (exportOptions.view === 'summary') {
-                addSummarySheet(workbook);
-            } else if (exportOptions.view === 'detailed') {
-                const companiesToExport = exportOptions.companyOption === 'all'
-                    ? data
-                    : data.filter(company => exportOptions.selectedCompanies.includes(company.id));
+                  if (exportOptions.exportFormat === 'single_workbook') {
+                      let sheetIndex = 1;
+                      companiesToExport.forEach(company => {
+                          exportOptions.taxTypes.forEach(taxType => {
+                              addDetailedSheet(workbook, company, taxType, sheetIndex);
+                              sheetIndex++;
+                          });
+                      });
+                  } else if (exportOptions.exportFormat === 'separate_workbooks') {
+                      for (const company of companiesToExport) {
+                          const companyWorkbook = new ExcelJS.Workbook();
+                          let sheetIndex = 1;
+                          exportOptions.taxTypes.forEach(taxType => {
+                              addDetailedSheet(companyWorkbook, company, taxType, sheetIndex);
+                              sheetIndex++;
+                          });
+                          const buffer = await companyWorkbook.xlsx.writeBuffer();
+                          const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+                          saveAs(blob, `Ledger_Report_${company.company_name}_${new Date().toISOString().split('T')[0]}.xlsx`);
+                      }
+                      return; // Exit function after saving separate workbooks
+                  }
+              }
 
-                if (exportOptions.exportFormat === 'single_workbook') {
-                    companiesToExport.forEach(company => {
-                        exportOptions.taxTypes.forEach(taxType => {
-                            addDetailedSheet(workbook, company, taxType);
-                        });
-                    });
-                } else if (exportOptions.exportFormat === 'separate_workbooks') {
-                    for (const company of companiesToExport) {
-                        const companyWorkbook = new ExcelJS.Workbook();
-                        exportOptions.taxTypes.forEach(taxType => {
-                            addDetailedSheet(companyWorkbook, company, taxType);
-                        });
-                        const buffer = await companyWorkbook.xlsx.writeBuffer();
-                        const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-                        saveAs(blob, `Ledger_Report_${company.company_name}_${new Date().toISOString().split('T')[0]}.xlsx`);
-                    }
-                    return; // Exit function after saving separate workbooks
-                }
-            }
+              const buffer = await workbook.xlsx.writeBuffer();
+              const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+              saveAs(blob, `Ledger_Report_${new Date().toISOString().split('T')[0]}.xlsx`);
+          } catch (error) {
+              console.error("Error exporting to Excel:", error);
+              alert("An error occurred while exporting to Excel. Please try again.");
+          }
+      };
 
-            const buffer = await workbook.xlsx.writeBuffer();
-            const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-            saveAs(blob, `Ledger_Report_${new Date().toISOString().split('T')[0]}.xlsx`);
-        } catch (error) {
-            console.error("Error exporting to Excel:", error);
-            alert("An error occurred while exporting to Excel. Please try again.");
-        }
-    };
-
-    const renderExportDialog = () => (
-        <Dialog>
-            <DialogTrigger asChild>
-                <Button>
-                    <Download className="mr-2 h-4 w-4" /> Export Options
-                </Button>
-            </DialogTrigger>
-            <DialogContent>
-                <DialogHeader>
-                    <DialogTitle>Export Options</DialogTitle>
-                </DialogHeader>
-                <div className="space-y-4">
-                    <Select
-                        value={exportOptions.view}
-                        onValueChange={(value) => setExportOptions(prev => ({ ...prev, view: value }))}
-                    >
-                        <SelectTrigger>
-                            <SelectValue placeholder="Select view to export" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="summary">Summary View</SelectItem>
-                            <SelectItem value="detailed">Detailed View</SelectItem>
-                        </SelectContent>
-                    </Select>
-                    <div>
-                        <h4 className="mb-2">Tax Types:</h4>
-                        {['income_tax', 'vat', 'paye'].map(type => (
-                            <div key={type} className="flex items-center space-x-2">
-                                <Checkbox
-                                    id={type}
-                                    checked={exportOptions.taxTypes.includes(type)}
-                                    onCheckedChange={(checked) => {
-                                        setExportOptions(prev => ({
-                                            ...prev,
-                                            taxTypes: checked
-                                                ? [...prev.taxTypes, type]
-                                                : prev.taxTypes.filter(t => t !== type)
-                                        }))
-                                    }}
-                                />
-                                <label htmlFor={type}>{type.toUpperCase()}</label>
-                            </div>
-                        ))}
-                    </div>
-                    <Select
-                        value={exportOptions.companyOption}
-                        onValueChange={(value) => setExportOptions(prev => ({ ...prev, companyOption: value }))}
-                    >
-                        <SelectTrigger>
-                            <SelectValue placeholder="Select companies" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="all">All Companies</SelectItem>
-                            <SelectItem value="selected">Selected Companies</SelectItem>
-                        </SelectContent>
-                    </Select>
-                    {exportOptions.companyOption === 'selected' && (
-                        <ScrollArea className="h-[200px] w-full border rounded-md p-4">
-                            {data.map(company => (
-                                <div key={company.id} className="flex items-center space-x-2 py-2">
-                                    <Checkbox
-                                        id={`company-${company.id}`}
-                                        checked={exportOptions.selectedCompanies.includes(company.id)}
-                                        onCheckedChange={(checked) => {
-                                            setExportOptions(prev => ({
-                                                ...prev,
-                                                selectedCompanies: checked
-                                                    ? [...prev.selectedCompanies, company.id]
-                                                    : prev.selectedCompanies.filter(id => id !== company.id)
-                                            }))
-                                        }}
-                                    />
-                                    <label htmlFor={`company-${company.id}`}>{company.company_name}</label>
-                                </div>
-                            ))}
-                        </ScrollArea>
-                    )}
-                    <Select
-                        value={exportOptions.exportFormat}
-                        onValueChange={(value) => setExportOptions(prev => ({ ...prev, exportFormat: value }))}
-                    >
-                        <SelectTrigger>
-                            <SelectValue placeholder="Select export format" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="single_workbook">Single Workbook</SelectItem>
-                            <SelectItem value="separate_workbooks">Separate Workbooks</SelectItem>
-                        </SelectContent>
-                    </Select>
-                    <Button onClick={exportToExcel}>
-                        Export
-                    </Button>
-                </div>
-            </DialogContent>
-        </Dialog>
-    );
-
+      const renderExportDialog = () => (
+          <Dialog>
+              <DialogTrigger asChild>
+                  <Button>
+                      <Download className="mr-2 h-4 w-4" /> Export Options
+                  </Button>
+              </DialogTrigger>
+              <DialogContent>
+                  <DialogHeader>
+                      <DialogTitle>Export Options</DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-4">
+                      <Select
+                          value={exportOptions.view}
+                          onValueChange={(value) => setExportOptions(prev => ({ ...prev, view: value }))}
+                      >
+                          <SelectTrigger>
+                              <SelectValue placeholder="Select view to export" />
+                          </SelectTrigger>
+                          <SelectContent>
+                              <SelectItem value="summary">Summary View</SelectItem>
+                              <SelectItem value="detailed">Detailed View</SelectItem>
+                          </SelectContent>
+                      </Select>
+                      <div>
+                          <h4 className="mb-2">Tax Types:</h4>
+                          {['income_tax', 'vat', 'paye'].map(type => (
+                              <div key={type} className="flex items-center space-x-2">
+                                  <Checkbox
+                                      id={type}
+                                      checked={exportOptions.taxTypes.includes(type)}
+                                      onCheckedChange={(checked) => {
+                                          setExportOptions(prev => ({
+                                              ...prev,
+                                              taxTypes: checked
+                                                  ? [...prev.taxTypes, type]
+                                                  : prev.taxTypes.filter(t => t !== type)
+                                          }))
+                                      }}
+                                  />
+                                  <label htmlFor={type}>{type.toUpperCase()}</label>
+                              </div>
+                          ))}
+                      </div>
+                      <Select
+                          value={exportOptions.companyOption}
+                          onValueChange={(value) => setExportOptions(prev => ({ ...prev, companyOption: value }))}
+                      >
+                          <SelectTrigger>
+                              <SelectValue placeholder="Select companies" />
+                          </SelectTrigger>
+                          <SelectContent>
+                              <SelectItem value="all">All Companies</SelectItem>
+                              <SelectItem value="selected">Selected Companies</SelectItem>
+                          </SelectContent>
+                      </Select>
+                      {exportOptions.companyOption === 'selected' && (
+                          <ScrollArea className="h-[200px] w-full border rounded-md p-4">
+                              {data.map(company => (
+                                  <div key={company.id} className="flex items-center space-x-2 py-2">
+                                      <Checkbox
+                                          id={`company-${company.id}`}
+                                          checked={exportOptions.selectedCompanies.includes(company.id)}
+                                          onCheckedChange={(checked) => {
+                                              setExportOptions(prev => ({
+                                                  ...prev,
+                                                  selectedCompanies: checked
+                                                      ? [...prev.selectedCompanies, company.id]
+                                                      : prev.selectedCompanies.filter(id => id !== company.id)
+                                              }))
+                                          }}
+                                      />
+                                      <label htmlFor={`company-${company.id}`}>{company.company_name}</label>
+                                  </div>
+                              ))}
+                          </ScrollArea>
+                      )}
+                      <Select
+                          value={exportOptions.exportFormat}
+                          onValueChange={(value) => setExportOptions(prev => ({ ...prev, exportFormat: value }))}
+                      >
+                          <SelectTrigger>
+                              <SelectValue placeholder="Select export format" />
+                          </SelectTrigger>
+                          <SelectContent>
+                              <SelectItem value="single_workbook">Single Workbook</SelectItem>
+                              <SelectItem value="separate_workbooks">Separate Workbooks</SelectItem>
+                          </SelectContent>
+                      </Select>
+                      <Button onClick={exportToExcel}>
+                          Export
+                      </Button>
+                  </div>
+              </DialogContent>
+          </Dialog>
+      );
     const sendToClients = async (options) => {
         // Implement the logic to send reports to clients
         // This could involve calling an API endpoint or triggering an email service
