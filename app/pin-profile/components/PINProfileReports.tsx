@@ -25,6 +25,8 @@ export function PINProfileReports() {
         profile: true,
     });
 
+    
+
     useEffect(() => {
         fetchReports();
     }, []);
