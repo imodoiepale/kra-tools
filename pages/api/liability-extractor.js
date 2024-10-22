@@ -140,12 +140,43 @@ async function extractLiabilities(page, company) {
 }
 
 async function storeLiabilityData(company, liabilityData) {
-    const { data, error } = await supabase
+    // Start a Supabase transaction
+    const { data: currentExtraction, error: fetchError } = await supabase
+        .from('liability_extractions')
+        .select('*')
+        .eq('company_name', company.company_name)
+        .single();
+
+    if (fetchError && fetchError.code !== 'PGRST116') { // PGRST116 is "not found" error
+        console.error('Error fetching current extraction:', fetchError);
+        throw fetchError;
+    }
+
+    // If there's existing data, store it in the history table
+    if (currentExtraction) {
+        const { error: historyError } = await supabase
+            .from('liability_extractions_history')
+            .insert({
+                company_name: currentExtraction.company_name,
+                liability_data: currentExtraction.liability_data,
+                extraction_date: currentExtraction.extraction_date || currentExtraction.updated_at,
+                created_at: new Date().toISOString()
+            });
+
+        if (historyError) {
+            console.error('Error storing historical data:', historyError);
+            throw historyError;
+        }
+    }
+
+    // Update or insert the new extraction data
+    const { data, error: upsertError } = await supabase
         .from('liability_extractions')
         .upsert({
             company_name: company.company_name,
             liability_data: liabilityData,
             updated_at: new Date().toISOString(),
+<<<<<<< Updated upstream
             extraction_date: new Date().toISOString()  // Add this line
         }, {
             onConflict: 'company_name',  // Change this line
@@ -157,11 +188,39 @@ async function storeLiabilityData(company, liabilityData) {
         console.error('Error details:', error.details);
         console.error('Error hint:', error.hint);
         throw error;
+=======
+            extraction_date: new Date().toISOString(),
+            status: 'completed',
+            progress: 100
+        }, {
+            onConflict: 'company_name',
+            update: ['liability_data', 'updated_at', 'extraction_date', 'status', 'progress']
+        });
+
+    if (upsertError) {
+        console.error('Error storing new liability data:', upsertError);
+        throw upsertError;
+>>>>>>> Stashed changes
     }
 
     return data;
 }
 
+// // Add this helper function to clean up old history records if needed
+// async function cleanupHistoricalData(companyName, retentionPeriodInDays = 365) {
+//     const cutoffDate = new Date();
+//     cutoffDate.setDate(cutoffDate.getDate() - retentionPeriodInDays);
+
+//     const { error } = await supabase
+//         .from('liability_extractions_history')
+//         .delete()
+//         .eq('company_name', companyName)
+//         .lt('extraction_date', cutoffDate.toISOString());
+
+//     if (error) {
+//         console.error('Error cleaning up historical data:', error);
+//     }
+// }
 async function findChromePath() {
     const chrome64Path = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
     const chrome32Path = 'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe';
