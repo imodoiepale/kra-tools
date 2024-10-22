@@ -1,6 +1,7 @@
 // pages/api/pin-checker-details.js
 import { chromium } from "playwright";
 import fs from "fs/promises";
+import { existsSync } from "fs";
 import path from "path";
 import os from "os";
 import ExcelJS from "exceljs";
@@ -70,12 +71,12 @@ async function updateAutomationProgress(progress, status, logs) {
     try {
         await supabase
             .from("PinCheckerDetails_AutomationProgress")
-            .upsert({ 
-                id: 1, 
-                progress, 
-                status, 
+            .upsert({
+                id: 1,
+                progress,
+                status,
                 logs: logs || [],
-                last_updated: new Date().toISOString() 
+                last_updated: new Date().toISOString()
             });
     } catch (error) {
         console.error("Error updating automation progress:", error);
@@ -83,7 +84,16 @@ async function updateAutomationProgress(progress, status, logs) {
 }
 
 async function processCompanies(runOption, selectedIds) {
-    const browser = await chromium.launch({ headless: false, executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe' });
+
+    const chrome64Path = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
+    const chrome32Path = 'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe';
+
+    // Launch Chromium using the chosen Chrome executable
+    const browser = await chromium.launch({
+        headless: false,
+        executablePath: chrome32Path || chrome64Path
+    });
+
     const context = await browser.newContext();
     const page = await context.newPage();
 
@@ -134,7 +144,7 @@ async function processCompanies(runOption, selectedIds) {
 
 async function readSupabaseData(runOption, selectedIds) {
     try {
-        let query = supabase.from("PasswordChecker").select("*");
+        let query = supabase.from("PasswordChecker").select("*").order('id', { ascending: true });
 
         if (runOption === 'selected' && selectedIds.length > 0) {
             query = query.in('id', selectedIds);
@@ -202,7 +212,7 @@ async function loginToKRA(page, company) {
             attempts++;
             continue;
         }
-        
+
         let result;
         if (text.includes("+")) {
             result = Number(numbers[0]) + Number(numbers[1]);
@@ -213,7 +223,7 @@ async function loginToKRA(page, company) {
             attempts++;
             continue;
         }
-        
+
         await worker.terminate();
 
         await page.type("#captcahText", result.toString());
@@ -246,6 +256,7 @@ async function clickObligationDetails(page) {
     }
 }
 
+
 function organizeData(companyName, tableContent) {
     const lines = tableContent.split("\n").map(line => line.trim()).filter(line => line);
     const data = {
@@ -259,12 +270,15 @@ function organizeData(companyName, tableContent) {
         paye_status: 'No obligation',
         paye_effective_from: 'No obligation',
         paye_effective_to: 'No obligation',
-        rent_income_status: 'No obligation',
-        rent_income_effective_from: 'No obligation',
-        rent_income_effective_to: 'No obligation',
+        rent_income_mri_status: 'No obligation',
+        rent_income_mri_effective_from: 'No obligation',
+        rent_income_mri_effective_to: 'No obligation',
         resident_individual_status: 'No obligation',
         resident_individual_effective_from: 'No obligation',
-        resident_individual_effective_to: 'No obligation'
+        resident_individual_effective_to: 'No obligation',
+        turnover_tax_status: 'No obligation',
+        turnover_tax_effective_from: 'No obligation',
+        turnover_tax_effective_to: 'No obligation'
     };
 
     for (const line of lines) {
@@ -286,15 +300,20 @@ function organizeData(companyName, tableContent) {
                 data.income_tax_company_effective_from = effectiveFromDate;
                 data.income_tax_company_effective_to = effectiveToDate || "Active";
                 break;
-            case 'Income Tax - Rent Income':
-                data.rent_income_status = currentStatus;
-                data.rent_income_effective_from = effectiveFromDate;
-                data.rent_income_effective_to = effectiveToDate || "Active";
+            case 'Income Tax - Rent Income (MRI)':
+                data.rent_income_mri_status = currentStatus;
+                data.rent_income_mri_effective_from = effectiveFromDate;
+                data.rent_income_mri_effective_to = effectiveToDate || "Active";
                 break;
             case 'Income Tax - Resident Individual':
                 data.resident_individual_status = currentStatus;
                 data.resident_individual_effective_from = effectiveFromDate;
                 data.resident_individual_effective_to = effectiveToDate || "Active";
+                break;
+            case 'Income Tax - Turnover Tax':
+                data.turnover_tax_status = currentStatus;
+                data.turnover_tax_effective_from = effectiveFromDate;
+                data.turnover_tax_effective_to = effectiveToDate || "Active";
                 break;
         }
     }

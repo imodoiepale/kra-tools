@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { AlertCircle } from 'lucide-react';
 
-export function PINProfileStart({ onStart, onStop }) {
+export function TCCStart({ onStart, onStop }) {
     const [isRunning, setIsRunning] = useState(false);
 
     const handleStart = async () => {
@@ -50,8 +50,8 @@ export function PINProfileStart({ onStart, onStop }) {
     return (
         <Card className="w-[350px]">
             <CardHeader>
-                <CardTitle>PIN Profile Extraction Control</CardTitle>
-                <CardDescription>Manage the PIN Profile extraction process.</CardDescription>
+                <CardTitle>TCC Extraction Control</CardTitle>
+                <CardDescription>Manage the Tax Compliance Certificate extraction process.</CardDescription>
             </CardHeader>
             <CardContent>
                 <p className="mb-4">Use the buttons below to start or stop the TCC extraction process for all registered companies.</p>

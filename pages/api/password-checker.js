@@ -246,7 +246,7 @@ async function processCompanies(runOption, selectedIds) {
                 return;
             }
 
-            const browser = await chromium.launch({ headless: true, executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe' });
+            const browser = await chromium.launch({ headless: false, executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe' });
             const context = await browser.newContext();
             const page    = await context.newPage();
             const company = data[i];

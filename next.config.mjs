@@ -1,10 +1,14 @@
+import withPWA from '@ducanh2912/next-pwa';
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-    reactStrictMode: true,
-    experimental: {
-      serverActions: true,
-    },
-  }
+  images: {
+    domains: ['zyszsqgdlrpnunkegipk.supabase.co'],
+  },
+};
 
-
-export default nextConfig;
+export default withPWA({
+  dest: 'public',
+  register: true,
+  skipWaiting: true,
+})(nextConfig);

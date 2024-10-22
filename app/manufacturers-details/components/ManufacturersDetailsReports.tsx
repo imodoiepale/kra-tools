@@ -32,6 +32,7 @@ interface Manufacturer {
 
 export function ManufacturersDetailsReports() {
   const [manufacturers, setManufacturers] = useState<Manufacturer[]>([])
+  const [searchTerm, setSearchTerm] = useState('')
   const [editingManufacturer, setEditingManufacturer] = useState<Manufacturer | null>(null)
   const [visibleColumns, setVisibleColumns] = useState({
     company_name: true,
@@ -114,6 +115,8 @@ export function ManufacturersDetailsReports() {
   const toggleColumnVisibility = (column: string) => {
     setVisibleColumns(prev => ({ ...prev, [column]: !prev[column] }))
   }
+
+
 
   const exportToExcel = async () => {
     const workbook = new ExcelJS.Workbook()
@@ -207,6 +210,13 @@ export function ManufacturersDetailsReports() {
     }
     return 0
   })
+  
+  const filteredManufacturers = sortedManufacturers.filter(manufacturer =>
+    Object.values(manufacturer).some(value =>
+      value.toString().toLowerCase().includes(searchTerm.toLowerCase())
+    )
+  )
+
 
   const requestSort = (key: string) => {
     let direction = 'ascending'
@@ -248,18 +258,27 @@ export function ManufacturersDetailsReports() {
           <Button variant="destructive" onClick={handleDeleteAll} size="sm">Delete All</Button>
         </div>
       </div>
+      <div className="">
+        <Input
+          placeholder="Search Manufacturers..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="max-w-sm"
+        />
+      </div>
+
       <div className="rounded-md border">
         <div className="overflow-x-auto">
-          <div className="max-h-[calc(100vh-200px)] overflow-y-auto">
-            <Table className="text-xs pb-2">
+          <div className="max-h-[calc(100vh-340px)] overflow-y-auto">
+            <Table className="text-[11px] pb-2 text-black">
               <TableHeader>
                 <TableRow>
-                  <TableHead className="text-center">Index</TableHead>
+                  <TableHead className="text-center text-[12px] text-black font-bold">Index</TableHead>
                   {Object.entries(visibleColumns).map(([column, isVisible]) => (
                     isVisible && (
                       <TableHead
                         key={column}
-                        className="text-center cursor-pointer"
+                        className={`cursor-pointer text-[12px] text-black font-bold capitalize ${column === 'company_name' ? 'text-left' : 'text-center'}`}
                         onClick={() => requestSort(column)}
                       >
                         {column.replace(/_/g, ' ').charAt(0).toUpperCase() + column.replace(/_/g, ' ').slice(1)}
@@ -269,16 +288,16 @@ export function ManufacturersDetailsReports() {
                       </TableHead>
                     )
                   ))}
-                  <TableHead className="text-center">Actions</TableHead>
+                  <TableHead className="text-center text-[12px] text-black font-bold">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {sortedManufacturers.map((manufacturer, index) => (
+                {filteredManufacturers.map((manufacturer, index) => (
                   <TableRow key={manufacturer.id} className={`h-8 ${index % 2 === 0 ? 'bg-white' : 'bg-blue-50'}`}>
-                    <TableCell className="text-center">{index + 1}</TableCell>
+                    <TableCell className="text-center font-bold">{index + 1}</TableCell>
                     {Object.entries(visibleColumns).map(([column, isVisible]) => (
                       isVisible && (
-                        <TableCell key={column} className="text-center">
+                        <TableCell key={column} className={`${column === 'company_name' ? 'text-left whitespace-nowrap font-bold' : 'text-center'}`}>
                           {manufacturer[column] ? (
                             column === 'manufacturer_name' ? manufacturer[column].toUpperCase() : manufacturer[column]
                           ) : (

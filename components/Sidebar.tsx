@@ -1,35 +1,43 @@
+// @ts-nocheck
 // components/Sidebar.tsx
+
 "use client"
 
-import { LayoutDashboard, Key, Wrench, Settings, Factory, FileCheck, FileText, ShieldCheck, CreditCard, FileSignature, Users, FileSpreadsheet, ClipboardCheck, DollarSign, BarChart2, ChevronLeft, ChevronRight, Download } from "lucide-react";
+import { LayoutDashboard, Key, Lock, Settings, Factory, KeyRound, FileCheck, FileText, ShieldCheck, CreditCard, FileSignature, Users, FileSpreadsheet, ClipboardCheck, UserCheck, BarChart2, ChevronLeft, ChevronRight, Download, ChevronDown } from "lucide-react";
 import Link from "next/link"
 import { usePathname } from 'next/navigation'
 import { useState } from "react"
+import { motion, AnimatePresence } from "framer-motion"
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
+    Popover,
+    PopoverContent,
+    PopoverTrigger,
 } from "@/components/ui/popover"
 
 const navItems = [
     { href: "/", icon: LayoutDashboard, label: "Dashboard", category: "Main", available: true },
+    { href: "/password-manager", icon: Lock, label: "Password Manager", category: "Main", available: true },
+    { href: "/pass-checker+pass-manager", icon: Lock, label: "Both", category: "Main", available: true },
+    { href: "/checklist", icon: FileCheck, label: "Checklist", category: "Main", available: true },
 
     // One-off Tools
     { href: "/password-checker", icon: Key, label: "Password Checker", category: "One-off Tools", available: true },
     { href: "/manufacturers-details", icon: Factory, label: "Manufacturers Details", category: "One-off Tools", available: true },
     { href: "/pin-checker-details", icon: ClipboardCheck, label: "PIN Checker Details (Obligations)", category: "One-off Tools", available: true },
-    { href: "/withholding-tax-doc-extractor", icon: FileText, label: "Withholding Tax Doc Extractor", category: "One-off Tools", available: false },
-    { href: "/pin-certificate", icon: ClipboardCheck, label: "PIN Certifiate Extractor", category: "One-off Tools", available: false },
+    { href: "/wht", icon: FileText, label: "Withholding VAT Extractor", category: "One-off Tools", available: true },
+    { href: "/pin-cert", icon: ClipboardCheck, label: "PIN Certifiate Extractor", category: "One-off Tools", available: true },
     { href: "/pin-profile", icon: ClipboardCheck, label: "PIN Profile Extractor", category: "One-off Tools", available: true },
     { href: "/tcc", icon: ShieldCheck, label: "Tax Compliance Downloader", category: "One-off Tools", available: true },
-    { href: "/password-changer", icon: Key, label: "Password Changer", category: "One-off Tools", available: false },
+    { href: "/name-extractor", icon: UserCheck, label: "Tax Payer Name Extractor", category: "One-off Tools", available: false },
+    { href: "/password-changer", icon: KeyRound, label: "Password Changer", category: "One-off Tools", available: false },
 
     // Monthly Tools
+    { href: "/auto-population", icon: Users, label: "Auto-Population", category: "Monthly Tools", available: true },
+    { href: "/liabilities", icon: FileSpreadsheet, label: "Liabilities Extractor", category: "Monthly Tools", available: true },
     { href: "/withholding-tax-downloader", icon: Download, label: "Withholding Tax Downloader", category: "Monthly Tools", available: false },
-    { href: "/auto-population-downloader", icon: Users, label: "Auto Population Downloader", category: "Monthly Tools", available: false },
-    { href: "/liabilities-extractor", icon: FileSpreadsheet, label: "Liabilities Extractor", category: "Monthly Tools", available: false },
-    { href: "/withholding-vat-extractor", icon: DollarSign, label: "Withholding VAT Extractor", category: "Monthly Tools", available: false },
-    { href: "/ledger-downloader", icon: BarChart2, label: "Ledger Downloader", category: "Monthly Tools", available: false },
+    { href: "/pentasoft", icon: Users, label: "Pentasoft Downloader", category: "Monthly Tools", available: true },
+    // { href: "/wht", icon: DollarSign, label: "Withholding VAT Extractor", category: "Monthly Tools", available: false },
+    { href: "/ledger", icon: BarChart2, label: "Ledger Downloader", category: "Monthly Tools", available: true },
 
     // Suggested New Tools
     { href: "/pin-registration", icon: FileSignature, label: "PIN Registration Tool", category: "Suggested New Tools", available: false },
@@ -38,55 +46,90 @@ const navItems = [
     { href: "/tax-clearance", icon: ShieldCheck, label: "Tax Clearance Status Checker", category: "Suggested New Tools", available: false },
     { href: "/payment-reminders", icon: CreditCard, label: "Tax Payment Reminders", category: "Suggested New Tools", available: false },
     { href: "/audit-logs", icon: FileText, label: "Audit Logs Viewer", category: "Suggested New Tools", available: false },
-    
+
     { href: "/settings", icon: Settings, label: "Settings", category: "Main", available: false },];
 
-export function Sidebar() {
+export function Sidebar({ isExpanded, setIsExpanded }: { isExpanded: boolean, setIsExpanded: (value: boolean) => void }) {
     const pathname = usePathname()
-    const [isExpanded, setIsExpanded] = useState(true)
+    const [openCategories, setOpenCategories] = useState<string[]>([])
 
     const categories = Array.from(new Set(navItems.map(item => item.category)));
+
+    const toggleCategory = (category: string) => {
+        if (isExpanded) {
+            setOpenCategories(prev =>
+                prev.includes(category)
+                    ? prev.filter(c => c !== category)
+                    : [...prev, category]
+            )
+        }
+    }
 
     return (
         <div className="flex h-[150vh]">
             <aside className={`bg-gray-800 text-white transition-all duration-300 ease-in-out ${isExpanded ? 'w-[300px]' : 'w-20'} p-3 hidden md:block relative`}>
                 <div className={`flex items-center mb-6 ${isExpanded ? '' : 'justify-center'}`}>
-                    {isExpanded && <span className="text-lg font-bold">KRA Tools</span>}
+                    {isExpanded && <span className="text-lg font-bold">BCL Tools</span>}
                 </div>
                 <nav className="space-y-1">
                     {categories.map((category) => (
                         <div key={category}>
-                            {isExpanded && <h3 className="text-xs font-semibold text-gray-400 mt-3 mb-1">{category}</h3>}
-                            {navItems.filter(item => item.category === category).map((item) => (
-                                item.available ? (
-                                    <Link
-                                        key={item.href}
-                                        href={item.href}
-                                        className={`flex items-center p-1.5 rounded text-sm ${pathname === item.href
-                                                ? "text-blue-400 font-bold bg-gray-700"
-                                                : "text-gray-300 hover:bg-gray-700"
-                                            } ${isExpanded ? '' : 'justify-center'} relative`}
+                            {isExpanded ? (
+                                <button
+                                    onClick={() => toggleCategory(category)}
+                                    className="flex items-center justify-between w-full text-xs font-semibold text-gray-400 mt-3 mb-1 hover:bg-gray-700 p-1 rounded"
+                                >
+                                    <span>{category}</span>
+                                    <ChevronDown className={`w-4 h-4 transition-transform ${openCategories.includes(category) ? 'rotate-180' : ''}`} />
+                                </button>
+                            ) : (
+                                <div className="text-xs font-semibold text-gray-400 mt-3 mb-1 text-center">{category[0]}</div>
+                            )}
+                            <AnimatePresence initial={false}>
+                                {(isExpanded ? openCategories.includes(category) : true) && (
+                                    <motion.div
+                                        initial="collapsed"
+                                        animate="open"
+                                        exit="collapsed"
+                                        variants={{
+                                            open: { opacity: 1, height: "auto" },
+                                            collapsed: { opacity: 0, height: 0 }
+                                        }}
+                                        transition={{ duration: 0.3, ease: "easeInOut" }}
                                     >
-                                        <item.icon className="w-4 h-4 mr-2" />
-                                        {isExpanded && item.label}
-                                    </Link>
-                                ) : (
-                                    <Popover key={item.href}>
-                                        <PopoverTrigger asChild>
-                                            <button
-                                                className={`flex items-center p-1.5 rounded text-sm text-gray-400 hover:bg-gray-700 ${isExpanded ? '' : 'justify-center'} relative w-full text-left`}
-                                            >
-                                                <span className="absolute top-0 right-0 w-2 h-2 z-10 bg-red-500 rounded-full"></span>
-                                                <item.icon className="w-4 h-4 mr-2" />
-                                                {isExpanded && item.label}
-                                            </button>
-                                        </PopoverTrigger>
-                                        <PopoverContent className="bg-red-500 text-white p-1 text-xs rounded w-40 h-8">
-                                            Coming soon
-                                        </PopoverContent>
-                                    </Popover>
-                                )
-                            ))}
+                                        {navItems.filter(item => item.category === category).map((item) => (
+                                            item.available ? (
+                                                <Link
+                                                    key={item.href}
+                                                    href={item.href}
+                                                    className={`flex items-center p-1.5 rounded text-sm ${pathname === item.href
+                                                        ? "text-blue-400 font-bold bg-gray-700"
+                                                        : "text-gray-300 hover:bg-gray-700"
+                                                        } ${isExpanded ? '' : 'justify-center'} relative`}
+                                                >
+                                                    <item.icon className="w-4 h-4 mr-2" />
+                                                    {isExpanded && item.label}
+                                                </Link>
+                                            ) : (
+                                                <Popover key={item.href}>
+                                                    <PopoverTrigger asChild>
+                                                        <button
+                                                            className={`flex items-center p-1.5 rounded text-sm text-gray-400 hover:bg-gray-700 ${isExpanded ? '' : 'justify-center'} relative w-full text-left`}
+                                                        >
+                                                            <span className="absolute top-0 right-0 w-2 h-2 z-10 bg-red-500 rounded-full"></span>
+                                                            <item.icon className="w-4 h-4 mr-2" />
+                                                            {isExpanded && item.label}
+                                                        </button>
+                                                    </PopoverTrigger>
+                                                    <PopoverContent className="bg-red-500 text-white p-1 text-xs rounded w-40 h-8">
+                                                        Coming soon
+                                                    </PopoverContent>
+                                                </Popover>
+                                            )
+                                        ))}
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
                         </div>
                     ))}
                 </nav>

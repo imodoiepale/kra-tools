@@ -7,8 +7,8 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow,TableFooter } from "@/components/ui/table"
-import { ManufacturersDetailsRunning } from '@/components/ManufacturersDetailsRunning'
-import { ManufacturersDetailsReports } from '@/components/ManufacturersDetailsReports'
+import { ManufacturersDetailsRunning } from '@/app/manufacturers-details/components/ManufacturersDetailsRunning'
+import { ManufacturersDetailsReports } from '@/app/manufacturers-details/components/ManufacturersDetailsReports'
 import { supabase } from '@/lib/supabase'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { motion } from "framer-motion"
@@ -22,7 +22,7 @@ interface Manufacturer {
 
 export default function ManufacturersDetails() {
     const [isChecking, setIsChecking] = useState(false)
-    const [activeTab, setActiveTab] = useState("start")
+    const [activeTab, setActiveTab] = useState("reports")
     const [shouldStop, setShouldStop] = useState(false)
     const [manufacturers, setManufacturers] = useState<Manufacturer[]>([])
     const [selectedManufacturers, setSelectedManufacturers] = useState<number[]>([])

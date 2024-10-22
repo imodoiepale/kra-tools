@@ -3,9 +3,9 @@
 import React, { useState } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { TCCStart } from '@/components/TCCStart';
-import { TCCRunning } from '@/components/TCCRunning';
-import { TCCReports } from '@/components/TCCReports';
+import { TCCStart } from '@/app/tcc/components/TCCStart';
+import { TCCRunning } from '@/app/tcc/components/TCCRunning';
+import { TCCReports } from '@/app/tcc/components/TCCReports';
 
 export default function TCCExtractor() {
     const [activeTab, setActiveTab] = useState("reports");
@@ -14,7 +14,7 @@ export default function TCCExtractor() {
         <div className="p-4 w-full">
             <Card>
                 <CardHeader>
-                    <CardTitle>Tax Compliance Certificate Extractor</CardTitle>
+                    <CardTitle>Tax Compliance Certificate Extractor </CardTitle>
                     <CardDescription>Extract and manage Tax Compliance Certificates for companies</CardDescription>
                 </CardHeader>
                 <CardContent>

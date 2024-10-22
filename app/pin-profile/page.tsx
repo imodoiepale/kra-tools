@@ -4,9 +4,9 @@
 import React, { useState } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { PINProfileStart } from '@/components/PINProfileStart';
-import { PINProfileRunning } from '@/components/PINProfileRunning';
-import { PINProfileReports } from '@/components/PINProfileReports';
+import { PINProfileStart } from '@/app/pin-profile/components/PINProfileStart';
+import { PINProfileRunning } from '@/app/pin-profile/components/PINProfileRunning';
+import { PINProfileReports } from '@/app/pin-profile/components/PINProfileReports';
 
 export default function PINProfileExtractor() {
     const [activeTab, setActiveTab] = useState("reports");

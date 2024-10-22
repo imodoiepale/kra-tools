@@ -4,8 +4,8 @@ import { useState, useEffect } from 'react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { PasswordCheckerRunning } from '@/components/PasswordCheckerRunning'
-import { PasswordCheckerReports } from '@/components/PasswordCheckerReports'
+import { PasswordCheckerRunning } from '@/app/password-checker/components/PasswordCheckerRunning'
+import { PasswordCheckerReports } from '@/app/password-checker/components/PasswordCheckerReports'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -14,7 +14,7 @@ import { supabase } from '@/lib/supabase'
 
 export default function PasswordChecker() {
     const [isChecking, setIsChecking] = useState(false)
-    const [activeTab, setActiveTab] = useState("start")
+    const [activeTab, setActiveTab] = useState("reports")
     const [progress, setProgress] = useState(0)
     const [status, setStatus] = useState("Not Started")
     const [companies, setCompanies] = useState([])

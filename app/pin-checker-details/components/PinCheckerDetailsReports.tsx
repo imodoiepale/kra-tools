@@ -1,6 +1,6 @@
 // components/PinCheckerDetailsReports.tsx
 // @ts-nocheck
-import { useEffect, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { supabase } from '@/lib/supabase'
 import { Button } from "@/components/ui/button"
@@ -35,10 +35,14 @@ interface PinCheckerDetail {
     last_checked_at: string;
 }
 
+type SortField = keyof PinCheckerDetail | 'last_checked_date' | 'last_checked_time';
+type SortOrder = 'asc' | 'desc';
+
 export function PinCheckerDetailsReports() {
     const [details, setDetails] = useState<PinCheckerDetail[]>([])
     const [editingDetail, setEditingDetail] = useState<PinCheckerDetail | null>(null)
-    const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
+    const [sortField, setSortField] = useState<SortField>('company_name')
+    const [sortOrder, setSortOrder] = useState<SortOrder>('asc')
 
     useEffect(() => {
         fetchReports()
@@ -217,7 +221,7 @@ export function PinCheckerDetailsReports() {
         link.href = window.URL.createObjectURL(blob);
         link.download = 'pin_checker_details.xlsx';
         link.click();
-    }    
+    }
 
     const getCellColor = (obligationType: string) => {
         switch (obligationType) {
@@ -238,17 +242,88 @@ export function PinCheckerDetailsReports() {
         }
     }
 
-    const handleSort = () => {
-        const sortedDetails = [...details].sort((a, b) => {
-            if (sortOrder === 'asc') {
-                return a.company_name.localeCompare(b.company_name)
-            } else {
-                return b.company_name.localeCompare(a.company_name)
-            }
-        })
-        setDetails(sortedDetails)
-        setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')
+    const handleSort = (field: SortField) => {
+        if (sortField === field) {
+            setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')
+        } else {
+            setSortField(field)
+            setSortOrder('asc')
+        }
     }
+
+    const formatDate = (dateString: string) => {
+        if (!dateString) return '';
+        
+        // Try parsing the date
+        const date = new Date(dateString);
+        
+        // Check if the date is valid
+        if (isNaN(date.getTime())) {
+            // If parsing fails, try to handle common formats
+            const parts = dateString.split(/[-/.]/);
+            if (parts.length === 3) {
+                // Assume yyyy-mm-dd, dd-mm-yyyy, or mm-dd-yyyy
+                const [a, b, c] = parts;
+                if (a.length === 4) {
+                    // yyyy-mm-dd
+                    date.setFullYear(parseInt(a), parseInt(b) - 1, parseInt(c));
+                } else if (c.length === 4) {
+                    // dd-mm-yyyy or mm-dd-yyyy
+                    date.setFullYear(parseInt(c), parseInt(b) - 1, parseInt(a));
+                }
+            } else {
+                // If we can't parse it, return the original string
+                return dateString;
+            }
+        }
+        
+        // Format the date
+        const day = date.getDate().toString().padStart(2, '0');
+        // const month = date.toLocaleString('en-GB', { month: 'short' });
+        const month = (date.getMonth() + 1).toString().padStart(2, '0');
+        const year = date.getFullYear();
+        
+        return `${day}.${month}.${year}`;
+    }
+
+    const sortedDetails = React.useMemo(() => {
+        return [...details].sort((a, b) => {
+            let aValue: any = a[sortField as keyof PinCheckerDetail];
+            let bValue: any = b[sortField as keyof PinCheckerDetail];
+
+            // Handle special cases for last_checked_date and last_checked_time
+            if (sortField === 'last_checked_date') {
+                aValue = new Date(a.last_checked_at).toLocaleDateString();
+                bValue = new Date(b.last_checked_at).toLocaleDateString();
+            } else if (sortField === 'last_checked_time') {
+                aValue = new Date(a.last_checked_at).toLocaleTimeString();
+                bValue = new Date(b.last_checked_at).toLocaleTimeString();
+            } else if (sortField.endsWith('_status')) {
+                // For status fields, use a custom sorting order
+                const statusOrder = ['Registered', 'Active', 'Suspended', 'Cancelled', 'No Obligation'];
+                aValue = statusOrder.indexOf(aValue || 'No Obligation');
+                bValue = statusOrder.indexOf(bValue || 'No Obligation');
+            } else if (sortField.endsWith('_from') || sortField.endsWith('_to')) {
+                // For date fields, convert to Date objects for comparison
+                aValue = aValue ? new Date(aValue) : new Date(0);
+                bValue = bValue ? new Date(bValue) : new Date(0);
+            }
+
+            // Perform the comparison
+            if (aValue < bValue) return sortOrder === 'asc' ? -1 : 1;
+            if (aValue > bValue) return sortOrder === 'asc' ? 1 : -1;
+            return 0;
+        });
+    }, [details, sortField, sortOrder]);
+
+
+    const SortableHeader: React.FC<{ field: SortField; children: React.ReactNode }> = ({ field, children }) => (
+        <Button variant="ghost" onClick={() => handleSort(field)} className="h-8 px-2">
+            {children}
+            <ArrowUpDown className="ml-2 h-4 w-4" />
+        </Button>
+    );
+
 
     return (
         <div className="space-y-4">
@@ -268,69 +343,81 @@ export function PinCheckerDetailsReports() {
             </div>
             <div className="rounded-md border">
                 <div className="overflow-x-auto">
-                    <div className=" max-h-[calc(100vh-300px)] overflow-y-auto">
+                    <div className="max-h-[calc(100vh-300px)] overflow-y-auto">
                         <Table className="text-xs pb-2">
                             <TableHeader>
                                 <TableRow className="h-8">
                                     <TableHead className="sticky top-0 bg-white border-r border-black border-b font-bold text-black text-center">Index</TableHead>
                                     <TableHead className="sticky top-0 bg-white border-r border-black border-b font-bold text-black">
-                                        <Button variant="ghost" onClick={handleSort} className="h-8 px-2">
-                                            Company Name
-                                            <ArrowUpDown className="ml-2 h-4 w-4" />
-                                        </Button>
+                                        <SortableHeader field="company_name">Company Name</SortableHeader>
                                     </TableHead>
                                     {['Income Tax Company', 'VAT', 'PAYE', 'Rent Income (MRI)', 'Resident Individual', 'Turnover Tax'].map((header, index) => (
                                         <TableHead key={index} className={`sticky top-0 ${getCellColor(header.toLowerCase().replace(' ', '_'))} border-r border-black border-b text-center font-bold text-black`} colSpan={3}>{header}</TableHead>
                                     ))}
-                                    <TableHead className="sticky top-0 bg-white border-r border-black border-b font-bold text-black text-center">Last Checked</TableHead>
+                                    <TableHead className="sticky top-0 bg-white border-r border-black border-b font-bold text-black text-center" colSpan={2}>Last Checked</TableHead>
                                     <TableHead className="sticky top-0 bg-white border-b font-bold text-black text-center">Actions</TableHead>
                                 </TableRow>
                                 <TableRow className="h-8">
                                     <TableHead className="sticky top-8 bg-white border-r border-black border-b"></TableHead>
                                     <TableHead className="sticky top-8 bg-white border-r border-black border-b"></TableHead>
                                     {['Income Tax Company', 'VAT', 'PAYE', 'Rent Income (MRI)', 'Resident Individual', 'Turnover Tax'].flatMap((header) => (
-                                        ['Status', 'From', 'To'].map((subHeader, index) => (
-                                            <TableHead key={`${header}-${subHeader}`} className={`sticky top-8 ${getCellColor(header.toLowerCase().replace(' ', '_'))} border-r border-black border-b text-black text-center`}>{subHeader}</TableHead>
-                                        ))
+                                        ['Status', 'From', 'To'].map((subHeader, index) => {
+                                            const field = `${header.toLowerCase().replace(' ', '_')}_${subHeader.toLowerCase()}` as SortField;
+                                            return (
+                                                <TableHead key={`${header}-${subHeader}`} className={`sticky top-8 ${getCellColor(header.toLowerCase().replace(' ', '_'))} border-r border-black border-b text-black text-center`}>
+                                                    <SortableHeader field={field}>{subHeader}</SortableHeader>
+                                                </TableHead>
+                                            );
+                                        })
                                     ))}
-                                    <TableHead className="sticky top-8 bg-white border-r border-black border-b"></TableHead>
+                                    <TableHead className="sticky top-8 bg-white border-r border-black border-b">
+                                        <SortableHeader field="last_checked_date">Date</SortableHeader>
+                                    </TableHead>
+                                    <TableHead className="sticky top-8 bg-white border-r border-black border-b">
+                                        <SortableHeader field="last_checked_time">Time</SortableHeader>
+                                    </TableHead>
                                     <TableHead className="sticky top-8 bg-white border-b"></TableHead>
                                 </TableRow>
                             </TableHeader>
 
                             <TableBody>
-                                {details.map((detail, index) => (
+                                {sortedDetails.map((detail, index) => (
                                     <TableRow key={detail.id} className="h-6">
                                         <TableCell className="border-r border-black font-bold text-black text-center">{index + 1}</TableCell>
                                         <TableCell className="border-r border-black">{detail.company_name}</TableCell>
 
                                         {['income_tax_company', 'vat', 'paye', 'rent_income_mri', 'resident_individual', 'turnover_tax'].map((type) => (
-                                            <>
-                                                <TableCell className={`${getCellColor(type)} border-l border-r border-black ${!detail[`${type}_status`] || detail[`${type}_status`].toLowerCase() === 'no obligation' ? 'font-bold text-red-600 bg-red-100' : ''} text-center`}>
-                                                    {!detail[`${type}_status`] ? (
+                                            <React.Fragment key={type}>
+                                                <TableCell className={`${getCellColor(type)} border-l border-r border-black ${!detail[`${type}_status` as keyof PinCheckerDetail] || detail[`${type}_status` as keyof PinCheckerDetail]?.toLowerCase() === 'no obligation' ? 'font-bold text-red-600 bg-red-100' : ''} text-center`}>
+                                                    {!detail[`${type}_status` as keyof PinCheckerDetail] ? (
                                                         <span className="font-bold text-red-600">No Obligation</span>
-                                                    ) : detail[`${type}_status`].toLowerCase() === 'cancelled' ? (
+                                                    ) : detail[`${type}_status` as keyof PinCheckerDetail]?.toLowerCase() === 'cancelled' ? (
                                                         <span className="bg-amber-500 text-amber-800 px-1 py-1 rounded-full text-xs font-semibold">
-                                                            {detail[`${type}_status`]}
+                                                            {detail[`${type}_status` as keyof PinCheckerDetail]}
                                                         </span>
-                                                    ) : detail[`${type}_status`].toLowerCase() === 'registered' ? (
+                                                    ) : detail[`${type}_status` as keyof PinCheckerDetail]?.toLowerCase() === 'registered' ? (
                                                         <span className="bg-green-400 text-green-800 px-1 py-1 rounded-full text-xs font-semibold">
-                                                            {detail[`${type}_status`]}
+                                                            {detail[`${type}_status` as keyof PinCheckerDetail]}
                                                         </span>
                                                     ) : (
-                                                        detail[`${type}_status`]
+                                                        detail[`${type}_status` as keyof PinCheckerDetail]
                                                     )}
                                                 </TableCell>
-                                                <TableCell className={`${getCellColor(type)} border-r border-black text-center ${!detail[`${type}_effective_from`] ? 'font-bold text-red-600 bg-red-100' : ''}`}>
-                                                    {detail[`${type}_effective_from`] || <span className="font-bold text-red-600">No Obligation</span>}
+                                                <TableCell className={`${getCellColor(type)} border-r border-black text-center ${!detail[`${type}_effective_from` as keyof PinCheckerDetail] ? 'font-bold text-red-600 bg-red-100' : ''}`}>
+                                                    {detail[`${type}_effective_from` as keyof PinCheckerDetail] ? formatDate(detail[`${type}_effective_from` as keyof PinCheckerDetail] as string) : <span className="font-bold text-red-600">No Obligation</span>}
                                                 </TableCell>
-                                                <TableCell className={`${getCellColor(type)} border-r border-black text-center ${!detail[`${type}_effective_to`] ? 'font-bold text-red-600 bg-red-100' : ''}`}>
-                                                    {detail[`${type}_effective_to`] || <span className="font-bold text-red-600">No Obligation</span>}
+                                                <TableCell className={`${getCellColor(type)} border-r border-black text-center ${!detail[`${type}_effective_to` as keyof PinCheckerDetail] ? 'font-bold text-red-600 bg-red-100' : ''}`}>
+                                                    {detail[`${type}_effective_to` as keyof PinCheckerDetail] ? formatDate(detail[`${type}_effective_to` as keyof PinCheckerDetail] as string) : <span className="font-bold text-red-600">No Obligation</span>}
                                                 </TableCell>
-                                            </>
+                                            </React.Fragment>
                                         ))}
 
-                                        <TableCell className="border-r border-black text-center">{new Date(detail.last_checked_at).toLocaleString()}</TableCell>
+                                        <TableCell className="border-r border-black text-center">
+                                            {formatDate(detail.last_checked_at)}
+                                        </TableCell>
+                                        <TableCell className="border-r border-black text-center">
+                                            {new Date(detail.last_checked_at).toLocaleTimeString()}
+                                        </TableCell>
 
                                         <TableCell className="border-black">
                                             <div className="flex space-x-2">
@@ -353,7 +440,7 @@ export function PinCheckerDetailsReports() {
                                                             ))}
                                                         </div>
                                                         <DialogClose asChild>
-                                                            <Button onClick={() => handleSave(editingDetail)}>Save</Button>
+                                                            <Button onClick={() => handleSave(editingDetail!)}>Save</Button>
                                                         </DialogClose>
                                                     </DialogContent>
                                                 </Dialog>
@@ -365,7 +452,6 @@ export function PinCheckerDetailsReports() {
                                     </TableRow>
                                 ))}
                             </TableBody>
-
                         </Table>
                     </div>
                 </div>
