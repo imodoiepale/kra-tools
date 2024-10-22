@@ -176,19 +176,6 @@ async function storeLiabilityData(company, liabilityData) {
             company_name: company.company_name,
             liability_data: liabilityData,
             updated_at: new Date().toISOString(),
-<<<<<<< Updated upstream
-            extraction_date: new Date().toISOString()  // Add this line
-        }, {
-            onConflict: 'company_name',  // Change this line
-            update: ['liability_data', 'updated_at', 'extraction_date']  // Add this line
-        });
-
-    if (error) {
-        console.error('Error storing liability data:', error);
-        console.error('Error details:', error.details);
-        console.error('Error hint:', error.hint);
-        throw error;
-=======
             extraction_date: new Date().toISOString(),
             status: 'completed',
             progress: 100
@@ -200,7 +187,6 @@ async function storeLiabilityData(company, liabilityData) {
     if (upsertError) {
         console.error('Error storing new liability data:', upsertError);
         throw upsertError;
->>>>>>> Stashed changes
     }
 
     return data;

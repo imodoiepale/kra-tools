@@ -5,11 +5,7 @@ import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-<<<<<<< Updated upstream
-import { AlertCircle, PlayCircle } from 'lucide-react';
-=======
 import { AlertCircle, PlayCircle, StopCircle } from 'lucide-react';
->>>>>>> Stashed changes
 import { supabase } from '@/lib/supabase';
 
 export function AutoLiabilitiesRunning({ onComplete }) {
@@ -87,10 +83,7 @@ export function AutoLiabilitiesRunning({ onComplete }) {
       alert('Failed to resume extraction. Please try again.');
     }
   };
-<<<<<<< Updated upstream
-=======
   
->>>>>>> Stashed changes
 
     return (
         <Card className="w-full">
