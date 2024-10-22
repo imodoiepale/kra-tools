@@ -24,6 +24,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { supabase } from '@/lib/supabase';
 import toast from 'react-hot-toast';
+import { Switch } from "@/components/ui/switch";
 
 const columnHelper = createColumnHelper();
 
@@ -129,12 +130,15 @@ const TotalsRow = ({ totals }) => (
             </TableRow>
         ))}
     </>
-);export default function OverallTaxesTable({ companies: initialCompanies }) {
+);
+
+export default function OverallTaxesTable({ companies: initialCompanies }) {
     const [companies, setCompanies] = useState(initialCompanies);
     const [isLoading, setIsLoading] = useState(false);
     const [globalFilter, setGlobalFilter] = useState('');
     const [dialogOpen, setDialogOpen] = useState(false);
     const [editCompany, setEditCompany] = useState(null);
+    const [showTotals, setShowTotals] = useState(true);
 
     const fetchCompanies = useCallback(async () => {
         setIsLoading(true);
@@ -331,7 +335,7 @@ const TotalsRow = ({ totals }) => (
             header: '#',
         }),
         columnHelper.accessor('company_name', {
-            cell  : info => <span className="text-[10px]">{info.getValue()}</span>,
+            cell: info => <span className="text-[10px]">{info.getValue()}</span>,
             header: 'Company Name',
         }),
         columnHelper.accessor('income_tax_company_status', {
@@ -452,13 +456,23 @@ const TotalsRow = ({ totals }) => (
     return (
         <div>
             <div className="flex justify-between items-center my-4">
-                <Input
-                    placeholder="Search..."
-                    value={globalFilter}
-                    onChange={(e) => setGlobalFilter(e.target.value)}
-                    className="w-64"
-                />
-                <div className="space-x-2">
+                <div className="flex items-center space-x-4">
+                    <Input
+                        placeholder="Search..."
+                        value={globalFilter}
+                        onChange={(e) => setGlobalFilter(e.target.value)}
+                        className="w-64"
+                    />
+                </div>
+                <div className="flex items-center space-x-4">
+                    <div className="flex items-center space-x-2">
+                        <span className="text-sm font-medium">Show Totals</span>
+                        <Switch
+                            checked={showTotals}
+                            onCheckedChange={setShowTotals}
+                            className="data-[state=checked]:bg-green-500"
+                        />
+                    </div>
                     <Button onClick={exportToExcel} size="sm">
                         <FileDown className="mr-2 h-4 w-4" />
                         Export
@@ -496,7 +510,7 @@ const TotalsRow = ({ totals }) => (
                                 </TableRow>
 
                             ))}
-                            <TotalsRow totals={calculateTotals(companies)} />
+                            {showTotals && <TotalsRow totals={calculateTotals(companies)} />}
                         </TableHeader>
                         <TableBody>
                             {table.getRowModel().rows.map((row, index) => (
@@ -505,8 +519,8 @@ const TotalsRow = ({ totals }) => (
                                         <TableCell
                                             key={cell.id}
                                             className={`py-0.5 px-2 whitespace-nowrap ${cell.column.id === 'nssf_status'
-                                                    ? 'border-l-2 border-black'
-                                                    : ''
+                                                ? 'border-l-2 border-black'
+                                                : ''
                                                 }`}
                                         >
                                             {flexRender(cell.column.columnDef.cell, cell.getContext())}

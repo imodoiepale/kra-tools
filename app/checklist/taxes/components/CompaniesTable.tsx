@@ -22,6 +22,7 @@ import { format, isValid, parse } from 'date-fns';
 import { ArrowUpDown, FileDown } from "lucide-react";
 import { toast } from 'react-hot-toast';
 import { supabase } from '@/lib/supabase';
+import { Switch } from "@/components/ui/switch";
 
 const columnHelper = createColumnHelper();
 
@@ -98,6 +99,7 @@ const TaxStatus = ({ status }) => {
 
 export default function CompaniesTable({ companies, taxType, tableType }) {
     const [globalFilter, setGlobalFilter] = useState('');
+    const [showTotals, setShowTotals] = useState(true); 
 
     const columns = useMemo(() => [
         columnHelper.accessor('index', {
@@ -317,16 +319,28 @@ export default function CompaniesTable({ companies, taxType, tableType }) {
     return (
         <div>
             <div className="flex justify-between items-center my-2">
-                <Input
-                    placeholder="Search companies..."
-                    value={globalFilter}
-                    onChange={(e) => setGlobalFilter(e.target.value)}
-                    className="max-w-sm"
-                />
-                <Button onClick={exportToExcel}>
-                    <FileDown className="mr-2 h-4 w-4" />
-                    Export to Excel
-                </Button>
+                <div className="flex items-center space-x-4">
+                    <Input
+                        placeholder="Search companies..."
+                        value={globalFilter}
+                        onChange={(e) => setGlobalFilter(e.target.value)}
+                        className="max-w-sm"
+                    />
+                </div>
+                <div className="flex items-center space-x-4">
+                    <div className="flex items-center space-x-2">
+                        <span className="text-sm font-medium">Show Totals</span>
+                        <Switch
+                            checked={showTotals}
+                            onCheckedChange={setShowTotals}
+                            className="data-[state=checked]:bg-green-500"
+                        />
+                    </div>
+                    <Button onClick={exportToExcel}>
+                        <FileDown className="mr-2 h-4 w-4" />
+                        Export to Excel
+                    </Button>
+                </div>
             </div>
             <ScrollArea className="h-[600px]">
                 <Table>
@@ -342,7 +356,7 @@ export default function CompaniesTable({ companies, taxType, tableType }) {
                                 ))}
                             </TableRow>
                         ))}
-                        <TotalsRow totals={calculateTotals(companies)} />
+                        {showTotals && <TotalsRow totals={calculateTotals(companies)} />}
                     </TableHeader>
                     <TableBody>
                         {table.getRowModel().rows.map(row => (

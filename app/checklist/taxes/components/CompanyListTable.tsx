@@ -35,15 +35,23 @@ import {
 import { Badge } from "@/components/ui/badge";
 import ExcelJS from 'exceljs';
 import { supabase } from '@/lib/supabase';
+import { toast } from 'react-hot-toast';
+
 
 const columnHelper = createColumnHelper();
 
 // EditCompanyDialog component
-const EditCompanyDialog = ({ company, onSave, onLockToggle }) => {
+const EditCompanyDialog = ({ company, onSave, onLockToggle, onDelete }) => {
     const [editedCompany, setEditedCompany] = useState(company);
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
     const handleSave = () => {
         onSave(editedCompany);
+    };
+
+    const handleDelete = () => {
+        onDelete(company.id);
+        setShowDeleteConfirm(false);
     };
 
     return (
@@ -54,76 +62,105 @@ const EditCompanyDialog = ({ company, onSave, onLockToggle }) => {
                 </Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-[425px]">
-                <DialogHeader>
-                    <DialogTitle>Edit Company</DialogTitle>
-                    <DialogDescription>
-                        {company.is_locked ? "This profile is locked. Unlock to make changes." : "Make changes to the company profile here."}
-                    </DialogDescription>
-                </DialogHeader>
-                <div className="grid gap-4 py-4">
-                    <div className="grid grid-cols-4 items-center gap-4">
-                        <Label htmlFor="name" className="text-right">Name</Label>
-                        <Input
-                            id="name"
-                            value={editedCompany.company_name}
-                            className="col-span-3"
-                            disabled
-                        />
-                    </div>
-                    <div className="grid grid-cols-4 items-center gap-4">
-                        <Label htmlFor="kra_pin" className="text-right">KRA PIN</Label>
-                        <Input
-                            id="kra_pin"
-                            value={editedCompany.kra_pin}
-                            className="col-span-3"
-                            disabled
-                        />
-                    </div>
-                    <div className="grid grid-cols-4 items-center gap-4">
-                        <Label htmlFor="status" className="text-right">Status</Label>
-                        <Select
-                            onValueChange={(value) => setEditedCompany({...editedCompany, status: value})}
-                            defaultValue={editedCompany.status || ''}
-                            disabled={company.is_locked}
-                        >
-                            <SelectTrigger className="col-span-3">
-                                <SelectValue placeholder="Select status" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="active">Active</SelectItem>
-                                <SelectItem value="inactive">Inactive</SelectItem>
-                            </SelectContent>
-                        </Select>
-                    </div>
-                    <div className="grid grid-cols-4 items-center gap-4">
-                        <Label htmlFor="category" className="text-right">Category</Label>
-                        <Select
-                            onValueChange={(value) => setEditedCompany({...editedCompany, category: value})}
-                            defaultValue={editedCompany.category}
-                            disabled={company.is_locked}
-                        >
-                            <SelectTrigger className="col-span-3">
-                                <SelectValue placeholder="Select category" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="IMM + ACC">IMM + ACC</SelectItem>
-                                <SelectItem value="IMM">IMM</SelectItem>
-                                <SelectItem value="ACC">ACC</SelectItem>
-                            </SelectContent>
-                        </Select>
-                    </div>
-                </div>
-                <DialogFooter>
-                    {!company.is_locked && <Button onClick={handleSave}>Save changes</Button>}
-                    <Button variant="outline" onClick={() => onLockToggle(company.id)}>
-                        {company.is_locked ? 'Unlock Profile' : 'Lock Profile'}
-                    </Button>
-                </DialogFooter>
+                {!showDeleteConfirm ? (
+                    <>
+                        <DialogHeader>
+                            <DialogTitle>Edit Company</DialogTitle>
+                            <DialogDescription>
+                                {company.is_locked ? "This profile is locked. Unlock to make changes." : "Make changes to the company profile here."}
+                            </DialogDescription>
+                        </DialogHeader>
+                        <div className="grid gap-4 py-4">
+                            <div className="grid grid-cols-4 items-center gap-4">
+                                <Label htmlFor="name" className="text-right">Name</Label>
+                                <Input
+                                    id="name"
+                                    value={editedCompany.company_name}
+                                    className="col-span-3"
+                                    disabled
+                                />
+                            </div>
+                            <div className="grid grid-cols-4 items-center gap-4">
+                                <Label htmlFor="kra_pin" className="text-right">KRA PIN</Label>
+                                <Input
+                                    id="kra_pin"
+                                    value={editedCompany.kra_pin}
+                                    className="col-span-3"
+                                    disabled
+                                />
+                            </div>
+                            <div className="grid grid-cols-4 items-center gap-4">
+                                <Label htmlFor="status" className="text-right">Status</Label>
+                                <Select
+                                    onValueChange={(value) => setEditedCompany({...editedCompany, status: value})}
+                                    defaultValue={editedCompany.status || ''}
+                                    disabled={company.is_locked}
+                                >
+                                    <SelectTrigger className="col-span-3">
+                                        <SelectValue placeholder="Select status" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="active">Active</SelectItem>
+                                        <SelectItem value="inactive">Inactive</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <div className="grid grid-cols-4 items-center gap-4">
+                                <Label htmlFor="category" className="text-right">Category</Label>
+                                <Select
+                                    onValueChange={(value) => setEditedCompany({...editedCompany, category: value})}
+                                    defaultValue={editedCompany.category}
+                                    disabled={company.is_locked}
+                                >
+                                    <SelectTrigger className="col-span-3">
+                                        <SelectValue placeholder="Select category" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="IMM + ACC">IMM + ACC</SelectItem>
+                                        <SelectItem value="IMM">IMM</SelectItem>
+                                        <SelectItem value="ACC">ACC</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                        </div>
+                        <DialogFooter className="flex justify-between space-x-2">
+                            <div className="flex space-x-2">
+                                {!company.is_locked && <Button onClick={handleSave}>Save changes</Button>}
+                                <Button variant="outline" onClick={() => onLockToggle(company.id)}>
+                                    {company.is_locked ? 'Unlock Profile' : 'Lock Profile'}
+                                </Button>
+                            </div>
+                            <Button 
+                                variant="destructive" 
+                                onClick={() => setShowDeleteConfirm(true)}
+                                disabled={company.is_locked}
+                            >
+                                Delete
+                            </Button>
+                        </DialogFooter>
+                    </>
+                ) : (
+                    <>
+                        <DialogHeader>
+                            <DialogTitle>Confirm Delete</DialogTitle>
+                            <DialogDescription>
+                                Are you sure you want to delete {company.company_name}? This action cannot be undone.
+                            </DialogDescription>
+                        </DialogHeader>
+                        <div className="flex justify-end space-x-2 mt-4">
+                            <Button variant="outline" onClick={() => setShowDeleteConfirm(false)}>
+                                Cancel
+                            </Button>
+                            <Button variant="destructive" onClick={handleDelete}>
+                                Delete Company
+                            </Button>
+                        </div>
+                    </>
+                )}
             </DialogContent>
         </Dialog>
     );
 };
-
 
 const StatusBadge = ({ status }) => {
     if (!status) {
@@ -205,6 +242,24 @@ export default function CompanyListTable() {
         }
     };
 
+    const deleteCompany = async (companyId) => {
+        try {
+            const { error } = await supabase
+                .from('companyMainList')
+                .delete()
+                .eq('id', companyId);
+    
+            if (error) throw error;
+            
+            toast.success('Company deleted successfully');
+            fetchCompanies(); // Refresh the list
+        } catch (error) {
+            console.error('Error deleting company:', error);
+            toast.error('Failed to delete company');
+        }
+    };
+    
+
     const toggleLock = async (companyId) => {
         const companyToUpdate = companies.find(c => c.id === companyId);
         if (!companyToUpdate) return;
@@ -213,7 +268,7 @@ export default function CompanyListTable() {
         await upsertCompany(updatedCompany);
     };
 
-    const columns = [
+    const columns = useMemo(() => [
         columnHelper.accessor('index', {
             cell: info => info.row.index + 1,
             header: '#',
@@ -241,6 +296,7 @@ export default function CompanyListTable() {
                         company={info.row.original}
                         onSave={upsertCompany}
                         onLockToggle={toggleLock}
+                        onDelete={deleteCompany}
                     />
                     <Button
                         variant="ghost"
@@ -258,7 +314,7 @@ export default function CompanyListTable() {
             ),
             header: 'Actions',
         }),
-    ];
+    ], [upsertCompany, toggleLock, deleteCompany]);
 
     const table = useReactTable({
         data: companies,
@@ -306,6 +362,9 @@ export default function CompanyListTable() {
         link.click();
         URL.revokeObjectURL(url);
     };
+
+    
+
 
     return (
         <div>
