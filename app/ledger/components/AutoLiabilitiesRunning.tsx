@@ -87,7 +87,7 @@ export function AutoLiabilitiesRunning({ onComplete }) {
     return (
         <Card className="w-full">
             <CardHeader>
-                <CardTitle>Auto Liabilities Extraction in Progress</CardTitle>
+                <CardTitle>Auto Ledger Extraction in Progress</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
                 <Progress value={progress} className="w-full" />

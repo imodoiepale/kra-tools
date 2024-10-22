@@ -49,17 +49,21 @@ export function AutoLiabilitiesReports() {
         selectedCompanies: [],
         exportFormat: 'single_workbook'
     });
-
+    const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState(null);
+    
     useEffect(() => {
         fetchResults();
     }, []);
 
     const fetchResults = async () => {
+        setIsLoading(true);
+        setError(null);
         try {
             const { data, error } = await supabase
                 .from('liability_extractions')
                 .select('*')
-                .order('id', { ascending: true });
+                .order('updated_at', { ascending: true });
 
             if (error) throw error;
             setData(data);
@@ -68,7 +72,9 @@ export function AutoLiabilitiesReports() {
             }
         } catch (error) {
             console.error('Error fetching results:', error);
-            alert('Failed to fetch results. Please try again.');
+            setError('Failed to fetch results. Please try again.');
+        } finally {
+            setIsLoading(false);
         }
     };
 
@@ -116,7 +122,7 @@ export function AutoLiabilitiesReports() {
             },
         },
         {
-            accessorKey: 'extraction_date',
+            accessorKey: 'updated_at',
             header: ({ column }) => {
                 return (
                     <Button
@@ -128,7 +134,7 @@ export function AutoLiabilitiesReports() {
                     </Button>
                 )
             },
-            cell: ({ row }) => new Date(row.getValue('extraction_date')).toLocaleString(),
+            cell: ({ row }) => new Date(row.getValue('updated_at')).toLocaleString(),
         },
         {
             accessorKey: 'income_tax',
@@ -365,7 +371,7 @@ export function AutoLiabilitiesReports() {
                 table.getRowModel().rows.forEach((row, index) => {
                     const rowData = columns.map(col => {
                         if (col.accessorKey === 'index') return index + 1;
-                        if (col.accessorKey === 'extraction_date') return new Date(row.original.extraction_date).toLocaleString();
+                        if (col.accessorKey === 'updated_at') return new Date(row.original.updated_at).toLocaleString();
                         if (['income_tax', 'vat', 'paye'].includes(col.accessorKey)) {
                             return formatAmount(calculateTotal(row.original, col.accessorKey));
                         }

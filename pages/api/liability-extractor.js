@@ -84,7 +84,6 @@ async function loginToKRA(page, company) {
     }
 }
 
-
 async function extractTableData(page, selector) {
     const table = await page.$(selector);
     if (!table) return null;
@@ -175,79 +174,82 @@ async function findChromePath() {
     return null;
 }
 
+async function processCompany(page, company, updateProgressCallback) {
+    try {
+      await updateProgressCallback(company.company_name, 10);
+      await loginToKRA(page, company);
+      await updateProgressCallback(company.company_name, 30);
+      
+      await page.hover("#ddtopmenubar > ul > li:nth-child(6) > a");
+      await page.evaluate(() => {
+        showPaymentRegForm();
+      });
+      await updateProgressCallback(company.company_name, 50);
+  
+      await page.click("#openPayRegForm");
+      page.once("dialog", dialog => {
+        dialog.accept().catch(() => { });
+      });
+      await page.click("#openPayRegForm");
+      page.once("dialog", dialog => {
+        dialog.accept().catch(() => { });
+      });
+      await updateProgressCallback(company.company_name, 80);
+  
+      const liabilityData = await extractLiabilities(page, company);
+      await storeLiabilityData(company, liabilityData);
+      await updateProgressCallback(company.company_name, 100, 'completed');
+  
+      await page.evaluate(() => {
+        logOutUser();
+      });
+      await page.waitForLoadState("load");
+      await page.reload();
+      
+    } catch (error) {
+      console.error(`Error processing ${company.company_name}:`, error);
+      await updateProgressCallback(company.company_name, 'error');
+    }
+  }
+  async function updateProgress(companyName, percentComplete, status = 'running') {
+    currentCompany = companyName;
+    progress = percentComplete;
+    
+    await supabase
+        .from('liability_extractions')
+        .update({ 
+            status: status,
+            progress: percentComplete,
+            updated_at: new Date().toISOString()
+        })
+        .eq('company_name', companyName);
+}
+
+
 
 async function runAutomation(companyIds, updateProgressCallback) {
-    const data = await readSupabaseData();
-
+    const data = await readSupabaseData(companyIds);
     const chromePath = await findChromePath();
     if (!chromePath) {
-        throw new Error('Chrome executable not found');
+      throw new Error('Chrome executable not found');
     }
-
-
-    const filteredData = companyIds ? data.filter(company => companyIds.includes(company.id)) : data;
-    const totalCompanies = filteredData.length;
-
-    for (let i = 0; i < filteredData.length; i++) {
-        const company = filteredData[i];
-        updateProgressCallback(company.company_name, Math.round((i / totalCompanies) * 100));
-
-        if (!company.kra_pin || !(company.kra_pin.startsWith("P") || company.kra_pin.startsWith("A"))) {
-            console.log(`Skipping ${company.company_name}: Invalid KRA PIN`);
-            continue;
-        }
-
-        if (company.kra_itax_current_password === null) {
-            console.log(`Skipping ${company.company_name}: Password is null`);
-            continue;
-        }
-
-        const browser = await chromium.launch({
-            headless: false,
-            executablePath: chromePath
-        });
-        const context = await browser.newContext();
-
-
-        const page = await context.newPage();
-
-        try {
-            await loginToKRA(page, company);
-            await page.hover("#ddtopmenubar > ul > li:nth-child(6) > a");
-
-            await page.evaluate(() => {
-                showPaymentRegForm();
-            });
-
-            await page.click("#openPayRegForm");
-            page.once("dialog", dialog => {
-                dialog.accept().catch(() => { });
-            });
-            await page.click("#openPayRegForm");
-            page.once("dialog", dialog => {
-                dialog.accept().catch(() => { });
-            });
-
-            const liabilityData = await extractLiabilities(page, company);
-            await storeLiabilityData(company, liabilityData);
-
-            await page.evaluate(() => {
-                logOutUser();
-            });
-            await page.waitForLoadState("load");
-            await page.reload();
-        } catch (error) {
-            console.error(`Error processing ${company.company_name}:`, error);
-        } finally {
-            await page.close();
-            await context.close();
-            await browser.close();
-        }
+  
+    const browser = await chromium.launch({
+      headless: false,
+      executablePath: chromePath
+    });
+    const context = await browser.newContext();
+    const page = await context.newPage();
+  
+    for (const company of data) {
+      if (!isRunning) break;
+      await processCompany(page, company, updateProgressCallback);
     }
-
-   
-    updateProgressCallback('', 100);
-}
+  
+    await context.close();
+    await browser.close();
+  }
+  
 
 export default async function handler(req, res) {
     const { action, companyIds, runOption } = req.body; // Make sure runOption is being received
@@ -260,30 +262,50 @@ export default async function handler(req, res) {
             isRunning = true;
             progress = 0;
             let companiesToProcess = [];
-
+        
             if (runOption === 'all') {
-                // Fetch all companies from the database
                 const { data, error } = await supabase
                     .from('company_MAIN')
                     .select('id');
-
+        
                 if (error) {
                     isRunning = false;
                     return res.status(500).json({ error: 'Failed to fetch companies' });
                 }
-
-                // Log the fetched companies
-                console.log('Fetched all companies:', data);
-
+        
                 companiesToProcess = data.map(company => company.id);
             } else {
                 companiesToProcess = companyIds;
-
-                // Log the selected companies
-                console.log('Selected companies:', companiesToProcess);
             }
+        
+            // Update status for all companies to 'pending'
+            await supabase
+                .from('liability_extractions')
+                .update({ status: 'pending', progress: 0 })
+                .in('company_name', companiesToProcess.map(id => id.toString()));
+        
+                runAutomation(companiesToProcess, updateProgress)
+                .then(() => {
+                  isRunning = false;
+                })
+                .catch((error) => {
+                  isRunning = false;
+                  console.error('Automation error:', error);
+                });
+              return res.status(200).json({ message: 'Automation started', companiesCount: companiesToProcess.length });
+        
+        case 'resume':
+            const { company, lastProgress } = req.body;
+            isRunning = true;
+            progress = lastProgress;
+            currentCompany = company;
 
-            runAutomation(companiesToProcess, updateProgress)
+            await supabase
+                .from('liability_extractions')
+                .update({ status: 'running', progress: lastProgress })
+                .eq('company_name', company);
+
+            runAutomation([company], updateProgress)
                 .then(() => {
                     isRunning = false;
                     progress = 100;
@@ -293,14 +315,40 @@ export default async function handler(req, res) {
                     console.error('Automation error:', error);
                 });
 
-            return res.status(200).json({ message: 'Automation started', companiesCount: companiesToProcess.length });
+            return res.status(200).json({ message: 'Extraction resumed' });
 
-        case 'stop':
-            isRunning = false;
-            return res.status(200).json({ message: 'Automation stopped' });
+            case 'stop':
+                isRunning = false;
+                await supabase
+                    .from('liability_extractions')
+                    .update({ status: 'stopped', updated_at: new Date().toISOString() })
+                    .eq('status', 'running');
+                return res.status(200).json({ message: 'Automation stopped' });
+            
 
-        case 'progress':
-            return res.status(200).json({ isRunning, progress, currentCompany });
+       
+    case 'progress':
+        const { data: progressData, error: progressError } = await supabase
+          .from('liability_extractions')
+          .select('*')
+          .order('updated_at', { ascending: false });
+  
+        if (progressError) {
+          return res.status(500).json({ error: 'Failed to fetch progress data' });
+        }
+  
+        return res.status(200).json({
+          isRunning,
+          progress,
+          currentCompany,
+          logs: progressData.map(item => ({
+            company: item.company_name,
+            status: item.status,
+            progress: item.progress,
+            timestamp: item.updated_at
+          }))
+        });
+  
 
         case 'getResults':
             const { data, error } = await supabase
@@ -316,9 +364,4 @@ export default async function handler(req, res) {
         default:
             return res.status(400).json({ error: 'Invalid action' });
     }
-}
-
-function updateProgress(companyName, percentComplete) {
-    currentCompany = companyName;
-    progress = percentComplete;
 }

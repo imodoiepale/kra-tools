@@ -48,25 +48,6 @@ async function readSupabaseData() {
   }
 }
 
-async function saveLedgerDataToDB(companyName, ledgerData) {
-  try {
-    const { data, error } = await supabase
-      .from("ledger_extractions")
-      .upsert({
-        company_name: companyName,
-        ledger_data: ledgerData,
-        extraction_date: new Date().toISOString()
-      });
-
-    if (error) {
-      throw new Error(`Error saving ledger data to database: ${error.message}`);
-    }
-    console.log(`Successfully saved ledger data for ${companyName}`);
-  } catch (error) {
-    console.error("Error saving ledger data:", error);
-  }
-}
-
 function highlightCells(row, startCol, endCol, color, bold = false) {
   for (let col = startCol.charCodeAt(0); col <= endCol.charCodeAt(0); col++) {
     const cell = row.getCell(String.fromCharCode(col));

@@ -64,7 +64,7 @@ const fetchResults = async () => {
             const { data, error } = await supabase
                 .from('ledger_extractions')
                 .select('*')
-                .order('updated_at', { ascending: false });
+                .order('id', { ascending: true });
 
             if (error) throw error;
             setData(data);
