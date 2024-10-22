@@ -207,7 +207,7 @@ const FileViewer = ({ url, fileType, title }) => {
                     View
                 </Button>
             </DialogTrigger>
-            <DialogContent className="w-full max-w-5xl max-h-[90vh]">
+            <DialogContent className="w-full max-w-8xl max-h-[95vh]">
                 <DialogHeader>
                     <DialogTitle>{title}</DialogTitle>
                 </DialogHeader>

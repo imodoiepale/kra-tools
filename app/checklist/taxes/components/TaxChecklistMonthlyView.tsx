@@ -1074,7 +1074,7 @@ export default function TaxChecklistMonthlyView({ companies, checklist: initialC
             </ScrollArea>
 
             <Dialog open={showReminderDialog} onOpenChange={setShowReminderDialog}>
-                <DialogContent className="max-w-7xl max-h-[80vh] overflow-hidden flex flex-col">
+                <DialogContent className="max-w-8xl max-h-[90vh] overflow-hidden flex flex-col">
                     <motion.div
                         initial={{ opacity: 0, y: -20 }}
                         animate={{ opacity: 1, y: 0 }}
@@ -1165,6 +1165,9 @@ export default function TaxChecklistMonthlyView({ companies, checklist: initialC
                                             <TableRow>
                                                 <TableHead className="sticky top-0 bg-white w-[60px]">#</TableHead>
                                                 <TableHead className="sticky top-0 bg-white">Company Name</TableHead>
+                                                <TableHead className="sticky top-0 bg-white">Primary Director Name</TableHead>
+                                                <TableHead className="sticky top-0 bg-white">Communication Email</TableHead>
+                                                <TableHead className="sticky top-0 bg-white">Mobile Number</TableHead>
                                                 <TableHead className="sticky top-0 bg-white w-[100px]">Action</TableHead>
                                             </TableRow>
                                         </TableHeader>
@@ -1173,6 +1176,15 @@ export default function TaxChecklistMonthlyView({ companies, checklist: initialC
                                                 <TableRow key={clientName}>
                                                     <TableCell className=" font-medium">{index + 1}</TableCell>
                                                     <TableCell>{clientName}</TableCell>
+                                                    <TableCell>
+                                                        {/* {client.primary_director_name} */}
+                                                        </TableCell>
+                                                    <TableCell>
+                                                        {/* {client.communication_email} */}
+                                                        </TableCell>
+                                                    <TableCell>
+                                                        {/* {client.mobile_number} */}
+                                                        </TableCell>
                                                     <TableCell>
                                                         <Button
                                                             variant="ghost"
