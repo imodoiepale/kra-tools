@@ -7,10 +7,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { ArrowUpDown, Download, MoreHorizontal, RefreshCw, Upload, Search } from "lucide-react";
+import { ArrowUpDown, Download, MoreHorizontal, RefreshCw, Upload, Search, Eye } from "lucide-react";
 import * as ExcelJS from 'exceljs';
 import { createClient } from '@supabase/supabase-js';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import FileViewer from '@/components/FileViewer';
+
+
 
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!);
 const STORAGE_BUCKET = 'pentasoft-reports';
@@ -61,6 +64,9 @@ export function PentasoftExtractionReports() {
     const [filesPreviews, setFilesPreviews] = useState<FilePreview[]>([]);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [companySearchTerm, setCompanySearchTerm] = useState('');
+    const [previewDialogOpen, setPreviewDialogOpen] = useState(false);
+    const [previewFile, setPreviewFile] = useState<ExtractionFile | null>(null);
+
 
     useEffect(() => {
         fetchReports();
@@ -142,27 +148,54 @@ export function PentasoftExtractionReports() {
 
     const renderFileButton = (files: ExtractionFile[] | ExtractionRecord['files'], type: string) => {
         let file: ExtractionFile | undefined;
-
+    
         if (Array.isArray(files)) {
-            // This is for the detailed view
             file = files.find(f => f.name.includes(type));
         } else {
-            // This is for the summary view
             file = findFile(files, type);
         }
-
+    
         if (!file) return <span className="text-red-500 font-bold">Missing</span>;
+    
+        const fileType = file.name.split('.').pop().toLowerCase();
+        const supportedTypes = ['excel', 'xls', 'xlsx', 'zip', 'csv'];
+    
         return (
-            <Button
-                variant="outline"
-                size="sm"
-                onClick={() => window.open(file.fullPath, '_blank')}
-            >
-                <Download className="mr-1 h-3 w-3" />
-                Download
-            </Button>
+            <FileViewer
+                url={file.fullPath}
+                fileType={fileType}
+                title={file.name}
+            />
         );
     };
+    
+
+    const PreviewDialog = ({ file, isOpen, onClose }) => {
+        const fileType = file?.name.split('.').pop().toLowerCase();
+
+        return (
+            <Dialog open={isOpen} onOpenChange={onClose}>
+                <DialogContent className="max-w-4xl">
+                    <DialogHeader>
+                        <DialogTitle>{file?.name}</DialogTitle>
+                    </DialogHeader>
+                    <div className="mt-4 h-[70vh]">
+                        <FileViewer
+                            fileType={fileType}
+                            filePath={file?.fullPath}
+                        />
+                    </div>
+                    <DialogFooter>
+                        <Button onClick={() => window.open(file?.fullPath, '_blank')}>
+                            <Download className="mr-1 h-4 w-4" />
+                            Download
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+        );
+    };
+
 
     const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
         const files = event.target.files;
@@ -416,6 +449,11 @@ export function PentasoftExtractionReports() {
                         </Table>
                     </ScrollArea>
                 </div>
+                <PreviewDialog
+                    file={previewFile}
+                    isOpen={previewDialogOpen}
+                    onClose={() => setPreviewDialogOpen(false)}
+                />
             </TabsContent>
             <TabsContent value="detailed">
                 <div className="flex space-x-8 mb-4">
@@ -434,8 +472,8 @@ export function PentasoftExtractionReports() {
                                 <React.Fragment key={report.id}>
                                     <div
                                         className={`p-2 cursor-pointer transition-colors duration-200 text-xs uppercase ${selectedCompany?.id === report.id
-                                                ? 'bg-blue-500 text-white font-bold'
-                                                : 'hover:bg-blue-100'
+                                            ? 'bg-blue-500 text-white font-bold'
+                                            : 'hover:bg-blue-100'
                                             }`}
                                         onClick={() => setSelectedCompany(report)}
                                     >

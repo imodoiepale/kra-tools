@@ -1012,6 +1012,7 @@ export default function TaxChecklistMonthlyView({ companies, checklist: initialC
                         <Switch
                             checked={showTotals}
                             onCheckedChange={setShowTotals}
+                            className="data-[state=checked]:bg-green-500"
                         />
                     </div>
                     <Button onClick={exportToExcel}>
