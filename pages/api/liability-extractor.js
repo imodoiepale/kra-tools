@@ -195,20 +195,6 @@ async function processCompany(page, company, updateProgressCallback) {
   
         const liabilityData = await extractLiabilities(page, company);
         
-        // Store current extraction in history before updating current
-        const { error: historyError } = await supabase
-            .from('liability_extractions_history')
-            .insert({
-                company_name: company.company_name,
-                liability_data: liabilityData,
-                extraction_date: new Date().toISOString()
-            });
-
-        if (historyError) {
-            console.error('Error storing extraction history:', historyError);
-        }
-
-        // Update current extraction
         await storeLiabilityData(company, liabilityData);
         await updateProgressCallback(company.company_name, 100, 'completed');
   
@@ -220,26 +206,40 @@ async function processCompany(page, company, updateProgressCallback) {
         
     } catch (error) {
         console.error(`Error processing ${company.company_name}:`, error);
-        
-        // Store error in liability_extractions table
+
+        // Store detailed error information
         const { error: updateError } = await supabase
             .from('liability_extractions')
-            .update({ 
-                status: 'error',
+            .upsert({
+                company_name: company.company_name,
+                status: 'skipped',
                 progress: 0,
                 liability_data: {
                     error: error.message,
-                    timestamp: new Date().toISOString()
-                }
-            })
-            .eq('company_name', company.company_name);
+                    timestamp: new Date().toISOString(),
+                    details: 'Company skipped due to extraction error'
+                },
+                updated_at: new Date().toISOString()
+            }, {
+                onConflict: 'company_name'
+            });
 
-        if (updateError) {
-            console.error('Error updating liability extraction with error:', updateError);
-        }
+        // Store in history table
+        await supabase
+            .from('liability_extractions_history')
+            .insert({
+                company_name: company.company_name,
+                status: 'error',
+                error_message: error.message,
+                extraction_date: new Date().toISOString()
+            });
 
-        await updateProgressCallback(company.company_name, 0, 'error');
-        throw error; // Re-throw to handle in parent
+        // Reset page state for next company
+        await page.goto("https://itax.kra.go.ke/KRA-Portal/");
+        await updateProgressCallback(company.company_name, 0, 'skipped');
+        
+        // Continue with next company
+        return;
     }
 }
 

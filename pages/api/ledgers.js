@@ -215,7 +215,7 @@ async function extractTableData(page, worksheet, company) {
       }).filter(row => row.length > 0 && row.some(cell => cell !== "")); // Filter out empty rows
     });
 
-    console.log("Extracted table content:", sectionB2TableContent); // Debug log
+    // console.log("Extracted table content:", sectionB2TableContent); // Debug log
 
     if (!sectionB2TableContent || sectionB2TableContent.length <= 1) {
       console.log("No records found for", company.company_name);
@@ -274,7 +274,6 @@ async function extractTableData(page, worksheet, company) {
       })
       .filter(Boolean); // Remove null entries
 
-    console.log("Processed ledger data:", ledgerData); // Debug log
 
     // Save to database with retry logic
     let retryCount = 0;
@@ -419,10 +418,37 @@ async function processCompany(page, company, worksheet, downloadFolderPath) {
   } catch (error) {
     console.error(`Error processing company ${company.company_name}:`, error);
     await updateExtractionStatus(company.company_name, 'error', 0);
-    throw error;
-  }
-}
+  // Update database with error details
+  await supabase.from("ledger_extractions")
+  .upsert({
+    company_name: company.company_name,
+    status: 'error',
+    progress: 0,
+    error_message: error.message,
+    updated_at: new Date().toISOString()
+  }, {
+    onConflict: 'company_name'
+  });
 
+// Add error information to worksheet
+const companyNameRow = worksheet.addRow([
+  "",
+  `${company.company_name}`,
+  `Extraction Date: ${getFormattedDateTime()}`
+]);
+highlightCells(companyNameRow, "B", "O", "FFADD8E6", true);
+
+const errorRow = worksheet.addRow(["", "", `ERROR: ${error.message}`]);
+highlightCells(errorRow, "C", "O", "FFFF0000");
+worksheet.addRow();
+
+// Reload page to clean state for next company
+await page.goto("https://itax.kra.go.ke/KRA-Portal/");
+
+// Don't throw error - let it continue with next company
+return;
+}
+}
 async function processCompanies(runOption, selectedIds, startProgress = 0, existingLogs = []) {
   const downloadFolderPath = await createDownloadFolder();
   let data = await readSupabaseData();
@@ -474,24 +500,114 @@ export default async function handler(req, res) {
 
   try {
     switch (action) {
-      case "start":
+      case 'start':
+        if (stopRequested) {
+          return res.status(400).json({ error: 'Extraction is already running' });
+        }
         stopRequested = false;
+        let companiesToProcess = [];
+        
+        if (runOption === 'all') {
+          const { data, error } = await supabase
+            .from('company_MAIN')
+            .select('id');
+        
+          if (error) {
+            stopRequested = false;
+            return res.status(500).json({ error: 'Failed to fetch companies' });
+          }
+        
+          companiesToProcess = data.map(company => company.id);
+        } else {
+          companiesToProcess = selectedIds;
+        }
+        
+        // Update status for all companies to be processed
+        await supabase
+          .from('ledger_extractions')
+          .update({ 
+            status: 'pending', 
+            progress: 0,
+            updated_at: new Date().toISOString()
+          })
+          .in('company_name', companiesToProcess.map(id => id.toString()));
+        
         // Start processing in background
-        processCompanies(runOption, selectedIds).catch(console.error);
-        return res.status(200).json({ message: "Extraction started." });
+        processCompanies(runOption, companiesToProcess)
+          .then(() => {
+            stopRequested = false;
+          })
+          .catch((error) => {
+            stopRequested = false;
+            console.error('Extraction error:', error);
+          });
+
+        return res.status(200).json({ 
+          message: 'Extraction started', 
+          companiesCount: companiesToProcess.length 
+        });
       
+      case 'resume':
+        try {
+          const { company, lastProgress, companyId } = req.body;
+          
+          // Validate required fields
+          if (!company) {
+            return res.status(400).json({ error: 'Company name is required' });
+          }
+          
+          // Reset stop flag
+          stopRequested = false;
+          
+          // Update database status
+          await supabase
+            .from('ledger_extractions')
+            .update({ 
+              status: 'running',
+              progress: lastProgress || 0,
+              updated_at: new Date().toISOString()
+            })
+            .eq('company_name', company);
+          
+          // Start extraction with single company
+          const companyToProcess = companyId ? [companyId] : 
+            (await supabase
+              .from('company_MAIN')
+              .select('id')
+              .eq('company_name', company)
+              .single())?.data?.id;
+              
+          if (!companyToProcess) {
+            throw new Error('Company not found in database');
+          }
+          
+          // Run extraction in background
+          processCompanies(runOption, [companyToProcess], lastProgress)
+            .then(() => {
+              stopRequested = false;
+            })
+            .catch((error) => {
+              stopRequested = false;
+              console.error('Extraction error:', error);
+            });
+          
+          return res.status(200).json({ 
+            message: 'Extraction resumed',
+            company,
+            progress: lastProgress || 0
+          });
+          
+        } catch (error) {
+          stopRequested = false;
+          console.error('Resume error:', error);
+          return res.status(500).json({ 
+            error: error.message || 'Failed to resume extraction'
+          });
+        }
+
       case "stop":
         stopRequested = true;
         return res.status(200).json({ message: "Extraction stop requested." });
-      
-      case 'resume':
-        const { company, lastProgress } = req.body;
-        stopRequested = false;
-        
-        await updateExtractionStatus(company, 'running', lastProgress);
-        // Resume processing
-        processCompanies(runOption, selectedIds, lastProgress).catch(console.error);
-        return res.status(200).json({ message: "Extraction resumed." });
       
       case 'progress':
         // Fetch current progress from database
