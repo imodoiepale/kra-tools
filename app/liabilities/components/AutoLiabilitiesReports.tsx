@@ -23,12 +23,13 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Download, Search, ArrowUpDown, Send } from 'lucide-react';
+import { Download, Search, ArrowUpDown, Send, AlertCircle } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 
@@ -41,90 +42,76 @@ export function AutoLiabilitiesReports() {
         pageIndex: 0,
         pageSize: 100,
     });
+
+    const TAX_TYPES = ['income_tax', 'vat', 'paye', 'mri', 'tot'];
     const [selectedCompanies, setSelectedCompanies] = useState([]);
     const [exportOptions, setExportOptions] = useState({
         view: 'summary',
-        taxTypes: ['income_tax', 'vat', 'paye'],
         companyOption: 'all',
+        taxTypes: TAX_TYPES,
         selectedCompanies: [],
         exportFormat: 'single_workbook'
     });
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState(null);
     const [extractionHistory, setExtractionHistory] = useState({});
+
     useEffect(() => {
+        const fetchResults = async () => {
+            setIsLoading(true);
+            setError(null);
+            try {
+                // Fetch current extractions
+                const { data: currentData, error: currentError } = await supabase
+                    .from('liability_extractions')
+                    .select('*')
+                    .order('id', { ascending: false });
+
+                if (currentError) throw currentError;
+
+                // Fetch historical extractions
+                const { data: historyData, error: historyError } = await supabase
+                    .from('liability_extractions_history')
+                    .select('*')
+                    .order('id', { ascending: false });
+
+                if (historyError) throw historyError;
+
+                // Organize historical data by company
+                const history = historyData.reduce((acc, record) => {
+                    if (!acc[record.company_name]) {
+                        acc[record.company_name] = [];
+                    }
+                    acc[record.company_name].push(record);
+                    return acc;
+                }, {});
+
+                setData(currentData);
+                setExtractionHistory(history);
+                if (currentData.length > 0) {
+                    setSelectedCompany(currentData[0]);
+                }
+            } catch (error) {
+                console.error('Error fetching data:', error);
+                setError('Failed to fetch results. Please try again.');
+            } finally {
+                setIsLoading(false);
+            }
+        };
+
         fetchResults();
     }, []);
 
-    const fetchResults = async () => {
-        setIsLoading(true);
-        setError(null);
-        try {
-            // Fetch current extractions
-            const { data: currentData, error: currentError } = await supabase
-                .from('liability_extractions')
-                .select('*')
-                .order('updated_at', { ascending: false });
-    
-            if (currentError) throw currentError;
-    
-            // Fetch historical extractions
-            const { data: historyData, error: historyError } = await supabase
-                .from('liability_extractions_history')
-                .select('*')
-                .order('extraction_date', { ascending: false });
-    
-            if (historyError) throw historyError;
-    
-            // Organize historical data by company
-            const history = historyData.reduce((acc, record) => {
-                if (!acc[record.company_name]) {
-                    acc[record.company_name] = [];
-                }
-                acc[record.company_name].push(record);
-                return acc;
-            }, {});
-    
-            setData(currentData);
-            setExtractionHistory(history);
-            if (currentData.length > 0) {
-                setSelectedCompany(currentData[0]);
-            }
-        } catch (error) {
-            console.error('Error fetching data:', error);
-            setError('Failed to fetch results. Please try again.');
-        } finally {
-            setIsLoading(false);
-        }
-    };
-
     const calculateTotal = (item, taxType) => {
         try {
-            // Add null checks for item and liability_data
-            if (!item || !item.liability_data) {
+            if (!item || !item.liability_data || !item.liability_data[taxType] || !item.liability_data[taxType].rows) {
                 return 0;
             }
-    
-            // Add null check for specific tax type data
-            const taxData = item.liability_data[taxType];
-            if (!taxData || !taxData.rows || !Array.isArray(taxData.rows)) {
-                return 0;
-            }
-    
-            // Calculate total with additional validation
-            return taxData.rows.reduce((sum, row) => {
-                // Ensure row is an array and has the expected length
+            return item.liability_data[taxType].rows.reduce((sum, row) => {
                 if (!Array.isArray(row) || row.length < 9) {
                     return sum;
                 }
-    
-                // Safely parse the amount value
-                const amountStr = row[8];
-                if (typeof amountStr !== 'string') {
-                    return sum;
-                }
-    
-                const amountToPay = parseFloat(amountStr.replace(/[^0-9.-]+/g, "") || 0);
+                const amountToPay = parseFloat(row[8].replace(/[^0-9.-]+/g, "") || 0);
                 return sum + (isNaN(amountToPay) ? 0 : amountToPay);
             }, 0);
         } catch (error) {
@@ -133,11 +120,27 @@ export function AutoLiabilitiesReports() {
         }
     };
 
-
     const formatAmount = (amount) => {
         return `Ksh ${amount.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
     };
-
+    const renderErrorAlert = (data) => {
+        if (data.status === 'error' && data.liability_data?.error) {
+            return (
+                <Alert variant="destructive" className="mb-4">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertTitle>Extraction Error</AlertTitle>
+                    <AlertDescription>
+                        {data.liability_data.error}
+                        <br />
+                        <span className="text-sm opacity-70">
+                            Occurred at: {new Date(data.liability_data.timestamp).toLocaleString()}
+                        </span>
+                    </AlertDescription>
+                </Alert>
+            );
+        }
+        return null;
+    };
     const columns = useMemo(() => [
         {
             accessorKey: 'index',
@@ -173,60 +176,28 @@ export function AutoLiabilitiesReports() {
             },
             cell: ({ row }) => new Date(row.getValue('updated_at')).toLocaleString(),
         },
-        {
-            accessorKey: 'income_tax',
+        ...TAX_TYPES.map(taxType => ({
+            accessorKey: taxType,
             header: ({ column }) => (
                 <Button
                     variant="ghost"
                     onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
                     className="justify-center"
                 >
-                    Income Tax
+                    {taxType === 'mri' ? 'Monthly Rental Income' :
+                        taxType === 'tot' ? 'Turnover Tax' :
+                            taxType.toUpperCase()}
                     <ArrowUpDown className="ml-2 h-4 w-4" />
                 </Button>
             ),
             cell: ({ row }) => {
-                const amount = calculateTotal(row.original, 'income_tax');
-                return <span className={`text-center ${amount > 0 ? 'text-red-500 font-bold' : 'text-green-500'}`}>{formatAmount(amount)}</span>;
+                const amount = calculateTotal(row.original, taxType);
+                return <span className={`text-center ${amount > 0 ? 'text-red-500 font-bold' : 'text-green-500'}`}>
+                    {formatAmount(amount)}
+                </span>;
             },
-            sortingFn: (rowA, rowB) => calculateTotal(rowA.original, 'income_tax') - calculateTotal(rowB.original, 'income_tax'),
-        },
-        {
-            accessorKey: 'vat',
-            header: ({ column }) => (
-                <Button
-                    variant="ghost"
-                    onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-                    className="justify-center"
-                >
-                    VAT
-                    <ArrowUpDown className="ml-2 h-4 w-4" />
-                </Button>
-            ),
-            cell: ({ row }) => {
-                const amount = calculateTotal(row.original, 'vat');
-                return <span className={`text-center ${amount > 0 ? 'text-red-500 font-bold' : 'text-green-500'}`}>{formatAmount(amount)}</span>;
-            },
-            sortingFn: (rowA, rowB) => calculateTotal(rowA.original, 'vat') - calculateTotal(rowB.original, 'vat'),
-        },
-        {
-            accessorKey: 'paye',
-            header: ({ column }) => (
-                <Button
-                    variant="ghost"
-                    onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-                    className="justify-center"
-                >
-                    PAYE
-                    <ArrowUpDown className="ml-2 h-4 w-4" />
-                </Button>
-            ),
-            cell: ({ row }) => {
-                const amount = calculateTotal(row.original, 'paye');
-                return <span className={`text-center ${amount > 0 ? 'text-red-500 font-bold' : 'text-green-500'}`}>{formatAmount(amount)}</span>;
-            },
-            sortingFn: (rowA, rowB) => calculateTotal(rowA.original, 'paye') - calculateTotal(rowB.original, 'paye'),
-        },
+            sortingFn: (rowA, rowB) => calculateTotal(rowA.original, taxType) - calculateTotal(rowB.original, taxType),
+        }))
     ], []);
 
     const table = useReactTable({
@@ -291,194 +262,131 @@ export function AutoLiabilitiesReports() {
             </Table>
         </ScrollArea>
     );
+    const renderTaxTabs = () => (
+        <TabsList>
+            <TabsTrigger value="all">ALL</TabsTrigger>
+            {TAX_TYPES.map((taxType) => (
+                <TabsTrigger key={taxType} value={taxType}>
+                    {taxType === 'mri' ? 'MONTHLY RENTAL INCOME' :
+                        taxType === 'tot' ? 'TURNOVER TAX' :
+                            taxType.toUpperCase()}
+                </TabsTrigger>
+            ))}
+        </TabsList>
+    );
+    const renderTaxContent = (data) => (
+        <TabsContent value="all">
+            <ScrollArea className="h-[500px]">
+                {TAX_TYPES.map((taxType) => (
+                    <div key={taxType}>
+                        <h3 className="text-lg font-semibold mt-4 mb-2">
+                            {taxType === 'mri' ? 'MONTHLY RENTAL INCOME' :
+                                taxType === 'tot' ? 'TURNOVER TAX' :
+                                    taxType.replace('_', ' ').toUpperCase()}
+                        </h3>
+                        {renderTaxTable(data, taxType)}
+                    </div>
+                ))}
+            </ScrollArea>
+        </TabsContent>
+    );
 
-    const renderDetailedView = () => (
-        <div className="grid grid-cols-4 gap-2 xs:gap-1">
-            <div className="col-span-1">
-                <ScrollArea className="h-[550px] xs:h-[300px] border rounded-lg">
-                    {data.map((company) => (
-                        <div
-                            key={company.id}
-                            onClick={() => setSelectedCompany(company)}
-                            className={`p-1 xs:p-0.5 text-xs cursor-pointer ${
-                                selectedCompany?.id === company.id ? 'bg-blue-500 text-white' : 'hover:bg-blue-100'
-                            }`}
-                        >
-                            {company.company_name}
+    // Update the CurrentExtraction Tab content
+    const renderCurrentExtractionTab = () => (
+        <TabsContent value="current">
+            <Tabs defaultValue="all">
+                {renderTaxTabs()}
+                {renderTaxContent(selectedCompany)}
+                {TAX_TYPES.map((taxType) => (
+                    <TabsContent key={taxType} value={taxType}>
+                        <ScrollArea className="h-[500px]">
+                            {renderTaxTable(selectedCompany, taxType)}
+                        </ScrollArea>
+                    </TabsContent>
+                ))}
+            </Tabs>
+        </TabsContent>
+    );
+
+    // Update the Previous Extractions Tab content
+    const renderPreviousExtractionsTab = () => (
+        <TabsContent value="previous">
+            {extractionHistory[selectedCompany.company_name]?.length > 0 ? (
+                <ScrollArea className="h-[500px]">
+                    {extractionHistory[selectedCompany.company_name].map((extraction, index) => (
+                        <div key={index} className="mb-8 border-b pb-4">
+                            <h3 className="text-lg font-semibold mb-4">
+                                Extraction from {new Date(extraction.extraction_date).toLocaleString()}
+                            </h3>
+                            <Tabs defaultValue="all">
+                                {renderTaxTabs()}
+                                {renderTaxContent(extraction)}
+                                {TAX_TYPES.map((taxType) => (
+                                    <TabsContent key={taxType} value={taxType}>
+                                        {renderTaxTable(extraction, taxType)}
+                                    </TabsContent>
+                                ))}
+                            </Tabs>
                         </div>
                     ))}
                 </ScrollArea>
-            </div>
-            <div className="col-span-3">
-                {selectedCompany ? (
-                    <Card>
-                        <CardHeader>
-                            <CardTitle>{selectedCompany.company_name}</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                            <Tabs defaultValue="current">
-                                <TabsList className="grid w-full grid-cols-2 mb-4">
-                                    <TabsTrigger value="current">Current Extraction</TabsTrigger>
-                                    <TabsTrigger value="previous">Previous Extractions</TabsTrigger>
-                                </TabsList>
-    
-                                {/* Current Extraction Tab */}
-                                <TabsContent value="current">
-                                    <Tabs defaultValue="all">
-                                        <TabsList>
-                                            <TabsTrigger value="all">ALL</TabsTrigger>
-                                            {['income_tax', 'vat', 'paye'].map((taxType) => (
-                                                <TabsTrigger key={taxType} value={taxType}>
-                                                    {taxType.replace('_', ' ').toUpperCase()}
-                                                </TabsTrigger>
-                                            ))}
-                                        </TabsList>
-    
-                                        <TabsContent value="all">
-                                            <ScrollArea className="h-[500px]">
-                                                {['income_tax', 'vat', 'paye'].map((taxType) => (
-                                                    <div key={taxType}>
-                                                        <h3 className="text-lg font-semibold mt-4 mb-2">
-                                                            {taxType.replace('_', ' ').toUpperCase()}
-                                                        </h3>
-                                                        {renderTaxTable(selectedCompany, taxType)}
-                                                    </div>
-                                                ))}
-                                            </ScrollArea>
-                                        </TabsContent>
-    
-                                        {['income_tax', 'vat', 'paye'].map((taxType) => (
-                                            <TabsContent key={taxType} value={taxType}>
-                                                <ScrollArea className="h-[500px]">
-                                                    {renderTaxTable(selectedCompany, taxType)}
-                                                </ScrollArea>
-                                            </TabsContent>
-                                        ))}
-                                    </Tabs>
-                                </TabsContent>
-    
-                                {/* Previous Extractions Tab */}
-                                <TabsContent value="previous">
-                                    {extractionHistory[selectedCompany.company_name]?.length > 0 ? (
-                                        <ScrollArea className="h-[500px]">
-                                            {extractionHistory[selectedCompany.company_name].map((extraction, index) => (
-                                                <div key={index} className="mb-8 border-b pb-4">
-                                                    <h3 className="text-lg font-semibold mb-4">
-                                                        Extraction from {new Date(extraction.extraction_date).toLocaleString()}
-                                                    </h3>
-                                                    <Tabs defaultValue="all">
-                                                        <TabsList>
-                                                            <TabsTrigger value="all">ALL</TabsTrigger>
-                                                            {['income_tax', 'vat', 'paye'].map((taxType) => (
-                                                                <TabsTrigger key={taxType} value={taxType}>
-                                                                    {taxType.replace('_', ' ').toUpperCase()}
-                                                                </TabsTrigger>
-                                                            ))}
-                                                        </TabsList>
-    
-                                                        <TabsContent value="all">
-                                                            <ScrollArea className="h-[500px]">
-                                                                {['income_tax', 'vat', 'paye'].map((taxType) => (
-                                                                    <div key={taxType}>
-                                                                        <h3 className="text-lg font-semibold mt-4 mb-2">
-                                                                            {taxType.replace('_', ' ').toUpperCase()}
-                                                                        </h3>
-                                                                        {renderTaxTable(extraction, taxType)}
-                                                                    </div>
-                                                                ))}
-                                                            </ScrollArea>
-                                                        </TabsContent>
-    
-                                                        {['income_tax', 'vat', 'paye'].map((taxType) => (
-                                                            <TabsContent key={taxType} value={taxType}>
-                                                                <ScrollArea className="h-[500px]">
-                                                                    {renderTaxTable(extraction, taxType)}
-                                                                </ScrollArea>
-                                                            </TabsContent>
-                                                        ))}
-                                                    </Tabs>
-                                                </div>
-                                            ))}
-                                        </ScrollArea>
-                                    ) : (
-                                        <div className="text-center py-8 text-gray-500">
-                                            No previous extractions found
-                                        </div>
-                                    )}
-                                </TabsContent>
-                            </Tabs>
-                        </CardContent>
-                    </Card>
-                ) : (
-                    <Card>
-                        <CardContent className="text-center py-8">
-                            <p className="text-gray-500">Select a company to view details</p>
-                        </CardContent>
-                    </Card>
-                )}
-            </div>
-        </div>
+            ) : (
+                <div className="text-center py-8 text-gray-500">
+                    No previous extractions found
+                </div>
+            )}
+        </TabsContent>
     );
-    
-    const renderTaxTable = (company, taxType) => {
-        // Return early if company or liability_data is null/undefined
-        if (!company || !company.liability_data) {
+    const renderTaxTable = (data, taxType) => {
+        // Check for error state first
+        if (data.status === 'error') {
+            return (
+                <Table>
+                    <TableBody>
+                        <TableRow>
+                            <TableCell colSpan={7} className="text-left text-red-500 bg-red-50 p-4">
+                                <div className="flex items-center gap-2">
+                                    <AlertCircle className="h-4 w-4" />
+                                    <div>
+                                        <div className="font-bold">Extraction Failed</div>
+                                        <div className="text-sm">{data.liability_data?.error || 'An error occurred during extraction'}</div>
+                                    </div>
+                                </div>
+                            </TableCell>
+                        </TableRow>
+                    </TableBody>
+                </Table>
+            );
+        }
+        if (!data?.liability_data?.[taxType]) {
             return (
                 <Table>
                     <TableBody>
                         <TableRow>
                             <TableCell colSpan={7} className="text-left uppercase font-bold text-yellow-500 bg-yellow-100">
-                                No data available for this company
+                                No data available for {taxType}
                             </TableCell>
                         </TableRow>
                     </TableBody>
                 </Table>
             );
         }
-    
-        // Get tax data with default empty values
-        const taxData = company.liability_data[taxType] || { headers: [], rows: [] };
-        const { headers = [], rows = [] } = taxData;
-        
-        // Calculate total with null check
-        const total = calculateTotal(company, taxType);
-        
-        // Filter out empty rows
-        const nonEmptyRows = rows.filter(row => 
-            Array.isArray(row) && row.some(cell => cell !== null && cell !== '')
-        );
-    
-        // Show message if no data available
-        if (total === 0 || nonEmptyRows.length === 0) {
-            return (
-                <Table>
-                    <TableBody>
-                        <TableRow>
-                            <TableCell colSpan={7} className="text-left uppercase font-bold text-green-500 bg-green-100">
-                                No records found for {taxType.replace('_', ' ')}
-                            </TableCell>
-                        </TableRow>
-                    </TableBody>
-                </Table>
-            );
-        }
-    
-        // Add extraction date information
-        const extractionDate = company.extraction_date || company.updated_at;
-    
+
+        const { headers = [], rows = [] } = data.liability_data[taxType];
+        const total = calculateTotal(data, taxType);
+        const nonEmptyRows = rows.filter(row => row.some(cell => cell !== null && cell !== ''));
+
         return (
             <div>
-                {extractionDate && (
-                    <div className="text-sm text-gray-500 mb-2">
-                        Extraction Date: {new Date(extractionDate).toLocaleString()}
-                    </div>
-                )}
+                <div className="text-sm text-gray-500 mb-2">
+                    Extraction Date: {new Date(data.extraction_date || data.updated_at).toLocaleString()}
+                </div>
                 <Table>
                     <TableHeader>
                         <TableRow>
                             <TableHead>#</TableHead>
                             {headers.map((header, index) => (
-                                <TableHead key={index}>{header || `Column ${index + 1}`}</TableHead>
+                                <TableHead key={index}>{header}</TableHead>
                             ))}
                         </TableRow>
                     </TableHeader>
@@ -487,9 +395,7 @@ export function AutoLiabilitiesReports() {
                             <TableRow key={rowIndex}>
                                 <TableCell>{rowIndex + 1}</TableCell>
                                 {row.map((cell, cellIndex) => (
-                                    <TableCell key={cellIndex}>
-                                        {cell || '-'}
-                                    </TableCell>
+                                    <TableCell key={cellIndex}>{cell}</TableCell>
                                 ))}
                             </TableRow>
                         ))}
@@ -503,7 +409,54 @@ export function AutoLiabilitiesReports() {
             </div>
         );
     };
-    
+
+    const renderDetailedView = () => (
+        <div className="grid grid-cols-4 gap-2 xs:gap-1">
+            <div className="col-span-1">
+                <ScrollArea className="h-[550px] xs:h-[300px] border rounded-lg">
+                    {data.map((company) => (
+                        <div
+                            key={company.id}
+                            onClick={() => setSelectedCompany(company)}
+                            className={`p-1 xs:p-0.5 text-xs cursor-pointer ${selectedCompany?.id === company.id
+                                    ? 'bg-blue-500 text-white'
+                                    : company.status === 'error'
+                                        ? 'bg-red-100 hover:bg-red-200'
+                                        : 'hover:bg-blue-100'
+                                }`}
+                        >
+                            {company.company_name}
+                            {company.status === 'error' && (
+                                <AlertCircle className="inline-block ml-1 h-3 w-3 text-red-500" />
+                            )}
+                        </div>
+                    ))}
+                </ScrollArea>
+            </div>
+            <div className="col-span-3">
+                {selectedCompany && (
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>{selectedCompany.company_name}</CardTitle>
+                            {renderErrorAlert(selectedCompany)}
+                        </CardHeader>
+                        <CardContent>
+                            <Tabs defaultValue="current">
+                                <TabsList className="grid w-full grid-cols-2 mb-4">
+                                    <TabsTrigger value="current">Current Extraction</TabsTrigger>
+                                    <TabsTrigger value="previous">Previous Extractions</TabsTrigger>
+                                </TabsList>
+
+                                {renderCurrentExtractionTab()}
+                                {renderPreviousExtractionsTab()}
+                            </Tabs>
+                        </CardContent>
+                    </Card>
+                )}
+            </div>
+        </div>
+    );
+
     const exportToExcel = async () => {
         try {
             const workbook = new ExcelJS.Workbook();
@@ -600,7 +553,7 @@ export function AutoLiabilitiesReports() {
                     </Select>
                     <div>
                         <h4 className="mb-2">Tax Types:</h4>
-                        {['income_tax', 'vat', 'paye'].map(type => (
+                        {TAX_TYPES.map(type => (
                             <div key={type} className="flex items-center space-x-2">
                                 <Checkbox
                                     id={type}
@@ -614,7 +567,11 @@ export function AutoLiabilitiesReports() {
                                         }))
                                     }}
                                 />
-                                <label htmlFor={type}>{type.toUpperCase()}</label>
+                                <label htmlFor={type}>
+                                    {type === 'mri' ? 'MONTHLY RENTAL INCOME' :
+                                        type === 'tot' ? 'TURNOVER TAX' :
+                                            type.toUpperCase()}
+                                </label>
                             </div>
                         ))}
                     </div>
