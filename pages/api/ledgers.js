@@ -5,7 +5,6 @@ import os from "os";
 import ExcelJS from "exceljs";
 import { createWorker } from 'tesseract.js';
 import { createClient } from "@supabase/supabase-js";
-import retry from "async-retry";
 
 // Constants
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -18,11 +17,6 @@ let stopRequested = false;
 function getFormattedDateTime() {
   const now = new Date();
   return `${now.getDate()}.${now.getMonth() + 1}.${now.getFullYear()}`;
-}
-
-function getFormattedDateTimeForExcel() {
-  const now = new Date();
-  return `${now.getDate()}/${now.getMonth() + 1}/${now.getFullYear()}`;
 }
 
 function getDownloadFolderPath() {
@@ -60,14 +54,6 @@ function highlightCells(row, startCol, endCol, color, bold = false) {
       cell.font = { bold: true };
     }
   }
-}
-
-function getMonthName(month) {
-  const months = [
-    "January", "February", "March", "April", "May", "June",
-    "July", "August", "September", "October", "November", "December"
-  ];
-  return months[month - 1];
 }
 
 async function solveCaptcha(page, downloadFolderPath) {

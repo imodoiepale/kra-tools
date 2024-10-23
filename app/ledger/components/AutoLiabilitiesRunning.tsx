@@ -14,77 +14,102 @@ export function AutoLiabilitiesRunning({ onComplete }) {
     const [logs, setLogs] = useState([]);
     const [currentCompany, setCurrentCompany] = useState('');
     const [status, setStatus] = useState('');
-
+    const [error, setError] = useState(null);
+    
     useEffect(() => {
+        const fetchInitialProgress = async () => {
+            await fetchProgress();
+        };
+    
+        fetchInitialProgress();
         const interval = setInterval(fetchProgress, 5000);
         return () => clearInterval(interval);
     }, []);
+    
+    const fetchProgress = async () => {
+        try {
+            const response = await fetch('/api/ledgers', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'progress' })
+            });
+            
+            const data = await response.json();
+            console.log('Fetched Data:', data);
+            setProgress(data.progress === 'error' ? 0 : data.progress);
+            setIsRunning(data.isRunning);
+            setStatus(data.progress === 'error' ? 'error' : data.status || 'running');
+            setCurrentCompany(data.currentCompany);
+            setLogs(data.logs || []);
+    
+            if (!data.isRunning && data.progress === 100) {
+                onComplete();
+            }
+        } catch (error) {
+            console.error('Error fetching progress:', error);
+        }
+    };
+    
+    const handleStop = async () => {
+        try {
+            const response = await fetch('/api/ledgers', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'stop', updateQueued: true })
+            });
+            if (response.ok) {
+                setIsRunning(false);
+                setStatus('stopped');
+                // Refresh the logs to show updated statuses
+                await fetchProgress();
+                onComplete();
+            } else {
+                throw new Error('Failed to stop extraction');
+            }
+        } catch (error) {
+            console.error('Error stopping extraction:', error);
+            alert('Failed to stop extraction. Please try again.');
+        }
+    };
 
-
-  const fetchProgress = async () => {
-    try {
-      const response = await fetch('/api/ledgers', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'progress' })
-      });
+    const handleResume = async () => {
+        try {
+          setError(null); // Clear any previous errors
+          
+          // Validate required data before making request
+          if (!currentCompany) {
+            throw new Error('No company selected for resume');
+          }
+          
+          const response = await fetch('/api/ledgers', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+              action: 'resume',
+              company: currentCompany,
+              lastProgress: progress,
+              // Add company ID if available
+              companyId: logs.find(log => log.company === currentCompany)?.id
+            })
+          });
+          
+          const data = await response.json(); // Parse response data
+          
+          if (!response.ok) {
+            throw new Error(data.error || 'Failed to resume extraction');
+          }
+          
+          setIsRunning(true);
+          setStatus('running');
+          await fetchProgress();
+          
+        } catch (error) {
+          console.error('Error resuming extraction:', error);
+          setError(error.message);
+          setStatus('error');
+        }
+      };
       
-      const data = await response.json();
-      setProgress(data.progress);
-      setIsRunning(data.status === 'running');
-      setStatus(data.status);
-      setCurrentCompany(data.currentCompany);
-      setLogs(data.logs || []);
-
-      if (data.status !== 'running' && data.progress === 100) {
-        onComplete();
-      }
-    } catch (error) {
-      console.error('Error fetching progress:', error);
-    }
-  };
-
-  const handleStop = async () => {
-    try {
-      const response = await fetch('/api/ledgers', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'stop' })
-      });
-
-      if (response.ok) {
-        setIsRunning(false);
-        setStatus('stopped');
-        onComplete();
-      }
-    } catch (error) {
-      console.error('Error stopping extraction:', error);
-      alert('Failed to stop extraction. Please try again.');
-    }
-  };
-
-  const handleResume = async () => {
-    try {
-      const response = await fetch('/api/ledgers', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          action: 'resume',
-          company: currentCompany
-        })
-      });
-
-      if (response.ok) {
-        setIsRunning(true);
-        setStatus('running');
-      }
-    } catch (error) {
-      console.error('Error resuming extraction:', error);
-      alert('Failed to resume extraction. Please try again.');
-    }
-  };
-  
-
     return (
         <Card className="w-full">
             <CardHeader>
@@ -95,7 +120,17 @@ export function AutoLiabilitiesRunning({ onComplete }) {
                 <div className="flex justify-between items-center">
                     <p className="text-lg font-medium">{progress}% complete</p>
                     <div className="space-x-2">
-                        {status === 'stopped' && (
+                        {status === 'running' ? (
+                            <Button 
+                                onClick={handleStop} 
+                                variant="destructive" 
+                                size="lg"
+                                className="flex items-center gap-2"
+                            >
+                                <StopCircle className="w-4 h-4" />
+                                Stop Extraction
+                            </Button>
+                        ) : (
                             <Button 
                                 onClick={handleResume}
                                 variant="default"
@@ -106,14 +141,6 @@ export function AutoLiabilitiesRunning({ onComplete }) {
                                 Resume Extraction
                             </Button>
                         )}
-                        <Button 
-                            onClick={handleStop} 
-                            disabled={!isRunning} 
-                            variant="destructive" 
-                            size="lg"
-                        >
-                            Stop Extraction
-                        </Button>
                     </div>
                 </div>
                 {currentCompany && (
@@ -148,7 +175,9 @@ export function AutoLiabilitiesRunning({ onComplete }) {
                                             log.status === 'running' ? 'bg-blue-100 text-blue-800' :
                                             log.status === 'stopped' ? 'bg-yellow-100 text-yellow-800' :
                                             log.status === 'queued' ? 'bg-purple-100 text-purple-800' :
-                                            'bg-green-100 text-green-800'
+                                            log.status === 'completed' ? 'bg-green-100 text-green-800' :
+                                            log.status === 'error' || (log.progress < 100 && log.status !== 'running') ? 'bg-red-100 text-red-800' :
+                                            'bg-gray-100 text-gray-800'
                                         }`}>
                                             {log.status}
                                         </span>

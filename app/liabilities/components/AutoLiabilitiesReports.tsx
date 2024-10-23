@@ -1,5 +1,4 @@
 // @ts-nocheck
-
 import React, { useState, useEffect, useMemo } from 'react';
 import {
     useReactTable,
@@ -42,7 +41,6 @@ export function AutoLiabilitiesReports() {
         pageIndex: 0,
         pageSize: 100,
     });
-
     const TAX_TYPES = ['income_tax', 'vat', 'paye', 'mri', 'tot'];
     const [selectedCompanies, setSelectedCompanies] = useState([]);
     const [exportOptions, setExportOptions] = useState({
@@ -262,6 +260,7 @@ export function AutoLiabilitiesReports() {
             </Table>
         </ScrollArea>
     );
+
     const renderTaxTabs = () => (
         <TabsList>
             <TabsTrigger value="all">ALL</TabsTrigger>
@@ -274,6 +273,7 @@ export function AutoLiabilitiesReports() {
             ))}
         </TabsList>
     );
+
     const renderTaxContent = (data) => (
         <TabsContent value="all">
             <ScrollArea className="h-[500px]">
@@ -470,7 +470,7 @@ export function AutoLiabilitiesReports() {
                     const rowData = columns.map(col => {
                         if (col.accessorKey === 'index') return index + 1;
                         if (col.accessorKey === 'updated_at') return new Date(row.original.updated_at).toLocaleString();
-                        if (['income_tax', 'vat', 'paye'].includes(col.accessorKey)) {
+                        if (TAX_TYPES.includes(col.accessorKey)) {
                             return formatAmount(calculateTotal(row.original, col.accessorKey));
                         }
                         return row.original[col.accessorKey] || '';

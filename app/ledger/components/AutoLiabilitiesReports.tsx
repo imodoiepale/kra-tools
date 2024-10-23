@@ -22,7 +22,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Download, Search, ArrowUpDown, Send, AlertTriangle } from 'lucide-react';
+import { Download, Search, ArrowUpDown, Send, AlertTriangle, AlertCircle } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
@@ -41,43 +41,64 @@ export function AutoLiabilitiesReports() {
         pageIndex: 0,
         pageSize: 100,
     });
+    const TAX_TYPES = ['income_tax', 'vat', 'paye', 'mri', 'tot'];
     const [selectedCompanies, setSelectedCompanies] = useState([]);
     const [exportOptions, setExportOptions] = useState({
         view: 'summary',
-        taxTypes: ['income_tax', 'vat', 'paye'],
         companyOption: 'all',
+        taxTypes: TAX_TYPES,
         selectedCompanies: [],
         exportFormat: 'single_workbook'
     });
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState(null);
-
+    const [extractionHistory, setExtractionHistory] = useState({});
 
     useEffect(() => {
+        const fetchResults = async () => {
+            setIsLoading(true);
+            setError(null);
+            try {
+                // Fetch current extractions
+                const { data: currentData, error: currentError } = await supabase
+                    .from('ledger_extractions')
+                    .select('*')
+                    .order('id', { ascending: false });
+
+                if (currentError) throw currentError;
+
+                // Fetch historical extractions
+                const { data: historyData, error: historyError } = await supabase
+                    .from('ledger_extractions_history')
+                    .select('*')
+                    .order('id', { ascending: false });
+
+                if (historyError) throw historyError;
+
+                // Organize historical data by company
+                const history = historyData.reduce((acc, record) => {
+                    if (!acc[record.company_name]) {
+                        acc[record.company_name] = [];
+                    }
+                    acc[record.company_name].push(record);
+                    return acc;
+                }, {});
+
+                setData(currentData);
+                setExtractionHistory(history);
+                if (currentData.length > 0) {
+                    setSelectedCompany(currentData[0]);
+                }
+            } catch (error) {
+                console.error('Error fetching data:', error);
+                setError('Failed to fetch results. Please try again.');
+            } finally {
+                setIsLoading(false);
+            }
+        };
+
         fetchResults();
     }, []);
-
-const fetchResults = async () => {
-        setIsLoading(true);
-        setError(null);
-        try {
-            const { data, error } = await supabase
-                .from('ledger_extractions')
-                .select('*')
-                .order('id', { ascending: true });
-
-            if (error) throw error;
-            setData(data);
-            if (data.length > 0) {
-                setSelectedCompany(data[0]);
-            }
-        } catch (error) {
-            console.error('Error fetching results:', error);
-            setError('Failed to fetch results. Please try again.');
-        } finally {
-            setIsLoading(false);
-        }
-    };
 
     const calculateTotal = (item, taxType) => {
         if (!item || !item.ledger_data) return 0;
@@ -96,7 +117,24 @@ const fetchResults = async () => {
     const formatAmount = (amount) => {
         return `Ksh ${amount.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
     };
-
+    const renderErrorAlert = (data) => {
+        if (data.status === 'error' && data.ledger_data?.error) {
+            return (
+                <Alert variant="destructive" className="mb-4">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertTitle>Extraction Error</AlertTitle>
+                    <AlertDescription>
+                        {data.ledger_data.error}
+                        <br />
+                        <span className="text-sm opacity-70">
+                            Occurred at: {new Date(data.ledger_data.timestamp).toLocaleString()}
+                        </span>
+                    </AlertDescription>
+                </Alert>
+            );
+        }
+        return null;
+    };
     const columns = useMemo(() => [
         {
             accessorKey: 'index',
@@ -132,60 +170,28 @@ const fetchResults = async () => {
             },
             cell: ({ row }) => new Date(row.getValue('updated_at')).toLocaleString(),
         },
-        // {
-        //     accessorKey: 'income_tax',
-        //     header: ({ column }) => (
-        //         <Button
-        //             variant="ghost"
-        //             onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-        //             className="justify-center"
-        //         >
-        //             Income Tax
-        //             <ArrowUpDown className="ml-2 h-4 w-4" />
-        //         </Button>
-        //     ),
-        //     cell: ({ row }) => {
-        //         const amount = calculateTotal(row.original, 'income_tax');
-        //         return <span className={`text-center ${amount > 0 ? 'text-red-500 font-bold' : 'text-green-500'}`}>{formatAmount(amount)}</span>;
-        //     },
-        //     sortingFn: (rowA, rowB) => calculateTotal(rowA.original, 'income_tax') - calculateTotal(rowB.original, 'income_tax'),
-        // },
-        {
-            accessorKey: 'vat',
+        ...TAX_TYPES.map(taxType => ({
+            accessorKey: taxType,
             header: ({ column }) => (
                 <Button
                     variant="ghost"
                     onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
                     className="justify-center"
                 >
-                    VAT
+                    {taxType === 'mri' ? 'Monthly Rental Income' :
+                        taxType === 'tot' ? 'Turnover Tax' :
+                            taxType.toUpperCase()}
                     <ArrowUpDown className="ml-2 h-4 w-4" />
                 </Button>
             ),
             cell: ({ row }) => {
-                const amount = calculateTotal(row.original, 'Value Added Tax');
-                return <span className={`text-center ${amount > 0 ? 'text-green-500' : 'text-red-500 font-bold'}`}>{formatAmount(amount)}</span>;
+                const amount = calculateTotal(row.original, taxType);
+                return <span className={`text-center ${amount > 0 ? 'text-red-500 font-bold' : 'text-green-500'}`}>
+                    {formatAmount(amount)}
+                </span>;
             },
-            sortingFn: (rowA, rowB) => calculateTotal(rowA.original, 'Value Added Tax') - calculateTotal(rowB.original, 'Value Added Tax'),
-        },
-        {
-            accessorKey: 'paye',
-            header: ({ column }) => (
-                <Button
-                    variant="ghost"
-                    onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-                    className="justify-center"
-                >
-                    PAYE
-                    <ArrowUpDown className="ml-2 h-4 w-4" />
-                </Button>
-            ),
-            cell: ({ row }) => {
-                const amount = calculateTotal(row.original, 'Income Tax - PAYE');
-                return <span className={`text-center ${amount > 0 ?  'text-green-500' : 'text-red-500 font-bold'}`}>{formatAmount(amount)}</span>;
-            },
-            sortingFn: (rowA, rowB) => calculateTotal(rowA.original, 'Income Tax - PAYE') - calculateTotal(rowB.original, 'Income Tax - PAYE'),
-        },
+            sortingFn: (rowA, rowB) => calculateTotal(rowA.original, taxType) - calculateTotal(rowB.original, taxType),
+        }))
     ], []);
 
     const table = useReactTable({
@@ -250,32 +256,102 @@ const fetchResults = async () => {
             </Table>
         </ScrollArea>
     );
+    const renderTaxTabs = () => (
+        <TabsList>
+            <TabsTrigger value="all">ALL</TabsTrigger>
+            {TAX_TYPES.map((taxType) => (
+                <TabsTrigger key={taxType} value={taxType}>
+                    {taxType === 'mri' ? 'MONTHLY RENTAL INCOME' :
+                        taxType === 'tot' ? 'TURNOVER TAX' :
+                            taxType.toUpperCase()}
+                </TabsTrigger>
+            ))}
+        </TabsList>
+    );
+    const renderTaxContent = (data) => (
+        <TabsContent value="all">
+            <ScrollArea className="h-[500px]">
+                {TAX_TYPES.map((taxType) => (
+                    <div key={taxType}>
+                        <h3 className="text-lg font-semibold mt-4 mb-2">
+                            {taxType === 'mri' ? 'MONTHLY RENTAL INCOME' :
+                                taxType === 'tot' ? 'TURNOVER TAX' :
+                                    taxType.replace('_', ' ').toUpperCase()}
+                        </h3>
+                        {renderTaxTable(data, taxType)}
+                    </div>
+                ))}
+            </ScrollArea>
+        </TabsContent>
+    );
 
+    // Update the CurrentExtraction Tab content
+    const renderCurrentExtractionTab = () => (
+        <TabsContent value="current">
+            <Tabs defaultValue="all">
+                {renderTaxTabs()}
+                {renderTaxContent(selectedCompany)}
+                {TAX_TYPES.map((taxType) => (
+                    <TabsContent key={taxType} value={taxType}>
+                        <ScrollArea className="h-[500px]">
+                            {renderTaxTable(selectedCompany, taxType)}
+                        </ScrollArea>
+                    </TabsContent>
+                ))}
+            </Tabs>
+        </TabsContent>
+    );
+
+    // Update the Previous Extractions Tab content
+    const renderPreviousExtractionsTab = () => (
+        <TabsContent value="previous">
+            {extractionHistory[selectedCompany.company_name]?.length > 0 ? (
+                <ScrollArea className="h-[500px]">
+                    {extractionHistory[selectedCompany.company_name].map((extraction, index) => (
+                        <div key={index} className="mb-8 border-b pb-4">
+                            <h3 className="text-lg font-semibold mb-4">
+                                Extraction from {new Date(extraction.extraction_date).toLocaleString()}
+                            </h3>
+                            <Tabs defaultValue="all">
+                                {renderTaxTabs()}
+                                {renderTaxContent(extraction)}
+                                {TAX_TYPES.map((taxType) => (
+                                    <TabsContent key={taxType} value={taxType}>
+                                        {renderTaxTable(extraction, taxType)}
+                                    </TabsContent>
+                                ))}
+                            </Tabs>
+                        </div>
+                    ))}
+                </ScrollArea>
+            ) : (
+                <div className="text-center py-8 text-gray-500">
+                    No previous extractions found
+                </div>
+            )}
+        </TabsContent>
+    );
     const renderDetailedView = () => (
         <div className="grid grid-cols-4 gap-2 xs:gap-1">
             <div className="col-span-1">
                 <ScrollArea className="h-[550px] xs:h-[300px] border rounded-lg">
-                    {isLoading ? (
-                        <div className="flex justify-center items-center h-full">
-                            <span className="loading loading-spinner loading-lg"></span>
+                    {data.map((company) => (
+                        <div
+                            key={company.id}
+                            onClick={() => setSelectedCompany(company)}
+                            className={`p-1 xs:p-0.5 text-xs cursor-pointer ${selectedCompany?.id === company.id
+                                    ? 'bg-blue-500 text-white'
+                                    : company.status === 'error'
+                                        ? 'bg-red-100 hover:bg-red-200'
+                                        : 'hover:bg-blue-100'
+                                }`}
+                        >
+                            {company.company_name}
+                            {company.status === 'error' && (
+                                <AlertCircle className="inline-block ml-1 h-3 w-3 text-red-500" />
+                            )}
                         </div>
-                    ) : error ? (
-                        <Alert variant="destructive">
-                            <AlertTriangle className="h-4 w-4" />
-                            <AlertTitle>Error</AlertTitle>
-                            <AlertDescription>{error}</AlertDescription>
-                        </Alert>
-                    ) : (
-                        data.map((company) => (
-                            <div
-                                key={company.id}
-                                onClick={() => setSelectedCompany(company)}
-                                className={`p-1 xs:p-0.5 text-xs cursor-pointer ${selectedCompany?.id === company.id ? 'bg-blue-500 text-white' : 'hover:bg-blue-100'}`}
-                            >
-                                {company.company_name}
-                            </div>
-                        ))
-                    )}
+                    ))}
                 </ScrollArea>
             </div>
             <div className="col-span-3">
@@ -283,38 +359,17 @@ const fetchResults = async () => {
                     <Card>
                         <CardHeader>
                             <CardTitle>{selectedCompany.company_name}</CardTitle>
+                            {renderErrorAlert(selectedCompany)}
                         </CardHeader>
                         <CardContent>
-                            <Tabs defaultValue="all">
-                                <TabsList>
-                                    {['all', 'vat', 'income tax - paye'].map((tab) => (
-                                        <TabsTrigger key={tab} value={tab}>{tab.replace('_', ' ').toUpperCase()}</TabsTrigger>
-                                    ))}
+                            <Tabs defaultValue="current">
+                                <TabsList className="grid w-full grid-cols-2 mb-4">
+                                    <TabsTrigger value="current">Current Extraction</TabsTrigger>
+                                    <TabsTrigger value="previous">Previous Extractions</TabsTrigger>
                                 </TabsList>
-                                <TabsContent value="all">
-                                    <ScrollArea className="h-[500px]">
-                                        {['vat', 'income tax - paye'].map((taxType) => (
-                                            <div key={taxType}>
-                                                <h3 className="text-lg font-semibold mt-4 mb-2">{taxType.replace('_', ' ').toUpperCase()}</h3>
-                                                {renderTaxTable(selectedCompany, taxType)}
-                                            </div>
-                                        ))}
-                                    </ScrollArea>
-                                    <div className="mt-4 text-center">
-                                        <strong className="text-green-600">
-                                            Overall Ledger Total: <span className="text-red-500">{formatAmount(
-                                                ['vat', 'income tax - paye'].reduce((sum, type) => sum + calculateTotal(selectedCompany, type), 0)
-                                            )}</span>
-                                        </strong>
-                                    </div>
-                                </TabsContent>
-                                {[ 'vat', 'income tax - paye'].map((taxType) => (
-                                    <TabsContent key={taxType} value={taxType}>
-                                        <ScrollArea className="h-[500px]">
-                                            {renderTaxTable(selectedCompany, taxType)}
-                                        </ScrollArea>
-                                    </TabsContent>
-                                ))}
+
+                                {renderCurrentExtractionTab()}
+                                {renderPreviousExtractionsTab()}
                             </Tabs>
                         </CardContent>
                     </Card>
@@ -323,7 +378,27 @@ const fetchResults = async () => {
         </div>
     );
     const renderTaxTable = (company, taxType) => {
-        if (!company || !company.ledger_data) {
+        // Check for error state first
+        if (company.status === 'error') {
+            return (
+                <Table>
+                    <TableBody>
+                        <TableRow>
+                            <TableCell colSpan={7} className="text-left text-red-500 bg-red-50 p-4">
+                                <div className="flex items-center gap-2">
+                                    <AlertCircle className="h-4 w-4" />
+                                    <div>
+                                        <div className="font-bold">Extraction Failed</div>
+                                        <div className="text-sm">{company.ledger_data?.error || 'An error occurred during extraction'}</div>
+                                    </div>
+                                </div>
+                            </TableCell>
+                        </TableRow>
+                    </TableBody>
+                </Table>
+            );
+        }
+        if (!company?.ledger_data?.[taxType]) {
             return (
                 <Table>
                     <TableBody>
@@ -336,44 +411,42 @@ const fetchResults = async () => {
                 </Table>
             );
         }
-    
-        const relevantData = company.ledger_data.filter(entry => 
-            entry.tax_obligation && entry.tax_obligation.toLowerCase().includes(taxType.toLowerCase())
-        );
-    
-        const total = calculateTotal(company, taxType);
+
+        const { headers = [], rows = [] } = data.ledger_data[taxType];
+        const total = calculateTotal(data, taxType);
+        const nonEmptyRows = rows.filter(row => row.some(cell => cell !== null && cell !== ''));
+
         return (
-            <Table>
-                <TableHeader>
-                    <TableRow>
-                        <TableHead>#</TableHead>
-                        <TableHead>Tax Period</TableHead>
-                        <TableHead>Transaction Date</TableHead>
-                        <TableHead>Reference Number</TableHead>
-                        <TableHead>Particulars</TableHead>
-                        <TableHead>Debit</TableHead>
-                        <TableHead>Credit</TableHead>
-                    </TableRow>
-                </TableHeader>
-                <TableBody>
-                    {relevantData.map((entry, index) => (
-                        <TableRow key={index}>
-                            <TableCell>{index + 1}</TableCell>
-                            <TableCell>{entry.tax_period}</TableCell>
-                            <TableCell>{entry.transaction_date}</TableCell>
-                            <TableCell>{entry.reference_number}</TableCell>
-                            <TableCell>{entry.particulars}</TableCell>
-                            <TableCell>{entry.debit}</TableCell>
-                            <TableCell>{entry.credit}</TableCell>
+            <div>
+                <div className="text-sm text-gray-500 mb-2">
+                    Extraction Date: {new Date(data.extraction_date || data.updated_at).toLocaleString()}
+                </div>
+                <Table>
+                    <TableHeader>
+                        <TableRow>
+                            <TableHead>#</TableHead>
+                            {headers.map((header, index) => (
+                                <TableHead key={index}>{header}</TableHead>
+                            ))}
                         </TableRow>
-                    ))}
-                    <TableRow className="bg-red-100">
-                        <TableCell colSpan={7} className="text-center font-bold">
-                            Ledger Total: <span className="text-red-500">{formatAmount(total)}</span>
-                        </TableCell>
-                    </TableRow>
-                </TableBody>
-            </Table>
+                    </TableHeader>
+                    <TableBody>
+                        {nonEmptyRows.map((row, rowIndex) => (
+                            <TableRow key={rowIndex}>
+                                <TableCell>{rowIndex + 1}</TableCell>
+                                {row.map((cell, cellIndex) => (
+                                    <TableCell key={cellIndex}>{cell}</TableCell>
+                                ))}
+                            </TableRow>
+                        ))}
+                        <TableRow className="bg-red-100">
+                            <TableCell colSpan={headers.length + 1} className="text-center font-bold">
+                                Ledger Total: <span className="text-red-500">{formatAmount(total)}</span>
+                            </TableCell>
+                        </TableRow>
+                    </TableBody>
+                </Table>
+            </div>
         );
     };
 
@@ -390,7 +463,7 @@ const fetchResults = async () => {
                       const rowData = columns.map(col => {
                           if (col.accessorKey === 'index') return index + 1;
                           if (col.accessorKey === 'updated_at') return new Date(row.original.updated_at).toLocaleString();
-                          if (['income_tax', 'vat', 'paye'].includes(col.accessorKey)) {
+                          if (TAX_TYPES.includes(col.accessorKey)) {
                               return formatAmount(calculateTotal(row.original, col.accessorKey));
                           }
                           return row.original[col.accessorKey] || '';
@@ -478,7 +551,7 @@ const fetchResults = async () => {
                       </Select>
                       <div>
                           <h4 className="mb-2">Tax Types:</h4>
-                          {['income_tax', 'vat', 'paye'].map(type => (
+                          {TAX_TYPES.map(type => (
                               <div key={type} className="flex items-center space-x-2">
                                   <Checkbox
                                       id={type}
@@ -492,7 +565,12 @@ const fetchResults = async () => {
                                           }))
                                       }}
                                   />
-                                  <label htmlFor={type}>{type.toUpperCase()}</label>
+                                  <label htmlFor={type}>{
+                                        type === 'mri' ? 'MONTHLY RENTAL INCOME' :
+                                        type === 'tot' ? 'TURNOVER TAX' :
+                                        type.toUpperCase()}
+                                        
+                                </label>
                               </div>
                           ))}
                       </div>

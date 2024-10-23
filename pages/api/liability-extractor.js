@@ -4,7 +4,6 @@ import os from "os";
 import { promises as fsPromises } from 'fs';
 import { createWorker } from 'tesseract.js';
 import { createClient } from "@supabase/supabase-js";
-import retry from 'async-retry';
 
 // Constants
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;

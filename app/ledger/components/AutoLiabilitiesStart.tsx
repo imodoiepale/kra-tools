@@ -40,6 +40,7 @@ export function AutoLiabilitiesStart({ onStart, onStop }) {
             setCompanies(data as Company[] || []);
         }
     };
+    
     const handleStartCheck = async () => {
         setIsChecking(true);
         try {
