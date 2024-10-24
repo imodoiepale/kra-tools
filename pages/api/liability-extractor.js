@@ -4,20 +4,21 @@ import os from "os";
 import { promises as fsPromises } from 'fs';
 import { createWorker } from 'tesseract.js';
 import { createClient } from "@supabase/supabase-js";
+import retry from 'async-retry';
 
-// Constants
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 const imagePath = path.join("KRA", "ocr.png");
+
 const downloadFolderPath = path.join(os.homedir(), "Downloads", `AUTO LIABILITIES EXTRACTION - ${new Date().toISOString().split('T')[0]}`);
 
 let isRunning = false;
 let progress = 0;
 let currentCompany = '';
 
-// Utility Functions
 async function readSupabaseData(companyIds) {
     try {
         let query = supabase.from("PasswordChecker").select("*");
@@ -39,6 +40,7 @@ async function readSupabaseData(companyIds) {
     }
 }
 
+
 async function loginToKRA(page, company) {
     await page.goto("https://itax.kra.go.ke/KRA-Portal/");
     await page.locator("#logid").click();
@@ -48,21 +50,19 @@ async function loginToKRA(page, company) {
     });
     await page.locator('input[name="xxZTT9p2wQ"]').fill(company.kra_password);
     await page.waitForTimeout(1500);
-    
     const image = await page.waitForSelector("#captcha_img");
+
     await image.screenshot({ path: imagePath });
-    
     const worker = await createWorker('eng', 1);
     console.log("Extracting Text...");
     const ret = await worker.recognize(imagePath);
-    const text1 = ret.data.text.slice(0, -1);
+    const text1 = ret.data.text.slice(0, -1); // Omit the last character
     const text = text1.slice(0, -1);
     const numbers = text.match(/\d+/g);
-    
+    console.log('Extracted Numbers:', numbers);
     if (!numbers || numbers.length < 2) {
         throw new Error("Unable to extract valid numbers from the text.");
     }
-    
     let result;
     if (text.includes("+")) {
         result = Number(numbers[0]) + Number(numbers[1]);
@@ -71,13 +71,14 @@ async function loginToKRA(page, company) {
     } else {
         throw new Error("Unsupported operator.");
     }
-    
     console.log('Result:', result.toString());
     await worker.terminate();
     await page.type("#captcahText", result.toString());
     await page.click("#loginButton");
 
+    // Check if login was successful
     const isInvalidLogin = await page.waitForSelector('b:has-text("Wrong result of the arithmetic operation.")', { state: 'visible', timeout: 3000 }).catch(() => false);
+
     if (isInvalidLogin) {
         console.log("Wrong result of the arithmetic operation, retrying...");
         await loginToKRA(page, company);
@@ -140,6 +141,7 @@ async function extractLiabilities(page, company) {
 }
 
 async function storeLiabilityData(company, liabilityData) {
+    // Store in main liability_extractions table
     const { data, error } = await supabase
         .from('liability_extractions')
         .upsert({
@@ -171,6 +173,7 @@ async function findChromePath() {
     }
     return null;
 }
+
 async function processCompany(page, company, updateProgressCallback) {
     try {
         await updateProgressCallback(company.company_name, 10);
@@ -182,7 +185,7 @@ async function processCompany(page, company, updateProgressCallback) {
             showPaymentRegForm();
         });
         await updateProgressCallback(company.company_name, 50);
-  
+    
         await page.click("#openPayRegForm");
         page.once("dialog", dialog => {
             dialog.accept().catch(() => { });
@@ -192,104 +195,116 @@ async function processCompany(page, company, updateProgressCallback) {
             dialog.accept().catch(() => { });
         });
         await updateProgressCallback(company.company_name, 80);
-  
+    
         const liabilityData = await extractLiabilities(page, company);
-        
         await storeLiabilityData(company, liabilityData);
-        await updateProgressCallback(company.company_name, 100, 'completed');
-  
-        await page.evaluate(() => {
-            logOutUser();
-        });
-        await page.waitForLoadState("load");
-        await page.reload();
         
-    } catch (error) {
-        console.error(`Error processing ${company.company_name}:`, error);
-
-        // Store detailed error information
-        const { error: updateError } = await supabase
-            .from('liability_extractions')
-            .upsert({
-                company_name: company.company_name,
-                status: 'skipped',
-                progress: 0,
-                liability_data: {
-                    error: error.message,
-                    timestamp: new Date().toISOString(),
-                    details: 'Company skipped due to extraction error'
-                },
-                updated_at: new Date().toISOString()
-            }, {
-                onConflict: 'company_name'
-            });
-
-        // Store in history table
+        // Store successful extraction in history
         await supabase
             .from('liability_extractions_history')
             .insert({
                 company_name: company.company_name,
+                liability_data: liabilityData,
+                extraction_date: new Date().toISOString(),
+            });
+
+        await updateProgressCallback(company.company_name, 100, 'completed');
+
+        await page.evaluate(() => {
+            logOutUser();
+        });
+        
+        // Use try-catch for page reload to handle potential errors
+        try {
+            await page.waitForLoadState("load");
+            await page.reload();
+        } catch (reloadError) {
+            console.log(`Page reload failed for ${company.company_name}, continuing with next company...`);
+        }
+        
+    } catch (error) {
+        console.error(`Error processing ${company.company_name}:`, error);
+
+        const errorDetails = {
+            message: error.message,
+            timestamp: new Date().toISOString(),
+            stack: error.stack,
+            company: company.company_name
+        };
+
+        // Update main liability_extractions table with error status
+        await supabase
+            .from('liability_extractions')
+            .update({ 
                 status: 'error',
-                error_message: error.message,
+                progress: 0,
+                error_message: errorDetails,
+                updated_at: new Date().toISOString()
+            })
+            .eq('company_name', company.company_name);
+
+        // Store error in history table
+        await supabase
+            .from('liability_extractions_history')
+            .insert({
+                company_name: company.company_name,
+                error_message: {
+                    error: errorDetails,
+                    details: 'Company skipped due to extraction error'
+                },
                 extraction_date: new Date().toISOString()
             });
 
         // Reset page state for next company
-        await page.goto("https://itax.kra.go.ke/KRA-Portal/");
-        await updateProgressCallback(company.company_name, 0, 'skipped');
+        try {
+            await page.goto("https://itax.kra.go.ke/KRA-Portal/");
+        } catch (navigationError) {
+            console.error('Failed to reset page state:', navigationError);
+        }
         
-        // Continue with next company
-        return;
+        await updateProgressCallback(company.company_name, 0, 'error');
     }
 }
 
-async function updateProgress(companyName, percentComplete, status = 'running') {
+  async function updateProgress(companyName, percentComplete, status = 'running') {
     currentCompany = companyName;
     progress = percentComplete;
     
-    const updateData = {
-        status: status,
-        progress: percentComplete,
-        updated_at: new Date().toISOString()
-    };
-
-    // If status is error, add error info to liability_data
-    if (status === 'error') {
-        updateData.liability_data = {
-            error: 'Extraction failed',
-            timestamp: new Date().toISOString()
-        };
-    }
-
     await supabase
         .from('liability_extractions')
-        .update(updateData)
+        .update({ 
+            status: status,
+            progress: percentComplete,
+            updated_at: new Date().toISOString()
+        })
         .eq('company_name', companyName);
 }
+
+
 
 async function runAutomation(companyIds, updateProgressCallback) {
     const data = await readSupabaseData(companyIds);
     const chromePath = await findChromePath();
     if (!chromePath) {
-        throw new Error('Chrome executable not found');
+      throw new Error('Chrome executable not found');
     }
   
     const browser = await chromium.launch({
-        headless: false,
-        executablePath: chromePath
+      headless: false,
+      executablePath: chromePath
     });
     const context = await browser.newContext();
     const page = await context.newPage();
   
     for (const company of data) {
-        if (!isRunning) break;
-        await processCompany(page, company, updateProgressCallback);
+      if (!isRunning) break;
+      await processCompany(page, company, updateProgressCallback);
     }
   
     await context.close();
     await browser.close();
-}
-
+  }
+  
 export default async function handler(req, res) {
     const { action, companyIds, runOption } = req.body;
 
@@ -298,15 +313,44 @@ export default async function handler(req, res) {
             if (isRunning) {
                 return res.status(400).json({ error: 'Automation is already running' });
             }
+            
+            // Reset all previous running states
+            await supabase
+                .from('liability_extractions')
+                .update({ 
+                    status: 'completed',
+                    updated_at: new Date().toISOString()
+                })
+                .eq('status', 'running');
+
             isRunning = true;
             progress = 0;
             let companiesToProcess = [];
         
             if (runOption === 'all') {
-                const { data, error } = await supabase
-                    .from('company_MAIN')
-                    .select('id');
-        
+                const { data, error } = await Promise.all([
+                    supabase
+                        .from('companyMainList')
+                        .select('id, company_name, kra_pin, kra_password, status')
+                        .eq('status', 'active')
+                        .order('id', { ascending: true }),
+                    supabase
+                        .from('PasswordChecker')
+                        .select('company_name, kra_pin, kra_password, status')
+                ]);
+                
+                // Merge the data prioritizing PasswordChecker passwords
+                const mergedData = data[0].map(mainCompany => {
+                    const passwordMatch = data[1]?.find(
+                        pc => pc.company_name === mainCompany.company_name
+                    );
+                    
+                    return {
+                        ...mainCompany,
+                        kra_password: passwordMatch?.kra_password || mainCompany.kra_password
+                    };
+                });
+                
                 if (error) {
                     isRunning = false;
                     return res.status(500).json({ error: 'Failed to fetch companies' });
@@ -317,9 +361,14 @@ export default async function handler(req, res) {
                 companiesToProcess = companyIds;
             }
         
+            // Update status for selected companies to 'pending'
             await supabase
                 .from('liability_extractions')
-                .update({ status: 'pending', progress: 0 })
+                .update({ 
+                    status: 'pending', 
+                    progress: 0,
+                    error_message: null // Clear any previous errors
+                })
                 .in('company_name', companiesToProcess.map(id => id.toString()));
         
             runAutomation(companiesToProcess, updateProgress)
@@ -330,105 +379,69 @@ export default async function handler(req, res) {
                     isRunning = false;
                     console.error('Automation error:', error);
                 });
-            return res.status(200).json({ message: 'Automation started', companiesCount: companiesToProcess.length });
-        
-            case 'resume':
-                try {
-                  const { company, lastProgress, companyId } = req.body;
-                  
-                  // Validate required fields
-                  if (!company) {
-                    return res.status(400).json({ error: 'Company name is required' });
-                  }
-                  
-                  // Set running state
-                  isRunning = true;
-                  currentCompany = company;
-                  progress = lastProgress || 0;
-                  
-                  // Update database status
-                  await supabase
-                    .from('liability_extractions')
-                    .update({ 
-                      status: 'running',
-                      progress: lastProgress,
-                      updated_at: new Date().toISOString()
-                    })
-                    .eq('company_name', company);
-                  
-                  // Start automation with single company
-                  const companyToProcess = companyId ? [companyId] : 
-                    (await supabase
-                      .from('company_MAIN')
-                      .select('id')
-                      .eq('company_name', company)
-                      .single())?.data?.id;
-                      
-                  if (!companyToProcess) {
-                    throw new Error('Company not found in database');
-                  }
-                  
-                  // Run automation in background
-                  runAutomation([companyToProcess], updateProgress)
-                    .then(() => {
-                      isRunning = false;
-                      progress = 100;
-                    })
-                    .catch((error) => {
-                      isRunning = false;
-                      console.error('Automation error:', error);
-                    });
-                  
-                  return res.status(200).json({ 
-                    message: 'Extraction resumed',
-                    company,
-                    progress: lastProgress
-                  });
-                  
-                } catch (error) {
-                  isRunning = false;
-                  console.error('Resume error:', error);
-                  return res.status(500).json({ 
-                    error: error.message || 'Failed to resume extraction'
-                  });
-                }
-            case 'stop':
-                isRunning = false;
-                const updatePromises = [
-                    supabase
-                        .from('liability_extractions')
-                        .update({ status: 'stopped', updated_at: new Date().toISOString() })
-                        .eq('status', 'running'),
-                    supabase
-                        .from('liability_extractions')
-                        .update({ status: 'stopped', updated_at: new Date().toISOString() })
-                        .eq('status', 'queued')
-                ];
-                await Promise.all(updatePromises);
-                return res.status(200).json({ message: 'Automation stopped' });
             
-        case 'progress':
-            const { data: progressData, error: progressError } = await supabase
-                .from('liability_extractions')
-                .select('*')
-                .order('updated_at', { ascending: false });
-  
-            if (progressError) {
-                return res.status(500).json({ error: 'Failed to fetch progress data' });
-            }
-  
-            return res.status(200).json({
-                isRunning,
-                progress,
-                currentCompany,
-                logs: progressData.map(item => ({
-                    company: item.company_name,
-                    status: item.status,
-                    progress: item.progress,
-                    timestamp: item.updated_at
-                }))
+            return res.status(200).json({ 
+                message: 'Automation started', 
+                companiesCount: companiesToProcess.length 
             });
 
+        case 'resume':
+            const { company, lastProgress } = req.body;
+            isRunning = true;
+            progress = lastProgress;
+            currentCompany = company;
+
+            await supabase
+                .from('liability_extractions')
+                .update({ status: 'running', progress: lastProgress })
+                .eq('company_name', company);
+
+            runAutomation([company], updateProgress)
+                .then(() => {
+                    isRunning = false;
+                    progress = 100;
+                })
+                .catch((error) => {
+                    isRunning = false;
+                    console.error('Automation error:', error);
+                });
+
+            return res.status(200).json({ message: 'Extraction resumed' });
+
+            case 'stop':
+                isRunning = false;
+                await supabase
+                    .from('liability_extractions')
+                    .update({ status: 'stopped', updated_at: new Date().toISOString() })
+                    .eq('status', 'running');
+                return res.status(200).json({ message: 'Automation stopped' });
+            
+                case 'progress':
+                    const { data: progressData, error: progressError } = await supabase
+                        .from('liability_extractions')
+                        .select('*')
+                        .in('status', ['running', 'completed', 'error', 'stopped', 'queued'])
+                        .order('updated_at', { ascending: false });
+                
+                    if (progressError) {
+                        return res.status(500).json({ error: 'Failed to fetch progress data' });
+                    }
+                
+                    // Get the current running company if any
+                    const runningCompany = progressData.find(item => item.status === 'running');
+                
+                    return res.status(200).json({
+                        isRunning,
+                        progress: runningCompany ? runningCompany.progress : progress,
+                        currentCompany: runningCompany ? runningCompany.company_name : currentCompany,
+                        logs: progressData.map(item => ({
+                            company: item.company_name,
+                            status: item.status,
+                            progress: item.progress,
+                            timestamp: item.updated_at,
+                            error: item.error_message
+                        }))
+                    });
         case 'getResults':
             const { data, error } = await supabase
                 .from('liability_extractions')

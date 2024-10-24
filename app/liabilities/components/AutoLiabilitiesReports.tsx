@@ -1,4 +1,5 @@
 // @ts-nocheck
+
 import React, { useState, useEffect, useMemo } from 'react';
 import {
     useReactTable,
@@ -41,6 +42,7 @@ export function AutoLiabilitiesReports() {
         pageIndex: 0,
         pageSize: 100,
     });
+
     const TAX_TYPES = ['income_tax', 'vat', 'paye', 'mri', 'tot'];
     const [selectedCompanies, setSelectedCompanies] = useState([]);
     const [exportOptions, setExportOptions] = useState({
@@ -121,24 +123,7 @@ export function AutoLiabilitiesReports() {
     const formatAmount = (amount) => {
         return `Ksh ${amount.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
     };
-    const renderErrorAlert = (data) => {
-        if (data.status === 'error' && data.liability_data?.error) {
-            return (
-                <Alert variant="destructive" className="mb-4">
-                    <AlertCircle className="h-4 w-4" />
-                    <AlertTitle>Extraction Error</AlertTitle>
-                    <AlertDescription>
-                        {data.liability_data.error}
-                        <br />
-                        <span className="text-sm opacity-70">
-                            Occurred at: {new Date(data.liability_data.timestamp).toLocaleString()}
-                        </span>
-                    </AlertDescription>
-                </Alert>
-            );
-        }
-        return null;
-    };
+
     const columns = useMemo(() => [
         {
             accessorKey: 'index',
@@ -214,7 +199,80 @@ export function AutoLiabilitiesReports() {
         },
         onGlobalFilterChange: setGlobalFilter,
     });
-
+    const renderErrorAlert = (data) => {
+        if (data.status === 'error' && (data.liability_data?.error || data.error_message)) {
+            const errorDetails = data.liability_data?.error || data.error_message;
+            return (
+                <Card className="mb-4 border-red-200">
+                    <CardContent className="pt-6">
+                        <Alert variant="destructive">
+                            <AlertCircle className="h-4 w-4" />
+                            <AlertTitle>Extraction Error</AlertTitle>
+                            <AlertDescription>
+                                {typeof errorDetails === 'object' ? errorDetails.message : errorDetails}
+                                <br />
+                                <span className="text-sm opacity-70">
+                                    Occurred at: {new Date(data.liability_data?.timestamp || data.updated_at).toLocaleString()}
+                                </span>
+                            </AlertDescription>
+                        </Alert>
+                    </CardContent>
+                </Card>
+            );
+        }
+        return null;
+    };
+    
+    const renderDetailedView = () => (
+        <div className="grid grid-cols-4 gap-2 xs:gap-1">
+            <div className="col-span-1">
+                <ScrollArea className="h-[550px] xs:h-[300px] border rounded-lg">
+                    {data.map((company) => (
+                        <div
+                            key={company.id}
+                            onClick={() => setSelectedCompany(company)}
+                            className={`p-1 xs:p-0.5 text-xs cursor-pointer ${
+                                selectedCompany?.id === company.id
+                                    ? 'bg-blue-500 text-white'
+                                    : company.status === 'error'
+                                        ? 'bg-red-100 hover:bg-red-200'
+                                        : 'hover:bg-blue-100'
+                            }`}
+                        >
+                            {company.company_name}
+                            {company.status === 'error' && (
+                                <AlertCircle className="inline-block ml-1 h-3 w-3 text-red-500" />
+                            )}
+                        </div>
+                    ))}
+                </ScrollArea>
+            </div>
+            <div className="col-span-3">
+                {selectedCompany && (
+                    <>
+                        {renderErrorAlert(selectedCompany)}
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>{selectedCompany.company_name}</CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                                <Tabs defaultValue="current">
+                                    <TabsList className="grid w-full grid-cols-2 mb-4">
+                                        <TabsTrigger value="current">Current Extraction</TabsTrigger>
+                                        <TabsTrigger value="previous">Previous Extractions</TabsTrigger>
+                                    </TabsList>
+    
+                                    {renderCurrentExtractionTab()}
+                                    {renderPreviousExtractionsTab()}
+                                </Tabs>
+                            </CardContent>
+                        </Card>
+                    </>
+                )}
+            </div>
+        </div>
+    );
+    
     const renderSummaryView = () => (
         <ScrollArea className="h-[500px]">
             <Table>
@@ -260,7 +318,6 @@ export function AutoLiabilitiesReports() {
             </Table>
         </ScrollArea>
     );
-
     const renderTaxTabs = () => (
         <TabsList>
             <TabsTrigger value="all">ALL</TabsTrigger>
@@ -273,7 +330,6 @@ export function AutoLiabilitiesReports() {
             ))}
         </TabsList>
     );
-
     const renderTaxContent = (data) => (
         <TabsContent value="all">
             <ScrollArea className="h-[500px]">
@@ -308,27 +364,36 @@ export function AutoLiabilitiesReports() {
         </TabsContent>
     );
 
-    // Update the Previous Extractions Tab content
     const renderPreviousExtractionsTab = () => (
         <TabsContent value="previous">
-            {extractionHistory[selectedCompany.company_name]?.length > 0 ? (
+            {extractionHistory[selectedCompany?.company_name]?.length > 0 ? (
                 <ScrollArea className="h-[500px]">
-                    {extractionHistory[selectedCompany.company_name].map((extraction, index) => (
-                        <div key={index} className="mb-8 border-b pb-4">
-                            <h3 className="text-lg font-semibold mb-4">
-                                Extraction from {new Date(extraction.extraction_date).toLocaleString()}
-                            </h3>
-                            <Tabs defaultValue="all">
-                                {renderTaxTabs()}
-                                {renderTaxContent(extraction)}
-                                {TAX_TYPES.map((taxType) => (
-                                    <TabsContent key={taxType} value={taxType}>
-                                        {renderTaxTable(extraction, taxType)}
-                                    </TabsContent>
-                                ))}
-                            </Tabs>
-                        </div>
-                    ))}
+                    {extractionHistory[selectedCompany.company_name]
+                        .sort((a, b) => new Date(b.extraction_date) - new Date(a.extraction_date))
+                        .map((extraction, index) => (
+                            <Card key={index} className="mb-4">
+                                <CardHeader>
+                                    <CardTitle className="text-xl text-blue-500">
+                                        Extraction from {new Date(extraction.extraction_date).toLocaleString()}
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent>
+                                    {extraction.status === 'error' ? (
+                                        renderErrorAlert(extraction)
+                                    ) : (
+                                        <Tabs defaultValue="all" className="w-full">
+                                            {renderTaxTabs()}
+                                            {renderTaxContent(extraction)}
+                                            {TAX_TYPES.map((taxType) => (
+                                                <TabsContent key={taxType} value={taxType}>
+                                                    {renderTaxTable(extraction, taxType)}
+                                                </TabsContent>
+                                            ))}
+                                        </Tabs>
+                                    )}
+                                </CardContent>
+                            </Card>
+                        ))}
                 </ScrollArea>
             ) : (
                 <div className="text-center py-8 text-gray-500">
@@ -337,125 +402,70 @@ export function AutoLiabilitiesReports() {
             )}
         </TabsContent>
     );
+    
     const renderTaxTable = (data, taxType) => {
-        // Check for error state first
-        if (data.status === 'error') {
+        if (!data?.liability_data || data.status === 'error') {
             return (
-                <Table>
-                    <TableBody>
-                        <TableRow>
-                            <TableCell colSpan={7} className="text-left text-red-500 bg-red-50 p-4">
-                                <div className="flex items-center gap-2">
-                                    <AlertCircle className="h-4 w-4" />
-                                    <div>
-                                        <div className="font-bold">Extraction Failed</div>
-                                        <div className="text-sm">{data.liability_data?.error || 'An error occurred during extraction'}</div>
-                                    </div>
-                                </div>
-                            </TableCell>
-                        </TableRow>
-                    </TableBody>
-                </Table>
+                <Alert variant="destructive" className="my-2">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertTitle>No data available</AlertTitle>
+                    <AlertDescription>
+                        {data.status === 'error' 
+                            ? 'This extraction encountered an error'
+                            : `No ${taxType.toUpperCase()} data available for this extraction`}
+                    </AlertDescription>
+                </Alert>
             );
         }
-        if (!data?.liability_data?.[taxType]) {
-            return (
-                <Table>
-                    <TableBody>
-                        <TableRow>
-                            <TableCell colSpan={7} className="text-left uppercase font-bold text-yellow-500 bg-yellow-100">
-                                No data available for {taxType}
-                            </TableCell>
-                        </TableRow>
-                    </TableBody>
-                </Table>
-            );
-        }
-
-        const { headers = [], rows = [] } = data.liability_data[taxType];
+    
+        const { headers = [], rows = [] } = data.liability_data[taxType] || {};
         const total = calculateTotal(data, taxType);
         const nonEmptyRows = rows.filter(row => row.some(cell => cell !== null && cell !== ''));
-
+    
         return (
             <div>
                 <div className="text-sm text-gray-500 mb-2">
                     Extraction Date: {new Date(data.extraction_date || data.updated_at).toLocaleString()}
                 </div>
-                <Table>
-                    <TableHeader>
-                        <TableRow>
-                            <TableHead>#</TableHead>
-                            {headers.map((header, index) => (
-                                <TableHead key={index}>{header}</TableHead>
-                            ))}
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        {nonEmptyRows.map((row, rowIndex) => (
-                            <TableRow key={rowIndex}>
-                                <TableCell>{rowIndex + 1}</TableCell>
-                                {row.map((cell, cellIndex) => (
-                                    <TableCell key={cellIndex}>{cell}</TableCell>
+                {nonEmptyRows.length > 0 ? (
+                    <Table>
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead>#</TableHead>
+                                {headers.map((header, index) => (
+                                    <TableHead key={index}>{header}</TableHead>
                                 ))}
                             </TableRow>
-                        ))}
-                        <TableRow className="bg-red-100">
-                            <TableCell colSpan={headers.length + 1} className="text-center font-bold">
-                                Liability Total: <span className="text-red-500">{formatAmount(total)}</span>
-                            </TableCell>
-                        </TableRow>
-                    </TableBody>
-                </Table>
+                        </TableHeader>
+                        <TableBody>
+                            {nonEmptyRows.map((row, rowIndex) => (
+                                <TableRow key={rowIndex}>
+                                    <TableCell>{rowIndex + 1}</TableCell>
+                                    {row.map((cell, cellIndex) => (
+                                        <TableCell key={cellIndex}>{cell}</TableCell>
+                                    ))}
+                                </TableRow>
+                            ))}
+                            <TableRow className="bg-red-100">
+                                <TableCell colSpan={headers.length + 1} className="text-center font-bold">
+                                    Liability Total: <span className="text-red-500">{formatAmount(total)}</span>
+                                </TableCell>
+                            </TableRow>
+                        </TableBody>
+                    </Table>
+                ) : (
+                    <Alert className="my-2">
+                        <AlertCircle className="h-4 w-4" />
+                        <AlertTitle>No data</AlertTitle>
+                        <AlertDescription>
+                            No {taxType.toUpperCase()} records found for this extraction
+                        </AlertDescription>
+                    </Alert>
+                )}
             </div>
         );
     };
 
-    const renderDetailedView = () => (
-        <div className="grid grid-cols-4 gap-2 xs:gap-1">
-            <div className="col-span-1">
-                <ScrollArea className="h-[550px] xs:h-[300px] border rounded-lg">
-                    {data.map((company) => (
-                        <div
-                            key={company.id}
-                            onClick={() => setSelectedCompany(company)}
-                            className={`p-1 xs:p-0.5 text-xs cursor-pointer ${selectedCompany?.id === company.id
-                                    ? 'bg-blue-500 text-white'
-                                    : company.status === 'error'
-                                        ? 'bg-red-100 hover:bg-red-200'
-                                        : 'hover:bg-blue-100'
-                                }`}
-                        >
-                            {company.company_name}
-                            {company.status === 'error' && (
-                                <AlertCircle className="inline-block ml-1 h-3 w-3 text-red-500" />
-                            )}
-                        </div>
-                    ))}
-                </ScrollArea>
-            </div>
-            <div className="col-span-3">
-                {selectedCompany && (
-                    <Card>
-                        <CardHeader>
-                            <CardTitle>{selectedCompany.company_name}</CardTitle>
-                            {renderErrorAlert(selectedCompany)}
-                        </CardHeader>
-                        <CardContent>
-                            <Tabs defaultValue="current">
-                                <TabsList className="grid w-full grid-cols-2 mb-4">
-                                    <TabsTrigger value="current">Current Extraction</TabsTrigger>
-                                    <TabsTrigger value="previous">Previous Extractions</TabsTrigger>
-                                </TabsList>
-
-                                {renderCurrentExtractionTab()}
-                                {renderPreviousExtractionsTab()}
-                            </Tabs>
-                        </CardContent>
-                    </Card>
-                )}
-            </div>
-        </div>
-    );
 
     const exportToExcel = async () => {
         try {
@@ -470,7 +480,7 @@ export function AutoLiabilitiesReports() {
                     const rowData = columns.map(col => {
                         if (col.accessorKey === 'index') return index + 1;
                         if (col.accessorKey === 'updated_at') return new Date(row.original.updated_at).toLocaleString();
-                        if (TAX_TYPES.includes(col.accessorKey)) {
+                        if (['income_tax', 'vat', 'paye'].includes(col.accessorKey)) {
                             return formatAmount(calculateTotal(row.original, col.accessorKey));
                         }
                         return row.original[col.accessorKey] || '';
