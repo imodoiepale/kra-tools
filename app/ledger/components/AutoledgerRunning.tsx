@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AlertCircle, PlayCircle, StopCircle } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
-export function AutoLiabilitiesRunning({ onComplete }) {
+export function AutoLedgerRunning({ onComplete }) {
     const [progress, setProgress] = useState(0);
     const [isRunning, setIsRunning] = useState(false);
     const [logs, setLogs] = useState([]);

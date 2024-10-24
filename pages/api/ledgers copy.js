@@ -5,16 +5,13 @@ import os from "os";
 import ExcelJS from "exceljs";
 import { createWorker } from 'tesseract.js';
 import { createClient } from "@supabase/supabase-js";
-import retry from 'async-retry';
 
 // Constants
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-let isRunning = false;
-let progress = 0;
-let currentCompany = '';
+let stopRequested = false;
 
 // Utility functions
 function getFormattedDateTime() {
@@ -24,7 +21,7 @@ function getFormattedDateTime() {
 
 function getDownloadFolderPath() {
   const formattedDateTime = getFormattedDateTime();
-  return path.join(os.homedir(), "Downloads", `AUTO EXTRACT GENERAL LEDGER- ${formattedDateTime}`);
+  return path.join(os.homedir(), "Downloads", ` AUTO EXTRACT GENERAL LEDGER- ${formattedDateTime}`);
 }
 
 async function createDownloadFolder() {
@@ -33,15 +30,9 @@ async function createDownloadFolder() {
   return downloadFolderPath;
 }
 
-async function readSupabaseData(companyIds) {
+async function readSupabaseData() {
   try {
-    let query = supabase.from("company_MAIN").select("*");
-
-    if (companyIds && companyIds.length > 0) {
-      query = query.in('id', companyIds);
-    }
-
-    const { data, error } = await query.order("id", { ascending: true });
+    const { data, error } = await supabase.from("company_MAIN").select("*").order("id", { ascending: true });
     if (error) {
       throw new Error(`Error reading data from 'company_MAIN' table: ${error.message}`);
     }
@@ -51,18 +42,18 @@ async function readSupabaseData(companyIds) {
   }
 }
 
-async function updateProgress(companyName, percentComplete, status = 'running') {
-  currentCompany = companyName;
-  progress = percentComplete;
-
-  await supabase
-    .from('ledger_extractions')
-    .update({
-      status: status,
-      progress: percentComplete,
-      updated_at: new Date().toISOString()
-    })
-    .eq('company_name', companyName);
+function highlightCells(row, startCol, endCol, color, bold = false) {
+  for (let col = startCol.charCodeAt(0); col <= endCol.charCodeAt(0); col++) {
+    const cell = row.getCell(String.fromCharCode(col));
+    cell.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: color }
+    };
+    if (bold) {
+      cell.font = { bold: true };
+    }
+  }
 }
 
 async function solveCaptcha(page, downloadFolderPath) {
@@ -93,31 +84,27 @@ async function solveCaptcha(page, downloadFolderPath) {
 }
 
 async function loginToKRA(page, company, downloadFolderPath) {
-  await retry(async () => {
-    await page.goto("https://itax.kra.go.ke/KRA-Portal/");
-    await page.locator("#logid").click();
-    await page.locator("#logid").fill(company.kra_pin);
-    await page.evaluate(() => {
-      CheckPIN();
-    });
-    await page.locator('input[name="xxZTT9p2wQ"]').fill(company.kra_itax_current_password);
-    await page.waitForTimeout(1500);
-    
-    const captchaResult = await solveCaptcha(page, downloadFolderPath);
-    await page.type("#captcahText", captchaResult);
-    await page.click("#loginButton");
-
-    const isInvalidLogin = await page.waitForSelector('b:has-text("Wrong result of the arithmetic operation.")', { state: 'visible', timeout: 3000 })
-      .catch(() => false);
-
-    if (isInvalidLogin) {
-      throw new Error("Wrong result of the arithmetic operation");
-    }
-  }, {
-    retries: 3,
-    minTimeout: 1000,
-    maxTimeout: 3000
+  await page.goto("https://itax.kra.go.ke/KRA-Portal/");
+  await page.goto("https://itax.kra.go.ke/KRA-Portal/");
+  await page.locator("#logid").click();
+  await page.locator("#logid").fill(company.kra_pin);
+  await page.evaluate(() => {
+    CheckPIN();
   });
+  await page.locator('input[name="xxZTT9p2wQ"]').fill(company.kra_itax_current_password);
+  await page.waitForTimeout(1500);
+  
+  const captchaResult = await solveCaptcha(page, downloadFolderPath);
+  await page.type("#captcahText", captchaResult);
+  await page.click("#loginButton");
+
+  const isInvalidLogin = await page.waitForSelector('b:has-text("Wrong result of the arithmetic operation.")', { state: 'visible', timeout: 3000 })
+    .catch(() => false);
+
+  if (isInvalidLogin) {
+    console.log("Wrong result of the arithmetic operation, retrying...");
+    await loginToKRA(page, company, downloadFolderPath);
+  }
 }
 
 async function navigateToGeneralLedger(page) {
@@ -194,6 +181,22 @@ async function configureGeneralLedger(page) {
   }
   
   await page.waitForTimeout(2500);
+}
+// Add this function near other utility functions
+async function storeExtractionHistory(companyName, ledgerData) {
+  const { data, error } = await supabase
+    .from("ledger_extractions_history")
+    .insert({
+      company_name: companyName,
+      ledger_data: ledgerData,
+      extraction_date: new Date().toISOString()
+    });
+
+  if (error) {
+    console.error("Failed to store extraction history:", error);
+    throw error;
+  }
+  return data;
 }
 
 async function extractTableData(page, worksheet, company) {
@@ -345,32 +348,71 @@ async function extractTableData(page, worksheet, company) {
   }
 }
 
-async function processCompany(page, company, worksheet, downloadFolderPath, updateProgressCallback) {
+
+async function updateExtractionStatus(companyName, status, progress = 0) {
+  try {
+    const { error } = await supabase
+      .from('ledger_extractions')
+      .upsert({
+        company_name: companyName,
+        status: status,
+        progress: progress,
+        updated_at: new Date().toISOString()
+      }, {
+        onConflict: 'company_name'
+      });
+
+    if (error) throw error;
+    console.log(`Updated status for ${companyName} to ${status} with progress ${progress}%`);
+  } catch (error) {
+    console.error('Error updating extraction status:', error);
+  }
+}
+
+async function processCompany(page, company, worksheet, downloadFolderPath) {
   try {
     if (!company.kra_pin || !(company.kra_pin.startsWith("P") || company.kra_pin.startsWith("A"))) {
       console.log(`Skipping ${company.company_name}: Invalid KRA PIN`);
-      await updateProgressCallback(company.company_name, 0, 'skipped');
+      await updateExtractionStatus(company.company_name, 'skipped', 0);
+      const companyNameRow = worksheet.addRow([
+        "",
+        `${company.company_name}`,
+        `Extraction Date: ${getFormattedDateTime()}`
+      ]);
+      highlightCells(companyNameRow, "B", "0", "FFADD8E6", true);
+      const pinRow = worksheet.addRow(["", " ", "MISSING KRA PIN"]);
+      highlightCells(pinRow, "C", "J", "FF7474");
+      worksheet.addRow();
       return;
     }
 
     if (company.kra_itax_current_password === null) {
       console.log(`Skipping ${company.company_name}: Password is null`);
-      await updateProgressCallback(company.company_name, 0, 'skipped');
+      await updateExtractionStatus(company.company_name, 'skipped', 0);
+      const companyNameRow = worksheet.addRow([
+        "",
+        `${company.company_name}`,
+        `Extraction Date: ${getFormattedDateTime()}`
+      ]);
+      highlightCells(companyNameRow, "B", "J", "FFADD8E6", true);
+      const passwordRow = worksheet.addRow(["", " ", "MISSING KRA PASSWORD"]);
+      highlightCells(passwordRow, "C", "J", "FF7474");
+      worksheet.addRow();
       return;
     }
 
-    await updateProgressCallback(company.company_name, 10);
+    await updateExtractionStatus(company.company_name, 'running', 10);
     await loginToKRA(page, company, downloadFolderPath);
-    await updateProgressCallback(company.company_name, 30);
+    await updateExtractionStatus(company.company_name, 'running', 30);
     
     await navigateToGeneralLedger(page);
-    await updateProgressCallback(company.company_name, 50);
+    await updateExtractionStatus(company.company_name, 'running', 50);
     
     await configureGeneralLedger(page);
-    await updateProgressCallback(company.company_name, 70);
+    await updateExtractionStatus(company.company_name, 'running', 70);
     
     await extractTableData(page, worksheet, company);
-    await updateProgressCallback(company.company_name, 90);
+    await updateExtractionStatus(company.company_name, 'running', 90);
 
     await page.evaluate(() => {
       logOutUser();
@@ -380,61 +422,29 @@ async function processCompany(page, company, worksheet, downloadFolderPath, upda
       .catch(() => false);
 
     if (isInvalidLogout) {
+      console.log("LOGOUT FAILED, retrying...");
       await page.goto("https://itax.kra.go.ke/KRA-Portal/");
       await page.waitForLoadState("load");
       await page.reload();
     }
 
-    await updateProgressCallback(company.company_name, 100, 'completed');
+    await updateExtractionStatus(company.company_name, 'completed', 100);
 
   } catch (error) {
     console.error(`Error processing company ${company.company_name}:`, error);
-    
-    const errorDetails = {
-      message: error.message,
-      timestamp: new Date().toISOString(),
-      stack: error.stack,
-      company: company.company_name
-    };
-
-    await supabase.from("ledger_extractions")
-      .upsert({
-        company_name: company.company_name,
-        status: 'error',
-        progress: 0,
-        error_message: errorDetails,
-        updated_at: new Date().toISOString()
-      }, { onConflict: 'company_name' });
-
-    await supabase.from("ledger_extractions_history")
-      .insert({
-        company_name: company.company_name,
-        error_message: errorDetails,
-        extraction_date: new Date().toISOString()
-      });
-
+    await updateExtractionStatus(company.company_name, 'error', 0);
     throw error;
   }
 }
 
-function highlightCells(row, startCol, endCol, color, bold = false) {
-  for (let col = startCol.charCodeAt(0); col <= endCol.charCodeAt(0); col++) {
-    const cell = row.getCell(String.fromCharCode(col));
-    cell.fill = {
-      type: "pattern",
-      pattern: "solid",
-      fgColor: { argb: color }
-    };
-    if (bold) {
-      cell.font = { bold: true };
-    }
-  }
-}
-
-async function runAutomation(companyIds, updateProgressCallback) {
+async function processCompanies(runOption, selectedIds, startProgress = 0, existingLogs = []) {
   const downloadFolderPath = await createDownloadFolder();
-  const data = await readSupabaseData(companyIds);
-  
+  let data = await readSupabaseData();
+
+  if (runOption === 'selected' && selectedIds && selectedIds.length > 0) {
+    data = data.filter(company => selectedIds.includes(company.id));
+  }
+
   const workbook = new ExcelJS.Workbook();
   const worksheet = workbook.addWorksheet("GENERAL LEDGER ALL SUMMARY");
   const companyNameRow = worksheet.addRow(["", "", `GENERAL LEDGER ALL COMPANIES SUMMARY`]);
@@ -446,172 +456,81 @@ async function runAutomation(companyIds, updateProgressCallback) {
   const page = await context.newPage();
 
   try {
-    for (const company of data) {
-      if (!isRunning) break;
-      await processCompany(page, company, worksheet, downloadFolderPath, updateProgressCallback);
+    for (let i = 0; i < data.length; i++) {
+      if (stopRequested) {
+        console.log("Automation stopped by user request.");
+        const company = data[i];
+        await updateExtractionStatus(company.company_name, 'stopped', 0);
+        break;
+      }
+
+      const company = data[i];
+      console.log(`Processing company ${i + 1}/${data.length}`);
+      await processCompany(page, company, worksheet, downloadFolderPath);
       await workbook.xlsx.writeFile(path.join(downloadFolderPath, `AUTO EXTRACT GENERAL LEDGER KRA 2.xlsx`));
     }
+  } catch (error) {
+    console.error("Error during data extraction and processing:", error);
   } finally {
     await context.close();
     await browser.close();
   }
+
+  console.log("Data extraction and processing complete.");
 }
 
 export default async function handler(req, res) {
-  const { action, companyIds, runOption } = req.body;
+  if (req.method !== "POST") {
+    return res.status(405).json({ message: "Method not allowed" });
+  }
 
-  switch (action) {
-      case 'start':
-          if (isRunning) {
-              return res.status(400).json({ error: 'Automation is already running' });
-          }
+  const { action, runOption, selectedIds } = req.body;
 
-          // Reset all previous running states
-          await supabase
-              .from('ledger_extractions')
-              .update({
-                  status: 'completed',
-                  updated_at: new Date().toISOString()
-              })
-              .eq('status', 'running');
+  try {
+    switch (action) {
+      case "start":
+        stopRequested = false;
+        // Start processing in background
+        processCompanies(runOption, selectedIds).catch(console.error);
+        return res.status(200).json({ message: "Extraction started." });
+      
+      case "stop":
+        stopRequested = true;
+        return res.status(200).json({ message: "Extraction stop requested." });
+      
+      case 'resume':
+        const { company, lastProgress } = req.body;
+        stopRequested = false;
+        
+        await updateExtractionStatus(company, 'running', lastProgress);
+        // Resume processing
+        processCompanies(runOption, selectedIds, lastProgress).catch(console.error);
+        return res.status(200).json({ message: "Extraction resumed." });
+      
+      case 'progress':
+        // Fetch current progress from database
+        const { data: progressData } = await supabase
+          .from('ledger_extractions')
+          .select('*')
+          .order('updated_at', { ascending: false });
 
-          isRunning = true;
-          progress = 0;
-          let companiesToProcess = [];
-
-          if (runOption === 'all') {
-              const { data, error } = await Promise.all([
-                  supabase
-                      .from('companyMainList')
-                      .select('id, company_name, kra_pin, kra_password, status')
-                      .eq('status', 'active')
-                      .order('id', { ascending: true }),
-                  supabase
-                      .from('PasswordChecker')
-                      .select('company_name, kra_pin, kra_password, status')
-              ]);
-
-              // Merge the data prioritizing PasswordChecker passwords
-              const mergedData = data[0].map(mainCompany => {
-                  const passwordMatch = data[1]?.find(
-                      pc => pc.company_name === mainCompany.company_name
-                  );
-
-                  return {
-                      ...mainCompany,
-                      kra_password: passwordMatch?.kra_password || mainCompany.kra_password
-                  };
-              });
-
-              if (error) {
-                  isRunning = false;
-                  return res.status(500).json({ error: 'Failed to fetch companies' });
-              }
-
-              companiesToProcess = data.map(company => company.id);
-          } else {
-              companiesToProcess = companyIds;
-          }
-
-          // Update status for selected companies to 'pending'
-          await supabase
-              .from('ledger_extractions')
-              .update({
-                  status: 'pending',
-                  progress: 0,
-                  error_message: null // Clear any previous errors
-              })
-              .in('company_name', companiesToProcess.map(id => id.toString()));
-
-          runAutomation(companiesToProcess, updateProgress)
-              .then(() => {
-                  isRunning = false;
-              })
-              .catch((error) => {
-                  isRunning = false;
-                  console.error('Automation error:', error);
-              });
-
-          return res.status(200).json({
-              message: 'Automation started',
-              companiesCount: companiesToProcess.length
-          });
-
-    case 'resume':
-      const { company, lastProgress } = req.body;
-      isRunning = true;
-      progress = lastProgress;
-      currentCompany = company;
-
-      await supabase
-        .from('ledger_extractions')
-        .update({
-          status: 'running',
-          progress: lastProgress,
-          updated_at: new Date().toISOString()
-        })
-        .eq('company_name', company);
-
-      runAutomation([company], updateProgress)
-        .then(() => {
-          isRunning = false;
-        })
-        .catch((error) => {
-          isRunning = false;
-          console.error('Automation error:', error);
+        return res.status(200).json({
+          currentCompany: progressData?.[0]?.company_name,
+          progress: progressData?.[0]?.progress || 0,
+          status: progressData?.[0]?.status || 'idle',
+          logs: progressData?.map(row => ({
+            company: row.company_name,
+            status: row.status,
+            progress: row.progress,
+            timestamp: row.updated_at
+          }))
         });
 
-      return res.status(200).json({ message: 'Extraction resumed' });
-
-    case 'stop':
-      isRunning = false;
-      await supabase
-        .from('ledger_extractions')
-        .update({
-          status: 'stopped',
-          updated_at: new Date().toISOString()
-        })
-        .eq('status', 'running');
-      return res.status(200).json({ message: 'Automation stopped' });
-
-    case 'progress':
-      const { data: progressData, error: progressError } = await supabase
-        .from('ledger_extractions')
-        .select('*')
-        .in('status', ['running', 'completed', 'error', 'stopped', 'queued'])
-        .order('updated_at', { ascending: false });
-
-      if (progressError) {
-        return res.status(500).json({ error: 'Failed to fetch progress data' });
-      }
-
-      const runningCompany = progressData.find(item => item.status === 'running');
-
-      return res.status(200).json({
-        isRunning,
-        progress: runningCompany ? runningCompany.progress : progress,
-        currentCompany: runningCompany ? runningCompany.company_name : currentCompany,
-        logs: progressData.map(item => ({
-          company: item.company_name,
-          status: item.status,
-          progress: item.progress,
-          timestamp: item.updated_at,
-          error: item.error_message
-        }))
-      });
-
-    case 'getResults':
-      const { data, error } = await supabase
-        .from('ledger_extractions')
-        .select('*')
-        .order('extraction_date', { ascending: false });
-
-      if (error) {
-        return res.status(500).json({ error: 'Failed to fetch results' });
-      }
-      return res.status(200).json(data);
-
-    default:
-      return res.status(400).json({ error: 'Invalid action' });
+      default:
+        return res.status(400).json({ message: "Invalid action." });
+    }
+  } catch (error) {
+    console.error('Error in handler:', error);
+    return res.status(500).json({ message: "Internal server error", error: error.message });
   }
 }
