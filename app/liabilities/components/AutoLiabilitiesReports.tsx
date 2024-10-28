@@ -43,7 +43,7 @@ export function AutoLiabilitiesReports() {
         pageSize: 100,
     });
 
-    const TAX_TYPES = ['income_tax', 'vat', 'paye', 'mri', 'tot'];
+    const TAX_TYPES = ['income_tax', 'vat', 'paye', 'mri', 'turnover_tax'];
     const [selectedCompanies, setSelectedCompanies] = useState([]);
     const [exportOptions, setExportOptions] = useState({
         view: 'summary',
@@ -168,7 +168,7 @@ export function AutoLiabilitiesReports() {
                     className="justify-center"
                 >
                     {taxType === 'mri' ? 'Monthly Rental Income' :
-                        taxType === 'tot' ? 'Turnover Tax' :
+                        taxType === 'turnover_tax' ? 'Turnover Tax' :
                             taxType.toUpperCase()}
                     <ArrowUpDown className="ml-2 h-4 w-4" />
                 </Button>
@@ -324,7 +324,7 @@ export function AutoLiabilitiesReports() {
             {TAX_TYPES.map((taxType) => (
                 <TabsTrigger key={taxType} value={taxType}>
                     {taxType === 'mri' ? 'MONTHLY RENTAL INCOME' :
-                        taxType === 'tot' ? 'TURNOVER TAX' :
+                        taxType === 'turnover_tax' ? 'TURNOVER TAX' :
                             taxType.toUpperCase()}
                 </TabsTrigger>
             ))}
@@ -337,7 +337,7 @@ export function AutoLiabilitiesReports() {
                     <div key={taxType}>
                         <h3 className="text-lg font-semibold mt-4 mb-2">
                             {taxType === 'mri' ? 'MONTHLY RENTAL INCOME' :
-                                taxType === 'tot' ? 'TURNOVER TAX' :
+                                taxType === 'turnover_tax' ? 'TURNOVER TAX' :
                                     taxType.replace('_', ' ').toUpperCase()}
                         </h3>
                         {renderTaxTable(data, taxType)}
@@ -480,7 +480,7 @@ export function AutoLiabilitiesReports() {
                     const rowData = columns.map(col => {
                         if (col.accessorKey === 'index') return index + 1;
                         if (col.accessorKey === 'updated_at') return new Date(row.original.updated_at).toLocaleString();
-                        if (['income_tax', 'vat', 'paye'].includes(col.accessorKey)) {
+                        if (['income_tax', 'vat', 'paye', 'turnover_tax'].includes(col.accessorKey)) {
                             return formatAmount(calculateTotal(row.original, col.accessorKey));
                         }
                         return row.original[col.accessorKey] || '';
@@ -579,7 +579,7 @@ export function AutoLiabilitiesReports() {
                                 />
                                 <label htmlFor={type}>
                                     {type === 'mri' ? 'MONTHLY RENTAL INCOME' :
-                                        type === 'tot' ? 'TURNOVER TAX' :
+                                        type === 'turnover_tax' ? 'TURNOVER TAX' :
                                             type.toUpperCase()}
                                 </label>
                             </div>

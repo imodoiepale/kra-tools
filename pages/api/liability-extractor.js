@@ -105,38 +105,83 @@ async function extractLiabilities(page, company) {
     const liabilityData = {
         income_tax: null,
         vat: null,
-        paye: null
+        paye: null,
+        mri: null,
+        turnover_tax: null,
     };
 
-    // Extract Income Tax
-    await page.locator("#cmbTaxHead").selectOption("VAT");
-    await page.waitForLoadState("load");
-    await page.locator("#cmbTaxHead").selectOption("IT");
-    await page.locator("#cmbTaxSubHead").selectOption("4");
-    await page.locator("#cmbPaymentType").selectOption("SAT");
-    liabilityData.income_tax = await extractTableData(page, "#LiablibilityTbl");
-
-    // Extract VAT
-    await page.locator("#cmbTaxHead").selectOption("VAT");
-    await page.locator("#cmbTaxHead").selectOption("IT");
-    await page.waitForTimeout(1000);
-    await page.locator("#cmbTaxHead").selectOption("VAT");
-    const option9Exists = await page.locator('#cmbTaxSubHead option[value="9"]').count() > 0;
-    if (option9Exists) {
-        await page.locator("#cmbTaxSubHead").selectOption("9");
-        await page.locator("#cmbPaymentType").selectOption("SAT");
-        liabilityData.vat = await extractTableData(page, "#LiablibilityTbl");
+    try {
+        // Extract Income Tax
+        await page.locator("#cmbTaxHead").selectOption("VAT");
+        await page.waitForLoadState("load");
+        await page.locator("#cmbTaxHead").selectOption("IT");
+        const option4Exists = await page.locator('#cmbTaxSubHead option[value="4"]').count() > 0;
+        if (option4Exists) {
+            await page.locator("#cmbTaxSubHead").selectOption("4");
+            await page.locator("#cmbPaymentType").selectOption("SAT");
+            liabilityData.income_tax = await extractTableData(page, "#LiablibilityTbl");
+        }
+    } catch (error) {
+        console.log("Skipping Income Tax extraction due to error");
     }
 
-    // Extract PAYE
-    await page.locator("#cmbTaxHead").selectOption("IT");
-    const option7Exists = await page.locator('#cmbTaxSubHead option[value="7"]').count() > 0;
-    if (option7Exists) {
-        await page.locator("#cmbTaxSubHead").selectOption("7");
-        await page.locator("#cmbPaymentType").selectOption("SAT");
-        liabilityData.paye = await extractTableData(page, "#LiablibilityTbl");
+    try {
+        // Extract TOT
+        await page.locator("#cmbTaxHead").selectOption("VAT");
+        await page.waitForLoadState("load");
+        await page.locator("#cmbTaxHead").selectOption("IT");
+        const option8Exists = await page.locator('#cmbTaxSubHead option[value="8"]').count() > 0;
+        if (option8Exists) {
+            await page.locator("#cmbTaxSubHead").selectOption("8");
+            await page.locator("#cmbPaymentType").selectOption("SAT");
+            
+            const noLiabilityDialog = await page.waitForSelector('div:has-text("No liability details found for selected Tax Obligation")', { timeout: 3000 }).catch(() => null);
+            if (noLiabilityDialog) {
+                liabilityData.turnover_tax = { headers: [], rows: [] };
+            } else {
+                liabilityData.turnover_tax = await extractTableData(page, "#LiablibilityTbl");
+            }
+        }
+    } catch (error) {
+        console.log("Skipping TOT extraction due to error");
     }
 
+    try {
+        // Extract VAT
+        await page.locator("#cmbTaxHead").selectOption("VAT");
+        await page.locator("#cmbTaxHead").selectOption("IT");
+        await page.waitForTimeout(1000);
+        await page.locator("#cmbTaxHead").selectOption("VAT");
+        const option9Exists = await page.locator('#cmbTaxSubHead option[value="9"]').count() > 0;
+        if (option9Exists) {
+            await page.locator("#cmbTaxSubHead").selectOption("9");
+            await page.locator("#cmbPaymentType").selectOption("SAT");
+            liabilityData.vat = await extractTableData(page, "#LiablibilityTbl");
+        }
+    } catch (error) {
+        console.log("Skipping VAT extraction due to error");
+    }
+
+    try {
+        // Extract PAYE
+        await page.locator("#cmbTaxHead").selectOption("IT");
+        const option7Exists = await page.locator('#cmbTaxSubHead option[value="7"]').count() > 0;
+        if (option7Exists) {
+            await page.locator("#cmbTaxSubHead").selectOption("7");
+            await page.locator("#cmbPaymentType").selectOption("SAT");
+            liabilityData.paye = await extractTableData(page, "#LiablibilityTbl");
+        }
+    } catch (error) {
+        console.log("Skipping PAYE extraction due to error");
+    }   
+    
+    // // Extract MRI
+    // await page.locator("#cmbTaxHead").selectOption("VAT");
+    // await page.waitForLoadState("load");
+    // await page.locator("#cmbTaxHead").selectOption("IT");
+    // await page.locator("#cmbTaxSubHead").selectOption("33");
+    // await page.locator("#cmbPaymentType").selectOption("SAT");
+    // liabilityData.mri = await extractTableData(page, "#LiablibilityTbl");
     return liabilityData;
 }
 

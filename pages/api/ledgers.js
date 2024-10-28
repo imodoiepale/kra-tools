@@ -441,19 +441,23 @@ async function runAutomation(companyIds, updateProgressCallback) {
   highlightCells(companyNameRow, "B", "N", "83EBFF", true);
   worksheet.addRow();
 
-  const browser = await chromium.launch({ headless: false, channel: "msedge" });
-  const context = await browser.newContext();
+  let currentBrowser = await chromium.launch({ headless: false, channel: "msedge" });
+  const context = await currentBrowser.newContext();
   const page = await context.newPage();
 
   try {
     for (const company of data) {
-      if (!isRunning) break;
+      if (!isRunning) {
+        console.log("Automation stopped, closing browser...");
+        break;
+      }
       await processCompany(page, company, worksheet, downloadFolderPath, updateProgressCallback);
       await workbook.xlsx.writeFile(path.join(downloadFolderPath, `AUTO EXTRACT GENERAL LEDGER KRA 2.xlsx`));
     }
   } finally {
     await context.close();
-    await browser.close();
+    await currentBrowser.close();
+    currentBrowser = null;
   }
 }
 
@@ -563,17 +567,26 @@ export default async function handler(req, res) {
 
       return res.status(200).json({ message: 'Extraction resumed' });
 
-    case 'stop':
-      isRunning = false;
-      await supabase
-        .from('ledger_extractions')
-        .update({
-          status: 'stopped',
-          updated_at: new Date().toISOString()
-        })
-        .eq('status', 'running');
-      return res.status(200).json({ message: 'Automation stopped' });
-
+      case 'stop':
+        isRunning = false;
+        if (currentBrowser) {
+          try {
+            await currentBrowser.close();
+            currentBrowser = null;
+            console.log("Browser closed successfully");
+          } catch (error) {
+            console.error("Error closing browser:", error);
+          }
+        }
+        await supabase
+          .from('ledger_extractions')
+          .update({
+            status: 'stopped',
+            updated_at: new Date().toISOString()
+          })
+          .eq('status', 'running');
+        return res.status(200).json({ message: 'Automation stopped and browser closed' });
+  
     case 'progress':
       const { data: progressData, error: progressError } = await supabase
         .from('ledger_extractions')
