@@ -42,7 +42,8 @@ export default async function handler(req, res) {
                 progress = 0;
                 totalCompanies = 0;
                 currentCompany = '';
-                processAutoPopulation().catch(error => {
+                // Add selectedIds parameter
+                processAutoPopulation(req.body.selectedIds).catch(error => {
                     console.error("Error in processAutoPopulation:", error);
                     isRunning = false;
                 });
@@ -72,8 +73,8 @@ export default async function handler(req, res) {
     }
 }
 
-async function processAutoPopulation() {
-    const companies = await readSupabaseData();
+async function processAutoPopulation(selectedIds) {
+    const companies = await readSupabaseData(selectedIds); // Pass selectedIds to filter companies
     totalCompanies = companies.length;
 
     const now = new Date();
@@ -106,9 +107,17 @@ async function processAutoPopulation() {
     console.log("Auto-population process completed or stopped");
 }
 
-async function readSupabaseData() {
+async function readSupabaseData(selectedIds) {
     try {
-        const { data, error } = await supabase.from("Autopopulate").select("*").order("id", { ascending: true });
+        let query = supabase.from("Autopopulate").select("*");
+
+        // If selectedIds is provided, filter by those IDs
+        if (selectedIds && selectedIds.length > 0) {
+            query = query.in('id', selectedIds);
+        }
+
+        const { data, error } = await query.order("id", { ascending: true });
+
         if (error) throw error;
         return data;
     } catch (error) {

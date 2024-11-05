@@ -53,8 +53,8 @@ async function extractReports(runOption, selectedCompanies) {
     const browser = await chromium.launch({
         headless: false,
         executablePath: chromePath
-    });
-    const context = await browser.newContext();
+    });     
+    const context = await browser.newContext();     
 
     const today = new Date();
     const dateString = format(today, 'dd.MM.yyyy');
