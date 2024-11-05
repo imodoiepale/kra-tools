@@ -39,6 +39,12 @@ const TaxStatus = ({ status }) => {
             return <div className="flex justify-center"><Badge className="bg-red-500 text-[8px] px-1 py-0">Cancelled</Badge></div>;
         case 'dormant':
             return <div className="flex justify-center"><Badge className="bg-blue-500 text-[8px] px-1 py-0">Dormant</Badge></div>;
+        case 'to register':
+            return <div className="flex justify-center"><Badge className="bg-yellow-500 text-[8px] px-1 py-0">To Register</Badge></div>;
+        case 'not sure':
+            return <div className="flex justify-center"><Badge className="bg-gray-500 text-[8px] px-1 py-0">Not Sure</Badge></div>;
+        case 'to cancel':
+            return <div className="flex justify-center"><Badge className="bg-orange-500 text-[8px] px-1 py-0">To Cancel</Badge></div>;
         default:
             return <div className="flex justify-center"><Badge variant="outline" className="bg-red-600 text-white text-[8px] px-1 py-0">No Obligation</Badge></div>;
     }
@@ -130,8 +136,8 @@ const TotalsRow = ({ totals }) => (
             </TableRow>
         ))}
     </>
-);
 
+);
 export default function OverallTaxesTable({ companies: initialCompanies }) {
     const [companies, setCompanies] = useState(initialCompanies);
     const [isLoading, setIsLoading] = useState(false);
@@ -236,6 +242,9 @@ export default function OverallTaxesTable({ companies: initialCompanies }) {
                                     <SelectItem value="Dormant">Dormant</SelectItem>
                                     <SelectItem value="No Obligation">No Obligation</SelectItem>
                                     <SelectItem value="Missing">Missing</SelectItem>
+                                    <SelectItem value="To Register">To be Registered</SelectItem>
+                                    <SelectItem value="Not Sure">Not Sure</SelectItem>
+                                    <SelectItem value="To Cancel">To Cancel</SelectItem>
                                 </SelectContent>
                             </Select>
                         ) : (
