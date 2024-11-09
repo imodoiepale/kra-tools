@@ -323,7 +323,7 @@ export default function ClientFileManagement() {
 
     return (
       <ScrollArea className="h-[600px]">
-        <Table>
+        {/* <Table>
           <TableHeader>
             <TableRow className='bg-gray-600 font-bold'>
               <TableHead className="font-bold text-white">Index</TableHead>
@@ -406,7 +406,7 @@ export default function ClientFileManagement() {
               );
             })}
           </TableBody>
-        </Table>
+        </Table> */}
       </ScrollArea>
     );
   };
