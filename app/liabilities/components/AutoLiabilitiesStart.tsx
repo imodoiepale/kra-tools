@@ -69,41 +69,41 @@ export function AutoLiabilitiesStart({ onStart, onStop }) {
     const handleStartCheck = async () => {
         setIsChecking(true);
         try {
-          // Update all selected companies' status to 'queued'
-          const companiesToProcess = runOption === 'selected' 
-            ? companies.filter(c => selectedCompanies.includes(c.id))
-            : companies;
-    
-          for (const company of companiesToProcess) {
-            await supabase
-              .from('liability_extractions')
-              .upsert({
-                company_name: company.company_name,
-                status: 'queued',
-                progress: 0,
-                updated_at: new Date().toISOString()
-              }, {
-                onConflict: 'company_name'
-              });
-          }
-    
-          const response = await fetch('/api/liability-extractor', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              action: 'start',
-              runOption,
-              companyIds: runOption === 'selected' ? selectedCompanies : []
-            })
-          });
-    
-          if (!response.ok) throw new Error('API request failed');
-          onStart();
+            // Update all selected companies' status to 'queued'
+            const companiesToProcess = runOption === 'selected'
+                ? companies.filter(c => selectedCompanies.includes(c.id))
+                : companies;
+
+            for (const company of companiesToProcess) {
+                await supabase
+                    .from('liability_extractions')
+                    .upsert({
+                        company_name: company.company_name,
+                        status: 'queued',
+                        progress: 0,
+                        updated_at: new Date().toISOString()
+                    }, {
+                        onConflict: 'company_name'
+                    });
+            }
+
+            const response = await fetch('/api/liability-extractor', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'start',
+                    runOption,
+                    companyIds: runOption === 'selected' ? selectedCompanies : []
+                })
+            });
+
+            if (!response.ok) throw new Error('API request failed');
+            onStart();
         } catch (error) {
-          console.error('Error starting extraction:', error);
-          alert('Failed to start extraction. Please try again.');
+            console.error('Error starting extraction:', error);
+            alert('Failed to start extraction. Please try again.');
         } finally {
-          setIsChecking(false);
+            setIsChecking(false);
         }
 
     };
@@ -124,7 +124,7 @@ export function AutoLiabilitiesStart({ onStart, onStop }) {
             console.error('Error stopping automations:', error);
             alert('Failed to stop automations. Please try again.');
         }
-    };  
+    };
 
     const handleCheckboxChange = (id: number) => {
         setSelectedCompanies(prev =>
@@ -217,8 +217,8 @@ export function AutoLiabilitiesStart({ onStart, onStop }) {
                                                     <TableHead className="sticky top-0 bg-white">#</TableHead>
                                                     <TableHead className="sticky top-0 bg-white">Company Name</TableHead>
                                                     <TableHead className="sticky top-0 bg-white">KRA PIN</TableHead>
-                                            <TableHead className="sticky top-0 bg-white">KRA Password</TableHead>
-                                            <TableHead className="sticky top-0 bg-white">Status</TableHead>
+                                                    <TableHead className="sticky top-0 bg-white">KRA Password</TableHead>
+                                                    <TableHead className="sticky top-0 bg-white">Status</TableHead>
                                                 </TableRow>
                                             </TableHeader>
                                             <TableBody>
@@ -227,8 +227,8 @@ export function AutoLiabilitiesStart({ onStart, onStop }) {
                                                         <TableCell>{index + 1}</TableCell>
                                                         <TableCell>{company.company_name}</TableCell>
                                                         <TableCell>{company.kra_pin}</TableCell>
-                                                <TableCell>{company.kra_password}</TableCell>
-                                                <TableCell>{company.status}</TableCell>
+                                                        <TableCell>{company.kra_password}</TableCell>
+                                                        <TableCell>{company.status}</TableCell>
                                                     </TableRow>
                                                 ))}
                                             </TableBody>
