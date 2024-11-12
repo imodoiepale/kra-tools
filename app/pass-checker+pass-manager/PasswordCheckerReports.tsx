@@ -24,6 +24,26 @@ interface Company {
   director?: string
 }
 
+function getStatusColor(status: string | null): string {
+  if (!status) return 'bg-gray-100 text-gray-800' // Default styling for null/undefined status
+  
+  const lowerStatus = status.toLowerCase();
+
+  switch (lowerStatus) {
+    case 'valid':
+      return 'bg-green-100 text-green-800';
+    case 'invalid':
+      case 'error':
+      return 'bg-red-100 text-red-800';
+    case 'locked':
+      case 'pending':
+    case 'password expired':
+      return 'bg-yellow-100 text-yellow-800';
+    default:
+      return 'bg-gray-100 text-gray-800';
+  }
+}
+
 export default function PasswordCheckerReports() {
   const [editingCompany, setEditingCompany] = useState<Company | null>(null)
   const [newCompany, setNewCompany] = useState<Partial<Company>>({
@@ -439,8 +459,8 @@ return (
                         {activeTab === 'nhif' && (
                           <>
                             <TableHead className="text-center">NHIF ID</TableHead>
-                            <TableHead className="text-center">NHIF Password</TableHead>
                             <TableHead className="text-center">NHIF Code</TableHead>
+                            <TableHead className="text-center">NHIF Password</TableHead>
                           </>
                         )}
                         {activeTab === 'ecitizen' && (
@@ -473,7 +493,7 @@ return (
                           <TableCell className="text-center">{company.kra_pin || <span className="font-bold text-red-600">Missing</span>}</TableCell>
                           <TableCell className="text-center">{company.kra_password || <span className="font-bold text-red-600">Missing</span>}</TableCell>
                           <TableCell className="text-center">
-                            <span className={`inline-flex items-center justify-center px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(company.status)}`}>
+                            <span className={`inline-flex items-center justify-center px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(company.status || null)}`}>
                               {company.status || <span className="font-bold text-red-600">Missing</span>}
                             </span>
                           </TableCell>
@@ -482,20 +502,73 @@ return (
                       ) : (
                         <>
                           <TableCell className="text-center">{index + 1}</TableCell>
+                          {(activeTab === 'nhif') && (
+                           <> 
                           <TableCell>{company.name || <span className="font-bold text-red-600">Missing</span>}</TableCell>
                           <TableCell className="text-center">{company.identifier || <span className="font-bold text-red-600">Missing</span>}</TableCell>
-                          <TableCell className="text-center">{company.password || <span className="font-bold text-red-600">Missing</span>}</TableCell>
-                          {(activeTab === 'nhif' || activeTab === 'nssf') && (
-                            <TableCell className="text-center">{company.code || <span className="font-bold text-red-600">Missing</span>}</TableCell>
-                          )}
-                          {activeTab === 'ecitizen' && (
-                            <TableCell className="text-center">{company.director || <span className="font-bold text-red-600">Missing</span>}</TableCell>
-                          )}
+                          <TableCell className="text-center">{company.nhif_code || <span className="font-bold text-red-600">Missing</span>}</TableCell>
+                          <TableCell className="text-center">{company.nhif_password || <span className="font-bold text-red-600">Missing</span>}</TableCell>
                           <TableCell className="text-center">
-                            <span className={`inline-flex items-center justify-center px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(company.status)}`}>
-                              {company.status || <span className="font-bold text-red-600">Missing</span>}
-                            </span>
-                          </TableCell>
+  <span className={`inline-flex items-center justify-center px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(company.status || company.nhif_status || company.nssf_status || null)}`}>
+    {company.nhif_status || <span className="font-bold text-red-600">Missing</span>}
+  </span>
+</TableCell>
+                          </>
+                          )}
+
+                          {(activeTab === 'nssf') && (
+                           <> 
+                          <TableCell>{company.company_name || <span className="font-bold text-red-600">Missing</span>}</TableCell>
+                          <TableCell className="text-center">{company.identifier || <span className="font-bold text-red-600">Missing</span>}</TableCell>
+                          <TableCell className="text-center">{company.nssf_code || <span className="font-bold text-red-600">Missing</span>}</TableCell>
+                          <TableCell className="text-center">{company.nssf_password || <span className="font-bold text-red-600">Missing</span>}</TableCell>
+                          <TableCell className="text-center">
+  <span className={`inline-flex items-center justify-center px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(company.status || company.nhif_status || company.nssf_status || null)}`}>
+    {company.nssf_status || <span className="font-bold text-red-600">Missing</span>}
+  </span>
+</TableCell>
+                          </>
+                          )}                         
+                          
+                          {activeTab === 'ecitizen' && (
+                           <>
+                          <TableCell>{company.company_name || <span className="font-bold text-red-600">Missing</span>}</TableCell>
+                            <TableCell className="text-center">{company.ecitizen_identifier || <span className="font-bold text-red-600">Missing</span>}</TableCell>
+                            <TableCell className="text-center">{company.ecitizen_password || <span className="font-bold text-red-600">Missing</span>}</TableCell>
+                            <TableCell className="text-center">{company.director || <span className="font-bold text-red-600">Missing</span>}</TableCell>
+                            <TableCell className="text-center">
+  <span className={`inline-flex items-center justify-center px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(company.status || null)}`}>
+    { company.status || <span className="font-bold text-red-600">Missing</span>}
+  </span>
+</TableCell> </>
+                          )}
+
+                          {activeTab === 'quickbooks' && (
+                           <>
+                          <TableCell>{company.name || <span className="font-bold text-red-600">Missing</span>}</TableCell>
+                            <TableCell className="text-center">{company.identifier || <span className="font-bold text-red-600">Missing</span>}</TableCell>
+                            <TableCell className="text-center">{company.password || <span className="font-bold text-red-600">Missing</span>}</TableCell>
+                          <TableCell className="text-center">
+  <span className={`inline-flex items-center justify-center px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(company.status || null)}`}>
+    { company.status || <span className="font-bold text-red-600">Missing</span>}
+  </span>
+</TableCell>
+                            </>
+                          )}
+
+                          {activeTab === 'kebs' && (
+                           <>
+                          <TableCell>{company.name || <span className="font-bold text-red-600">Missing</span>}</TableCell>
+                            <TableCell className="text-center">{company.identifier || <span className="font-bold text-red-600">Missing</span>}</TableCell>
+                            <TableCell className="text-center">{company.password || <span className="font-bold text-red-600">Missing</span>}</TableCell>
+                            <TableCell className="text-center">
+  <span className={`inline-flex items-center justify-center px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(company.status || null)}`}>
+    { company.status || <span className="font-bold text-red-600">Missing</span>}
+  </span>
+</TableCell>
+                            </>
+                          )}
+                
                           <TableCell className="text-center">{company.updated_at ? new Date(company.updated_at).toLocaleString() : <span className="font-bold text-red-600">Missing</span>}</TableCell>
                         </>
                       )}
@@ -587,17 +660,3 @@ return (
 }
 
 
-function getStatusColor(status: string): string {
-  const lowerStatus = status.toLowerCase();
-  switch (lowerStatus) {
-    case 'valid':
-      return 'bg-green-100 text-green-800'
-    case 'invalid':
-      return 'bg-red-100 text-red-800'
-    case 'locked':
-    case 'password expired':
-      return 'bg-yellow-100 text-yellow-800'
-    default:
-      return 'bg-red-100 text-red-800'
-  }
-}

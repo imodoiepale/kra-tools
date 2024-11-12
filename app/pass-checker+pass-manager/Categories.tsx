@@ -193,7 +193,7 @@ export default function Categories() {
 
             // Provide default values if data is undefined
             const currentSettings = data?.column_settings || {};
-            const defaultColumns = ['index', 'name', 'identifier', 'password', 'status'];
+            const defaultColumns = ['index', 'company_name', 'identifier', 'password', 'status'];
 
             const mergedSettings = {
                 visibleColumns: { index: true, ...currentSettings.visibleColumns },
@@ -245,11 +245,11 @@ export default function Categories() {
 
     // Function to get current settings for the active category and subcategory
     const getCurrentColumnSettings = () => {
-        const defaultColumns = ['name', 'identifier', 'password', 'status'];
+        const defaultColumns = ['company_name', 'identifier', 'password', 'status'];
         const defaultSettings = {
             visibleColumns: Object.fromEntries(Object.keys(column_mappings).map(key => [key, true])),
             headerNames: { ...column_mappings },
-            columnOrder: ['index', 'name', ...Object.keys(column_mappings).filter(key => key !== 'name')]
+            columnOrder: ['index', 'company_name', ...Object.keys(column_mappings).filter(key => key !== 'company_name')]
         };
 
         const currentSettings = columnSettings[`${activeCategory}_${activeSubCategory}`];
@@ -352,7 +352,7 @@ export default function Categories() {
             const currentSettings = data?.column_settings || {};
             console.log('Current settings:', currentSettings); // Log the current settings
 
-            const defaultColumns = ['index', 'name', 'identifier', 'password', 'status'];
+            const defaultColumns = ['index', 'company_name', 'identifier', 'password', 'status'];
 
             const mergedSettings = {
                 visibleColumns: { index: true, ...currentSettings.visibleColumns },
@@ -395,7 +395,7 @@ export default function Categories() {
             return currentSettings.columnOrder;
         }
         // Fallback to default order if no custom order is set
-        return ['index', 'name', 'identifier', 'password', 'status'];
+        return ['index', 'company_name', 'identifier', 'password', 'status'];
     };
 
     const getSortedAndFilteredItems = () => {
