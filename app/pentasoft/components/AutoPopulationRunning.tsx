@@ -16,7 +16,7 @@ export function AutoPopulationRunning({ onComplete }) {
     const [currentCompany, setCurrentCompany] = useState('');
     const [processedCount, setProcessedCount] = useState(0);
     const [totalCount, setTotalCount] = useState(0);
-
+    
     useEffect(() => {
         const interval = setInterval(fetchProgress, 5000);
         return () => clearInterval(interval);

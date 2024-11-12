@@ -53,8 +53,8 @@ async function extractReports(runOption, selectedCompanies) {
     const browser = await chromium.launch({
         headless: false,
         executablePath: chromePath
-    });
-    const context = await browser.newContext();
+    });     
+    const context = await browser.newContext();     
 
     const today = new Date();
     const dateString = format(today, 'dd.MM.yyyy');
@@ -294,17 +294,43 @@ async function updateSupabaseTable(companies, uploadedFiles) {
         const companyFiles = uploadedFiles[company.name] || [];
 
         try {
+            // Fetch existing data for the company
+            const { data: existingData, error: fetchError } = await supabase
+                .from('pentasoft_extractions')
+                .select('files')
+                .eq('company_name', company.name)
+                .single();
+
+            if (fetchError && fetchError.code !== 'PGRST116') { // PGRST116 means no rows found
+                throw fetchError;
+            }
+
+            // Prepare new data
             const newData = {
                 company_name: company.name,
                 updated_at: new Date().toISOString(),
-                files: {
-                    [monthYear]: {
-                        extraction_date: currentDate.toISOString(),
-                        files: companyFiles
-                    }
-                }
+                files: {}
             };
 
+            // If existing data is found, merge it with new data
+            if (existingData && existingData.files) {
+                newData.files = { ...existingData.files }; // Start with existing files
+            }
+
+            // Check if the current month already exists in the files
+            if (newData.files[monthYear]) {
+                // If it exists, update the existing entry
+                newData.files[monthYear].files = [...newData.files[monthYear].files, ...companyFiles];
+                newData.files[monthYear].extraction_date = currentDate.toISOString(); // Update extraction date
+            } else {
+                // If it doesn't exist, create a new entry for the current month
+                newData.files[monthYear] = {
+                    extraction_date: currentDate.toISOString(),
+                    files: companyFiles
+                };
+            }
+
+            // Upsert the new data
             const { data, error } = await supabase
                 .from('pentasoft_extractions')
                 .upsert(newData, {

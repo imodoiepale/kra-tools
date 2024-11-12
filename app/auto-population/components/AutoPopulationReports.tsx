@@ -118,9 +118,34 @@ export function AutoPopulationReports() {
         );
     };
 
-    const runSelectedReports = () => {
-        console.log("Running selected reports:", selectedReports);
-        // Implement logic to run selected reports
+    const runSelectedReports = async () => {
+        if (selectedReports.length === 0) {
+            // Add some UI feedback that no reports are selected
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/auto-population', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'start',
+                    selectedIds: selectedReports // Pass the selected IDs
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to start selected reports');
+            }
+
+            // Switch to running tab or update UI as needed
+            if (onStart) {
+                onStart();
+            }
+        } catch (error) {
+            console.error('Error running selected reports:', error);
+            // Add error handling/UI feedback
+        }
     };
 
     const runMissingReports = () => {

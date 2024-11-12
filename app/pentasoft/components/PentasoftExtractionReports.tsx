@@ -1,4 +1,5 @@
 // @ts-nocheck
+"use client"        
 import React, { useState, useEffect, useRef } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -7,18 +8,17 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { ArrowUpDown, Download, MoreHorizontal, RefreshCw, Upload, Search, Eye } from "lucide-react";
+import { ArrowUpDown, Download, MoreHorizontal, RefreshCw, Upload, Search } from "lucide-react";
 import * as ExcelJS from 'exceljs';
 import { createClient } from '@supabase/supabase-js';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import FileViewer from '@/components/FileViewer';
 
-
-
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!);
 const STORAGE_BUCKET = 'pentasoft-reports';
 
-interface FilePreview {
+// Type definitions
+    interface FilePreview {
     fileName: string;
     companyName: string;
     reportType: string;
@@ -44,6 +44,7 @@ interface ExtractionRecord {
 }
 
 export function PentasoftExtractionReports() {
+    // State variables
     const [reports, setReports] = useState<ExtractionRecord[]>([]);
     const [selectedCompany, setSelectedCompany] = useState<ExtractionRecord | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
@@ -58,7 +59,6 @@ export function PentasoftExtractionReports() {
         nita: true,
         house_levy: true,
     });
-
     const [isUploading, setIsUploading] = useState(false);
     const [isPreviewOpen, setIsPreviewOpen] = useState(false);
     const [filesPreviews, setFilesPreviews] = useState<FilePreview[]>([]);
@@ -67,11 +67,12 @@ export function PentasoftExtractionReports() {
     const [previewDialogOpen, setPreviewDialogOpen] = useState(false);
     const [previewFile, setPreviewFile] = useState<ExtractionFile | null>(null);
 
-
+    // Fetch reports on component mount
     useEffect(() => {
         fetchReports();
     }, []);
 
+    // Fetch reports from Supabase
     const fetchReports = async () => {
         try {
             const { data: reportsData, error } = await supabase
@@ -80,22 +81,19 @@ export function PentasoftExtractionReports() {
                 .order('id');
 
             if (error) throw error;
-
             setReports(reportsData);
         } catch (error) {
             console.error('Error fetching reports:', error);
         }
     };
 
+    // Handle sorting of reports
     const handleSort = (column: string) => {
-        if (sortColumn === column) {
-            setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-        } else {
-            setSortColumn(column);
-            setSortOrder('asc');
-        }
+        setSortOrder(sortColumn === column ? (sortOrder === 'asc' ? 'desc' : 'asc') : 'asc');
+        setSortColumn(column);
     };
 
+    // Sort and filter reports
     const sortedReports = [...reports].sort((a, b) => {
         if (a[sortColumn] < b[sortColumn]) return sortOrder === 'asc' ? -1 : 1;
         if (a[sortColumn] > b[sortColumn]) return sortOrder === 'asc' ? 1 : -1;
@@ -106,6 +104,7 @@ export function PentasoftExtractionReports() {
         report.company_name.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
+    // Export reports to Excel
     const exportToExcel = async () => {
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet('Pentasoft Extraction Reports');
@@ -134,10 +133,10 @@ export function PentasoftExtractionReports() {
         link.click();
     };
 
+    // Find a specific file in the reports
     const findFile = (files: ExtractionRecord['files'], type: string) => {
         if (!files) return undefined;
 
-        // Get the most recent month
         const mostRecentMonth = Object.keys(files).sort().pop();
         if (!mostRecentMonth) return undefined;
 
@@ -145,48 +144,86 @@ export function PentasoftExtractionReports() {
         return monthFiles.find(file => file.name.includes(type));
     };
 
-
+    // Render file button for viewing
     const renderFileButton = (files: ExtractionFile[] | ExtractionRecord['files'], type: string) => {
         let file: ExtractionFile | undefined;
-    
+
         if (Array.isArray(files)) {
             file = files.find(f => f.name.includes(type));
         } else {
-            file = findFile(files, type);
+            const monthYear = Object.keys(files).sort().pop();
+            if (monthYear) {
+                file = files[monthYear].files.find(f => f.name.includes(type));
+            }
         }
-    
+
         if (!file) return <span className="text-red-500 font-bold">Missing</span>;
-    
-        const fileType = file.name.split('.').pop().toLowerCase();
-        const supportedTypes = ['excel', 'xls', 'xlsx', 'zip', 'csv'];
-    
+
         return (
             <FileViewer
                 url={file.fullPath}
-                fileType={fileType}
-                title={file.name}
+                fileType={file.type}
+                title={file.originalName}
             />
         );
     };
-    
 
+    // Handle file download
+    const handleDownload = async (file: ExtractionFile) => {
+        try {
+            const response = await fetch(file.fullPath);
+            const blob = await response.blob();
+            const downloadUrl = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = downloadUrl;
+            link.download = file.originalName;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            window.URL.revokeObjectURL(downloadUrl);
+        } catch (error) {
+            console.error('Download failed:', error);
+        }
+    };
+
+    // Preview dialog component
     const PreviewDialog = ({ file, isOpen, onClose }) => {
-        const fileType = file?.name.split('.').pop().toLowerCase();
+        const fileType = file?.type;
+
+        const handleFileDownload = async () => {
+            if (!file) return;
+
+            try {
+                const response = await fetch(file.fullPath);
+                const blob = await response.blob();
+                const downloadUrl = window.URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = downloadUrl;
+                link.download = file.originalName;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                window.URL.revokeObjectURL(downloadUrl);
+            } catch (error) {
+                console.error('Download failed:', error);
+            }
+        };
 
         return (
             <Dialog open={isOpen} onOpenChange={onClose}>
                 <DialogContent className="max-w-4xl">
                     <DialogHeader>
-                        <DialogTitle>{file?.name}</DialogTitle>
+                        <DialogTitle>{file?.originalName}</DialogTitle>
                     </DialogHeader>
                     <div className="mt-4 h-[70vh]">
                         <FileViewer
+                            url={file?.fullPath}
                             fileType={fileType}
-                            filePath={file?.fullPath}
+                            title={file?.originalName}
                         />
                     </div>
                     <DialogFooter>
-                        <Button onClick={() => window.open(file?.fullPath, '_blank')}>
+                        <Button onClick={handleFileDownload}>
                             <Download className="mr-1 h-4 w-4" />
                             Download
                         </Button>
@@ -196,7 +233,7 @@ export function PentasoftExtractionReports() {
         );
     };
 
-
+    // Handle file selection
     const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
         const files = event.target.files;
         if (!files) return;
@@ -231,6 +268,7 @@ export function PentasoftExtractionReports() {
         setIsPreviewOpen(true);
     };
 
+    // Handle file upload
     const handleFileUpload = async () => {
         setIsUploading(true);
 
@@ -324,7 +362,6 @@ export function PentasoftExtractionReports() {
             });
 
             await Promise.all(uploadPromises);
-
             await fetchReports();
             setIsPreviewOpen(false);
             setFilesPreviews([]);
@@ -335,10 +372,10 @@ export function PentasoftExtractionReports() {
         }
     };
 
+    // Filter companies based on search term
     const filteredCompanies = reports.filter(report =>
         report.company_name.toLowerCase().includes(companySearchTerm.toLowerCase())
     );
-
 
     return (
         <Tabs defaultValue="summary">
