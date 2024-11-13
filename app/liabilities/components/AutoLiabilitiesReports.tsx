@@ -65,7 +65,7 @@ export function AutoLiabilitiesReports() {
                 const { data: currentData, error: currentError } = await supabase
                     .from('liability_extractions')
                     .select('*')
-                    .order('id', { ascending: false });
+                    .order('company_name', { ascending: true });
 
                 if (currentError) throw currentError;
 
@@ -222,57 +222,58 @@ export function AutoLiabilitiesReports() {
         }
         return null;
     };
-    
+
     const renderDetailedView = () => (
-        <div className="grid grid-cols-4 gap-2 xs:gap-1">
+        <div className="grid grid-cols-4 gap-4">
             <div className="col-span-1">
-                <ScrollArea className="h-[550px] xs:h-[300px] border rounded-lg">
-                    {data.map((company) => (
-                        <div
-                            key={company.id}
-                            onClick={() => setSelectedCompany(company)}
-                            className={`p-1 xs:p-0.5 text-xs cursor-pointer ${
-                                selectedCompany?.id === company.id
-                                    ? 'bg-blue-500 text-white'
-                                    : company.status === 'error'
-                                        ? 'bg-red-100 hover:bg-red-200'
-                                        : 'hover:bg-blue-100'
-                            }`}
-                        >
-                            {company.company_name}
-                            {company.status === 'error' && (
-                                <AlertCircle className="inline-block ml-1 h-3 w-3 text-red-500" />
-                            )}
-                        </div>
-                    ))}
+                <ScrollArea className="h-[450px] border rounded-lg shadow-sm">
+                    {data
+                        .sort((a, b) => a.company_name.localeCompare(b.company_name))
+                        .map((company, index) => (
+                            <div
+                                key={company.id}
+                                onClick={() => setSelectedCompany(company)}
+                                className={`p-2 text-sm cursor-pointer border-b last:border-b-0 ${selectedCompany?.id === company.id
+                                        ? 'bg-blue-500 text-white'
+                                        : company.status === 'error'
+                                            ? 'bg-red-50 hover:bg-red-100'
+                                            : 'hover:bg-blue-50'
+                                    }`}
+                            >
+                                <span className="mr-2 text-xs text-gray-500">{index + 1}.</span>
+                                {company.company_name}
+                                {company.status === 'error' && (
+                                    <AlertCircle className="inline-block ml-1 h-3 w-3 text-red-500" />
+                                )}
+                            </div>
+                        ))}
                 </ScrollArea>
             </div>
+
             <div className="col-span-3">
                 {selectedCompany && (
-                    <>
-                        {renderErrorAlert(selectedCompany)}
-                        <Card>
-                            <CardHeader>
-                                <CardTitle>{selectedCompany.company_name}</CardTitle>
-                            </CardHeader>
-                            <CardContent>
+                    <Card className="h-[450px]">
+                        <CardHeader className="py-3">
+                            <CardTitle className="text-lg">{selectedCompany.company_name}</CardTitle>
+                        </CardHeader>
+                        <CardContent className="p-3">
+                            <ScrollArea className="h-[350px]">
                                 <Tabs defaultValue="current">
-                                    <TabsList className="grid w-full grid-cols-2 mb-4">
+                                    <TabsList className="grid w-full grid-cols-2 mb-2">
                                         <TabsTrigger value="current">Current Extraction</TabsTrigger>
                                         <TabsTrigger value="previous">Previous Extractions</TabsTrigger>
                                     </TabsList>
-    
                                     {renderCurrentExtractionTab()}
                                     {renderPreviousExtractionsTab()}
                                 </Tabs>
-                            </CardContent>
-                        </Card>
-                    </>
+                            </ScrollArea>
+                        </CardContent>
+                    </Card>
                 )}
             </div>
         </div>
     );
-    
+
     const renderSummaryView = () => (
         <ScrollArea className="h-[500px]">
             <Table>
@@ -318,6 +319,8 @@ export function AutoLiabilitiesReports() {
             </Table>
         </ScrollArea>
     );
+
+    
     const renderTaxTabs = () => (
         <TabsList>
             <TabsTrigger value="all">ALL</TabsTrigger>
@@ -402,7 +405,7 @@ export function AutoLiabilitiesReports() {
             )}
         </TabsContent>
     );
-    
+
     const renderTaxTable = (data, taxType) => {
         if (!data?.liability_data || data.status === 'error') {
             return (
@@ -423,38 +426,40 @@ export function AutoLiabilitiesReports() {
         const nonEmptyRows = rows.filter(row => row.some(cell => cell !== null && cell !== ''));
     
         return (
-            <div>
-                <div className="text-sm text-gray-500 mb-2">
+            <div className="rounded-lg border">
+                <div className="p-2 bg-gray-50 text-sm text-gray-600">
                     Extraction Date: {new Date(data.extraction_date || data.updated_at).toLocaleString()}
                 </div>
                 {nonEmptyRows.length > 0 ? (
                     <Table>
                         <TableHeader>
-                            <TableRow>
-                                <TableHead>#</TableHead>
+                            <TableRow className="bg-gray-50">
+                                <TableHead className="w-[50px]">#</TableHead>
                                 {headers.map((header, index) => (
-                                    <TableHead key={index}>{header}</TableHead>
+                                    <TableHead key={index} className="text-sm font-medium">
+                                        {header}
+                                    </TableHead>
                                 ))}
                             </TableRow>
                         </TableHeader>
                         <TableBody>
                             {nonEmptyRows.map((row, rowIndex) => (
-                                <TableRow key={rowIndex}>
-                                    <TableCell>{rowIndex + 1}</TableCell>
+                                <TableRow key={rowIndex} className="text-sm">
+                                    <TableCell className="text-gray-500">{rowIndex + 1}</TableCell>
                                     {row.map((cell, cellIndex) => (
                                         <TableCell key={cellIndex}>{cell}</TableCell>
                                     ))}
                                 </TableRow>
                             ))}
-                            <TableRow className="bg-red-100">
-                                <TableCell colSpan={headers.length + 1} className="text-center font-bold">
-                                    Liability Total: <span className="text-red-500">{formatAmount(total)}</span>
+                            <TableRow className="bg-red-50 font-medium">
+                                <TableCell colSpan={headers.length + 1} className="text-center">
+                                    Total Liability: <span className="text-red-600">{formatAmount(total)}</span>
                                 </TableCell>
                             </TableRow>
                         </TableBody>
                     </Table>
                 ) : (
-                    <Alert className="my-2">
+                    <Alert className="m-2">
                         <AlertCircle className="h-4 w-4" />
                         <AlertTitle>No data</AlertTitle>
                         <AlertDescription>
@@ -465,7 +470,7 @@ export function AutoLiabilitiesReports() {
             </div>
         );
     };
-
+    
 
     const exportToExcel = async () => {
         try {
@@ -691,50 +696,6 @@ export function AutoLiabilitiesReports() {
                         {renderDetailedView()}
                     </TabsContent>
                 </Tabs>
-                <div className="flex items-center justify-between mt-2">
-                    <div>
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => table.previousPage()}
-                            disabled={!table.getCanPreviousPage()}
-                        >
-                            Previous
-                        </Button>
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => table.nextPage()}
-                            disabled={!table.getCanNextPage()}
-                        >
-                            Next
-                        </Button>
-                    </div>
-                    <span className="flex items-center gap-1">
-                        <div>Page</div>
-                        <strong>
-                            {table.getState().pagination.pageIndex + 1} of{" "}
-                            {table.getPageCount()}
-                        </strong>
-                    </span>
-                    <Select
-                        value={table.getState().pagination.pageSize.toString()}
-                        onValueChange={(value) => {
-                            table.setPageSize(Number(value));
-                        }}
-                    >
-                        <SelectTrigger className="w-[100px]">
-                            <SelectValue placeholder={table.getState().pagination.pageSize} />
-                        </SelectTrigger>
-                        <SelectContent>
-                            {[10, 25, 50, 100].map((pageSize) => (
-                                <SelectItem key={pageSize} value={pageSize.toString()}>
-                                    {pageSize}
-                                </SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
-                </div>
             </CardContent>
         </Card>
     );

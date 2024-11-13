@@ -373,36 +373,47 @@ export default async function handler(req, res) {
             let companiesToProcess = [];
 
             if (runOption === 'all') {
-                const { data, error } = await Promise.all([
-                    supabase
-                        .from('companyMainList')
-                        .select('id, company_name, kra_pin, kra_password, status')
-                        .eq('status', 'active')
-                        .order('id', { ascending: true }),
-                    supabase
-                        .from('PasswordChecker')
-                        .select('company_name, kra_pin, kra_password, status')
-                ]);
-
+                const { data: mainListData, error: mainListError } = await supabase
+                    .from('companyMainList')
+                    .select('id, company_name, kra_pin, kra_password, status')
+                    .eq('status', 'active')
+                    .order('id', { ascending: true });
+            
+                const { data: passwordData, error: passwordError } = await supabase
+                    .from('PasswordChecker')
+                    .select('company_name, kra_pin, kra_password, status');
+            
+                if (mainListError || passwordError) {
+                    isRunning = false;
+                    return res.status(500).json({ error: 'Failed to fetch companies' });
+                }
+            
                 // Merge the data prioritizing PasswordChecker passwords
-                const mergedData = data[0].map(mainCompany => {
-                    const passwordMatch = data[1]?.find(
+                const mergedData = mainListData.map(mainCompany => {
+                    const passwordMatch = passwordData?.find(
                         pc => pc.company_name === mainCompany.company_name
                     );
-
+            
                     return {
                         ...mainCompany,
                         kra_password: passwordMatch?.kra_password || mainCompany.kra_password
                     };
                 });
+            
+                companiesToProcess = mergedData.map(company => company.id);
+            }
 
+            if (runOption === 'selected' && companyIds?.length > 0) {
+                const { data, error } = await supabase
+                    .from('PasswordChecker')
+                    .select('*')
+                    .in('id', companyIds);
+            
                 if (error) {
                     isRunning = false;
-                    return res.status(500).json({ error: 'Failed to fetch companies' });
+                    return res.status(500).json({ error: 'Failed to fetch selected companies' });
                 }
-
-                companiesToProcess = data.map(company => company.id);
-            } else {
+            
                 companiesToProcess = companyIds;
             }
 

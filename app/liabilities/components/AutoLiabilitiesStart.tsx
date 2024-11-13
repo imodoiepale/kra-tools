@@ -151,8 +151,11 @@ export function AutoLiabilitiesStart({ onStart, onStop }) {
                             <SelectValue placeholder="Select run option" />
                         </SelectTrigger>
                         <SelectContent>
-                            <SelectItem value="all">All Companies</SelectItem>
-                            <SelectItem value="selected">Selected Companies</SelectItem>
+                            {['all', 'selected'].map(option => (
+                                <SelectItem key={option} value={option}>
+                                    {option === 'all' ? 'All Companies' : 'Selected Companies'}
+                                </SelectItem>
+                            ))}
                         </SelectContent>
                     </Select>
                 </div>
@@ -168,17 +171,23 @@ export function AutoLiabilitiesStart({ onStart, onStop }) {
                                 <Table>
                                     <TableHeader>
                                         <TableRow>
-                                            <TableHead className="w-[50px] sticky top-0 bg-white">
-                                                <Checkbox
-                                                    checked={selectAll}
-                                                    onCheckedChange={handleSelectAllChange}
-                                                />
-                                            </TableHead>
-                                            <TableHead className="sticky top-0 bg-white">#</TableHead>
-                                            <TableHead className="sticky top-0 bg-white">Company Name</TableHead>
-                                            <TableHead className="sticky top-0 bg-white">KRA PIN</TableHead>
-                                            <TableHead className="sticky top-0 bg-white">KRA Password</TableHead>
-                                            <TableHead className="sticky top-0 bg-white">Status</TableHead>
+                                            {[
+                                                { key: 'checkbox', label: '', width: 'w-[50px]' },
+                                                { key: 'number', label: '#' },
+                                                { key: 'name', label: 'Company Name' },
+                                                { key: 'pin', label: 'KRA PIN' },
+                                                { key: 'password', label: 'KRA Password' },
+                                                { key: 'status', label: 'Status' }
+                                            ].map(({ key, label, width }) => (
+                                                <TableHead key={key} className={`sticky top-0 bg-white ${width || ''}`}>
+                                                    {key === 'checkbox' ? (
+                                                        <Checkbox
+                                                            checked={selectAll}
+                                                            onCheckedChange={handleSelectAllChange}
+                                                        />
+                                                    ) : label}
+                                                </TableHead>
+                                            ))}
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
@@ -214,11 +223,9 @@ export function AutoLiabilitiesStart({ onStart, onStop }) {
                                         <Table>
                                             <TableHeader>
                                                 <TableRow>
-                                                    <TableHead className="sticky top-0 bg-white">#</TableHead>
-                                                    <TableHead className="sticky top-0 bg-white">Company Name</TableHead>
-                                                    <TableHead className="sticky top-0 bg-white">KRA PIN</TableHead>
-                                                    <TableHead className="sticky top-0 bg-white">KRA Password</TableHead>
-                                                    <TableHead className="sticky top-0 bg-white">Status</TableHead>
+                                                    {['#', 'Company Name', 'KRA PIN', 'KRA Password', 'Status'].map(header => (
+                                                        <TableHead key={header} className="sticky top-0 bg-white">{header}</TableHead>
+                                                    ))}
                                                 </TableRow>
                                             </TableHeader>
                                             <TableBody>
@@ -248,9 +255,8 @@ export function AutoLiabilitiesStart({ onStart, onStop }) {
                             </motion.div>
                         )}
                     </div>
-                )
-                }
-            </CardContent >
+                )}
+            </CardContent>
             {runOption === 'all' && (
                 <CardFooter>
                     <div className="flex space-x-2">
@@ -263,6 +269,6 @@ export function AutoLiabilitiesStart({ onStart, onStop }) {
                     </div>
                 </CardFooter>
             )}
-        </Card >
+        </Card>
     );
 }
