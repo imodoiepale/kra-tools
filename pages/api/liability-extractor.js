@@ -175,14 +175,19 @@ async function extractLiabilities(page, company) {
         console.log("Skipping PAYE extraction due to error");
     }   
     
-    // // Extract MRI
-    // await page.locator("#cmbTaxHead").selectOption("VAT");
-    // await page.waitForLoadState("load");
-    // await page.locator("#cmbTaxHead").selectOption("IT");
-    // await page.locator("#cmbTaxSubHead").selectOption("33");
-    // await page.locator("#cmbPaymentType").selectOption("SAT");
-    // liabilityData.mri = await extractTableData(page, "#LiablibilityTbl");
-    return liabilityData;
+    try {
+        // Extract MRI
+        await page.locator("#cmbTaxHead").selectOption("VAT");
+        await page.waitForLoadState("load");
+        await page.locator("#cmbTaxHead").selectOption("IT");
+        await page.locator("#cmbTaxSubHead").selectOption("33");
+        await page.locator("#cmbPaymentType").selectOption("SAT");
+        liabilityData.mri = await extractTableData(page, "#LiablibilityTbl");
+    } catch (error) {
+        console.log("Skipping MRI extraction due to error");
+    }    return liabilityData;
+
+    
 }
 
 async function storeLiabilityData(company, liabilityData) {
