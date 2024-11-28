@@ -8,6 +8,7 @@ const config = {
     database: 'db_a77dbc_waclientrepository',
     user: 'db_a77dbc_waclientrepository_admin',
     password: 'jackesq99',
+    MemberID:84,
     options: {
         encrypt: true,
         trustServerCertificate: true,
@@ -48,6 +49,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                     NITA_List,
                     pno
                 FROM cr_Reports_External
+                WHERE MemberID = ${config.MemberID}
                 ORDER BY CompanyName, Year DESC, Month DESC
             `);
             await pool.close();
