@@ -1,5 +1,6 @@
 // @ts-nocheck
 "use client"
+import { cn } from "@/lib/utils";
 
 import React, { useMemo, useState } from 'react';
 import {
@@ -46,7 +47,7 @@ export default function MonthlyTable({ clients = [], checklist, selectedDate, up
     };
 
 
-     const handleSendReminder = async (companyName) => {
+    const handleSendReminder = async (companyName) => {
         try {
             // Implement your reminder logic here
             console.log(`Sending reminder to ${companyName}`);
@@ -94,6 +95,9 @@ export default function MonthlyTable({ clients = [], checklist, selectedDate, up
                             onConfirm={(status, kraPin) => updateClientStatus(info.row.original.company_name, year, month, status, kraPin)}
                             existingData={data}
                         />
+                        {data?.isNil && (
+                            <span className="text-xs font-medium text-red-500 ml-1">NIL</span>
+                        )}
                     </div>
                 );
             },
@@ -222,7 +226,9 @@ export default function MonthlyTable({ clients = [], checklist, selectedDate, up
         //     header: 'Last Modified',
         //     size: 150,
         // }),
-    ], [year, month, checklist, updateClientStatus, handleSendReminder]);
+        // ], [year, month, checklist, updateClientStatus, handleSendReminder]);
+    ], [year, month, checklist, updateClientStatus]);
+
 
     const data = useMemo(() =>
         clients.map((client, index) => ({
@@ -246,48 +252,60 @@ export default function MonthlyTable({ clients = [], checklist, selectedDate, up
     });
 
     const getStatusCounts = () => {
-        const total = table.getFilteredRowModel().rows.length;
-        const receivedCount = table.getFilteredRowModel().rows.filter(row =>
-            checklist[row.original.company_name]?.file_management?.[year]?.[month]?.receivedAt
-        ).length;
-        const deliveredCount = table.getFilteredRowModel().rows.filter(row =>
-            checklist[row.original.company_name]?.file_management?.[year]?.[month]?.filesDelivered
-        ).length;
+        const rows = table.getFilteredRowModel().rows;
+        const total = rows.length;
+
+        const receivedCount = rows.filter(row => {
+            const data = checklist[row.original.company_name]?.file_management?.[year]?.[month];
+            return data?.receivedAt || data?.isNil;
+        }).length;
+
+        const deliveredCount = rows.filter(row => {
+            const data = checklist[row.original.company_name]?.file_management?.[year]?.[month];
+            return data?.filesDelivered;
+        }).length;
+
+        const nilCount = rows.filter(row => {
+            const data = checklist[row.original.company_name]?.file_management?.[year]?.[month];
+            return data?.isNil;
+        }).length;
+
         return {
             total,
             receivedComplete: receivedCount,
             receivedPending: total - receivedCount,
             deliveredComplete: deliveredCount,
-            deliveredPending: total - deliveredCount
+            deliveredPending: total - deliveredCount,
+            nilCount
         };
     };
 
-   
+
 
     const exportToExcel = async () => {
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet('Monthly Report');
-        
+
         // Add title with month and year
         worksheet.addRow([`Monthly Report - ${format(selectedDate, 'MMMM yyyy')}`]);
         worksheet.mergeCells('A1:K1');
         worksheet.getCell('A1').font = { bold: true, size: 14 };
         worksheet.getCell('A1').alignment = { horizontal: 'center' };
-        
+
         // Add date generated
         worksheet.addRow([`Generated on: ${format(new Date(), 'dd/MM/yyyy HH:mm')}`]);
         worksheet.mergeCells('A2:K2');
         worksheet.getCell('A2').alignment = { horizontal: 'center' };
-        
+
         // Empty row for spacing
         worksheet.addRow([]);
-        
+
         // Add headers
         const headers = table.getAllColumns()
             .filter(column => column.getIsVisible())
             .map(column => column.columnDef.header);
         const headerRow = worksheet.addRow(headers);
-        
+
         // Style headers
         headerRow.eachCell((cell) => {
             cell.font = { bold: true };
@@ -303,7 +321,7 @@ export default function MonthlyTable({ clients = [], checklist, selectedDate, up
                 right: { style: 'thin' }
             };
         });
-        
+
         // Add data rows
         table.getRowModel().rows.forEach((row, index) => {
             const rowData = row.getAllCells()
@@ -319,7 +337,7 @@ export default function MonthlyTable({ clients = [], checklist, selectedDate, up
                     return value || '-';
                 });
             const excelRow = worksheet.addRow(rowData);
-            
+
             // Add zebra striping
             if (index % 2 === 0) {
                 excelRow.eachCell((cell) => {
@@ -330,7 +348,7 @@ export default function MonthlyTable({ clients = [], checklist, selectedDate, up
                     };
                 });
             }
-            
+
             // Add borders
             excelRow.eachCell((cell) => {
                 cell.border = {
@@ -341,23 +359,23 @@ export default function MonthlyTable({ clients = [], checklist, selectedDate, up
                 };
             });
         });
-        
+
         // Add totals if enabled
         if (showTotals) {
             const counts = getStatusCounts();
             worksheet.addRow([]); // Empty row for spacing
-            
+
             const totalsRows = [
                 ['Total', counts.total, counts.total],
                 ['Complete', counts.receivedComplete, counts.deliveredComplete],
                 ['Pending', counts.receivedPending, counts.deliveredPending]
             ];
-            
+
             totalsRows.forEach((rowData, index) => {
                 const row = worksheet.addRow(['Totals', ...rowData]);
                 row.font = { bold: true };
-                const bgColor = index === 0 ? 'FFE6F0FF' : 
-                               index === 1 ? 'FFE6FFE6' : 'FFFFE6E6';
+                const bgColor = index === 0 ? 'FFE6F0FF' :
+                    index === 1 ? 'FFE6FFE6' : 'FFFFE6E6';
                 row.eachCell((cell) => {
                     cell.fill = {
                         type: 'pattern',
@@ -402,7 +420,7 @@ export default function MonthlyTable({ clients = [], checklist, selectedDate, up
                 <div className="text-2xl font-bold text-gray-800">
                     {format(selectedDate, 'MMMM yyyy')}
                 </div>
-                
+
                 <div className="flex items-center space-x-4">
                     {/* Search */}
                     <div className="flex items-center w-64">
@@ -471,7 +489,7 @@ export default function MonthlyTable({ clients = [], checklist, selectedDate, up
                         {table.getHeaderGroups().map(headerGroup => (
                             <TableRow key={headerGroup.id}>
                                 {headerGroup.headers.map(header => (
-                                    <TableHead 
+                                    <TableHead
                                         key={header.id}
                                         className="font-bold bg-gray-100 text-center sticky top-0"
                                         style={{ width: header.column.columnDef.size }}
@@ -479,7 +497,7 @@ export default function MonthlyTable({ clients = [], checklist, selectedDate, up
                                         {header.isPlaceholder ? null : (
                                             <div
                                                 {...{
-                                                    className: header.column.getCanSort() 
+                                                    className: header.column.getCanSort()
                                                         ? 'cursor-pointer select-none flex items-center justify-center'
                                                         : '',
                                                     onClick: header.column.getToggleSortingHandler(),
@@ -500,13 +518,14 @@ export default function MonthlyTable({ clients = [], checklist, selectedDate, up
                                 ))}
                             </TableRow>
                         ))}
-                        
+
                         {showTotals && (
                             <>
                                 {[
                                     { label: 'Total', bgColor: 'bg-blue-50', counts: [getStatusCounts().total, getStatusCounts().total] },
                                     { label: 'Complete', bgColor: 'bg-green-50', counts: [getStatusCounts().receivedComplete, getStatusCounts().deliveredComplete] },
-                                    { label: 'Pending', bgColor: 'bg-red-50', counts: [getStatusCounts().receivedPending, getStatusCounts().deliveredPending] }
+                                    { label: 'Pending', bgColor: 'bg-red-50', counts: [getStatusCounts().receivedPending, getStatusCounts().deliveredPending] },
+                                    { label: 'NIL Records', bgColor: 'bg-red-100', counts: [getStatusCounts().nilCount, '-'] }
                                 ].map(row => (
                                     <TableRow key={row.label} className={`${row.bgColor}`}>
                                         <TableCell colSpan={4} className="font-bold text-left">
@@ -525,27 +544,39 @@ export default function MonthlyTable({ clients = [], checklist, selectedDate, up
                             </>
                         )}
                     </TableHeader>
-                    
+
                     <TableBody>
-                        {table.getRowModel().rows.map((row, rowIndex) => (
-                            <TableRow 
-                                key={row.id} 
-                                className={rowIndex % 2 === 0 ? 'bg-white' : 'bg-gray-50'}
-                            >
-                                {row.getVisibleCells().map(cell => (
-                                    <TableCell 
-                                        key={cell.id} 
-                                        className="text-center"
-                                        style={{ width: cell.column.columnDef.size }}
-                                    >
-                                        {flexRender(
-                                            cell.column.columnDef.cell,
-                                            cell.getContext()
-                                        )}
-                                    </TableCell>
-                                ))}
-                            </TableRow>
-                        ))}
+                        {table.getRowModel().rows.map((row, rowIndex) => {
+                            const isNilRecord = checklist[row.original.company_name]?.file_management?.[year]?.[month]?.isNil;
+
+                            return (
+                                <TableRow
+                                    key={row.id}
+                                    className={cn(
+                                        rowIndex % 2 === 0 ? 'bg-white' : 'bg-gray-50',
+                                        isNilRecord ? 'bg-red-50' : ''
+                                    )}
+                                >
+                                    {row.getVisibleCells().map(cell => (
+                                        <TableCell
+                                            key={cell.id}
+                                            className={cn(
+                                                "text-center",
+                                                isNilRecord && "text-red-700"
+                                            )}
+                                            style={{ width: cell.column.columnDef.size }}
+                                        >
+                                            {isNilRecord && cell.column.id !== 'receivedStatus' && cell.column.id !== 'index' && cell.column.id !== 'company_name'
+                                                ? <span className="text-red-500">NIL</span>
+                                                : flexRender(
+                                                    cell.column.columnDef.cell,
+                                                    cell.getContext()
+                                                )}
+                                        </TableCell>
+                                    ))}
+                                </TableRow>
+                            );
+                        })}
                     </TableBody>
                 </Table>
             </ScrollArea>
