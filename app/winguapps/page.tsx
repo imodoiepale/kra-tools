@@ -67,7 +67,7 @@ export default function WinguAppsExtractionReports() {
     const fetchReports = async () => {
         setIsLoading(true);
         try {
-            const response = await fetch('/api/reports');
+            const response = await fetch('/api/winguAppsReports');
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
             const data = await response.json();
             setReports(Array.isArray(data) ? data : []);
