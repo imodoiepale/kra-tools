@@ -1,43 +1,111 @@
-
 // @ts-nocheck
 "use client";
 
 import React, { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogTrigger, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Eye } from "lucide-react";
+import { Eye, Download, FileIcon, FolderIcon,Loader2  } from 'lucide-react';
 import * as ExcelJS from 'exceljs';
 import JSZip from 'jszip';
-import { FileIcon, FolderIcon,Download  } from 'lucide-react';
-
 import Papa from 'papaparse';
 
+interface FileViewerProps {
+    url: string;
+    fileType: 'excel' | 'csv' | 'pdf' | 'zip' | 'xlsx' | 'xls';
+    title: string;
+    pdfLink?: string;
+    dataLink?: string;
+}
+const LoadingSpinner = () => (
+    <div className="flex flex-col items-center justify-center h-full space-y-4">
+      <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+      <p className="text-sm text-gray-500 animate-pulse">Loading document...</p>
+    </div>
+  );
 
-
-const handleDownload = async () => {
-    const response = await fetch(url);
-    const blob = await response.blob();
-    const downloadUrl = window.URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = downloadUrl;
-    link.download = title;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
+const handleDownload = async (url: string, title: string) => {
+    try {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error('Download failed');
+        
+        const blob = await response.blob();
+        const downloadUrl = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        
+        link.href = downloadUrl;
+        link.download = title;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.URL.revokeObjectURL(downloadUrl);
+    } catch (error) {
+        console.error('Download error:', error);
+        alert('Failed to download file. Please try again.');
+    }
 };
 
-const ZipViewer = ({ url }) => {
-    const [files, setFiles] = useState([]);
-    const [error, setError] = useState(null);
+const ExcelViewer = ({ url }: { url: string }) => {
+    const [data, setData] = useState<any[]>([]);
+    const [error, setError] = useState<string | null>(null);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        const fetchExcelData = async () => {
+            try {
+                const response = await fetch(url);
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                
+                const arrayBuffer = await response.arrayBuffer();
+                const workbook = new ExcelJS.Workbook();
+                await workbook.xlsx.load(arrayBuffer);
+                const worksheet = workbook.getWorksheet(1);
+                const rows = worksheet.getRows(1, worksheet.rowCount);
+                setData(rows.map(row => row.values.slice(1)));
+            } catch (e) {
+                console.error("Error processing Excel file:", e);
+                setError(`Error loading Excel file: ${e}`);
+            }
+        };
+
+        fetchExcelData();
+    }, [url]);
+
+    if (loading) return <LoadingSpinner />;
+    if (error) return <div>Error: {error}</div>;
+
+    return (
+        <table className="min-w-full bg-white">
+            <thead>
+                <tr>
+                    {data[0]?.map((header: any, index: number) => (
+                        <th key={index} className="px-4 py-2 border">{header}</th>
+                    ))}
+                </tr>
+            </thead>
+            <tbody>
+                {data.slice(1).map((row, rowIndex) => (
+                    <tr key={rowIndex}>
+                        {row.map((cell: any, cellIndex: number) => (
+                            <td key={cellIndex} className="px-4 py-2 border">{cell?.toString() || ''}</td>
+                        ))}
+                    </tr>
+                ))}
+            </tbody>
+        </table>
+    );
+};
+
+const ZipViewer = ({ url }: { url: string }) => {
+    const [files, setFiles] = useState<any[]>([]);
+    const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
         const fetchZipContent = async () => {
             try {
                 const response = await fetch(url);
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                
                 const arrayBuffer = await response.arrayBuffer();
                 const zip = await JSZip.loadAsync(arrayBuffer);
                 const fileList = Object.keys(zip.files).map(filename => ({
@@ -47,8 +115,8 @@ const ZipViewer = ({ url }) => {
                 }));
                 setFiles(fileList);
             } catch (e) {
-                console.error("Error fetching or processing ZIP file:", e);
-                setError(`Error loading ZIP file: ${e.message}`);
+                console.error("Error processing ZIP file:", e);
+                setError(`Error loading ZIP file: ${e}`);
             } finally {
                 setLoading(false);
             }
@@ -57,13 +125,8 @@ const ZipViewer = ({ url }) => {
         fetchZipContent();
     }, [url]);
 
-    if (loading) {
-        return <div>Loading ZIP contents...</div>;
-    }
-
-    if (error) {
-        return <div>Error: {error}</div>;
-    }
+    if (loading) return <div>Loading ZIP contents...</div>;
+    if (error) return <div>Error: {error}</div>;
 
     return (
         <div className="p-4">
@@ -84,112 +147,53 @@ const ZipViewer = ({ url }) => {
         </div>
     );
 };
-
-const ExcelViewer = ({ url }) => {
-    const [data, setData] = useState([]);
-    const [error, setError] = useState(null);
-
-    useEffect(() => {
-        const fetchExcelData = async () => {
-            try {
-                const response = await fetch(url);
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                const arrayBuffer = await response.arrayBuffer();
-                const workbook = new ExcelJS.Workbook();
-                await workbook.xlsx.load(arrayBuffer);
-                const worksheet = workbook.getWorksheet(1);
-                const rows = worksheet.getRows(1, worksheet.rowCount);
-                setData(rows.map(row => row.values.slice(1)));
-            } catch (e) {
-                console.error("Error fetching or processing Excel file:", e);
-                setError(`Error loading Excel file: ${e.message}`);
-            }
-        };
-
-        fetchExcelData();
-    }, [url]);
-
-    if (error) {
-        return <div>Error: {error}</div>;
-    }
-
-    if (data.length === 0) {
-        return <div>Loading...</div>;
-    }
-
-    return (
-        <table className="min-w-full bg-white">
-            <thead>
-                <tr>
-                    {data[0].map((header, index) => (
-                        <th key={index} className="px-4 py-2 border">{header}</th>
-                    ))}
-                </tr>
-            </thead>
-            <tbody>
-                {data.slice(1).map((row, rowIndex) => (
-                    <tr key={rowIndex}>
-                        {row.map((cell, cellIndex) => (
-                            <td key={cellIndex} className="px-4 py-2 border">{cell}</td>
-                        ))}
-                    </tr>
-                ))}
-            </tbody>
-        </table>
-    );
-};
-
-
-const CsvViewer = ({ url }) => {
-    const [data, setData] = useState([]);
-    const [error, setError] = useState(null);
+const CsvViewer = ({ url }: { url: string }) => {
+    const [data, setData] = useState<any[]>([]);
+    const [error, setError] = useState<string | null>(null);
+    const [loading, setLoading] = useState(true);
 
     useEffect(() => {
         const fetchCsvData = async () => {
             try {
                 const response = await fetch(url);
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                const arrayBuffer = await response.arrayBuffer();
-                const workbook = new ExcelJS.Workbook();
-                await workbook.csv.load(arrayBuffer);
-                const worksheet = workbook.getWorksheet(1);
-                const rows = worksheet.getRows(1, worksheet.rowCount);
-                setData(rows.map(row => row.values.slice(1)));
+                const text = await response.text();
+                Papa.parse(text, {
+                    complete: (results) => {
+                        setData(results.data);
+                    },
+                    header: true,
+                    skipEmptyLines: true
+                });
             } catch (e) {
-                console.error("Error fetching or processing CSV file:", e);
-                setError(`Error loading CSV file: ${e.message}`);
+                console.error("Error processing CSV file:", e);
+                setError(`Error loading CSV file: ${e}`);
             }
         };
 
         fetchCsvData();
     }, [url]);
 
-    if (error) {
-        return <div>Error: {error}</div>;
-    }
+    if (error) return <div>Error: {error}</div>;
+    if (loading) return <LoadingSpinner />;
 
-    if (data.length === 0) {
-        return <div>Loading...</div>;
-    }
+    const headers = Object.keys(data[0] || {});
 
     return (
         <table className="min-w-full bg-white">
             <thead>
                 <tr>
-                    {data[0].map((header, index) => (
+                    {headers.map((header, index) => (
                         <th key={index} className="px-4 py-2 border">{header}</th>
                     ))}
                 </tr>
             </thead>
             <tbody>
-                {data.slice(1).map((row, rowIndex) => (
+                {data.map((row, rowIndex) => (
                     <tr key={rowIndex}>
-                        {row.map((cell, cellIndex) => (
-                            <td key={cellIndex} className="px-4 py-2 border">{cell}</td>
+                        {headers.map((header, cellIndex) => (
+                            <td key={cellIndex} className="px-4 py-2 border">
+                                {row[header]?.toString() || ''}
+                            </td>
                         ))}
                     </tr>
                 ))}
@@ -198,7 +202,35 @@ const CsvViewer = ({ url }) => {
     );
 };
 
-const FileViewer = ({ url, fileType, title }) => {
+
+
+const FileViewer: React.FC<FileViewerProps> = ({ url, fileType, title, pdfLink, dataLink }) => {
+    
+    const [isLoading, setIsLoading] = useState(true);
+
+    const renderContent = () => {
+        switch(fileType) {
+            case 'excel':
+            case 'xlsx':
+            case 'xls':
+                return <ExcelViewer url={url} />;
+            case 'zip':
+                return <ZipViewer url={url} />;
+            case 'csv':
+                return <CsvViewer url={url} />;
+            case 'pdf':
+                return (
+                    <iframe
+                        src={`${url}#toolbar=0`}
+                        className="w-full h-full border-none"
+                        title={title}
+                    />
+                );
+            default:
+                return <div>Unsupported file type</div>;
+        }
+    };
+
     return (
         <Dialog>
             <DialogTrigger asChild>
@@ -207,17 +239,26 @@ const FileViewer = ({ url, fileType, title }) => {
                     View
                 </Button>
             </DialogTrigger>
-            <DialogContent className="w-full max-w-8xl max-h-[95vh]">
+            <DialogContent className="w-full max-w-7xl h-[90vh]">
                 <DialogHeader>
                     <DialogTitle>{title}</DialogTitle>
                 </DialogHeader>
-                <div className="w-full h-[80vh] overflow-auto">
-                    {(fileType === 'excel' || fileType === 'xls' || fileType === 'xlsx') && <ExcelViewer url={url} />}
-                    {fileType === 'zip' && <ZipViewer url={url} />}
-                    {fileType === 'csv' && <CsvViewer url={url} />}
+                <div className="flex-1 w-full h-[calc(90vh-8rem)] overflow-auto relative">
+                    {isLoading && <LoadingSpinner />}
+                    <div className={isLoading ? 'opacity-0' : 'opacity-100 transition-opacity duration-300'}>
+                        {renderContent()}
+                    </div>
+                    {fileType === 'pdf' && (
+                        <iframe
+                            src={`${url}#toolbar=0`}
+                            className="w-full h-full border-none"
+                            title={title}
+                            onLoad={() => setIsLoading(false)}
+                        />
+                    )}
                 </div>
                 <DialogFooter>
-                    <Button onClick={handleDownload }>
+                    <Button onClick={() => handleDownload(url, title)}>
                         <Download className="mr-2 h-4 w-4" />
                         Download
                     </Button>
