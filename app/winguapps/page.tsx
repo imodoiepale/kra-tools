@@ -452,7 +452,7 @@ export default function WinguAppsExtractionReports() {
                             
                             <div className="flex items-center space-x-2">
                             <div className="flex items-center space-x-4 mb-4">
-                                <div className="flex items-center space-x-2">
+                                {/* <div className="flex items-center space-x-2">
                                     <span className="text-sm">Totals</span>
                                     <Switch
                                         checked={columnVisibility.statutory}
@@ -460,7 +460,7 @@ export default function WinguAppsExtractionReports() {
                                             setColumnVisibility(prev => ({ ...prev, statutory: checked }))
                                         }
                                     />
-                                </div>
+                                </div> */}
                                 {/* Add similar toggles for other column groups */}
                             </div>
                                 <Button variant="outline" onClick={() => exportToExcel(latestReports)}>
