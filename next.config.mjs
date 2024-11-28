@@ -5,7 +5,12 @@ const nextConfig = {
   images: {
     domains: ['zyszsqgdlrpnunkegipk.supabase.co'],
   },
+  experimental: {
+    serverActions: true,
+  },
   webpack: (config) => {
+    config.externals = [...(config.externals || []), 'mssql'];
+    
     config.resolve.fallback = {
       ...config.resolve.fallback,
       dgram: false,
@@ -22,6 +27,7 @@ const nextConfig = {
       os: false,
       path: false
     };
+    
     return config;
   },
 };
