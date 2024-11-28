@@ -10,9 +10,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { ArrowUpDown, Download, MoreHorizontal, RefreshCw, Search, FolderOpen } from "lucide-react";
+import { ArrowUpDown, Download, MoreHorizontal, RefreshCw, Search, FolderOpen , ChevronDown, ChevronUp } from "lucide-react";
 import * as ExcelJS from 'exceljs';
 import FileViewer from '@/components/FileViewer';
+import { Switch } from '@/components/ui/switch';
 
 interface ReportRecord {
     ID: number;
@@ -63,6 +64,32 @@ export default function WinguAppsExtractionReports() {
         PaymentLists: true,
     });
 
+    const [columnVisibility, setColumnVisibility] = useState({
+        statutory: true,
+        payroll: true,
+        payment: true
+    });
+
+    const [sortConfig, setSortConfig] = useState({
+        key: '',
+        direction: 'asc'
+    });
+
+    const handleSort = (column: string) => {
+        setSortConfig(current => {
+            if (current.key === column) {
+                return {
+                    key: column,
+                    direction: current.direction === 'asc' ? 'desc' : 'asc'
+                };
+            }
+            return {
+                key: column,
+                direction: 'asc'
+            };
+        });
+    };
+
     // Data Fetching
     const fetchReports = async () => {
         setIsLoading(true);
@@ -100,23 +127,29 @@ export default function WinguAppsExtractionReports() {
     }, [reports]);
 
     // Sorting and Filtering
-    const handleSort = (column: string) => {
-        setSortOrder(sortColumn === column ? (sortOrder === 'asc' ? 'desc' : 'asc') : 'asc');
-        setSortColumn(column);
-    };
+    // const handleSort = (column: string) => {
+    //     setSortOrder(sortColumn === column ? (sortOrder === 'asc' ? 'desc' : 'asc') : 'asc');
+    //     setSortColumn(column);
+    // };
 
-    const sortedReports = [...reports].sort((a, b) => {
-        if (!sortColumn) return 0;
-        const aValue = a[sortColumn];
-        const bValue = b[sortColumn];
-        return sortOrder === 'asc' ?
-            (aValue < bValue ? -1 : 1) :
-            (aValue > bValue ? -1 : 1);
-    });
+    const sortedReports = React.useMemo(() => {
+        if (!sortConfig.key) return reports;
 
-    const filteredReports = sortedReports.filter(report =>
-        report.CompanyName?.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+        return [...reports].sort((a, b) => {
+            if (!a[sortConfig.key] || !b[sortConfig.key]) return 0;
+
+            const comparison = a[sortConfig.key].localeCompare(b[sortConfig.key]);
+            return sortConfig.direction === 'asc' ? comparison : -comparison;
+        });
+    }, [reports, sortConfig]);
+
+
+    const filteredReports = React.useMemo(() => {
+        return sortedReports.filter(report =>
+            report.CompanyName.toLowerCase().includes(searchTerm.toLowerCase())
+        );
+    }, [sortedReports, searchTerm]);
+
 
     // Excel Export Functions
     const exportToExcel = async (reportData: ReportRecord[] = filteredReports) => {
@@ -200,6 +233,17 @@ export default function WinguAppsExtractionReports() {
         link.download = 'wingu_reports.xlsx';
         link.click();
     };
+    const calculateColumnStats = (columnKey: string) => {
+        const total = reports.length;
+        const available = reports.filter(report => report[columnKey]).length;
+        const missing = total - available;
+
+        return {
+            total,
+            available,
+            missing
+        };
+    };
 
     // Render file link with both PDF and Excel/CSV options
     const renderFileLink = (pdfLink: string, dataLink?: string) => {
@@ -219,114 +263,170 @@ export default function WinguAppsExtractionReports() {
 
     // Table Components
     const renderTableHeader = (showPeriod: boolean = false) => (
-        <TableRow className="bg-gray-100">
-            <TableHead className="w-14">Index</TableHead>
-            <TableHead>
-                <div className="flex items-center space-x-2">
-                    <span>Company Name</span>
-                    <ArrowUpDown
-                        className="h-4 w-4 cursor-pointer"
+        <>
+            <TableRow className="bg-gray-100">
+                <TableHead className="w-14">Index</TableHead>
+                <TableHead>
+                    <div
+                        className="flex items-center space-x-2 cursor-pointer"
                         onClick={() => handleSort('CompanyName')}
-                    />
-                </div>
-            </TableHead>
-            {showPeriod && <TableHead>Period</TableHead>}
+                    >
+                        <span>Company Name</span>
+                        <ArrowUpDown className="h-4 w-4" />
+                    </div>
+                </TableHead>
+                {showPeriod && <TableHead>Period</TableHead>}
 
-            {/* Statutory Documents */}
-            {visibleColumns.StatutoryDocs && (
-                <>
-                    <TableHead className="text-center">PAYE Returns</TableHead>
-                    <TableHead className="text-center">NSSF Returns</TableHead>
-                    <TableHead className="text-center">NHIF Returns</TableHead>
-                    <TableHead className="text-center">SHIF Returns</TableHead>
-                    <TableHead className="text-center">Housing Levy</TableHead>
-                </>
-            )}
+                {/* Statutory Documents */}
+                {visibleColumns.StatutoryDocs && (
+                    <>
+                        <TableHead className="text-center">PAYE Returns</TableHead>
+                        <TableHead className="text-center">NSSF Returns</TableHead>
+                        <TableHead className="text-center">NHIF Returns</TableHead>
+                        <TableHead className="text-center">SHIF Returns</TableHead>
+                        <TableHead className="text-center">Housing Levy</TableHead>
+                    </>
+                )}
 
-            {/* Payroll Documents */}
-            {visibleColumns.PayrollDocs && (
-                <>
-                    <TableHead className="text-center">Payroll Summary</TableHead>
-                    <TableHead className="text-center">Recon Report</TableHead>
-                    <TableHead className="text-center">Control Total</TableHead>
-                    <TableHead className="text-center">Payslips</TableHead>
-                </>
-            )}
+                {/* Payroll Documents */}
+                {visibleColumns.PayrollDocs && (
+                    <>
+                        <TableHead className="text-center">Payroll Summary</TableHead>
+                        <TableHead className="text-center">Recon Report</TableHead>
+                        <TableHead className="text-center">Control Total</TableHead>
+                        <TableHead className="text-center">Payslips</TableHead>
+                    </>
+                )}
 
-            {/* Payment Lists */}
-            {visibleColumns.PaymentLists && (
-                <>
-                    <TableHead className="text-center">Bank List</TableHead>
-                    <TableHead className="text-center">Cash List</TableHead>
-                    <TableHead className="text-center">M-PESA List</TableHead>
-                    <TableHead className="text-center">NITA Returns</TableHead>
-                </>
-            )}
-        </TableRow>
+                {/* Payment Lists */}
+                {visibleColumns.PaymentLists && (
+                    <>
+                        <TableHead className="text-center">Bank List</TableHead>
+                        <TableHead className="text-center">Cash List</TableHead>
+                        <TableHead className="text-center">M-PESA List</TableHead>
+                        <TableHead className="text-center">NITA Returns</TableHead>
+                    </>
+                )}
+            </TableRow>
+            <TableRow className="bg-blue-50">
+                <TableHead colSpan={2}>Total Documents</TableHead>
+                {visibleColumns.StatutoryDocs && documentGroups.statutory.map(doc => (
+                    <TableHead key={doc.key} className="text-center">
+                        {calculateColumnStats(doc.pdfKey)?.total}
+                    </TableHead>
+                ))}
+                {visibleColumns.PayrollDocs && documentGroups.payroll.map(doc => (
+                    <TableHead key={doc.key} className="text-center">
+                        {calculateColumnStats(doc.pdfKey)?.total}
+                    </TableHead>
+                ))}
+                {visibleColumns.PaymentLists && documentGroups.payments.map(doc => (
+                    <TableHead key={doc.key} className="text-center">
+                        {calculateColumnStats(doc.pdfKey)?.total}
+                    </TableHead>
+                ))}
+            </TableRow>
+            <TableRow className="bg-green-50">
+                <TableHead colSpan={2}>Available Documents</TableHead>
+                {visibleColumns.StatutoryDocs && documentGroups.statutory.map(doc => (
+                    <TableHead key={doc.key} className="text-center">
+                        {calculateColumnStats(doc.pdfKey)?.available}
+                    </TableHead>
+                ))}
+                {visibleColumns.PayrollDocs && documentGroups.payroll.map(doc => (
+                    <TableHead key={doc.key} className="text-center">
+                        {calculateColumnStats(doc.pdfKey)?.available}
+                    </TableHead>
+                ))}
+                {visibleColumns.PaymentLists && documentGroups.payments.map(doc => (
+                    <TableHead key={doc.key} className="text-center">
+                        {calculateColumnStats(doc.pdfKey)?.available}
+                    </TableHead>
+                ))}
+            </TableRow>
+            <TableRow className="bg-red-50">
+                <TableHead colSpan={2}>Missing Documents</TableHead>
+                {visibleColumns.StatutoryDocs && documentGroups.statutory.map(doc => (
+                    <TableHead key={doc.key} className="text-center">
+                        {calculateColumnStats(doc.pdfKey)?.missing}
+                    </TableHead>
+                ))}
+                {visibleColumns.PayrollDocs && documentGroups.payroll.map(doc => (
+                    <TableHead key={doc.key} className="text-center">
+                        {calculateColumnStats(doc.pdfKey)?.missing}
+                    </TableHead>
+                ))}
+                {visibleColumns.PaymentLists && documentGroups.payments.map(doc => (
+                    <TableHead key={doc.key} className="text-center">
+                        {calculateColumnStats(doc.pdfKey)?.missing}
+                    </TableHead>
+                ))}
+            </TableRow>
+        </>
     );
 
     const documentGroups = {
         statutory: [
-          { key: 'PAYE', pdfKey: 'PAYE_Link', dataKey: 'PAYE_CSV_Link' },
-          { key: 'NSSF', pdfKey: 'NSSF_Link', dataKey: 'NSSF_Excel_Link' },
-          { key: 'NHIF', pdfKey: 'NHIF_Link', dataKey: 'NHIF_Excel_Link' },
-          { key: 'SHIF', pdfKey: 'SHIF_Link', dataKey: 'SHIF_Excel_Link' },
-          { key: 'Housing_Levy', pdfKey: 'Housing_Levy_Link', dataKey: 'Housing_Levy_CSV_Link' }
+            { key: 'PAYE', pdfKey: 'PAYE_Link', dataKey: 'PAYE_CSV_Link' },
+            { key: 'NSSF', pdfKey: 'NSSF_Link', dataKey: 'NSSF_Excel_Link' },
+            { key: 'NHIF', pdfKey: 'NHIF_Link', dataKey: 'NHIF_Excel_Link' },
+            { key: 'SHIF', pdfKey: 'SHIF_Link', dataKey: 'SHIF_Excel_Link' },
+            { key: 'Housing_Levy', pdfKey: 'Housing_Levy_Link', dataKey: 'Housing_Levy_CSV_Link' }
         ],
         payroll: [
-          { key: 'Payroll_Summary', pdfKey: 'Payroll_Summary_Link', dataKey: 'Payroll_Summary_Excel_Link' },
-          { key: 'Payroll_Recon', pdfKey: 'Payroll_Recon_Link' },
-          { key: 'Control_Total', pdfKey: 'Control_Total_Link' },
-          { key: 'Payslips', pdfKey: 'Payslips_Link' }
+            { key: 'Payroll_Summary', pdfKey: 'Payroll_Summary_Link', dataKey: 'Payroll_Summary_Excel_Link' },
+            { key: 'Payroll_Recon', pdfKey: 'Payroll_Recon_Link' },
+            { key: 'Control_Total', pdfKey: 'Control_Total_Link' },
+            { key: 'Payslips', pdfKey: 'Payslips_Link' }
         ],
         payments: [
-          { key: 'Bank_List', pdfKey: 'Bank_List_Link' },
-          { key: 'Cash_List', pdfKey: 'Cash_List' },
-          { key: 'MPESA_List', pdfKey: 'MPESA_List' },
-          { key: 'NITA_List', pdfKey: 'NITA_List' }
+            { key: 'Bank_List', pdfKey: 'Bank_List_Link' },
+            { key: 'Cash_List', pdfKey: 'Cash_List' },
+            { key: 'MPESA_List', pdfKey: 'MPESA_List' },
+            { key: 'NITA_List', pdfKey: 'NITA_List' }
         ]
-      };
-      
-      const renderTableRow = (report: ReportRecord, index: number, showPeriod: boolean = false) => (
+    };
+
+    const renderTableRow = (report: ReportRecord, index: number, showPeriod: boolean = false) => (
         <TableRow key={report.ID} className="hover:bg-gray-50">
-          <TableCell className="font-medium">{index + 1}</TableCell>
-          <TableCell>{report.CompanyName}</TableCell>
-          {showPeriod && <TableCell>{`${report.Month}/${report.Year}`}</TableCell>}
-      
-          {visibleColumns.StatutoryDocs && documentGroups.statutory.map(doc => (
-            <TableCell key={doc.key}>
-              <FileViewer 
-                url={report[doc.pdfKey]} 
-                fileType="pdf" 
-                title={`${doc.key.replace('_', ' ')} - ${report.CompanyName}`}
-                dataLink={doc.dataKey ? report[doc.dataKey] : undefined}
-              />
-            </TableCell>
-          ))}
-      
-          {visibleColumns.PayrollDocs && documentGroups.payroll.map(doc => (
-            <TableCell key={doc.key}>
-              <FileViewer 
-                url={report[doc.pdfKey]} 
-                fileType="pdf" 
-                title={`${doc.key.replace('_', ' ')} - ${report.CompanyName}`}
-                dataLink={doc.dataKey ? report[doc.dataKey] : undefined}
-              />
-            </TableCell>
-          ))}
-      
-          {visibleColumns.PaymentLists && documentGroups.payments.map(doc => (
-            <TableCell key={doc.key}>
-              <FileViewer 
-                url={report[doc.pdfKey]} 
-                fileType="pdf" 
-                title={`${doc.key.replace('_', ' ')} - ${report.CompanyName}`}
-              />
-            </TableCell>
-          ))}
+            <TableCell className="font-medium">{index + 1}</TableCell>
+            <TableCell>{report.CompanyName}</TableCell>
+            {showPeriod && <TableCell>{`${report.Month}/${report.Year}`}</TableCell>}
+
+            {visibleColumns.StatutoryDocs && documentGroups.statutory.map(doc => (
+                <TableCell key={doc.key}>
+                    <FileViewer
+                        url={report[doc.pdfKey]}
+                        fileType="pdf"
+                        title={`${doc.key.replace('_', ' ')} - ${report.CompanyName}`}
+                        dataLink={doc.dataKey ? report[doc.dataKey] : undefined}
+                    />
+                </TableCell>
+            ))}
+
+            {visibleColumns.PayrollDocs && documentGroups.payroll.map(doc => (
+                <TableCell key={doc.key}>
+                    <FileViewer
+                        url={report[doc.pdfKey]}
+                        fileType="pdf"
+                        title={`${doc.key.replace('_', ' ')} - ${report.CompanyName}`}
+                        dataLink={doc.dataKey ? report[doc.dataKey] : undefined}
+                    />
+                </TableCell>
+            ))}
+
+            {visibleColumns.PaymentLists && documentGroups.payments.map(doc => (
+                <TableCell key={doc.key}>
+                    <FileViewer
+                        url={report[doc.pdfKey]}
+                        fileType="pdf"
+                        title={`${doc.key.replace('_', ' ')} - ${report.CompanyName}`}
+                    />
+                </TableCell>
+            ))}
         </TableRow>
-      );
-      
+    );
+
 
     return (
         <div className="p-4">
@@ -340,7 +440,7 @@ export default function WinguAppsExtractionReports() {
                 <TabsContent value="summary">
                     <div className="space-y-4">
                         <div className="flex justify-between items-center">
-                            <div className="flex items-center space-x-2">
+                            <div className="flex items-center space-x-2 mb-4">
                                 <Search className="h-4 w-4 text-gray-400" />
                                 <Input
                                     placeholder="Search companies..."
@@ -349,7 +449,20 @@ export default function WinguAppsExtractionReports() {
                                     className="w-[300px]"
                                 />
                             </div>
+                            
                             <div className="flex items-center space-x-2">
+                            <div className="flex items-center space-x-4 mb-4">
+                                <div className="flex items-center space-x-2">
+                                    <span className="text-sm">Totals</span>
+                                    <Switch
+                                        checked={columnVisibility.statutory}
+                                        onCheckedChange={(checked) =>
+                                            setColumnVisibility(prev => ({ ...prev, statutory: checked }))
+                                        }
+                                    />
+                                </div>
+                                {/* Add similar toggles for other column groups */}
+                            </div>
                                 <Button variant="outline" onClick={() => exportToExcel(latestReports)}>
                                     <Download className="mr-2 h-4 w-4" />
                                     Export
@@ -408,16 +521,26 @@ export default function WinguAppsExtractionReports() {
                                                     <RefreshCw className="h-8 w-8 animate-spin mx-auto text-gray-400" />
                                                 </TableCell>
                                             </TableRow>
-                                        ) : latestReports.length === 0 ? (
+                                        ) : filteredReports.length === 0 ? (
                                             <TableRow>
                                                 <TableCell colSpan={20} className="text-center">
                                                     No reports found
                                                 </TableCell>
                                             </TableRow>
                                         ) : (
-                                            latestReports.map((report, index) => renderTableRow(report, index, false))
+                                            filteredReports
+                                                .sort((a, b) => {
+                                                    if (sortConfig.key === 'CompanyName') {
+                                                        return sortConfig.direction === 'asc'
+                                                            ? a.CompanyName.localeCompare(b.CompanyName)
+                                                            : b.CompanyName.localeCompare(a.CompanyName);
+                                                    }
+                                                    return 0;
+                                                })
+                                                .map((report, index) => renderTableRow(report, index, false))
                                         )}
                                     </TableBody>
+
                                 </Table>
                             </ScrollArea>
                         </div>
@@ -522,15 +645,32 @@ export default function WinguAppsExtractionReports() {
                                                     {renderTableHeader(true)}
                                                 </TableHeader>
                                                 <TableBody>
-                                                    {reports
+                                                    {isLoading ? (
+                                                        <TableRow>
+                                                            <TableCell colSpan={20} className="text-center">
+                                                                <RefreshCw className="h-8 w-8 animate-spin mx-auto text-gray-400" />
+                                                            </TableCell>
+                                                        </TableRow>
+                                                    ) : reports
                                                         .filter(r => r.CompanyID === selectedCompany.CompanyID)
+                                                        .filter(report =>
+                                                            report.CompanyName.toLowerCase().includes(searchTerm.toLowerCase())
+                                                        )
                                                         .sort((a, b) => {
+                                                            if (sortConfig.key) {
+                                                                const aValue = a[sortConfig.key];
+                                                                const bValue = b[sortConfig.key];
+                                                                const comparison = aValue < bValue ? -1 : aValue > bValue ? 1 : 0;
+                                                                return sortConfig.direction === 'asc' ? comparison : -comparison;
+                                                            }
+                                                            // Default date sorting
                                                             const dateA = new Date(a.Year, a.Month - 1);
                                                             const dateB = new Date(b.Year, b.Month - 1);
                                                             return dateB.getTime() - dateA.getTime();
                                                         })
                                                         .map((report, index) => renderTableRow(report, index, true))}
                                                 </TableBody>
+
                                             </Table>
                                         </ScrollArea>
                                     </CardContent>

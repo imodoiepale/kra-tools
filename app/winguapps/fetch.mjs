@@ -18,7 +18,9 @@ const mssqlConfig = {
 export async function fetchReports() {
     try {
         const pool = await sql.connect(mssqlConfig); // Connect to MSSQL
-        const result = await pool.request().query('SELECT * FROM dbo.cr_Reports_External'); // Query the table
+        const result = await pool.request()
+            .input('MemberID', sql.Int, 84)
+            .query('SELECT * FROM dbo.cr_Reports_External WHERE MemberID = @MemberID'); // Query with filter
 
         console.log('Reports:', result.recordset); // For debugging
         // populateUI(result.recordset); // Populate UI with the fetched data
