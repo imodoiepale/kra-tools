@@ -4,7 +4,7 @@
 import React, { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogTrigger, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Eye, Download, FileIcon, FolderIcon,Loader2  } from 'lucide-react';
+import { Eye, Download, FileIcon, FolderIcon, Loader2 } from 'lucide-react';
 import * as ExcelJS from 'exceljs';
 import JSZip from 'jszip';
 import Papa from 'papaparse';
@@ -18,20 +18,20 @@ interface FileViewerProps {
 }
 const LoadingSpinner = () => (
     <div className="flex flex-col items-center justify-center h-full space-y-4">
-      <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
-      <p className="text-sm text-gray-500 animate-pulse">Loading document...</p>
+        <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+        <p className="text-sm text-gray-500 animate-pulse">Loading document...</p>
     </div>
-  );
+);
 
 const handleDownload = async (url: string, title: string) => {
     try {
         const response = await fetch(url);
         if (!response.ok) throw new Error('Download failed');
-        
+
         const blob = await response.blob();
         const downloadUrl = window.URL.createObjectURL(blob);
         const link = document.createElement('a');
-        
+
         link.href = downloadUrl;
         link.download = title;
         document.body.appendChild(link);
@@ -54,7 +54,7 @@ const ExcelViewer = ({ url }: { url: string }) => {
             try {
                 const response = await fetch(url);
                 if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-                
+
                 const arrayBuffer = await response.arrayBuffer();
                 const workbook = new ExcelJS.Workbook();
                 await workbook.xlsx.load(arrayBuffer);
@@ -105,7 +105,7 @@ const ZipViewer = ({ url }: { url: string }) => {
             try {
                 const response = await fetch(url);
                 if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-                
+
                 const arrayBuffer = await response.arrayBuffer();
                 const zip = await JSZip.loadAsync(arrayBuffer);
                 const fileList = Object.keys(zip.files).map(filename => ({
@@ -205,11 +205,17 @@ const CsvViewer = ({ url }: { url: string }) => {
 
 
 const FileViewer: React.FC<FileViewerProps> = ({ url, fileType, title, pdfLink, dataLink }) => {
-    
+    if (!url) {
+        return (
+            <div className="flex justify-center">
+                <span className="text-red-500 text-sm font-bold text-center">Missing</span>
+            </div>
+        );
+    }
     const [isLoading, setIsLoading] = useState(true);
 
     const renderContent = () => {
-        switch(fileType) {
+        switch (fileType) {
             case 'excel':
             case 'xlsx':
             case 'xls':
@@ -220,16 +226,20 @@ const FileViewer: React.FC<FileViewerProps> = ({ url, fileType, title, pdfLink, 
                 return <CsvViewer url={url} />;
             case 'pdf':
                 return (
-                    <iframe
-                        src={`${url}#toolbar=0`}
-                        className="w-full h-full border-none"
-                        title={title}
-                    />
+                    <div className="flex-1 w-full h-[calc(90vh-8rem)] overflow-auto relative">
+                        <iframe
+                            src={`${url}#toolbar=0`}
+                            className="w-full h-full border-none"
+                            title={title}
+                            onLoad={() => setIsLoading(false)}
+                        />
+                    </div>
                 );
             default:
                 return <div>Unsupported file type</div>;
         }
     };
+
 
     return (
         <Dialog>
@@ -239,24 +249,25 @@ const FileViewer: React.FC<FileViewerProps> = ({ url, fileType, title, pdfLink, 
                     View
                 </Button>
             </DialogTrigger>
-            <DialogContent className="w-full max-w-7xl h-[90vh]">
+            <DialogContent className="w-full max-w-7xl ">
                 <DialogHeader>
                     <DialogTitle>{title}</DialogTitle>
                 </DialogHeader>
                 <div className="flex-1 w-full h-[calc(90vh-8rem)] overflow-auto relative">
                     {isLoading && <LoadingSpinner />}
                     <div className={isLoading ? 'opacity-0' : 'opacity-100 transition-opacity duration-300'}>
-                        {renderContent()}
+                        {/* {renderContent()} */}
                     </div>
                     {fileType === 'pdf' && (
                         <iframe
-                            src={`${url}#toolbar=0`}
+                            src={`${url}#toolbar=1`}
                             className="w-full h-full border-none"
                             title={title}
                             onLoad={() => setIsLoading(false)}
                         />
                     )}
                 </div>
+
                 <DialogFooter>
                     <Button onClick={() => handleDownload(url, title)}>
                         <Download className="mr-2 h-4 w-4" />
