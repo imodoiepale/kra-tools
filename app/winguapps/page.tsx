@@ -811,6 +811,150 @@ export default function WinguAppsExtractionReports() {
                     </div>
                 </TabsContent>
 
+                
+                 {/* Detailed View */}
+                <TabsContent value="detailed">
+                    <div className="grid grid-cols-[350px_1fr] gap-6">
+                        {/* Left Panel - Company List */}
+                        <div className="space-y-4">
+                            <div className="relative">
+                                <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
+                                <Input
+                                    placeholder="Search companies..."
+                                    value={companySearchTerm}
+                                    onChange={(e) => setCompanySearchTerm(e.target.value)}
+                                    className="pl-8"
+                                />
+                            </div>
+                            <ScrollArea className="h-[calc(100vh-300px)] rounded-md border">
+                                <div className="space-y-1 p-2">
+                                    {reports
+                                        .filter(report =>
+                                            report.CompanyName.toLowerCase().includes(companySearchTerm.toLowerCase())
+                                        )
+                                        .map((report) => (
+                                            <div
+                                                key={report.ID}
+                                                onClick={() => setSelectedCompany(report)}
+                                                className={`flex items-center justify-between px-3 py-2 cursor-pointer rounded-md ${selectedCompany?.ID === report.ID
+                                                    ? 'bg-blue-100 text-blue-900'
+                                                    : 'hover:bg-gray-50'
+                                                    }`}
+                                            >
+                                                <span>{report.CompanyName}</span>
+                                            </div>
+                                        ))}
+                                </div>
+                            </ScrollArea>
+                        </div>
+
+                        {/* Right Panel - Detailed Table View */}
+                        <div>
+                            {selectedCompany ? (
+                                <Card>
+                                    <CardHeader className="bg-gradient-to-r from-blue-500 to-blue-600">
+                                        <div className="flex items-center justify-between">
+                                            <CardTitle className="text-xl text-white">
+                                                {selectedCompany.CompanyName}
+                                            </CardTitle>
+                                            <div className="flex space-x-2">
+                                                <Button
+                                                    variant="ghost"
+                                                    className="text-white hover:text-blue-100"
+                                                    onClick={() => exportToExcel(reports.filter(r => r.CompanyID === selectedCompany.CompanyID))}
+                                                >
+                                                    <Download className="mr-2 h-4 w-4" />
+                                                    Export
+                                                </Button>
+                                                <DropdownMenu>
+                                                    <DropdownMenuTrigger asChild>
+                                                        <Button variant="ghost" className="text-white hover:text-blue-100">
+                                                            <MoreHorizontal className="mr-2 h-4 w-4" />
+                                                            Sections
+                                                        </Button>
+                                                    </DropdownMenuTrigger>
+                                                    <DropdownMenuContent align="end">
+                                                        <DropdownMenuCheckboxItem
+                                                            checked={visibleColumns.StatutoryDocs}
+                                                            onCheckedChange={(checked) =>
+                                                                setVisibleColumns(prev => ({ ...prev, StatutoryDocs: checked }))
+                                                            }
+                                                        >
+                                                            Statutory Documents
+                                                        </DropdownMenuCheckboxItem>
+                                                        <DropdownMenuCheckboxItem
+                                                            checked={visibleColumns.PayrollDocs}
+                                                            onCheckedChange={(checked) =>
+                                                                setVisibleColumns(prev => ({ ...prev, PayrollDocs: checked }))
+                                                            }
+                                                        >
+                                                            Payroll Documents
+                                                        </DropdownMenuCheckboxItem>
+                                                        <DropdownMenuCheckboxItem
+                                                            checked={visibleColumns.PaymentLists}
+                                                            onCheckedChange={(checked) =>
+                                                                setVisibleColumns(prev => ({ ...prev, PaymentLists: checked }))
+                                                            }
+                                                        >
+                                                            Payment Lists
+                                                        </DropdownMenuCheckboxItem>
+                                                    </DropdownMenuContent>
+                                                </DropdownMenu>
+                                            </div>
+                                        </div>
+                                    </CardHeader>
+                                    <CardContent className="p-6">
+                                        <ScrollArea className="h-[calc(100vh-400px)]">
+                                            <Table>
+                                                <TableHeader>
+                                                    {renderTableHeader(true)}
+                                                </TableHeader>
+                                                <TableBody>
+                                                    {isLoading ? (
+                                                        <TableRow>
+                                                            <TableCell colSpan={20} className="text-center">
+                                                                <RefreshCw className="h-8 w-8 animate-spin mx-auto text-gray-400" />
+                                                            </TableCell>
+                                                        </TableRow>
+                                                    ) : reports
+                                                        .filter(r => r.CompanyID === selectedCompany.CompanyID)
+                                                        .filter(report =>
+                                                            report.CompanyName.toLowerCase().includes(searchTerm.toLowerCase())
+                                                        )
+                                                        .sort((a, b) => {
+                                                            if (sortConfig.key) {
+                                                                const aValue = a[sortConfig.key];
+                                                                const bValue = b[sortConfig.key];
+                                                                const comparison = aValue < bValue ? -1 : aValue > bValue ? 1 : 0;
+                                                                return sortConfig.direction === 'asc' ? comparison : -comparison;
+                                                            }
+                                                            // Default date sorting
+                                                            const dateA = new Date(a.Year, a.Month - 1);
+                                                            const dateB = new Date(b.Year, b.Month - 1);
+                                                            return dateB.getTime() - dateA.getTime();
+                                                        })
+                                                        .map((report, index) => renderTableRow(report, index, true))}
+                                                </TableBody>
+
+                                            </Table>
+                                        </ScrollArea>
+                                    </CardContent>
+                                </Card>
+                            ) : (
+                                <div className="flex h-[calc(100vh-300px)] items-center justify-center rounded-lg border-2 border-dashed">
+                                    <div className="text-center">
+                                        <FolderOpen className="mx-auto h-12 w-12 text-gray-400" />
+                                        <h3 className="mt-2 text-sm font-medium text-gray-900">No Company Selected</h3>
+                                        <p className="mt-1 text-sm text-gray-500">
+                                            Select a company from the list to view detailed information
+                                        </p>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </TabsContent>
+                
             </Tabs>
         </div>
     );
