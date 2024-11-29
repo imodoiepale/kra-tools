@@ -8,10 +8,6 @@ import { Eye, Download, FileIcon, FolderIcon, Loader2 } from 'lucide-react';
 import * as ExcelJS from 'exceljs';
 import JSZip from 'jszip';
 import Papa from 'papaparse';
-import DocViewer, { DocViewerRenderers } from "@cyntler/react-doc-viewer";
-
-import CSVReader from 'react-csv-reader';
-
 
 interface FileViewerProps {
     url: string;
@@ -151,93 +147,62 @@ const ZipViewer = ({ url }: { url: string }) => {
         </div>
     );
 };
-
-
 const CsvViewer = ({ url }: { url: string }) => {
     const [data, setData] = useState<any[]>([]);
-    const [headers, setHeaders] = useState<string[]>([]);
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
-
-    const handleData = (data: any[], fileInfo: any) => {
-        if (data && data.length > 0) {
-            setHeaders(Object.keys(data[0]));
-            setData(data);
-        }
-        setLoading(false);
-    };
-
-    const papaParseOptions = {
-        header: true,
-        skipEmptyLines: true,
-        complete: (results: any) => {
-            handleData(results.data, results.meta);
-        },
-        error: (error: any) => {
-            setError(`Error parsing CSV: ${error.message}`);
-            setLoading(false);
-        }
-    };
 
     useEffect(() => {
         const fetchCsvData = async () => {
             try {
                 const response = await fetch(url);
                 const text = await response.text();
-                Papa.parse(text, papaParseOptions);
+                Papa.parse(text, {
+                    complete: (results) => {
+                        setData(results.data);
+                    },
+                    header: true,
+                    skipEmptyLines: true
+                });
             } catch (e) {
+                console.error("Error processing CSV file:", e);
                 setError(`Error loading CSV file: ${e}`);
-                setLoading(false);
             }
         };
 
         fetchCsvData();
     }, [url]);
 
-    if (error) return (
-        <div className="p-4 text-red-500">
-            Error: {error}
-        </div>
-    );
-
+    if (error) return <div>Error: {error}</div>;
     if (loading) return <LoadingSpinner />;
 
+    const headers = Object.keys(data[0] || {});
+
     return (
-        <div className="overflow-x-auto">
-            <table className="min-w-full bg-white border border-gray-200">
-                <thead className="bg-gray-50">
-                    <tr>
-                        {headers.map((header, index) => (
-                            <th 
-                                key={index} 
-                                className="px-4 py-2 border-b border-gray-200 text-left text-sm font-semibold text-gray-600"
-                            >
-                                {header}
-                            </th>
+        <table className="min-w-full bg-white">
+            <thead>
+                <tr>
+                    {headers.map((header, index) => (
+                        <th key={index} className="px-4 py-2 border">{header}</th>
+                    ))}
+                </tr>
+            </thead>
+            <tbody>
+                {data.map((row, rowIndex) => (
+                    <tr key={rowIndex}>
+                        {headers.map((header, cellIndex) => (
+                            <td key={cellIndex} className="px-4 py-2 border">
+                                {row[header]?.toString() || ''}
+                            </td>
                         ))}
                     </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
-                    {data.map((row, rowIndex) => (
-                        <tr key={rowIndex} className="hover:bg-gray-50">
-                            {headers.map((header, cellIndex) => (
-                                <td 
-                                    key={cellIndex} 
-                                    className="px-4 py-2 text-sm text-gray-900 whitespace-nowrap"
-                                >
-                                    {row[header]?.toString() || ''}
-                                </td>
-                            ))}
-                        </tr>
-                    ))}
-                </tbody>
-            </table>
-            <div className="mt-4 text-sm text-gray-500">
-                Total rows: {data.length}
-            </div>
-        </div>
+                ))}
+            </tbody>
+        </table>
     );
 };
+
+
 
 const getFileExtension = (url: string): string | null => {
     try {
@@ -281,26 +246,23 @@ const FileViewer: React.FC<FileViewerProps> = ({ url, title }) => {
     const renderContent = () => {
         if (!fileType) return <div>Unsupported file type</div>;
 
-        const docs = [{ uri: url }];
-
         switch (fileType) {
-            case 'pdf':
-            case 'docx':
-            case 'doc':
-                return (
-                    <DocViewer
-                        documents={docs}
-                        pluginRenderers={DocViewerRenderers}
-                        style={{ height: '100%' }}
-                    />
-                );
             case 'xlsx':
             case 'xls':
                 return <ExcelViewer url={url} />;
-            case 'csv':
-                return <CsvViewer url={url} />;
             case 'zip':
                 return <ZipViewer url={url} />;
+            case 'csv':
+                return <CsvViewer url={url} />;
+            case 'pdf':
+                return (
+                    <iframe
+                        src={`${url}#toolbar=1`}
+                            className="w-full h-full border-none"
+                            title={title}
+                            onLoad={() => setIsLoading(false)}
+                    />
+                );
             default:
                 return <div>Unsupported file type: {fileType}</div>;
         }

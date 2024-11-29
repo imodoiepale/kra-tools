@@ -14,6 +14,7 @@ import { ArrowUpDown, Download, MoreHorizontal, RefreshCw, Search, FolderOpen, C
 import * as ExcelJS from 'exceljs';
 import FileViewer from '@/components/FileViewer';
 import { Switch } from '@/components/ui/switch';
+import ExcelViewer from './viewer';
 
 interface ReportRecord {
     ID: number;
@@ -396,9 +397,16 @@ export default function WinguAppsExtractionReports() {
                 ))}
                 {/* Payroll Documents */}
                 {visibleColumns.PayrollDocs && documentGroups.payroll.map(doc => (
-                    <TableHead key={doc.key} className="text-center border-r border-gray-300">
-                        {calculateColumnStats(doc.pdfKey)?.total}
-                    </TableHead>
+                    <React.Fragment key={doc.key}>
+                        <TableHead className="text-center border-r border-gray-300">
+                            {calculateColumnStats(doc.pdfKey)?.total}
+                        </TableHead>
+                        {doc.dataKey && (
+                            <TableHead className="text-center border-r border-gray-300">
+                                {calculateColumnStats(doc.dataKey)?.total}
+                            </TableHead>
+                        )}
+                    </React.Fragment>
                 ))}
                 {/* Payment Lists */}
                 {visibleColumns.PaymentLists && documentGroups.payments.map(doc => (
@@ -431,9 +439,16 @@ export default function WinguAppsExtractionReports() {
                 ))}
                 {/* Payroll Documents */}
                 {visibleColumns.PayrollDocs && documentGroups.payroll.map(doc => (
-                    <TableHead key={doc.key} className="text-center border-r border-gray-300">
-                        {calculateColumnStats(doc.pdfKey)?.available}
-                    </TableHead>
+                    <React.Fragment key={doc.key}>
+                        <TableHead className="text-center border-r border-gray-300">
+                            {calculateColumnStats(doc.pdfKey)?.available}
+                        </TableHead>
+                        {doc.dataKey && (
+                            <TableHead className="text-center border-r border-gray-300">
+                                {calculateColumnStats(doc.dataKey)?.available}
+                            </TableHead>
+                        )}
+                    </React.Fragment>
                 ))}
                 {/* Payment Lists */}
                 {visibleColumns.PaymentLists && documentGroups.payments.map(doc => (
@@ -466,9 +481,16 @@ export default function WinguAppsExtractionReports() {
                 ))}
                 {/* Payroll Documents */}
                 {visibleColumns.PayrollDocs && documentGroups.payroll.map(doc => (
-                    <TableHead key={doc.key} className="text-center border-r border-gray-300">
-                        {calculateColumnStats(doc.pdfKey)?.missing}
-                    </TableHead>
+                    <React.Fragment key={doc.key}>
+                        <TableHead className="text-center border-r border-gray-300">
+                            {calculateColumnStats(doc.pdfKey)?.missing}
+                        </TableHead>
+                        {doc.dataKey && (
+                            <TableHead className="text-center border-r border-gray-300">
+                                {calculateColumnStats(doc.dataKey)?.missing}
+                            </TableHead>
+                        )}
+                    </React.Fragment>
                 ))}
                 {/* Payment Lists */}
                 {visibleColumns.PaymentLists && documentGroups.payments.map(doc => (
@@ -601,17 +623,52 @@ export default function WinguAppsExtractionReports() {
                 {visibleColumns.PayrollDocs && (
                     <>
                         {documentGroups.payroll.map(doc => (
+                            <React.Fragment key={doc.key}>
+                                <TableCell className="border-r border-gray-300">
+                                    <FileViewer
+                                        url={report[doc.pdfKey]}
+                                        fileType={getFileTypeFromUrl(report[doc.pdfKey])}
+                                        title={`${doc.key.replace('_', ' ')} - ${report.CompanyName}`}
+                                    />
+                                </TableCell>
+                                {doc.dataKey && (
+                                    <TableCell className="border-r border-gray-300">
+                                        <FileViewer
+                                            url={report[doc.dataKey]}
+                                            fileType={getFileTypeFromUrl(report[doc.dataKey])}
+                                            title={`${doc.key.replace('_', ' ')} Excel - ${report.CompanyName}`}
+                                        />
+                                    </TableCell>
+                                )}
+                            </React.Fragment>
+                        ))}
+                    </>
+                )}
+
+                
+                {visibleColumns.PayrollDocs && (
+                    <>
+                        {documentGroups.payroll.map(doc => (
                             <TableCell key={doc.key} className="border-r border-gray-300">
-                                <FileViewer
-                                    url={report[doc.pdfKey]}
-                                    fileType={getFileTypeFromUrl(report[doc.pdfKey])}
-                                    title={`${doc.key.replace('_', ' ')} - ${report.CompanyName}`}
-                                    dataLink={doc.dataKey ? report[doc.dataKey] : undefined}
-                                />
+                                <div className="flex items-center justify-center space-x-2">
+                                    <FileViewer
+                                        url={report[doc.pdfKey]}
+                                        fileType={getFileTypeFromUrl(report[doc.pdfKey])}
+                                        title={`${doc.key.replace('_', ' ')} - ${report.CompanyName}`}
+                                    />
+                                    {doc.dataKey && (
+                                        <FileViewer
+                                            url={report[doc.dataKey]}
+                                            fileType={getFileTypeFromUrl(report[doc.dataKey])}
+                                            title={`${doc.key.replace('_', ' ')} Excel - ${report.CompanyName}`}
+                                        />
+                                    )}
+                                </div>
                             </TableCell>
                         ))}
                     </>
                 )}
+
 
                 {/* Payment Lists Section */}
                 {visibleColumns.PaymentLists && (
@@ -640,6 +697,8 @@ export default function WinguAppsExtractionReports() {
                     <TabsTrigger value="summary">Summary View</TabsTrigger>
                     <TabsTrigger value="detailed">Detailed View</TabsTrigger>
                 </TabsList>
+
+                {/* <ExcelViewer/> */}
 
                 {/* Summary View */}
                 <TabsContent value="summary">
