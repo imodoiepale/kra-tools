@@ -49,16 +49,21 @@ interface ReportRecord {
 
 
 const getFileTypeFromUrl = (url: string): string => {
-    if (!url) return 'pdf';
+    if (!url) return 'pdf'; // default fallback
     const extension = url.split('.').pop()?.toLowerCase();
-    const fileTypes = {
-        xlsx: 'excel',
-        xls: 'excel',
-        csv: 'csv',
-        pdf: 'pdf',
-        zip: 'zip'
-    };
-    return fileTypes[extension] || 'pdf';
+    switch (extension) {
+        case 'xlsx':
+        case 'xls':
+            return 'excel';
+        case 'csv':
+            return 'csv';
+        case 'pdf':
+            return 'pdf';
+        case 'zip':
+            return 'zip';
+        default:
+            return 'pdf';
+    }
 };
 
 export default function WinguAppsExtractionReports() {
@@ -554,81 +559,125 @@ export default function WinguAppsExtractionReports() {
 
         return (
             <TableRow key={report.ID} className="hover:bg-gray-50">
-                {/* Basic Info Cells */}
                 <TableCell className="font-medium border-r border-gray-300">{index + 1}</TableCell>
                 <TableCell className="border-r border-gray-300">{report.CompanyName}</TableCell>
                 {showPeriod && <TableCell className="border-r border-gray-300">{`${report.Month}/${report.Year}`}</TableCell>}
 
-                {/* Statutory Documents Section */}
+                {/* Statutory Documents - PDF */}
                 {visibleColumns.StatutoryDocs && (
                     <>
-                        {/* Statutory PDF Documents */}
-                        {documentGroups.statutory_pdf.map(doc => (
-                            <TableCell key={doc.key} className="border-r border-gray-300">
-                                <FileViewer
-                                    url={report[doc.pdfKey]}
-                                    fileType={getFileTypeFromUrl(report[doc.pdfKey])}
-                                    title={`${doc.key.replace('_', ' ')} - ${report.CompanyName}`}
-                                />
-                            </TableCell>
-                        ))}
+                        {/* PDF Files */}
+                        <TableCell className="border-r border-gray-300">
+                            <FileViewer url={report.PAYE_Link} fileType={getFileTypeFromUrl(report.PAYE_Link)} title={`PAYE Returns - ${report.CompanyName}`} />
+                        </TableCell>
+                        <TableCell className="border-r border-gray-300">
+                            <FileViewer url={report.NSSF_Link} fileType={getFileTypeFromUrl(report.NSSF_Link)} title={`NSSF Returns - ${report.CompanyName}`} />
+                        </TableCell>
+                        <TableCell className="border-r border-gray-300">
+                            <FileViewer url={report.NHIF_Link} fileType={getFileTypeFromUrl(report.NHIF_Link)} title={`NHIF Returns - ${report.CompanyName}`} />
+                        </TableCell>
+                        <TableCell className="border-r border-gray-300">
+                            <FileViewer url={report.SHIF_Link} fileType={getFileTypeFromUrl(report.SHIF_Link)} title={`SHIF Returns - ${report.CompanyName}`} />
+                        </TableCell>
+                        <TableCell className="border-r border-gray-300">
+                            <FileViewer url={report.Housing_Levy_Link} fileType={getFileTypeFromUrl(report.Housing_Levy_Link)} title={`Housing Levy Returns - ${report.CompanyName}`} />
+                        </TableCell>
+                        <TableCell className="border-r-2 border-black">
+                            <FileViewer url={report.NITA_List} fileType={getFileTypeFromUrl(report.NITA_List)} title={`NITA Returns - ${report.CompanyName}`} />
+                        </TableCell>
 
-                        {/* Statutory Excel Documents */}
-                        {documentGroups.statutory_excel.map(doc => (
-                            <TableCell key={doc.key} className="border-r border-gray-300">
-                                <FileViewer
-                                    url={report[doc.dataKey]}
-                                    fileType={getFileTypeFromUrl(report[doc.dataKey])}
-                                    title={`${doc.key.replace('_', ' ')} - ${report.CompanyName}`}
-                                />
-                            </TableCell>
-                        ))}
+                        {/* Excel Files */}
+                        <TableCell className="border-r border-gray-300">
+                            <FileViewer
+                                url={report.NSSF_Link}
+                                fileType={getFileTypeFromUrl(report.NSSF_Link)}
+                                title={`NSSF Returns - ${report.CompanyName}`}
+                                dataLink={report.NSSF_Excel_Link}
+                            />
+                        </TableCell>
+                        <TableCell className="border-r border-gray-300">
+                            <FileViewer
+                                url={report.NHIF_Link}
+                                fileType={getFileTypeFromUrl(report.NHIF_Link)}
+                                title={`NHIF Returns - ${report.CompanyName}`}
+                                dataLink={report.NHIF_Excel_Link}
+                            />
+                        </TableCell>
+                        <TableCell className="border-r-2 border-black">
+                            <FileViewer
+                                url={report.SHIF_Link}
+                                fileType={getFileTypeFromUrl(report.SHIF_Link)}
+                                title={`SHIF Returns - ${report.CompanyName}`}
+                                dataLink={report.SHIF_Excel_Link}
+                            />
+                        </TableCell>
 
-                        {/* Statutory CSV Documents */}
-                        {documentGroups.statutory_csv.map(doc => (
-                            <TableCell key={doc.key} className="border-r-2 border-black">
-                                <FileViewer
-                                    url={report[doc.dataKey]}
-                                    fileType={getFileTypeFromUrl(report[doc.dataKey])}
-                                    title={`${doc.key.replace('_', ' ')} - ${report.CompanyName}`}
-                                />
-                            </TableCell>
-                        ))}
+                        {/* CSV Files */}
+                        <TableCell className="border-r border-gray-300">
+                            <FileViewer
+                                url={report.PAYE_Link}
+                                fileType={getFileTypeFromUrl(report.PAYE_Link)}
+                                title={`PAYE Returns - ${report.CompanyName}`}
+                                dataLink={report.PAYE_CSV_Link}
+                            />
+                        </TableCell>
+                        <TableCell className="border-r-2 border-black">
+                            <FileViewer
+                                url={report.Housing_Levy_Link}
+                                fileType={getFileTypeFromUrl(report.Housing_Levy_Link)}
+                                title={`Housing Levy Returns - ${report.CompanyName}`}
+                                dataLink={report.Housing_Levy_CSV_Link}
+                            />
+                        </TableCell>
                     </>
                 )}
 
-                {/* Payroll Documents Section */}
+                {/* Payroll Documents */}
                 {visibleColumns.PayrollDocs && (
                     <>
-                        {documentGroups.payroll.map(doc => (
-                            <TableCell key={doc.key} className="border-r border-gray-300">
-                                <FileViewer
-                                    url={report[doc.pdfKey]}
-                                    fileType={getFileTypeFromUrl(report[doc.pdfKey])}
-                                    title={`${doc.key.replace('_', ' ')} - ${report.CompanyName}`}
-                                    dataLink={doc.dataKey ? report[doc.dataKey] : undefined}
-                                />
-                            </TableCell>
-                        ))}
+                        <TableCell className="border-r border-gray-300">
+                            <FileViewer
+                                url={report.Payroll_Summary_Link}
+                                fileType={getFileTypeFromUrl(report.Payroll_Summary_Link)}
+                                title={`Payroll Summary - ${report.CompanyName}`}
+                                dataLink={report.Payroll_Summary_Excel_Link}
+                            />
+                        </TableCell>
+                        <TableCell className="border-r border-gray-300">
+                            <FileViewer
+                                url={report.Payroll_Summary_Link}
+                                fileType={getFileTypeFromUrl(report.Payroll_Summary_Link)}
+                                title={`Payroll Summary Excel - ${report.CompanyName}`}
+                                dataLink={report.Payroll_Summary_Excel_Link}
+                            />
+                        </TableCell>
+                        <TableCell className="border-r border-gray-300">
+                            <FileViewer url={report.Payroll_Recon_Link} fileType={getFileTypeFromUrl(report.Payroll_Recon_Link)} title={`Payroll Recon - ${report.CompanyName}`} />
+                        </TableCell>
+                        <TableCell className="border-r border-gray-300">
+                            <FileViewer url={report.Control_Total_Link} fileType={getFileTypeFromUrl(report.Control_Total_Link)} title={`Control Total - ${report.CompanyName}`} />
+                        </TableCell>
+                        <TableCell className="border-r-2 border-black">
+                            <FileViewer url={report.Payslips_Link} fileType={getFileTypeFromUrl(report.Payslips_Link)} title={`Payslips - ${report.CompanyName}`} />
+                        </TableCell>
                     </>
                 )}
 
-                {/* Payment Lists Section */}
+                {/* Payment Lists */}
                 {visibleColumns.PaymentLists && (
                     <>
-                        {documentGroups.payments.map(doc => (
-                            <TableCell key={doc.key} className="border-r-2 border-black">
-                                <FileViewer
-                                    url={report[doc.pdfKey]}
-                                    fileType={getFileTypeFromUrl(report[doc.pdfKey])}
-                                    title={`${doc.key.replace('_', ' ')} - ${report.CompanyName}`}
-                                />
-                            </TableCell>
-                        ))}
+                        <TableCell className="border-r border-gray-300">
+                            <FileViewer url={report.Bank_List_Link} fileType={getFileTypeFromUrl(report.Bank_List_Link)} title={`Bank List - ${report.CompanyName}`} />
+                        </TableCell>
+                        <TableCell className="border-r border-gray-300">
+                            <FileViewer url={report.Cash_List} fileType={getFileTypeFromUrl(report.Cash_List)} title={`Cash List - ${report.CompanyName}`} />
+                        </TableCell>
+                        <TableCell className="border-r-2 border-black">
+                            <FileViewer url={report.MPESA_List} fileType={getFileTypeFromUrl(report.MPESA_List)} title={`MPESA List - ${report.CompanyName}`} />
+                        </TableCell>
                     </>
                 )}
             </TableRow>
-
         );
     };
 
@@ -752,6 +801,148 @@ export default function WinguAppsExtractionReports() {
                     </div>
                 </TabsContent>
 
+                {/* Detailed View */}
+                <TabsContent value="detailed">
+                    <div className="grid grid-cols-[350px_1fr] gap-6">
+                        {/* Left Panel - Company List */}
+                        <div className="space-y-4">
+                            <div className="relative">
+                                <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
+                                <Input
+                                    placeholder="Search companies..."
+                                    value={companySearchTerm}
+                                    onChange={(e) => setCompanySearchTerm(e.target.value)}
+                                    className="pl-8"
+                                />
+                            </div>
+                            <ScrollArea className="h-[calc(100vh-300px)] rounded-md border">
+                                <div className="space-y-1 p-2">
+                                    {reports
+                                        .filter(report =>
+                                            report.CompanyName.toLowerCase().includes(companySearchTerm.toLowerCase())
+                                        )
+                                        .map((report) => (
+                                            <div
+                                                key={report.ID}
+                                                onClick={() => setSelectedCompany(report)}
+                                                className={`flex items-center justify-between px-3 py-2 cursor-pointer rounded-md ${selectedCompany?.ID === report.ID
+                                                    ? 'bg-blue-100 text-blue-900'
+                                                    : 'hover:bg-gray-50'
+                                                    }`}
+                                            >
+                                                <span>{report.CompanyName}</span>
+                                            </div>
+                                        ))}
+                                </div>
+                            </ScrollArea>
+                        </div>
+
+                        {/* Right Panel - Detailed Table View */}
+                        <div>
+                            {selectedCompany ? (
+                                <Card>
+                                    <CardHeader className="bg-gradient-to-r from-blue-500 to-blue-600">
+                                        <div className="flex items-center justify-between">
+                                            <CardTitle className="text-xl text-white">
+                                                {selectedCompany.CompanyName}
+                                            </CardTitle>
+                                            <div className="flex space-x-2">
+                                                <Button
+                                                    variant="ghost"
+                                                    className="text-white hover:text-blue-100"
+                                                    onClick={() => exportToExcel(reports.filter(r => r.CompanyID === selectedCompany.CompanyID))}
+                                                >
+                                                    <Download className="mr-2 h-4 w-4" />
+                                                    Export
+                                                </Button>
+                                                <DropdownMenu>
+                                                    <DropdownMenuTrigger asChild>
+                                                        <Button variant="ghost" className="text-white hover:text-blue-100">
+                                                            <MoreHorizontal className="mr-2 h-4 w-4" />
+                                                            Sections
+                                                        </Button>
+                                                    </DropdownMenuTrigger>
+                                                    <DropdownMenuContent align="end">
+                                                        <DropdownMenuCheckboxItem
+                                                            checked={visibleColumns.StatutoryDocs}
+                                                            onCheckedChange={(checked) =>
+                                                                setVisibleColumns(prev => ({ ...prev, StatutoryDocs: checked }))
+                                                            }
+                                                        >
+                                                            Statutory Documents
+                                                        </DropdownMenuCheckboxItem>
+                                                        <DropdownMenuCheckboxItem
+                                                            checked={visibleColumns.PayrollDocs}
+                                                            onCheckedChange={(checked) =>
+                                                                setVisibleColumns(prev => ({ ...prev, PayrollDocs: checked }))
+                                                            }
+                                                        >
+                                                            Payroll Documents
+                                                        </DropdownMenuCheckboxItem>
+                                                        <DropdownMenuCheckboxItem
+                                                            checked={visibleColumns.PaymentLists}
+                                                            onCheckedChange={(checked) =>
+                                                                setVisibleColumns(prev => ({ ...prev, PaymentLists: checked }))
+                                                            }
+                                                        >
+                                                            Payment Lists
+                                                        </DropdownMenuCheckboxItem>
+                                                    </DropdownMenuContent>
+                                                </DropdownMenu>
+                                            </div>
+                                        </div>
+                                    </CardHeader>
+                                    <CardContent className="p-6">
+                                        <ScrollArea className="h-[calc(100vh-400px)]">
+                                            <Table>
+                                                <TableHeader>
+                                                    {renderTableHeader(true)}
+                                                </TableHeader>
+                                                <TableBody>
+                                                    {isLoading ? (
+                                                        <TableRow>
+                                                            <TableCell colSpan={20} className="text-center">
+                                                                <RefreshCw className="h-8 w-8 animate-spin mx-auto text-gray-400" />
+                                                            </TableCell>
+                                                        </TableRow>
+                                                    ) : reports
+                                                        .filter(r => r.CompanyID === selectedCompany.CompanyID)
+                                                        .filter(report =>
+                                                            report.CompanyName.toLowerCase().includes(searchTerm.toLowerCase())
+                                                        )
+                                                        .sort((a, b) => {
+                                                            if (sortConfig.key) {
+                                                                const aValue = a[sortConfig.key];
+                                                                const bValue = b[sortConfig.key];
+                                                                const comparison = aValue < bValue ? -1 : aValue > bValue ? 1 : 0;
+                                                                return sortConfig.direction === 'asc' ? comparison : -comparison;
+                                                            }
+                                                            // Default date sorting
+                                                            const dateA = new Date(a.Year, a.Month - 1);
+                                                            const dateB = new Date(b.Year, b.Month - 1);
+                                                            return dateB.getTime() - dateA.getTime();
+                                                        })
+                                                        .map((report, index) => renderTableRow(report, index, true))}
+                                                </TableBody>
+
+                                            </Table>
+                                        </ScrollArea>
+                                    </CardContent>
+                                </Card>
+                            ) : (
+                                <div className="flex h-[calc(100vh-300px)] items-center justify-center rounded-lg border-2 border-dashed">
+                                    <div className="text-center">
+                                        <FolderOpen className="mx-auto h-12 w-12 text-gray-400" />
+                                        <h3 className="mt-2 text-sm font-medium text-gray-900">No Company Selected</h3>
+                                        <p className="mt-1 text-sm text-gray-500">
+                                            Select a company from the list to view detailed information
+                                        </p>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </TabsContent>
             </Tabs>
         </div>
     );
