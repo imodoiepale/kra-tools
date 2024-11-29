@@ -21,16 +21,19 @@ interface ReportRecord {
     Year: number;
     CompanyID: number;
     CompanyName: string;
-    // Statutory Documents
+    // Statutory Documents - PDF
     PAYE_Link: string;
-    PAYE_CSV_Link: string;
     NSSF_Link: string;
-    NSSF_Excel_Link: string;
     NHIF_Link: string;
-    NHIF_Excel_Link: string;
     SHIF_Link: string;
-    SHIF_Excel_Link: string;
     Housing_Levy_Link: string;
+    NITA_List: string;
+    // Statutory Documents - Excel
+    NSSF_Excel_Link: string;
+    NHIF_Excel_Link: string;
+    SHIF_Excel_Link: string;
+    // Statutory Documents - CSV
+    PAYE_CSV_Link: string;
     Housing_Levy_CSV_Link: string;
     // Payroll Documents
     Payroll_Summary_Link: string;
@@ -42,7 +45,6 @@ interface ReportRecord {
     Bank_List_Link: string;
     Cash_List: string;
     MPESA_List: string;
-    NITA_List: string;
 }
 
 export default function WinguAppsExtractionReports() {
@@ -151,38 +153,52 @@ export default function WinguAppsExtractionReports() {
     }, [sortedReports, searchTerm]);
 
 
+    // Add a function to calculate total cells for colSpan
+    const calculateTotalColumns = () => {
+        let total = 2; // Index and Company Name
+        if (visibleColumns.StatutoryDocs) total += 11; // 6 PDF + 3 Excel + 2 CSV
+        if (visibleColumns.PayrollDocs) total += 5;
+        if (visibleColumns.PaymentLists) total += 3;
+        return total;
+    };
+
+    // Update the loading and no data states to use the correct colSpan
+    const renderLoadingState = () => (
+        <TableRow>
+            <TableCell colSpan={calculateTotalColumns()} className="text-center">
+                <RefreshCw className="h-8 w-8 animate-spin mx-auto text-gray-400" />
+            </TableCell>
+        </TableRow>
+    );
+
+    const renderNoDataState = () => (
+        <TableRow>
+            <TableCell colSpan={calculateTotalColumns()} className="text-center">
+                No reports found
+            </TableCell>
+        </TableRow>
+    );
+
     // Excel Export Functions
     const exportToExcel = async (reportData: ReportRecord[] = filteredReports) => {
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet('Reports');
 
-        // Define headers
+        // Define headers based on document groups
         const headers = [
             'Index',
             'Company Name',
             'Period',
-            // Statutory Documents
-            'PAYE Returns',
-            'PAYE CSV',
-            'NSSF Returns',
-            'NSSF Excel',
-            'NHIF Returns',
-            'NHIF Excel',
-            'SHIF Returns',
-            'SHIF Excel',
-            'Housing Levy',
-            'Housing Levy CSV',
+            // Statutory Documents - PDF
+            ...documentGroups.statutory_pdf.map(doc => doc.key.replace('_', ' ')),
+            // Statutory Documents - Excel
+            ...documentGroups.statutory_excel.map(doc => doc.key.replace('_', ' ')),
+            // Statutory Documents - CSV
+            ...documentGroups.statutory_csv.map(doc => doc.key.replace('_', ' ')),
             // Payroll Documents
-            'Payroll Summary',
-            'Payroll Summary Excel',
-            'Payroll Reconciliation',
-            'Control Totals',
-            'Payslips',
+            ...documentGroups.payroll.map(doc => doc.key.replace('_', ' ')),
             // Payment Lists
-            'Bank List',
-            'Cash List',
-            'M-PESA List',
-            'NITA Returns'
+            ...documentGroups.payments.map(doc => doc.key.replace('_', ' '))
         ];
 
         // Add headers
@@ -190,33 +206,25 @@ export default function WinguAppsExtractionReports() {
 
         // Add data
         reportData.forEach((report, index) => {
-            worksheet.addRow([
+            const row = [
                 index + 1,
                 report.CompanyName,
-                `${report.Month}/${report.Year}`,
-                // Statutory Documents
-                report.PAYE_Link ? 'Available' : 'Missing',
-                report.PAYE_CSV_Link ? 'Available' : 'Missing',
-                report.NSSF_Link ? 'Available' : 'Missing',
-                report.NSSF_Excel_Link ? 'Available' : 'Missing',
-                report.NHIF_Link ? 'Available' : 'Missing',
-                report.NHIF_Excel_Link ? 'Available' : 'Missing',
-                report.SHIF_Link ? 'Available' : 'Missing',
-                report.SHIF_Excel_Link ? 'Available' : 'Missing',
-                report.Housing_Levy_Link ? 'Available' : 'Missing',
-                report.Housing_Levy_CSV_Link ? 'Available' : 'Missing',
-                // Payroll Documents
-                report.Payroll_Summary_Link ? 'Available' : 'Missing',
-                report.Payroll_Summary_Excel_Link ? 'Available' : 'Missing',
-                report.Payroll_Recon_Link ? 'Available' : 'Missing',
-                report.Control_Total_Link ? 'Available' : 'Missing',
-                report.Payslips_Link ? 'Available' : 'Missing',
-                // Payment Lists
-                report.Bank_List_Link ? 'Available' : 'Missing',
-                report.Cash_List ? 'Available' : 'Missing',
-                report.MPESA_List ? 'Available' : 'Missing',
-                report.NITA_List ? 'Available' : 'Missing'
-            ]);
+                `${report.Month}/${report.Year}`
+            ];
+
+            // Add data for each document group
+            const addDocumentStatus = (doc) => {
+                if (doc.pdfKey) row.push(report[doc.pdfKey] ? 'Available' : 'Missing');
+                if (doc.dataKey) row.push(report[doc.dataKey] ? 'Available' : 'Missing');
+            };
+
+            documentGroups.statutory_pdf.forEach(addDocumentStatus);
+            documentGroups.statutory_excel.forEach(addDocumentStatus);
+            documentGroups.statutory_csv.forEach(addDocumentStatus);
+            documentGroups.payroll.forEach(addDocumentStatus);
+            documentGroups.payments.forEach(addDocumentStatus);
+
+            worksheet.addRow(row);
         });
 
         // Style the worksheet
@@ -264,9 +272,10 @@ export default function WinguAppsExtractionReports() {
     // Table Components
     const renderTableHeader = (showPeriod: boolean = false) => (
         <>
-            <TableRow className="bg-gray-100">
-                <TableHead className="w-14">Index</TableHead>
-                <TableHead>
+            {/* Main Header Row */}
+            <TableRow className="bg-gray-100 border-b-2 border-black">
+                <TableHead rowSpan={2} className="w-14 border-r border-gray-300">#</TableHead>
+                <TableHead rowSpan={2} className="border-r border-gray-300">
                     <div
                         className="flex items-center space-x-2 cursor-pointer"
                         onClick={() => handleSort('CompanyName')}
@@ -275,103 +284,204 @@ export default function WinguAppsExtractionReports() {
                         <ArrowUpDown className="h-4 w-4" />
                     </div>
                 </TableHead>
-                {showPeriod && <TableHead>Period</TableHead>}
+                {showPeriod && <TableHead rowSpan={2} className="border-r border-gray-300">Period</TableHead>}
 
-                {/* Statutory Documents */}
+                {visibleColumns.StatutoryDocs && (
+                    <TableHead
+                        colSpan={11}
+                        className="text-center font-bold bg-blue-50 border-x-2 border-black"
+                    >
+                        Statutory Documents
+                    </TableHead>
+                )}
+
+                {visibleColumns.PayrollDocs && (
+                    <TableHead
+                        colSpan={5}
+                        className="text-center font-bold bg-purple-50 border-x-2 border-black"
+                    >
+                        Payroll Documents
+                    </TableHead>
+                )}
+
+                {visibleColumns.PaymentLists && (
+                    <TableHead
+                        colSpan={3}
+                        className="text-center font-bold bg-orange-50 border-x-2 border-black"
+                    >
+                        Payment Lists
+                    </TableHead>
+                )}
+            </TableRow>
+
+            {/* Sub-header Row */}
+            <TableRow className="bg-gray-50 border-b-2 border-black">
+                {/* Statutory Documents Subgroups */}
                 {visibleColumns.StatutoryDocs && (
                     <>
-                        <TableHead className="text-center">PAYE Returns</TableHead>
-                        <TableHead className="text-center">NSSF Returns</TableHead>
-                        <TableHead className="text-center">NHIF Returns</TableHead>
-                        <TableHead className="text-center">SHIF Returns</TableHead>
-                        <TableHead className="text-center">Housing Levy</TableHead>
+                        {/* PDF Files */}
+                        <TableHead className="text-center border-r border-gray-300">PAYE Returns</TableHead>
+                        <TableHead className="text-center border-r border-gray-300">NSSF Returns</TableHead>
+                        <TableHead className="text-center border-r border-gray-300">NHIF Returns</TableHead>
+                        <TableHead className="text-center border-r border-gray-300">SHIF Returns</TableHead>
+                        <TableHead className="text-center border-r border-gray-300">Housing Levy Returns</TableHead>
+                        <TableHead className="text-center border-r-2 border-black">NITA Returns</TableHead>
+
+                        {/* Excel Files */}
+                        <TableHead className="text-center border-r border-gray-300">NSSF Excel</TableHead>
+                        <TableHead className="text-center border-r border-gray-300">NHIF Excel</TableHead>
+                        <TableHead className="text-center border-r-2 border-black">SHIF Excel</TableHead>
+
+                        {/* CSV Files */}
+                        <TableHead className="text-center border-r border-gray-300">PAYE CSV</TableHead>
+                        <TableHead className="text-center border-r-2 border-black">Housing Levy CSV</TableHead>
                     </>
                 )}
 
                 {/* Payroll Documents */}
                 {visibleColumns.PayrollDocs && (
                     <>
-                        <TableHead className="text-center">Payroll Summary</TableHead>
-                        <TableHead className="text-center">Recon Report</TableHead>
-                        <TableHead className="text-center">Control Total</TableHead>
-                        <TableHead className="text-center">Payslips</TableHead>
+                        <TableHead className="text-center border-r border-gray-300">Payroll Summary PDF</TableHead>
+                        <TableHead className="text-center border-r border-gray-300">Payroll Summary Excel</TableHead>
+                        <TableHead className="text-center border-r border-gray-300">Payroll Recon</TableHead>
+                        <TableHead className="text-center border-r border-gray-300">Control Total</TableHead>
+                        <TableHead className="text-center border-r-2 border-black">Payslips</TableHead>
                     </>
                 )}
 
                 {/* Payment Lists */}
                 {visibleColumns.PaymentLists && (
                     <>
-                        <TableHead className="text-center">Bank List</TableHead>
-                        <TableHead className="text-center">Cash List</TableHead>
-                        <TableHead className="text-center">M-PESA List</TableHead>
-                        <TableHead className="text-center">NITA Returns</TableHead>
+                        <TableHead className="text-center border-r border-gray-300">Bank List</TableHead>
+                        <TableHead className="text-center border-r border-gray-300">Cash List</TableHead>
+                        <TableHead className="text-center border-r-2 border-black">M-PESA List</TableHead>
                     </>
                 )}
             </TableRow>
-            <TableRow className="bg-blue-50">
-                <TableHead colSpan={2}>Total Documents</TableHead>
-                {visibleColumns.StatutoryDocs && documentGroups.statutory.map(doc => (
-                    <TableHead key={doc.key} className="text-center">
+
+            {/* Total Documents Row */}
+            <TableRow className="bg-blue-50 border-b border-gray-300">
+                <TableHead colSpan={showPeriod ? 3 : 2} className="border-r-2 border-black font-bold">Total Documents</TableHead>
+                {/* Statutory Documents - PDF */}
+                {visibleColumns.StatutoryDocs && documentGroups.statutory_pdf.map(doc => (
+                    <TableHead key={doc.key} className="text-center border-r border-gray-300">
                         {calculateColumnStats(doc.pdfKey)?.total}
                     </TableHead>
                 ))}
+                {/* Statutory Documents - Excel */}
+                {visibleColumns.StatutoryDocs && documentGroups.statutory_excel.map(doc => (
+                    <TableHead key={doc.key} className="text-center border-r border-gray-300">
+                        {calculateColumnStats(doc.dataKey)?.total}
+                    </TableHead>
+                ))}
+                {/* Statutory Documents - CSV */}
+                {visibleColumns.StatutoryDocs && documentGroups.statutory_csv.map(doc => (
+                    <TableHead key={doc.key} className="text-center border-r-2 border-black">
+                        {calculateColumnStats(doc.dataKey)?.total}
+                    </TableHead>
+                ))}
+                {/* Payroll Documents */}
                 {visibleColumns.PayrollDocs && documentGroups.payroll.map(doc => (
-                    <TableHead key={doc.key} className="text-center">
+                    <TableHead key={doc.key} className="text-center border-r border-gray-300">
                         {calculateColumnStats(doc.pdfKey)?.total}
                     </TableHead>
                 ))}
+                {/* Payment Lists */}
                 {visibleColumns.PaymentLists && documentGroups.payments.map(doc => (
-                    <TableHead key={doc.key} className="text-center">
+                    <TableHead key={doc.key} className="text-center border-r border-gray-300">
                         {calculateColumnStats(doc.pdfKey)?.total}
                     </TableHead>
                 ))}
             </TableRow>
-            <TableRow className="bg-green-50">
-                <TableHead colSpan={2}>Available Documents</TableHead>
-                {visibleColumns.StatutoryDocs && documentGroups.statutory.map(doc => (
-                    <TableHead key={doc.key} className="text-center">
+
+            {/* Available Documents Row */}
+            <TableRow className="bg-green-50 border-b border-gray-300">
+                <TableHead colSpan={showPeriod ? 3 : 2} className="border-r-2 border-black font-bold">Available Documents</TableHead>
+                {/* Statutory Documents - PDF */}
+                {visibleColumns.StatutoryDocs && documentGroups.statutory_pdf.map(doc => (
+                    <TableHead key={doc.key} className="text-center border-r border-gray-300">
                         {calculateColumnStats(doc.pdfKey)?.available}
                     </TableHead>
                 ))}
+                {/* Statutory Documents - Excel */}
+                {visibleColumns.StatutoryDocs && documentGroups.statutory_excel.map(doc => (
+                    <TableHead key={doc.key} className="text-center border-r border-gray-300">
+                        {calculateColumnStats(doc.dataKey)?.available}
+                    </TableHead>
+                ))}
+                {/* Statutory Documents - CSV */}
+                {visibleColumns.StatutoryDocs && documentGroups.statutory_csv.map(doc => (
+                    <TableHead key={doc.key} className="text-center border-r-2 border-black">
+                        {calculateColumnStats(doc.dataKey)?.available}
+                    </TableHead>
+                ))}
+                {/* Payroll Documents */}
                 {visibleColumns.PayrollDocs && documentGroups.payroll.map(doc => (
-                    <TableHead key={doc.key} className="text-center">
+                    <TableHead key={doc.key} className="text-center border-r border-gray-300">
                         {calculateColumnStats(doc.pdfKey)?.available}
                     </TableHead>
                 ))}
+                {/* Payment Lists */}
                 {visibleColumns.PaymentLists && documentGroups.payments.map(doc => (
-                    <TableHead key={doc.key} className="text-center">
+                    <TableHead key={doc.key} className="text-center border-r border-gray-300">
                         {calculateColumnStats(doc.pdfKey)?.available}
                     </TableHead>
                 ))}
             </TableRow>
-            <TableRow className="bg-red-50">
-                <TableHead colSpan={2}>Missing Documents</TableHead>
-                {visibleColumns.StatutoryDocs && documentGroups.statutory.map(doc => (
-                    <TableHead key={doc.key} className="text-center">
+
+            {/* Missing Documents Row */}
+            <TableRow className="bg-red-50 border-b-2 border-black">
+                <TableHead colSpan={showPeriod ? 3 : 2} className="border-r-2 border-black font-bold">Missing Documents</TableHead>
+                {/* Statutory Documents - PDF */}
+                {visibleColumns.StatutoryDocs && documentGroups.statutory_pdf.map(doc => (
+                    <TableHead key={doc.key} className="text-center border-r border-gray-300">
                         {calculateColumnStats(doc.pdfKey)?.missing}
                     </TableHead>
                 ))}
+                {/* Statutory Documents - Excel */}
+                {visibleColumns.StatutoryDocs && documentGroups.statutory_excel.map(doc => (
+                    <TableHead key={doc.key} className="text-center border-r border-gray-300">
+                        {calculateColumnStats(doc.dataKey)?.missing}
+                    </TableHead>
+                ))}
+                {/* Statutory Documents - CSV */}
+                {visibleColumns.StatutoryDocs && documentGroups.statutory_csv.map(doc => (
+                    <TableHead key={doc.key} className="text-center border-r-2 border-black">
+                        {calculateColumnStats(doc.dataKey)?.missing}
+                    </TableHead>
+                ))}
+                {/* Payroll Documents */}
                 {visibleColumns.PayrollDocs && documentGroups.payroll.map(doc => (
-                    <TableHead key={doc.key} className="text-center">
+                    <TableHead key={doc.key} className="text-center border-r border-gray-300">
                         {calculateColumnStats(doc.pdfKey)?.missing}
                     </TableHead>
                 ))}
+                {/* Payment Lists */}
                 {visibleColumns.PaymentLists && documentGroups.payments.map(doc => (
-                    <TableHead key={doc.key} className="text-center">
+                    <TableHead key={doc.key} className="text-center border-r border-gray-300">
                         {calculateColumnStats(doc.pdfKey)?.missing}
                     </TableHead>
                 ))}
             </TableRow>
         </>
     );
-
     const documentGroups = {
-        statutory: [
-            { key: 'PAYE', pdfKey: 'PAYE_Link', dataKey: 'PAYE_CSV_Link' },
-            { key: 'NSSF', pdfKey: 'NSSF_Link', dataKey: 'NSSF_Excel_Link' },
-            { key: 'NHIF', pdfKey: 'NHIF_Link', dataKey: 'NHIF_Excel_Link' },
-            { key: 'SHIF', pdfKey: 'SHIF_Link', dataKey: 'SHIF_Excel_Link' },
-            { key: 'Housing_Levy', pdfKey: 'Housing_Levy_Link', dataKey: 'Housing_Levy_CSV_Link' }
+        statutory_pdf: [
+            { key: 'PAYE_PDF', pdfKey: 'PAYE_Link' },
+            { key: 'NSSF_PDF', pdfKey: 'NSSF_Link' },
+            { key: 'NHIF_PDF', pdfKey: 'NHIF_Link' },
+            { key: 'SHIF_PDF', pdfKey: 'SHIF_Link' },
+            { key: 'Housing_Levy_PDF', pdfKey: 'Housing_Levy_Link' },
+            { key: 'NITA_PDF', pdfKey: 'NITA_List' }
+        ],
+        statutory_excel: [
+            { key: 'NSSF_Excel', dataKey: 'NSSF_Excel_Link' },
+            { key: 'NHIF_Excel', dataKey: 'NHIF_Excel_Link' },
+            { key: 'SHIF_Excel', dataKey: 'SHIF_Excel_Link' }
+        ],
+        statutory_csv: [
+            { key: 'PAYE_CSV', dataKey: 'PAYE_CSV_Link' },
+            { key: 'Housing_Levy_CSV', dataKey: 'Housing_Levy_CSV_Link' }
         ],
         payroll: [
             { key: 'Payroll_Summary', pdfKey: 'Payroll_Summary_Link', dataKey: 'Payroll_Summary_Excel_Link' },
@@ -382,19 +492,20 @@ export default function WinguAppsExtractionReports() {
         payments: [
             { key: 'Bank_List', pdfKey: 'Bank_List_Link' },
             { key: 'Cash_List', pdfKey: 'Cash_List' },
-            { key: 'MPESA_List', pdfKey: 'MPESA_List' },
-            { key: 'NITA_List', pdfKey: 'NITA_List' }
+            { key: 'MPESA_List', pdfKey: 'MPESA_List' }
         ]
     };
 
+
     const renderTableRow = (report: ReportRecord, index: number, showPeriod: boolean = false) => (
         <TableRow key={report.ID} className="hover:bg-gray-50">
-            <TableCell className="font-medium">{index + 1}</TableCell>
-            <TableCell>{report.CompanyName}</TableCell>
-            {showPeriod && <TableCell>{`${report.Month}/${report.Year}`}</TableCell>}
+            <TableCell className="font-medium border-r border-gray-300">{index + 1}</TableCell>
+            <TableCell className="border-r border-gray-300">{report.CompanyName}</TableCell>
+            {showPeriod && <TableCell className="border-r border-gray-300">{`${report.Month}/${report.Year}`}</TableCell>}
 
-            {visibleColumns.StatutoryDocs && documentGroups.statutory.map(doc => (
-                <TableCell key={doc.key}>
+            {/* Statutory Documents - PDF */}
+            {visibleColumns.StatutoryDocs && documentGroups.statutory_pdf.map(doc => (
+                <TableCell key={doc.key} className="border-r border-gray-300">
                     <FileViewer
                         url={report[doc.pdfKey]}
                         fileType="pdf"
@@ -404,8 +515,36 @@ export default function WinguAppsExtractionReports() {
                 </TableCell>
             ))}
 
-            {visibleColumns.PayrollDocs && documentGroups.payroll.map(doc => (
-                <TableCell key={doc.key}>
+            {/* Statutory Documents - Excel */}
+            {visibleColumns.StatutoryDocs && documentGroups.statutory_excel.map(doc => (
+                <TableCell key={doc.key} className="border-r border-gray-300">
+                    <FileViewer
+                        url={report[doc.pdfKey]}
+                        fileType="pdf"
+                        title={`${doc.key.replace('_', ' ')} - ${report.CompanyName}`}
+                        dataLink={doc.dataKey}
+                    />
+                </TableCell>
+            ))}
+
+            {/* Statutory Documents - CSV */}
+            {visibleColumns.StatutoryDocs && documentGroups.statutory_csv.map(doc => (
+                <TableCell key={doc.key} className="border-r-2 border-black">
+                    <FileViewer
+                        url={report[doc.pdfKey]}
+                        fileType="pdf"
+                        title={`${doc.key.replace('_', ' ')} - ${report.CompanyName}`}
+                        dataLink={doc.dataKey}
+                    />
+                </TableCell>
+            ))}
+
+            {/* Payroll Documents */}
+            {visibleColumns.PayrollDocs && documentGroups.payroll.map((doc, idx) => (
+                <TableCell
+                    key={doc.key}
+                    className={`${idx === documentGroups.payroll.length - 1 ? 'border-r-2 border-black' : 'border-r border-gray-300'}`}
+                >
                     <FileViewer
                         url={report[doc.pdfKey]}
                         fileType="pdf"
@@ -415,8 +554,12 @@ export default function WinguAppsExtractionReports() {
                 </TableCell>
             ))}
 
-            {visibleColumns.PaymentLists && documentGroups.payments.map(doc => (
-                <TableCell key={doc.key}>
+            {/* Payment Lists */}
+            {visibleColumns.PaymentLists && documentGroups.payments.map((doc, idx) => (
+                <TableCell
+                    key={doc.key}
+                    className={`${idx === documentGroups.payments.length - 1 ? 'border-r-2 border-black' : 'border-r border-gray-300'}`}
+                >
                     <FileViewer
                         url={report[doc.pdfKey]}
                         fileType="pdf"
