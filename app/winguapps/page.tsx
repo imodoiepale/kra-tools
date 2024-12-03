@@ -694,8 +694,8 @@ export default function WinguAppsExtractionReports() {
         <div className="p-4">
             <Tabs defaultValue="summary" className="w-full space-y-6">
                 <TabsList className="grid w-[400px] grid-cols-2">
-                    <TabsTrigger value="summary">Summary View</TabsTrigger>
-                    <TabsTrigger value="detailed">Detailed View</TabsTrigger>
+                    <TabsTrigger value="summary">Monthly View</TabsTrigger>
+                    <TabsTrigger value="detailed">All Months </TabsTrigger>
                 </TabsList>
 
                 {/* <ExcelViewer/> */}
@@ -954,7 +954,7 @@ export default function WinguAppsExtractionReports() {
                         </div>
                     </div>
                 </TabsContent>
-                
+
             </Tabs>
         </div>
     );

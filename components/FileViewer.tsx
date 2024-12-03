@@ -25,13 +25,18 @@ const LoadingSpinner = () => (
 
 const handleDownload = async (url: string, title: string) => {
     try {
-        const response = await fetch(url);
+        const response = await fetch(url, {
+            method: 'GET',
+            mode: 'cors',
+            headers: {
+                'Access-Control-Allow-Origin': '*',
+            },
+        });
         if (!response.ok) throw new Error('Download failed');
 
         const blob = await response.blob();
         const downloadUrl = window.URL.createObjectURL(blob);
         const link = document.createElement('a');
-
         link.href = downloadUrl;
         link.download = title;
         document.body.appendChild(link);
@@ -43,6 +48,8 @@ const handleDownload = async (url: string, title: string) => {
         alert('Failed to download file. Please try again.');
     }
 };
+
+
 
 const ExcelViewer = ({ url }: { url: string }) => {
     const [data, setData] = useState<any[]>([]);

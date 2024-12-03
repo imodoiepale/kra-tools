@@ -83,7 +83,7 @@ export function AutoPopulationReports() {
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet('Auto-Populate Reports');
 
-        const headers = ['Company Name', 'Last Updated', 'VAT3', 'Sec B with VAT', 'Sec B without VAT', 'Sec F'];
+        const headers = ['Company Name', 'Last Updated', 'VAT3 - Template', 'Sec B - Sales 16%', 'Sec B -  Sales 0%', 'Sec F - Purchase'];
         worksheet.addRow(headers);
 
         filteredReports.forEach((report) => {
@@ -254,10 +254,10 @@ export function AutoPopulationReports() {
                                         { key: 'index', label: 'Index', alwaysVisible: true },
                                         { key: 'company_name', label: 'Company Name', center: false },
                                         { key: 'last_updated', label: 'Last Updated', center: false },
-                                        { key: 'vat3', label: 'VAT3', center: true },
-                                        { key: 'sec_b_with_vat', label: 'Sec B with VAT', center: true },
-                                        { key: 'sec_b_without_vat', label: 'Sec B without VAT', center: true },
-                                        { key: 'sec_f', label: 'Sec F', center: true },
+                                        { key: 'vat3', label: 'VAT3 - Template', center: true },
+                                        { key: 'sec_b_with_vat', label: 'Sec B - Sales 16%', center: true },
+                                        { key: 'sec_b_without_vat', label: 'Sec B - Sales 0%', center: true },
+                                        { key: 'sec_f', label: 'Sec F - Purchase', center: true },
                                     ].map(({ key, label, alwaysVisible, center }) => (
                                         (alwaysVisible || visibleColumns[key]) && (
                                             <TableHead key={key}>
@@ -332,15 +332,17 @@ export function AutoPopulationReports() {
                                                     <TableRow>
                                                         <TableHead className="text-xs text-center">Index</TableHead>
                                                         <TableHead className="text-xs ">Month</TableHead>
-                                                        <TableHead className="text-xs ">Extraction Date</TableHead>
-                                                        <TableHead className="text-xs text-center">VAT3</TableHead>
-                                                        <TableHead className="text-xs text-center">Sec B with VAT</TableHead>
-                                                        <TableHead className="text-xs text-center">Sec B without VAT</TableHead>
-                                                        <TableHead className="text-xs text-center">Sec F</TableHead>
+                                                        <TableHead className="text-xs ">Last Updated</TableHead>
+                                                        <TableHead className="text-xs text-center">VAT3 - Template</TableHead>
+                                                        <TableHead className="text-xs text-center">Sec B - Sales 16%</TableHead>
+                                                        <TableHead className="text-xs text-center">Sec B - Sales 0%</TableHead>
+                                                        <TableHead className="text-xs text-center">Sec F - Purchase</TableHead>
                                                     </TableRow>
                                                 </TableHeader>
                                                 <TableBody>
-                                                    {selectedCompany.extractions.map((extraction, index) => (
+                                                    {selectedCompany.extractions
+                                                        .sort((a, b) => new Date(b.monthYear) - new Date(a.monthYear))
+                                                        .map((extraction, index) => (
                                                         <TableRow key={index} className={index % 2 === 0 ? 'bg-white' : 'bg-blue-50'}>
                                                             <TableCell className="text-xs p-1 text-center">{index + 1}</TableCell>
                                                             <TableCell className="text-xs p-1 whitespace-nowrap ">{extraction.monthYear}</TableCell>

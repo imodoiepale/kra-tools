@@ -161,14 +161,16 @@ async function loginToKRA(page, company) {
     await page.type("#captcahText", result.toString());
     await page.click("#loginButton");
 
+    await page.goto("https://itax.kra.go.ke/KRA-Portal/")
     // Check if login was successful
-    const isInvalidLogin = await page.waitForSelector('b:has-text("Wrong result of the arithmetic operation.")', { state: 'visible', timeout: 3000 })
+    const isInvalidLogin = await page.waitForSelector('b:has-text("Wrong result of the arithmetic operation.")', { state: 'visible', timeout: 1000 })
         .catch(() => false);
 
     if (isInvalidLogin) {
         console.log("Wrong result of the arithmetic operation, retrying...");
         await loginToKRA(page, company);
     }
+
 }
 
 async function initiateAndHandleDownload(page, worksheet, company, downloadFolderPath, formattedDateTime) {
