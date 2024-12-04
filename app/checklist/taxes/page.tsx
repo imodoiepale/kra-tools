@@ -40,7 +40,7 @@ export default function TaxesPage() {
         try {
             const [passwordCheckerResult, pinCheckerDetailsResult, checklistResult, companyMainListResult] = await Promise.all([
                 supabase
-                    .from('PasswordChecker')
+                    .from('PasswordChecker_duplicate')
                     .select('id, company_name, kra_pin')
                     .order('id', { ascending: true }),
                 supabase

@@ -28,7 +28,7 @@ export default function ClientFileManagement() {
         setIsLoading(true);
         try {
             const [clientsResult, checklistResult] = await Promise.all([
-                supabase.from('PasswordChecker').select('id, company_name, kra_pin').order('id'),
+                supabase.from('PasswordChecker_duplicate').select('id, company_name, kra_pin').order('id'),
                 supabase.from('checklist').select('*')
             ]);
 

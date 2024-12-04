@@ -21,7 +21,7 @@ export default function MainPage() {
     async function fetchCompanies() {
         try {
             const { data, error } = await supabase
-                .from('PasswordChecker')
+                .from('PasswordChecker_duplicate')
                 .select('*');
 
             if (error) throw error;

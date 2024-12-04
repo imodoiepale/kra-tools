@@ -91,7 +91,8 @@ async function processCompanies(runOption, selectedIds) {
     // Launch Chromium using the chosen Chrome executable
     const browser = await chromium.launch({
         headless: false,
-        executablePath: chrome32Path || chrome64Path
+        // executablePath: chrome32Path || chrome64Path,
+        channel: "msedge"
     });
 
     const context = await browser.newContext();

@@ -190,7 +190,7 @@ export default function CompanyListTable() {
     const fetchCompanies = async () => {
         // Fetch data from PasswordChecker table
         const { data: passwordCheckerData, error: passwordCheckerError } = await supabase
-            .from('PasswordChecker')
+            .from('PasswordChecker_duplicate')
             .select('id, company_name, kra_pin')
             .order('id', { ascending: true });
 
