@@ -21,15 +21,15 @@ export async function fetchReports() {
         const result = await pool.request()
             .input('MemberID', sql.Int, 84)
             .query('SELECT * FROM dbo.cr_Reports_External WHERE MemberID = @MemberID'); // Query with filter
-
-        const filteredData = result.recordset.map(report => ({
-            PAYE_CSV_Link: report.PAYE_CSV_Link,
-            NSSF_Excel_Link: report.NSSF_Excel_Link,
-            NHIF_Excel_Link: report.NHIF_Excel_Link,
-            SHIF_Excel_Link: report.SHIF_Excel_Link,
-            Housing_Levy_CSV_Link: report.Housing_Levy_CSV_Link,
-        }));
-
+          const filteredData = result.recordset.map(report => ({
+              CompanyName: report.CompanyName,
+              Month: 11,
+              PAYE_CSV_Link: report.PAYE_CSV_Link,
+              NSSF_Excel_Link: report.NSSF_Excel_Link,
+              NHIF_Excel_Link: report.NHIF_Excel_Link,
+              SHIF_Excel_Link: report.SHIF_Excel_Link,
+              Housing_Levy_CSV_Link: report.Housing_Levy_CSV_Link,
+          }));
         console.log('Filtered Reports:', filteredData); // For debugging
     } catch (error) {
         console.error('Error fetching reports:', error);
