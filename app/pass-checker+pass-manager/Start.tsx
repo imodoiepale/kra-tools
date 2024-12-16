@@ -200,7 +200,7 @@ export default function Start({ companies, handleStopCheck, activeTab, setStatus
                           />
                         </TableCell>
                         <TableCell className="text-center">{index + 1}</TableCell>
-                        <TableCell>{company.name}</TableCell>
+                        <TableCell>{company.name || company.company_name}</TableCell>
                         <TableCell className="">
                           {company.status?.toLowerCase() === 'valid' && <span className="bg-green-500 text-white px-2 py-1 rounded">{company.status}</span>}
                           {company.status?.toLowerCase() === 'invalid' && <span className="bg-red-500 text-white px-2 py-1 rounded">{company.status}</span>}
@@ -233,7 +233,7 @@ export default function Start({ companies, handleStopCheck, activeTab, setStatus
                       {companies.filter(c => selectedCompanies.includes(c.id)).map((company, index) => (
                         <TableRow key={company.id} className="bg-blue-100">
                           <TableCell className="text-center">{index + 1}</TableCell>
-                          <TableCell>{company.name}</TableCell>
+                          <TableCell>{company.name || company.company_name}</TableCell>
                           <TableCell className="">
                             {company.status?.toLowerCase() === 'valid' && <span className="bg-green-500 text-white px-2 py-1 rounded">{company.status}</span>}
                             {company.status?.toLowerCase() === 'invalid' && <span className="bg-red-500 text-white px-2 py-1 rounded">{company.status}</span>}
