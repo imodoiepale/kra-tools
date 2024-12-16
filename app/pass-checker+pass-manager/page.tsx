@@ -479,17 +479,31 @@ export default function CheckerManager() {
                     </div>
                 </CardHeader>
                 <CardContent>
-                    <div className="flex justify-end items-center mb-3 gap-4">
-                        <span className="text-sm text-gray-500">
-                            Linked to: {linkedTables[`${activeCategory}_${activeSubCategory}`] || 'Not linked'}
-                        </span>
-                        <Button onClick={() => setAddDialogOpen(true)}>
-                            <Plus className="mr-2 h-4 w-4" />
-                            Add Item
-                        </Button>
-                    </div>
-                    <PasswordCheckerReports />
-
+                    <Tabs defaultValue="Reports" className="w-full">
+                        <TabsList className="grid w-full grid-cols-3">
+                            <TabsTrigger value="Start">Start</TabsTrigger>
+                            <TabsTrigger value="Running">Running</TabsTrigger>
+                            <TabsTrigger value="Reports">Reports</TabsTrigger>
+                        </TabsList>
+                        <TabsContent value="Start">
+                            <Start />
+                        </TabsContent>
+                        <TabsContent value="Running">
+                            <PasswordCheckerRunning />
+                        </TabsContent>
+                        <TabsContent value="Reports">
+                            <div className="flex justify-end items-center mb-3 gap-4">
+                                <span className="text-sm text-gray-500">
+                                    Linked to: {linkedTables[`${activeCategory}_${activeSubCategory}`] || 'Not linked'}
+                                </span>
+                                <Button onClick={() => setAddDialogOpen(true)}>
+                                    <Plus className="mr-2 h-4 w-4" />
+                                    Add Item
+                                </Button>
+                            </div>
+                            <PasswordCheckerReports />
+                        </TabsContent>
+                    </Tabs>
                 </CardContent>
             </Card>
 
