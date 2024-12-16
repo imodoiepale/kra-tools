@@ -53,9 +53,10 @@ export default function CheckerManager() {
     const [searchTerm, setSearchTerm] = useState('');
 
     const [isChecking, setIsChecking] = useState(false);
-    const [activeTab, setActiveTab] = useState("Reports");
+    const [activeTab, setActiveTab] = useState("PasswordCheckerReports");
     const [status, setStatus] = useState("Not Started");
     const [companies, setCompanies] = useState([]);
+
 
     // Function to handle sorting
     const handleSort = (key) => {
@@ -194,6 +195,7 @@ export default function CheckerManager() {
             // Provide default values if data is undefined
             const currentSettings = data?.column_settings || {};
             const defaultColumns = ['index', 'name', 'identifier', 'password', 'status'];
+
             const mergedSettings = {
                 visibleColumns: { index: true, ...currentSettings.visibleColumns },
                 headerNames: { index: 'Index', ...currentSettings.headerNames },
@@ -352,6 +354,7 @@ export default function CheckerManager() {
             console.log('Current settings:', currentSettings); // Log the current settings
 
             const defaultColumns = ['index', 'name', 'identifier', 'password', 'status'];
+
             const mergedSettings = {
                 visibleColumns: { index: true, ...currentSettings.visibleColumns },
                 headerNames: { index: 'Index', ...currentSettings.headerNames },
@@ -454,56 +457,41 @@ export default function CheckerManager() {
 
     return (
         <div className="p-4 w-full">
-            <div className="flex flex-col space-y-4">
-                <div className="flex justify-between items-center">
+            <Card>
+                <CardHeader className="flex flex-row items-center justify-between">
                     <div>
-                        <h2 className="text-2xl font-bold">Password Check Reports</h2>
-                        <p className="text-sm text-muted-foreground">Manage passwords for different categories</p>
+                        <h3 className="text-lg font-medium">Password Check Reports</h3>
+                        <CardDescription>Manage passwords for different categories</CardDescription>
                     </div>
-                    <div className="flex items-center space-x-2">
-                        <Button variant="outline" onClick={() => setCsvUploadDialogOpen(true)}>
+                    <div className="space-x-2">
+                        <Button onClick={() => setCsvUploadDialogOpen(true)} variant="outline">
                             <Upload className="mr-2 h-4 w-4" />
                             Upload CSV
                         </Button>
-                        <Button variant="outline" onClick={handleExport}>
+                        <Button onClick={handleExport} variant="outline">
                             <Download className="mr-2 h-4 w-4" />
                             Export CSV
                         </Button>
-                        <Button variant="outline" onClick={() => setSettingsDialogOpen(true)}>
+                        <Button onClick={() => setSettingsDialogOpen(true)} variant="outline">
                             <Settings className="mr-2 h-4 w-4" />
                             Settings
                         </Button>
                     </div>
-                </div>
+                </CardHeader>
+                <CardContent>
+                    <div className="flex justify-end items-center mb-3 gap-4">
+                        <span className="text-sm text-gray-500">
+                            Linked to: {linkedTables[`${activeCategory}_${activeSubCategory}`] || 'Not linked'}
+                        </span>
+                        <Button onClick={() => setAddDialogOpen(true)}>
+                            <Plus className="mr-2 h-4 w-4" />
+                            Add Item
+                        </Button>
+                    </div>
+                    <PasswordCheckerReports />
 
-                <Tabs defaultValue="Reports" className="w-full">
-                    <TabsList className="grid w-full grid-cols-3">
-                        <TabsTrigger value="Start">Start</TabsTrigger>
-                        <TabsTrigger value="Running">Running</TabsTrigger>
-                        <TabsTrigger value="Reports">Reports</TabsTrigger>
-                    </TabsList>
-                    <TabsContent value="Start">
-                        <Start />
-                    </TabsContent>
-                    <TabsContent value="Running">
-                        <PasswordCheckerRunning />
-                    </TabsContent>
-                    <TabsContent value="Reports">
-                        <div className="flex justify-between items-center mb-4">
-                            <div className="flex items-center space-x-2">
-                                <div className="text-sm text-muted-foreground">
-                                    Linked to: {linkedTables[`${activeCategory}_${activeSubCategory}`] || 'Not linked'}
-                                </div>
-                            </div>
-                            <Button onClick={() => setAddDialogOpen(true)}>
-                                <Plus className="mr-2 h-4 w-4" />
-                                Add Item
-                            </Button>
-                        </div>
-                        <PasswordCheckerReports />
-                    </TabsContent>
-                </Tabs>
-            </div>
+                </CardContent>
+            </Card>
 
             <AddItemDialog
                 open={addDialogOpen}

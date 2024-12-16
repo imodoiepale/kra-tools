@@ -510,6 +510,7 @@ export default function PasswordCheckerReports() {
         </Tabs>
 
         <div className="rounded-md border">
+          
           <Table>
             <TableHeader>
               <TableRow>
@@ -543,7 +544,7 @@ export default function PasswordCheckerReports() {
                       <>
                         <TableHead className="text-center">eCitizen ID</TableHead>
                         <TableHead className="text-center">eCitizen Password</TableHead>
-                        <TableHead className="text-center">Director</TableHead>
+                        <TableHead >Director</TableHead>
                       </>
                     )}
                     {activeTab === 'quickbooks' && (
