@@ -492,7 +492,7 @@ export default function CheckerManager() {
                             <PasswordCheckerRunning />
                         </TabsContent>
                         <TabsContent value="Reports">
-                            <div className="flex justify-end items-center mb-3 gap-4">
+                            {/* <div className="flex justify-end items-center mb-3 gap-4">
                                 <span className="text-sm text-gray-500">
                                     Linked to: {linkedTables[`${activeCategory}_${activeSubCategory}`] || 'Not linked'}
                                 </span>
@@ -500,7 +500,7 @@ export default function CheckerManager() {
                                     <Plus className="mr-2 h-4 w-4" />
                                     Add Item
                                 </Button>
-                            </div>
+                            </div> */}
                             <PasswordCheckerReports />
                         </TabsContent>
                     </Tabs>
