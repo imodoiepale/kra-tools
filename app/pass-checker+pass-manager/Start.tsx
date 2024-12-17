@@ -9,13 +9,16 @@ import { motion } from "framer-motion";
 import { supabase } from '@/lib/supabase';
 
 import { usePathname } from 'next/navigation'
-export default function Start({ companies, handleStopCheck, activeTab, setStatus, isChecking, setIsChecking, setActiveTab }) {
+export default function Start({ activeTab, setStatus, isChecking, setIsChecking, setActiveTab }) {
   const [selectedCompanies, setSelectedCompanies] = useState([]);
   const [runOption, setRunOption] = useState('all');
   const [automationProgress, setAutomationProgress] = useState(null);
+  const [companies, setCompanies] = useState([]);
   const pathname = usePathname()
+
   useEffect(() => {
     fetchAutomationProgress();
+    fetchCompanies();
   }, []);
 
   const fetchAutomationProgress = async () => {
@@ -44,6 +47,23 @@ export default function Start({ companies, handleStopCheck, activeTab, setStatus
     }
   };
 
+  const fetchCompanies = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('PasswordChecker')
+        .select('id, company_name, status')
+        .order('id', { ascending: true });
+
+      if (error) {
+        console.error('Error fetching companies:', error);
+      } else {
+        setCompanies(data || []);
+      }
+    } catch (error) {
+      console.error('Error fetching companies:', error);
+    }
+  };
+
   const handleCheckboxChange = (id) => {
     setSelectedCompanies(prev =>
       prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
@@ -51,6 +71,7 @@ export default function Start({ companies, handleStopCheck, activeTab, setStatus
   };
 
   const startCheck = async () => {
+    console.log('Current activeTab:', activeTab); // Debugging line
     if (isChecking) {
       alert('An automation is already running. Please wait for it to complete or stop it before starting a new one.');
       return;
@@ -64,12 +85,12 @@ export default function Start({ companies, handleStopCheck, activeTab, setStatus
       case 'nhif':
         apiEndpoint = '/api/nhif-pass-checker';
         break;
-        case 'kra':
-          apiEndpoint = '/api/password-checker';
-          break;      
-          case 'ecitizen':
-          apiEndpoint = '/api/ecitizen-pass-checker';
-          break;
+      case 'kra':
+        apiEndpoint = '/api/password-checker';
+        break;
+      case 'ecitizen':
+        apiEndpoint = '/api/ecitizen-pass-checker';
+        break;
       default:
         alert('Invalid tab selected');
         return;
@@ -121,9 +142,9 @@ export default function Start({ companies, handleStopCheck, activeTab, setStatus
       case 'kra':
         apiEndpoint = '/api/password-checker';
         break;
-        case 'ecitizen':
-          apiEndpoint = '/api/ecitizen-pass-checker';
-          break;
+      case 'ecitizen':
+        apiEndpoint = '/api/ecitizen-pass-checker';
+        break;
       default:
         alert('Invalid tab selected');
         return;
@@ -200,7 +221,7 @@ export default function Start({ companies, handleStopCheck, activeTab, setStatus
                           />
                         </TableCell>
                         <TableCell className="text-center">{index + 1}</TableCell>
-                        <TableCell>{company.name || company.company_name}</TableCell>
+                        <TableCell>{company.company_name}</TableCell>
                         <TableCell className="">
                           {company.status?.toLowerCase() === 'valid' && <span className="bg-green-500 text-white px-2 py-1 rounded">{company.status}</span>}
                           {company.status?.toLowerCase() === 'invalid' && <span className="bg-red-500 text-white px-2 py-1 rounded">{company.status}</span>}
@@ -233,7 +254,7 @@ export default function Start({ companies, handleStopCheck, activeTab, setStatus
                       {companies.filter(c => selectedCompanies.includes(c.id)).map((company, index) => (
                         <TableRow key={company.id} className="bg-blue-100">
                           <TableCell className="text-center">{index + 1}</TableCell>
-                          <TableCell>{company.name || company.company_name}</TableCell>
+                          <TableCell>{company.company_name}</TableCell>
                           <TableCell className="">
                             {company.status?.toLowerCase() === 'valid' && <span className="bg-green-500 text-white px-2 py-1 rounded">{company.status}</span>}
                             {company.status?.toLowerCase() === 'invalid' && <span className="bg-red-500 text-white px-2 py-1 rounded">{company.status}</span>}
@@ -253,7 +274,7 @@ export default function Start({ companies, handleStopCheck, activeTab, setStatus
                     {isChecking ? 'Running...' : automationProgress?.status === 'Stopped' ? 'Resume' : 'Start Password Check'}
                   </Button>
 
-                  <Button onClick={() => { handleStopCheck(); setStatus("Stopped"); }} disabled={!isChecking} variant="destructive" className="ml-2">
+                  <Button onClick={() => { setStatus("Stopped"); }} disabled={!isChecking} variant="destructive" className="ml-2">
                     Stop Password Check
                   </Button>
                 </div>
@@ -272,7 +293,7 @@ export default function Start({ companies, handleStopCheck, activeTab, setStatus
             {isChecking ? 'Running...' : automationProgress?.status === 'Stopped' ? 'Resume' : 'Start Password Check'}
           </Button>
 
-          <Button onClick={() => { handleStopCheck(); setStatus("Stopped"); }} disabled={!isChecking} variant="destructive" className="ml-2">
+          <Button onClick={() => { setStatus("Stopped"); }} disabled={!isChecking} variant="destructive" className="ml-2">
             Stop Password Check
           </Button>
         </CardFooter>
