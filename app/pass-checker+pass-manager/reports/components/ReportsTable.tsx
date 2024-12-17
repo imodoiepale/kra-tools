@@ -3,7 +3,7 @@
 import React from 'react'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
-import { Trash2 } from 'lucide-react'
+import { Edit, Trash2 } from 'lucide-react'
 import { Company, CategoryFilter } from '../types'
 
 interface ReportsTableProps {
@@ -71,11 +71,11 @@ export function ReportsTable({
             <TableCell className="text-center">
               <div className="flex items-center justify-center space-x-2">
                 <Button variant="ghost" size="sm" onClick={() => onEdit(company)}>
-                  Edit
+                  <Edit className="h-4 w-4" />
                 </Button>
-                <Button variant="ghost" size="sm" onClick={() => onDelete(company.id)}>
+                {/* <Button variant="ghost" size="sm" onClick={() => onDelete(company.id)}>
                   <Trash2 className="h-4 w-4" />
-                </Button>
+                </Button> */}
               </div>
             </TableCell>
           </TableRow>
