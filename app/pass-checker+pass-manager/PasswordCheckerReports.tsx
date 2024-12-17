@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogClose } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Trash2, Download, Filter } from 'lucide-react'
+import { Trash2, Download, Filter, Search } from 'lucide-react'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger, SheetClose } from "@/components/ui/sheet"
 import ExcelJS from 'exceljs'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -49,17 +49,17 @@ interface CategoryFilter {
 
 function getStatusColor(status: string | null): string {
   if (!status) return 'bg-gray-100 text-gray-800' // Default styling for null/undefined status
-  
+
   const lowerStatus = status.toLowerCase();
 
   switch (lowerStatus) {
     case 'valid':
       return 'bg-green-100 text-green-800';
     case 'invalid':
-      case 'error':
+    case 'error':
       return 'bg-red-100 text-red-800';
     case 'locked':
-      case 'pending':
+    case 'pending':
     case 'password expired':
       return 'bg-yellow-100 text-yellow-800';
     default:
@@ -98,6 +98,18 @@ const parseDate = (dateStr: string | null): Date | null => {
   }
 
   return null;
+};
+
+// Helper function to format dates consistently
+const formatDate = (dateStr: string | null | undefined): string => {
+  if (!dateStr) return 'N/A';
+  const date = parseDate(dateStr);
+  if (!date) return 'Invalid Date';
+  return date.toLocaleDateString('en-GB', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric'
+  });
 };
 
 export default function PasswordCheckerReports() {
@@ -159,18 +171,32 @@ export default function PasswordCheckerReports() {
 
         return {
           ...company,
-          acc_client_effective_from: duplicateInfo?.acc_client_effective_from || '1950-01-01',
-          acc_client_effective_to: duplicateInfo?.acc_client_effective_to || '1990-01-01',
-          audit_tax_client_effective_from: duplicateInfo?.audit_tax_client_effective_from || '1950-01-01',
-          audit_tax_client_effective_to: duplicateInfo?.audit_tax_client_effective_to || '1990-01-01',
-          cps_sheria_client_effective_from: duplicateInfo?.cps_sheria_client_effective_from || '1950-01-01',
-          cps_sheria_client_effective_to: duplicateInfo?.cps_sheria_client_effective_to || '1990-01-01',
-          imm_client_effective_from: duplicateInfo?.imm_client_effective_from || '1950-01-01',
-          imm_client_effective_to: duplicateInfo?.imm_client_effective_to || '1990-01-01'
+          acc_client_effective_from: duplicateInfo?.acc_client_effective_from || null,
+          acc_client_effective_to: duplicateInfo?.acc_client_effective_to || null,
+          audit_tax_client_effective_from: duplicateInfo?.audit_tax_client_effective_from || null,
+          audit_tax_client_effective_to: duplicateInfo?.audit_tax_client_effective_to || null,
+          cps_sheria_client_effective_from: duplicateInfo?.cps_sheria_client_effective_from || null,
+          cps_sheria_client_effective_to: duplicateInfo?.cps_sheria_client_effective_to || null,
+          imm_client_effective_from: duplicateInfo?.imm_client_effective_from || null,
+          imm_client_effective_to: duplicateInfo?.imm_client_effective_to || null
         };
       });
 
       setCompanies(mergedData);
+
+      // Log dates in table format
+      console.table(mergedData.map(company => ({
+        'Company': company.company_name || company.name,
+        'ACC From': company.acc_client_effective_from || 'N/A',
+        'ACC To': company.acc_client_effective_to || 'N/A',
+        'Audit Tax From': company.audit_tax_client_effective_from || 'N/A',
+        'Audit Tax To': company.audit_tax_client_effective_to || 'N/A',
+        'CPS Sheria From': company.cps_sheria_client_effective_from || 'N/A',
+        'CPS Sheria To': company.cps_sheria_client_effective_to || 'N/A',
+        'Immigration From': company.imm_client_effective_from || 'N/A',
+        'Immigration To': company.imm_client_effective_to || 'N/A'
+      })));
+
     } catch (error) {
       console.error('Error fetching reports:', error);
     }
@@ -354,7 +380,7 @@ export default function PasswordCheckerReports() {
 
   const getTableName = () => {
     const category = activeTab.toUpperCase();
-  
+
     // Find the matching category and subcategory
     for (const [cat, subcategories] of Object.entries(categoriesData)) {
       if (cat.toUpperCase() === category) {
@@ -401,7 +427,12 @@ export default function PasswordCheckerReports() {
   }
 
   const handleCategoryFilterChange = (key: string) => {
-    setCategoryFilters(categoryFilters.map(filter => filter.key === key ? { ...filter, checked: !filter.checked } : filter));
+    // Don't allow accounting to be unchecked
+    if (key === 'acc') return;
+    
+    setCategoryFilters(categoryFilters.map(filter => 
+      filter.key === key ? { ...filter, checked: !filter.checked } : filter
+    ));
   }
 
   const isCompanyActive = (company: Company) => {
@@ -412,45 +443,73 @@ export default function PasswordCheckerReports() {
     }
 
     const currentDate = new Date();
-  
+
     const isActiveForCategory = (fromStr: string | null | undefined, toStr: string | null | undefined): boolean => {
-      if (!fromStr && !toStr) return false;
+      // If no dates are provided, consider the company as potentially active
+      if (!fromStr && !toStr) {
+        return true;
+      }
 
-      const from = parseDate(fromStr || '');
-      const to = parseDate(toStr || '');
+      const from = fromStr ? parseDate(fromStr) : null;
+      const to = toStr ? parseDate(toStr) : null;
 
-      if (!from && !to) return false;
+      // If dates can't be parsed, consider the company as potentially active
+      if (fromStr && !from) {
+        console.warn(`Failed to parse from date: ${fromStr}`);
+        return true;
+      }
+      if (toStr && !to) {
+        console.warn(`Failed to parse to date: ${toStr}`);
+        return true;
+      }
 
-      // If only from date exists, consider it active if it's in the past
+      // If only from date exists, check if it's in the past
       if (from && !to) {
         return from <= currentDate;
       }
 
-      // If only to date exists, consider it active if it's in the future
+      // If only to date exists, check if it's in the future
       if (!from && to) {
         return currentDate <= to;
       }
 
-      // Both dates exist
+      // Both dates exist, check if current date is within range
       return from! <= currentDate && currentDate <= to!;
     };
 
-    return activeFilters.some(category => {
+    const result = activeFilters.some(category => {
+      console.log(`\nChecking company "${company.company_name || company.name}" for category: ${category.key}`);
+      let isActive = false;
+
       switch (category.key) {
         case 'acc_billing':
-          return isActiveForCategory(company.acc_billing_client_effective_from, company.acc_billing_client_effective_to);
+          isActive = isActiveForCategory(company.acc_billing_client_effective_from, company.acc_billing_client_effective_to);
+          console.log(`acc_billing: ${isActive ? 'ACTIVE' : 'INACTIVE'}`);
+          return isActive;
         case 'cps_sheria':
-          return isActiveForCategory(company.cps_sheria_client_effective_from, company.cps_sheria_client_effective_to);
+          isActive = isActiveForCategory(company.cps_sheria_client_effective_from, company.cps_sheria_client_effective_to);
+          console.log(`cps_sheria: ${isActive ? 'ACTIVE' : 'INACTIVE'}`);
+          return isActive;
         case 'imm':
-          return isActiveForCategory(company.imm_client_effective_from, company.imm_client_effective_to);
+          isActive = isActiveForCategory(company.imm_client_effective_from, company.imm_client_effective_to);
+          console.log(`imm: ${isActive ? 'ACTIVE' : 'INACTIVE'}`);
+          return isActive;
         case 'audit_tax':
-          return isActiveForCategory(company.audit_tax_client_effective_from, company.audit_tax_client_effective_to);
+          isActive = isActiveForCategory(company.audit_tax_client_effective_from, company.audit_tax_client_effective_to);
+          console.log(`audit_tax: ${isActive ? 'ACTIVE' : 'INACTIVE'}`);
+          return isActive;
         case 'acc':
-          return isActiveForCategory(company.acc_client_effective_from, company.acc_client_effective_to);
+          isActive = isActiveForCategory(company.acc_client_effective_from, company.acc_client_effective_to);
+          console.log(`acc: ${isActive ? 'ACTIVE' : 'INACTIVE'}`);
+          return isActive;
         default:
+          console.log(`Unknown category: ${category.key}`);
           return false;
       }
     });
+
+    console.log(`Final result for "${company.company_name || company.name}": ${result ? 'ACTIVE' : 'INACTIVE'}\n`);
+    return result;
   };
 
   // Add this style to highlight inactive rows
@@ -460,6 +519,24 @@ export default function PasswordCheckerReports() {
   };
 
   const filteredCompanies = companies.filter(isCompanyActive);
+
+  // Add global search filter
+  const filteredAndSearchedCompanies = filteredCompanies.filter(company => {
+    if (!searchTerm) return true;
+    const searchLower = searchTerm.toLowerCase();
+    
+    // Search in all relevant fields
+    return (
+      (company.company_name || company.name || '').toLowerCase().includes(searchLower) ||
+      (company.kra_pin || '').toLowerCase().includes(searchLower) ||
+      (company.kra_password || '').toLowerCase().includes(searchLower) ||
+      (company.nhif_code || '').toLowerCase().includes(searchLower) ||
+      (company.nssf_code || '').toLowerCase().includes(searchLower) ||
+      (company.ecitizen_identifier || '').toLowerCase().includes(searchLower) ||
+      (company.director || '').toLowerCase().includes(searchLower) ||
+      (company.status || '').toLowerCase().includes(searchLower)
+    );
+  });
 
   return (
     <div className="space-y-4">
@@ -473,8 +550,19 @@ export default function PasswordCheckerReports() {
                 </TabsTrigger>
               ))}
             </TabsList>
-          
+
             <div className="flex items-center space-x-2">
+              <div className="relative w-64">
+                <Input
+                  type="text"
+                  placeholder="Search companies..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-8"
+                />
+                <Search className="h-4 w-4 absolute left-2 top-3 text-gray-500" />
+              </div>
+
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="outline" size="sm">
@@ -489,6 +577,7 @@ export default function PasswordCheckerReports() {
                         id={filter.key}
                         checked={filter.checked}
                         onCheckedChange={() => handleCategoryFilterChange(filter.key)}
+                        // disabled={filter.key === 'acc'} // Disable checkbox for accounting
                       />
                       <label
                         htmlFor={filter.key}
@@ -500,7 +589,7 @@ export default function PasswordCheckerReports() {
                   ))}
                 </DropdownMenuContent>
               </DropdownMenu>
-            
+
               <Button variant="outline" size="sm" onClick={handleDownloadExcel}>
                 <Download className="h-4 w-4 mr-2" />
                 Download Excel
@@ -510,85 +599,176 @@ export default function PasswordCheckerReports() {
         </Tabs>
 
         <div className="rounded-md border">
-          
+
           <Table>
             <TableHeader>
-              <TableRow>
-                <TableHead className="w-[50px]">Index</TableHead>
-                <TableHead>Name</TableHead>
+              <TableRow className="bg-blue-600">
+                <TableHead className="text-center text-white w-[50px]">Index</TableHead>
+                <TableHead className="text-white">Name</TableHead>
                 {activeTab === 'kra' ? (
                   <>
-                    <TableHead className="text-center">KRA PIN</TableHead>
-                    <TableHead className="text-center">KRA Password</TableHead>
-                    <TableHead className="text-center">Status	</TableHead>
-                    <TableHead className="text-center">Last Checked</TableHead>
+                    <TableHead className="text-center text-white">KRA PIN</TableHead>
+                    <TableHead className="text-center text-white">KRA Password</TableHead>
                   </>
                 ) : (
                   <>
-
                     {activeTab === 'nhif' && (
                       <>
-                        <TableHead className="text-center">NHIF ID</TableHead>
-                        <TableHead className="text-center">NHIF Code</TableHead>
-                        <TableHead className="text-center">NHIF Password</TableHead>
+                        <TableHead className="text-center text-white">NHIF ID</TableHead>
+                        <TableHead className="text-center text-white">NHIF Code</TableHead>
+                        <TableHead className="text-center text-white">NHIF Password</TableHead>
                       </>
                     )}
                     {activeTab === 'nssf' && (
                       <>
-                        <TableHead className="text-center">NSSF ID</TableHead>
-                        <TableHead className="text-center">NSSF Code</TableHead>
-                        <TableHead className="text-center">NSSF Password</TableHead>
+                        <TableHead className="text-center text-white">NSSF ID</TableHead>
+                        <TableHead className="text-center text-white">NSSF Code</TableHead>
+                        <TableHead className="text-center text-white">NSSF Password</TableHead>
                       </>
                     )}
                     {activeTab === 'ecitizen' && (
                       <>
-                        <TableHead className="text-center">eCitizen ID</TableHead>
-                        <TableHead className="text-center">eCitizen Password</TableHead>
-                        <TableHead >Director</TableHead>
+                        <TableHead className="text-center text-white">eCitizen ID</TableHead>
+                        <TableHead className="text-center text-white">eCitizen Password</TableHead>
+                        <TableHead className="text-white">Director</TableHead>
                       </>
                     )}
                     {activeTab === 'quickbooks' && (
                       <>
-                        <TableHead className="text-center">ID</TableHead>
-                        <TableHead className="text-center">Password</TableHead>
+                        <TableHead className="text-center text-white">ID</TableHead>
+                        <TableHead className="text-center text-white">Password</TableHead>
                       </>
                     )}
                     {activeTab === 'kebs' && (
                       <>
-                        <TableHead className="text-center">ID</TableHead>
-                        <TableHead className="text-center">Password</TableHead>
+                        <TableHead className="text-center text-white">ID</TableHead>
+                        <TableHead className="text-center text-white">Password</TableHead>
                       </>
                     )}
-                
-                    <TableHead className="text-center">Status</TableHead>
-                    <TableHead className="text-center">Last Checked</TableHead>
-                    <TableHead className="text-center">Actions</TableHead>
                   </>
                 )}
+
+                {/* Show date columns only for selected filters */}
+                {categoryFilters.find(f => f.key === 'acc' && f.checked) && (
+                  <>
+                    <TableHead className="text-center text-white">ACC From</TableHead>
+                    <TableHead className="text-center text-white">ACC To</TableHead>
+                  </>
+                )}
+                {categoryFilters.find(f => f.key === 'audit_tax' && f.checked) && (
+                  <>
+                    <TableHead className="text-center text-white">Audit Tax From</TableHead>
+                    <TableHead className="text-center text-white">Audit Tax To</TableHead>
+                  </>
+                )}
+                {categoryFilters.find(f => f.key === 'cps_sheria' && f.checked) && (
+                  <>
+                    <TableHead className="text-center text-white">CPS Sheria From</TableHead>
+                    <TableHead className="text-center text-white">CPS Sheria To</TableHead>
+                  </>
+                )}
+                {categoryFilters.find(f => f.key === 'imm' && f.checked) && (
+                  <>
+                    <TableHead className="text-center text-white">Immigration From</TableHead>
+                    <TableHead className="text-center text-white">Immigration To</TableHead>
+                  </>
+                )}
+
+                <TableHead className="text-center text-white">Status</TableHead>
+                <TableHead className="text-center text-white">Last Checked</TableHead>
+                <TableHead className="text-center text-white">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredCompanies.map((company, index) => (
+              {filteredAndSearchedCompanies.map((company, index) => (
                 <TableRow key={company.id} className={getRowStyle(company)}>
                   <TableCell className="text-center">{index + 1}</TableCell>
                   <TableCell>{company.company_name || company.name}</TableCell>
-                  <TableCell className="text-center">{company.kra_pin || company.identifier || company.ecitizen_identifier}</TableCell>
-                  <TableCell className="text-center">{company.kra_password || company.password || company.ecitizen_password}</TableCell>
-                  {activeTab === 'nssf' && (
+                  {activeTab === 'kra' ? (
                     <>
-                    <TableCell className="text-center">{company.nssf_code}</TableCell>
-                      <TableCell className="text-center">{company.nssf_password}</TableCell>
-                      </>
+                      <TableCell className="text-center">{company.kra_pin}</TableCell>
+                      <TableCell className="text-center">{company.kra_password}</TableCell>
+                    </>
+                  ) : (
+                    <>
+                      {activeTab === 'nhif' && (
+                        <>
+                          <TableCell className="text-center">{company.nhif_id}</TableCell>
+                          <TableCell className="text-center">{company.nhif_code}</TableCell>
+                          <TableCell className="text-center">{company.nhif_password}</TableCell>
+                        </>
+                      )}
+                      {activeTab === 'nssf' && (
+                        <>
+                          <TableCell className="text-center">{company.nssf_id}</TableCell>
+                          <TableCell className="text-center">{company.nssf_code}</TableCell>
+                          <TableCell className="text-center">{company.nssf_password}</TableCell>
+                        </>
+                      )}
+                      {activeTab === 'ecitizen' && (
+                        <>
+                          <TableCell className="text-center">{company.ecitizen_identifier}</TableCell>
+                          <TableCell className="text-center">{company.ecitizen_password}</TableCell>
+                          <TableCell>{company.director}</TableCell>
+                        </>
+                      )}
+                      {activeTab === 'quickbooks' && (
+                        <>
+                          <TableCell className="text-center">{company.quickbooks_id}</TableCell>
+                          <TableCell className="text-center">{company.quickbooks_password}</TableCell>
+                        </>
+                      )}
+                      {activeTab === 'kebs' && (
+                        <>
+                          <TableCell className="text-center">{company.kebs_id}</TableCell>
+                          <TableCell className="text-center">{company.kebs_password}</TableCell>
+                        </>
+                      )}
+                    </>
                   )}
-                  {activeTab === 'nhif' && (
-                     <>
-                    <TableCell className="text-center">{company.nhif_code}</TableCell>
-                    <TableCell className="text-center">{company.nhif_password}</TableCell>
-                     </>
+                  
+                  {/* Show date cells only for selected filters */}
+                  {categoryFilters.find(f => f.key === 'acc' && f.checked) && (
+                    <>
+                      <TableCell className="text-center text-sm">
+                        {formatDate(company.acc_client_effective_from)}
+                      </TableCell>
+                      <TableCell className="text-center text-sm">
+                        {formatDate(company.acc_client_effective_to)}
+                      </TableCell>
+                    </>
                   )}
-                  {activeTab === 'ecitizen' && (
-                    <TableCell className="">{company.director}</TableCell>
+                  {categoryFilters.find(f => f.key === 'audit_tax' && f.checked) && (
+                    <>
+                      <TableCell className="text-center text-sm">
+                        {formatDate(company.audit_tax_client_effective_from)}
+                      </TableCell>
+                      <TableCell className="text-center text-sm">
+                        {formatDate(company.audit_tax_client_effective_to)}
+                      </TableCell>
+                    </>
                   )}
+                  {categoryFilters.find(f => f.key === 'cps_sheria' && f.checked) && (
+                    <>
+                      <TableCell className="text-center text-sm">
+                        {formatDate(company.cps_sheria_client_effective_from)}
+                      </TableCell>
+                      <TableCell className="text-center text-sm">
+                        {formatDate(company.cps_sheria_client_effective_to)}
+                      </TableCell>
+                    </>
+                  )}
+                  {categoryFilters.find(f => f.key === 'imm' && f.checked) && (
+                    <>
+                      <TableCell className="text-center text-sm">
+                        {formatDate(company.imm_client_effective_from)}
+                      </TableCell>
+                      <TableCell className="text-center text-sm">
+                        {formatDate(company.imm_client_effective_to)}
+                      </TableCell>
+                    </>
+                  )}
+
                   <TableCell className="text-center">
                     <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(company.status)}`}>
                       {company.status || 'N/A'}
@@ -598,12 +778,12 @@ export default function PasswordCheckerReports() {
                     {company.last_checked ? new Date(company.last_checked).toLocaleString() : 'Never'}
                   </TableCell>
                   <TableCell className="text-center">
-                    <div className="flex items-center space-x-2 ">
+                    <div className="flex items-center justify-center space-x-2">
                       <Button variant="ghost" size="sm" onClick={() => handleEdit(company)}>
                         Edit
                       </Button>
                       <Button variant="ghost" size="sm" onClick={() => handleDelete(company.id)}>
-                        <Trash2 className="h-4 w-4" />
+                        Delete
                       </Button>
                     </div>
                   </TableCell>
