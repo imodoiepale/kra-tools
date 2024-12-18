@@ -66,8 +66,8 @@ export function PinCheckerDetailsRunning({ onComplete, progress, status }: PinCh
             const { data, error } = await supabase
                 .from('PinCheckerDetails')
                 .select('*')
-                .order('last_checked_at', { ascending: false })
-                .limit(50)
+                .order('last_checked_at', { ascending: true })
+                .limit(500)
 
             if (data) {
                 setLogs(data)

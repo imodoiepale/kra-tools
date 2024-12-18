@@ -36,7 +36,7 @@ export default function PinCheckerDetails() {
 
     const fetchCompanies = async () => {
         const { data, error } = await supabase
-            .from('PasswordChecker_duplicate')
+            .from('acc_portal_company_duplicate')
             .select('id, company_name, kra_pin')
             .order('id', { ascending: true })
 

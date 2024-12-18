@@ -145,7 +145,7 @@ async function processCompanies(runOption, selectedIds) {
 
 async function readSupabaseData(runOption, selectedIds) {
     try {
-        let query = supabase.from("PasswordChecker").select("*").order('id', { ascending: true });
+        let query = supabase.from("acc_portal_company_duplicate").select("*").order('id', { ascending: true });
 
         if (runOption === 'selected' && selectedIds.length > 0) {
             query = query.in('id', selectedIds);
