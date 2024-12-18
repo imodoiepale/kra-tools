@@ -99,24 +99,91 @@ export function ManufacturersDetailsReports() {
     }
   }
 
-  const handleDeleteAll = async () => {
-    const { error } = await supabase
-      .from('ManufacturersDetails')
-      .delete()
-      .neq('id', 0)  // This will delete all rows
 
-    if (error) {
-      console.error('Error deleting all manufacturers:', error)
-    } else {
-      setManufacturers([])
-    }
-  }
 
   const toggleColumnVisibility = (column: string) => {
     setVisibleColumns(prev => ({ ...prev, [column]: !prev[column] }))
   }
 
+  const calculateTotals = () => {
+    const totals = {
+      overall: {
+        total: 0,
+        complete: 0,
+        pending: 0,
+        missing: 0,
+      },
+    };
 
+    manufacturers.forEach(manufacturer => {
+      totals.overall.total += 1;
+      let isComplete = true;
+
+      for (const key in manufacturer) {
+        if (!totals[key]) {
+          totals[key] = { total: 0, complete: 0, pending: 0, missing: 0 };
+        }
+        totals[key].total += 1;
+
+        if (manufacturer[key] === null || manufacturer[key] === '') {
+          isComplete = false;
+          totals[key].pending += 1;
+        } else {
+          totals[key].complete += 1;
+        }
+
+        if (key === 'kra_pin' && !manufacturer[key]) {
+          totals[key].missing += 1;
+        }
+      }
+
+      if (isComplete) {
+        totals.overall.complete += 1;
+      } else {
+        totals.overall.pending += 1;
+      }
+
+      if (!manufacturer.kra_pin) {
+        totals.overall.missing += 1;
+      }
+    });
+
+    // Ensure all keys are initialized
+    Object.keys(manufacturers[0] || {}).forEach(key => {
+      if (!totals[key]) {
+        totals[key] = { total: 0, complete: 0, pending: 0, missing: 0 };
+      }
+    });
+
+    return totals;
+  };
+
+  const totals = calculateTotals();
+
+  const renderTotalsRow = () => (
+    <>
+      <TableRow className="bg-gray-100 border-b">
+        {Object.keys(totals).map((key) => (
+          <TableCell key={key} className="font-bold uppercase px-1 text-center" style={{ height: '10px', fontSize: '10px' }}>{key === 'overall' ? 'Total' : key}</TableCell>
+        ))}
+      </TableRow>
+      <TableRow className="bg-gray-100 border-b">
+        {Object.keys(totals).map((key) => (
+          <TableCell key={key} className="text-center px-1" style={{ height: '10px', fontSize: '10px' }}>{totals[key].complete}</TableCell>
+        ))}
+      </TableRow>
+      <TableRow className="bg-gray-100 border-b">
+        {Object.keys(totals).map((key) => (
+          <TableCell key={key} className="text-center px-1" style={{ height: '10px', fontSize: '10px' }}>{totals[key].pending}</TableCell>
+        ))}
+      </TableRow>
+      <TableRow className="bg-gray-100 border-b">
+        {Object.keys(totals).map((key) => (
+          <TableCell key={key} className="text-center px-1 bg-red-100" style={{ height: '10px', fontSize: '10px' }}>{totals[key].missing}</TableCell>
+        ))}
+      </TableRow>
+    </>
+  );
 
   const exportToExcel = async () => {
     const workbook = new ExcelJS.Workbook()
@@ -199,7 +266,13 @@ export function ManufacturersDetailsReports() {
     link.click()
   }
 
-  const sortedManufacturers = [...manufacturers].sort((a, b) => {
+  const uniqueManufacturers = manufacturers.filter((manufacturer, index, self) =>
+    index === self.findIndex((m) => (
+      m.company_name === manufacturer.company_name
+    ))
+  );
+
+  const sortedManufacturers = [...uniqueManufacturers].sort((a, b) => {
     if (sortConfig.key !== null) {
       if (a[sortConfig.key] < b[sortConfig.key]) {
         return sortConfig.direction === 'ascending' ? -1 : 1
@@ -210,13 +283,15 @@ export function ManufacturersDetailsReports() {
     }
     return 0
   })
-  
-  const filteredManufacturers = sortedManufacturers.filter(manufacturer =>
-    Object.values(manufacturer).some(value =>
-      value.toString().toLowerCase().includes(searchTerm.toLowerCase())
-    )
-  )
 
+  const filteredManufacturers = sortedManufacturers.filter(manufacturer => {
+    return Object.entries(manufacturer).some(([key, value]) => {
+      if (value === null || value === undefined) {
+        return false;
+      }
+      return value.toString().toLowerCase().includes(searchTerm.toLowerCase());
+    });
+  });
 
   const requestSort = (key: string) => {
     let direction = 'ascending'
@@ -255,7 +330,7 @@ export function ManufacturersDetailsReports() {
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
-          <Button variant="destructive" onClick={handleDeleteAll} size="sm">Delete All</Button>
+          {/* <Button variant="destructive" onClick={handleDeleteAll} size="sm">Delete All</Button> */}
         </div>
       </div>
       <div className="">
@@ -290,6 +365,7 @@ export function ManufacturersDetailsReports() {
                   ))}
                   <TableHead className="text-center text-[12px] text-black font-bold">Actions</TableHead>
                 </TableRow>
+                {/* {renderTotalsRow()} */}
               </TableHeader>
               <TableBody>
                 {filteredManufacturers.map((manufacturer, index) => (
@@ -336,13 +412,14 @@ export function ManufacturersDetailsReports() {
                             </DialogClose>
                           </DialogContent>
                         </Dialog>
-                        <Button variant="destructive" size="sm" onClick={() => handleDelete(manufacturer.id)}>
+                        {/* <Button variant="destructive" size="sm" onClick={() => handleDelete(manufacturer.id)}>
                           <Trash2 className="h-4 w-4" />
-                        </Button>
+                        </Button> */}
                       </div>
                     </TableCell>
                   </TableRow>
                 ))}
+                
               </TableBody>
             </Table>
           </div>

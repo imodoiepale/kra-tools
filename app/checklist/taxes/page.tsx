@@ -7,6 +7,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { supabase } from '@/lib/supabase';
 import TaxTypeComponent from './components/TaxTypeComponent';
 import OverallTaxesTable from './components/OverallTaxesTable';
+import { Badge } from "@/components/ui/badge";
+import { type CategoryFilter } from './components/CategoryFilters';
 
 const taxTypes = [
     { key: 'overall', label: 'Overall Taxes' },
@@ -23,6 +25,22 @@ const taxTypes = [
     { key: 'housing_levy', label: 'Housing Levy' },
     { key: 'kebs', label: 'KEBS' },
 ];
+
+const calculateStatus = (from, to) => {
+    try {
+        const currentDate = new Date();
+        if (!from || !to) return 'Inactive';
+        const fromDate = new Date(from);
+        const toDate = new Date(to);
+        return fromDate <= currentDate && currentDate <= toDate ? 'Active' : 'Inactive';
+    } catch (error) {
+        console.error('Error calculating status:', error);
+        return 'Error';
+    }
+};
+
+
+
 export default function TaxesPage() {
     const [data, setData] = useState({
         companies: [],
@@ -30,6 +48,13 @@ export default function TaxesPage() {
     });
     const [activeTab, setActiveTab] = useState("overall");
     const [isLoading, setIsLoading] = useState(true);
+    const [searchTerm, setSearchTerm] = useState('');
+    const [categoryFilters, setCategoryFilters] = useState([
+        { label: 'Accounting', key: 'acc', checked: true },
+        { label: 'Audit Tax', key: 'audit_tax', checked: false },
+        { label: 'Sheria', key: 'cps_sheria', checked: false },
+        { label: 'Immigration', key: 'imm', checked: false },
+    ]);
 
     useEffect(() => {
         fetchAllData();
@@ -38,32 +63,18 @@ export default function TaxesPage() {
     const fetchAllData = async () => {
         setIsLoading(true);
         try {
-            const [passwordCheckerResult, pinCheckerDetailsResult, checklistResult, companyMainListResult] = await Promise.all([
+            const [accPortalResult, checklistResult] = await Promise.all([
                 supabase
-                    .from('PasswordChecker_duplicate')
-                    .select('id, company_name, kra_pin')
-                    .order('id', { ascending: true }),
-                supabase
-                    .from('PinCheckerDetails')
+                    .from('acc_portal_company_duplicate')
                     .select('*')
                     .order('id', { ascending: true }),
                 supabase
                     .from('checklist')
-                    .select('*'),
-                supabase
-                    .from('companyMainList')
                     .select('*')
             ]);
 
-            if (passwordCheckerResult.error) throw passwordCheckerResult.error;
-            if (pinCheckerDetailsResult.error) throw pinCheckerDetailsResult.error;
+            if (accPortalResult.error) throw accPortalResult.error;
             if (checklistResult.error) throw checklistResult.error;
-            if (companyMainListResult.error) throw companyMainListResult.error;
-
-            const combinedCompanies = passwordCheckerResult.data.map(pcData => {
-                const detailsData = pinCheckerDetailsResult.data.find(pcdData => pcdData.id === pcData.id);
-                return { ...pcData, ...detailsData };
-            });
 
             const checklistMap = {};
             checklistResult.data.forEach(item => {
@@ -73,9 +84,24 @@ export default function TaxesPage() {
                 };
             });
 
-            const activeCompanies = combinedCompanies.filter(company => {
-                const companyMainListData = companyMainListResult.data.find(cmlData => cmlData.company_name === company.company_name);
-                return companyMainListData && companyMainListData.status === 'active';
+            const activeCompanies = accPortalResult.data.filter(company => {
+                // Check if company is active in any of the selected categories
+                return categoryFilters.some(filter => {
+                    if (!filter.checked) return false;
+                    
+                    switch (filter.key) {
+                        case 'acc':
+                            return calculateStatus(company.acc_client_effective_from, company.acc_client_effective_to) === 'Active';
+                        case 'audit_tax':
+                            return calculateStatus(company.audit_tax_client_effective_from, company.audit_tax_client_effective_to) === 'Active';
+                        case 'cps_sheria':
+                            return calculateStatus(company.cps_sheria_client_effective_from, company.cps_sheria_client_effective_to) === 'Active';
+                        case 'imm':
+                            return calculateStatus(company.imm_client_effective_from, company.imm_client_effective_to) === 'Active';
+                        default:
+                            return false;
+                    }
+                });
             });
 
             setData({
@@ -89,24 +115,53 @@ export default function TaxesPage() {
         }
     };
 
-    const memoizedTaxTypeComponents = useMemo(() => {
-        return taxTypes.slice(1).map(tax => (
-            <TabsContent key={tax.key} value={tax.key}>
-                <TaxTypeComponent
-                    taxType={tax.key}
-                    companies={data.companies}
-                    checklist={data.checklist}
-                />
-            </TabsContent>
-        ));
-    }, [data.companies, data.checklist]);
+    const handleCategoryFilterChange = (key) => {
+        setCategoryFilters(filters => 
+            filters.map(filter => 
+                filter.key === key ? { ...filter, checked: !filter.checked } : filter
+            )
+        );
+        fetchAllData();
+    };
+
+    // Filter companies based on search term
+    const filteredCompanies = useMemo(() => {
+        return data.companies.filter(company => {
+            if (!searchTerm) return true;
+            const searchLower = searchTerm.toLowerCase();
+            return (
+                (company.company_name || '').toLowerCase().includes(searchLower) ||
+                (company.kra_pin || '').toLowerCase().includes(searchLower)
+            );
+        });
+    }, [data.companies, searchTerm]);
+
+    // Calculate tax totals for the current tab
+    const getTaxTotals = (companies) => {
+        if (!Array.isArray(companies)) return null;
+        
+        const total = companies.length;
+        let active = 0;
+        let inactive = 0;
+
+        companies.forEach(company => {
+            const status = calculateStatus(
+                company[`${activeTab}_client_effective_from`],
+                company[`${activeTab}_client_effective_to`]
+            );
+            if (status === 'Active') active++;
+            else inactive++;
+        });
+
+        return { active, inactive, total };
+    };
 
     if (isLoading) {
         return <div>Loading all tax data...</div>;
     }
 
     return (
-        <div className="">
+        <div className="space-y-4">
             <Tabs value={activeTab} onValueChange={setActiveTab}>
                 <TabsList>
                     {taxTypes.map(tax => (
@@ -115,12 +170,22 @@ export default function TaxesPage() {
                         </TabsTrigger>
                     ))}
                 </TabsList>
-                {/* <ScrollArea className="h-[calc(100vh-200px)]"> */}
-                    <TabsContent value="overall">
+                <TabsContent value="overall">
+                    <div className="space-y-2">
                         <OverallTaxesTable companies={data.companies} />
+                    </div>
+                </TabsContent>
+                {taxTypes.slice(1).map(tax => (
+                    <TabsContent key={tax.key} value={tax.key}>
+                        <div className="space-y-2">
+                            <TaxTypeComponent
+                                taxType={tax.key}
+                                companies={data.companies}
+                                checklist={data.checklist}
+                            />
+                        </div>
                     </TabsContent>
-                    {memoizedTaxTypeComponents}
-                {/* </ScrollArea> */}
+                ))}
             </Tabs>
         </div>
     );

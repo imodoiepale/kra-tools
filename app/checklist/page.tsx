@@ -76,7 +76,7 @@ export default function MainPage() {
         <div className="p-4">
             <Tabs defaultValue="company-list">
                 <TabsList>
-                    <TabsTrigger value="company-list">Company List</TabsTrigger>
+                    <TabsTrigger value="company-list">Company Categories</TabsTrigger>
                     <TabsTrigger value="checklist">Checklist</TabsTrigger>
                 </TabsList>
                 <TabsContent value="company-list">

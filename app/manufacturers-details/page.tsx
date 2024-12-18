@@ -33,16 +33,20 @@ export default function ManufacturersDetails() {
     }, [])
 
     const fetchManufacturers = async () => {
+        console.log('Fetching manufacturers data...');
         const { data, error } = await supabase
-            .from('PasswordChecker')
+            .from('acc_portal_company_duplicate')
             .select('id, company_name, kra_pin')
-            .order('id', { ascending: true })
+            .order('id', { ascending: true });
 
         if (error) {
-            console.error('Error fetching manufacturers:', error)
+            console.error('Error fetching manufacturers:', error);
         } else {
-            setManufacturers(data as Manufacturer[] || [])
+            console.log('Manufacturers data fetched successfully:', data);
+            setManufacturers(data as Manufacturer[] || []);
         }
+
+        console.log('Manufacturers state updated:', manufacturers);
     }
 
     const handleStartCheck = async () => {
@@ -59,7 +63,7 @@ export default function ManufacturersDetails() {
                     runOption,
                     selectedIds: runOption === 'selected' ? selectedManufacturers : []
                 })
-            })
+            });
 
             if (!response.ok) throw new Error('API request failed')
 

@@ -25,6 +25,8 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@
 import { supabase } from '@/lib/supabase';
 import toast from 'react-hot-toast';
 import { Switch } from "@/components/ui/switch";
+import { TableToolbar } from './TableToolbar';
+import TotalsRow from './TotalsRow';
 
 const columnHelper = createColumnHelper();
 
@@ -83,24 +85,34 @@ const calculateTotals = (companies) => {
 };
 
 const exportToExcel = async (companies) => {
+    // Verify that each company object contains the necessary fields before exporting
+    companies.forEach((company) => {
+        if (!company.company_name || !company.kra_pin) {
+            console.error('Missing essential data:', company);
+        }
+    });
+
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('Overall Taxes');
 
-    worksheet.addRow(['Company Name', 'KRA PIN', 'Income Tax Company', 'VAT', 'PAYE', 'MRI', 'NSSF', 'NHIF', 'Housing Levy', 'NITA', 'WH VAT']);
+    // Define headers
+    const headers = ['Company Name', 'KRA PIN', 'Income Tax Company', 'VAT', 'PAYE', 'MRI', 'NSSF', 'NHIF', 'Housing Levy', 'NITA', 'WH VAT'];
+    worksheet.addRow(headers);
 
+    // Add data rows
     companies.forEach((company) => {
         worksheet.addRow([
-            company.company_name,
-            company.kra_pin,
-            company.income_tax_company_status,
-            company.vat_status,
-            company.paye_status,
-            company.rent_income_mri_status,
-            company.nssf_status,
-            company.nhif_status,
-            company.housing_levy_status,
-            company.nita_status,
-            company.wh_vat_status,
+            company.company_name || 'N/A',
+            company.kra_pin || 'N/A',
+            company.income_tax_company_status || 'N/A',
+            company.vat_status || 'N/A',
+            company.paye_status || 'N/A',
+            company.rent_income_mri_status || 'N/A',
+            company.nssf_status || 'N/A',
+            company.nhif_status || 'N/A',
+            company.housing_levy_status || 'N/A',
+            company.nita_status || 'N/A',
+            company.wh_vat_status || 'N/A',
         ]);
     });
 
@@ -113,48 +125,139 @@ const exportToExcel = async (companies) => {
     link.click();
     URL.revokeObjectURL(url);
 };
-const TotalsRow = ({ totals }) => (
-    <>
-        {[
-            { label: 'Total', bgColor: 'bg-blue-100', counts: Object.fromEntries(Object.entries(totals).map(([key, value]) => [key, value.total])) },
-            { label: 'Registered', bgColor: 'bg-green-100', counts: Object.fromEntries(Object.entries(totals).map(([key, value]) => [key, value.registered])) },
-            { label: 'To Be Registered', bgColor: 'bg-yellow-100', counts: Object.fromEntries(Object.entries(totals).map(([key, value]) => [key, value.toBeRegistered || 0])) },
-            { label: 'No Obligation', bgColor: 'bg-amber-100', counts: Object.fromEntries(Object.entries(totals).map(([key, value]) => [key, value.missing])) },
-            { label: 'Cancelled', bgColor: 'bg-red-100', counts: Object.fromEntries(Object.entries(totals).map(([key, value]) => [key, value.cancelled])) },
-            { label: 'Dormant', bgColor: 'bg-blue-100', counts: Object.fromEntries(Object.entries(totals).map(([key, value]) => [key, value.dormant])) }
-        ].map(row => (
-            <TableRow key={row.label} className={`${row.bgColor} border-b`} style={{ height: '16px' }}>
-                <TableCell colSpan={2} className="font-bold uppercase text-xs px-2 col-span-2" style={{ height: '16px' }}>{row.label}</TableCell>
 
 
-                {Object.entries(row.counts).map(([tax, count], index) => (
-                    <TableCell key={tax} className={`text-center text-xs p-0 ${tax === 'resident_individual' ? 'border-r-2 border-black' : ''}`} style={{ height: '16px' }}>
-                        {count}
-                    </TableCell>
-                ))}
-                <TableCell className="font-bold uppercase text-xs px-2 col-span-2" style={{ height: '16px' }}>{row.label}</TableCell>
-            </TableRow>
-        ))}
-    </>
 
-);
 export default function OverallTaxesTable({ companies: initialCompanies }) {
-    const [companies, setCompanies] = useState(initialCompanies);
+    const [companies, setCompanies] = useState(initialCompanies || []);
     const [isLoading, setIsLoading] = useState(false);
     const [globalFilter, setGlobalFilter] = useState('');
     const [dialogOpen, setDialogOpen] = useState(false);
     const [editCompany, setEditCompany] = useState(null);
     const [showTotals, setShowTotals] = useState(true);
+    const [categoryFilters, setCategoryFilters] = useState([
+        { label: 'Accounting', key: 'acc', checked: true },
+        { label: 'Audit Tax', key: 'audit_tax', checked: false },
+        { label: 'Sheria', key: 'cps_sheria', checked: false },
+        { label: 'Immigration', key: 'imm', checked: false },
+    ]);
+
+
+
+    const calculateStatus = (from, to) => {
+        try {
+            const currentDate = new Date();
+            if (!from || !to) return 'Inactive';
+            const fromDate = new Date(from);
+            const toDate = new Date(to);
+            return fromDate <= currentDate && currentDate <= toDate ? 'Active' : 'Inactive';
+        } catch (error) {
+            console.error('Error calculating status:', error);
+            return 'Error';
+        }
+    };
+
+    const handleCategoryFilterChange = (key: string) => {
+        setCategoryFilters(prev =>
+            prev.map(filter =>
+                filter.key === key ? { ...filter, checked: !filter.checked } : filter
+            )
+        );
+    };
+
+    // Filter data based on both search and category filters
+    const filteredData = useMemo(() => {
+        return companies.filter(company => {
+            // Apply global search filter
+            const matchesSearch = !globalFilter ||
+                company.company_name?.toLowerCase().includes(globalFilter.toLowerCase()) ||
+                company.kra_pin?.toLowerCase().includes(globalFilter.toLowerCase());
+
+            // Apply category filters
+            const matchesCategory = categoryFilters.some(filter => {
+                if (!filter.checked) return false;
+
+                const fromField = `${filter.key}_client_effective_from`;
+                const toField = `${filter.key}_client_effective_to`;
+
+                return calculateStatus(company[fromField], company[toField]) === 'Active';
+            });
+
+            return matchesSearch && matchesCategory;
+        });
+    }, [companies, globalFilter, categoryFilters]);
 
     const fetchCompanies = useCallback(async () => {
         setIsLoading(true);
         try {
-            const { data, error } = await supabase.from('PinCheckerDetails').select('*');
-            if (error) throw error;
-            setCompanies(data);
+            // First, get companies from acc_portal_company_duplicate
+            const { data: accPortalCompanies, error: accPortalError } = await supabase
+                .from('acc_portal_company_duplicate')
+                .select('*')
+                .order('id', { ascending: true });
+
+            if (accPortalError) throw accPortalError;
+
+            // Get existing companies from PinCheckerDetails
+            const { data: pinCheckerCompanies, error: pinCheckerError } = await supabase
+                .from('PinCheckerDetails')
+                .select('*');
+
+            if (pinCheckerError) throw pinCheckerError;
+
+            // Create a map of existing companies in PinCheckerDetails
+            const existingCompaniesMap = new Map(
+                pinCheckerCompanies.map(company => [company.company_name, company])
+            );
+
+            // Prepare upsert data
+            const upsertData = accPortalCompanies.map(accCompany => {
+                const existingCompany = existingCompaniesMap.get(accCompany.company_name);
+                return {
+                    company_name: accCompany.company_name,
+                    kra_pin: accCompany.kra_pin,
+                    // Preserve existing tax statuses if they exist, otherwise set defaults
+                    income_tax_company_status: existingCompany?.income_tax_company_status || 'No Obligation',
+                    vat_status: existingCompany?.vat_status || 'No Obligation',
+                    paye_status: existingCompany?.paye_status || 'No Obligation',
+                    rent_income_mri_status: existingCompany?.rent_income_mri_status || 'No Obligation',
+                    turnover_tax_status: existingCompany?.turnover_tax_status || 'No Obligation',
+                    resident_individual_status: existingCompany?.resident_individual_status || 'No Obligation',
+                    nssf_status: existingCompany?.nssf_status || 'No Obligation',
+                    nhif_status: existingCompany?.nhif_status || 'No Obligation',
+                    nita_status: existingCompany?.nita_status || 'No Obligation',
+                    housing_levy_status: existingCompany?.housing_levy_status || 'No Obligation',
+                    wh_vat_status: existingCompany?.wh_vat_status || 'No Obligation',
+                    kebs_status: existingCompany?.kebs_status || 'No Obligation',
+                    // Copy over the effective dates from acc_portal_company_duplicate
+                    acc_client_effective_from: accCompany.acc_client_effective_from,
+                    acc_client_effective_to: accCompany.acc_client_effective_to,
+                    audit_tax_client_effective_from: accCompany.audit_tax_client_effective_from,
+                    audit_tax_client_effective_to: accCompany.audit_tax_client_effective_to,
+                    cps_sheria_client_effective_from: accCompany.cps_sheria_client_effective_from,
+                    cps_sheria_client_effective_to: accCompany.cps_sheria_client_effective_to,
+                    imm_client_effective_from: accCompany.imm_client_effective_from,
+                    imm_client_effective_to: accCompany.imm_client_effective_to,
+                    is_locked: existingCompany?.is_locked || false
+                };
+            });
+
+            // Upsert the data into PinCheckerDetails
+            const { error: upsertError } = await supabase
+                .from('PinCheckerDetails')
+                .upsert(upsertData, {
+                    onConflict: 'company_name',
+                    ignoreDuplicates: false
+                });
+
+            if (upsertError) throw upsertError;
+
+            // Set the companies state with the upserted data
+            setCompanies(upsertData);
+            toast.success('Companies data synchronized successfully');
         } catch (error) {
-            console.error('Error fetching companies:', error);
-            toast.error('Failed to refresh data. Using existing data.');
+            console.error('Error fetching and syncing companies:', error);
+            toast.error('Failed to sync companies data');
         } finally {
             setIsLoading(false);
         }
@@ -163,6 +266,7 @@ export default function OverallTaxesTable({ companies: initialCompanies }) {
     const updateCompanyField = async (companyId, field, newValue) => {
         const toastId = toast.loading('Saving changes...');
         try {
+            // Update PinCheckerDetails table
             const { data, error } = await supabase
                 .from('PinCheckerDetails')
                 .update({ [field]: newValue })
@@ -340,7 +444,7 @@ export default function OverallTaxesTable({ companies: initialCompanies }) {
 
     const columns = useMemo(() => [
         columnHelper.accessor('index', {
-            cell: info => <span className="font-bold text-[10px]">{info.getValue()}</span>,
+            cell: info => <span className="font-bold text-[10px] text-center">{info.getValue()}</span>,
             header: '#',
         }),
         columnHelper.accessor('company_name', {
@@ -442,16 +546,14 @@ export default function OverallTaxesTable({ companies: initialCompanies }) {
         }
     };
 
-    const data = useMemo(() =>
-        companies.map((company, index) => ({
-            ...company,
-            index: index + 1
-        })),
-        [companies]
-    );
-
     const table = useReactTable({
-        data,
+        data: useMemo(() =>
+            filteredData.map((company, index) => ({
+                ...company,
+                index: index + 1
+            })),
+            [filteredData]
+        ),
         columns,
         getCoreRowModel: getCoreRowModel(),
         getSortedRowModel: getSortedRowModel(),
@@ -464,30 +566,17 @@ export default function OverallTaxesTable({ companies: initialCompanies }) {
 
     return (
         <div>
-            <div className="flex justify-between items-center my-4">
-                <div className="flex items-center space-x-4">
-                    <Input
-                        placeholder="Search..."
-                        value={globalFilter}
-                        onChange={(e) => setGlobalFilter(e.target.value)}
-                        className="w-64"
-                    />
-                </div>
-                <div className="flex items-center space-x-4">
-                    <div className="flex items-center space-x-2">
-                        <span className="text-sm font-medium">Show Totals</span>
-                        <Switch
-                            checked={showTotals}
-                            onCheckedChange={setShowTotals}
-                            className="data-[state=checked]:bg-green-500"
-                        />
-                    </div>
-                    <Button onClick={exportToExcel} size="sm">
-                        <FileDown className="mr-2 h-4 w-4" />
-                        Export
-                    </Button>
-                </div>
-            </div>
+            <TableToolbar
+                globalFilter={globalFilter}
+                setGlobalFilter={setGlobalFilter}
+                showTotals={showTotals}
+                setShowTotals={setShowTotals}
+                onExport={() => exportToExcel(filteredData)}
+                categoryFilters={categoryFilters}
+                onFilterChange={handleCategoryFilterChange}
+                companies={companies}
+                activeTab={null}
+            />
             <ScrollArea className="h-[650px] w-full rounded-md border">
                 <TooltipProvider>
                     <Table>
@@ -508,8 +597,8 @@ export default function OverallTaxesTable({ companies: initialCompanies }) {
                                                 >
                                                     {flexRender(header.column.columnDef.header, header.getContext())}
                                                     {{
-                                                        asc: ' 🔼',
-                                                        desc: ' 🔽',
+                                                        asc: ' ▲',
+                                                        desc: ' ▼',
                                                     }[header.column.getIsSorted()] ?? null}
                                                 </div>
                                             )}
@@ -519,7 +608,7 @@ export default function OverallTaxesTable({ companies: initialCompanies }) {
                                 </TableRow>
 
                             ))}
-                            {showTotals && <TotalsRow totals={calculateTotals(companies)} />}
+                            {showTotals && <TotalsRow totals={calculateTotals(filteredData)} />}
                         </TableHeader>
                         <TableBody>
                             {table.getRowModel().rows.map((row, index) => (
