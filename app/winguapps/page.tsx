@@ -15,6 +15,10 @@ import * as ExcelJS from 'exceljs';
 import FileViewer from '@/components/FileViewer';
 import { Switch } from '@/components/ui/switch';
 import ExcelViewer from './viewer';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Label } from "@/components/ui/label"
+import JSZip from 'jszip';
 
 interface ReportRecord {
     ID: number;
@@ -71,6 +75,32 @@ export default function WinguAppsExtractionReports() {
     const [selectedCompany, setSelectedCompany] = useState<ReportRecord | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [companySearchTerm, setCompanySearchTerm] = useState('');
+    const [bulkDownloadOpen, setBulkDownloadOpen] = useState(false);
+    const [selectedDocs, setSelectedDocs] = useState({
+        // Statutory Documents - PDF
+        PAYE_PDF: false,
+        NSSF_PDF: false,
+        NHIF_PDF: false,
+        SHIF_PDF: false,
+        Housing_Levy_PDF: false,
+        NITA_PDF: false,
+        // Statutory Documents - Excel/CSV
+        PAYE_CSV: false,
+        Housing_Levy_CSV: false,
+        NSSF_Excel: false,
+        NHIF_Excel: false,
+        SHIF_Excel: false,
+        // Payroll Documents
+        Payroll_Summary_PDF: false,
+        Payroll_Summary_Excel: false,
+        Payroll_Recon: false,
+        Control_Total: false,
+        Payslips: false,
+        // Payment Lists
+        Bank_List: false,
+        Cash_List: false,
+        MPESA_List: false
+    });
 
     // Column Visibility State
     const [visibleColumns, setVisibleColumns] = useState({
@@ -645,31 +675,6 @@ export default function WinguAppsExtractionReports() {
                     </>
                 )}
 
-                
-                {visibleColumns.PayrollDocs && (
-                    <>
-                        {documentGroups.payroll.map(doc => (
-                            <TableCell key={doc.key} className="border-r border-gray-300">
-                                <div className="flex items-center justify-center space-x-2">
-                                    <FileViewer
-                                        url={report[doc.pdfKey]}
-                                        fileType={getFileTypeFromUrl(report[doc.pdfKey])}
-                                        title={`${doc.key.replace('_', ' ')} - ${report.CompanyName}`}
-                                    />
-                                    {doc.dataKey && (
-                                        <FileViewer
-                                            url={report[doc.dataKey]}
-                                            fileType={getFileTypeFromUrl(report[doc.dataKey])}
-                                            title={`${doc.key.replace('_', ' ')} Excel - ${report.CompanyName}`}
-                                        />
-                                    )}
-                                </div>
-                            </TableCell>
-                        ))}
-                    </>
-                )}
-
-
                 {/* Payment Lists Section */}
                 {visibleColumns.PaymentLists && (
                     <>
@@ -689,6 +694,83 @@ export default function WinguAppsExtractionReports() {
         );
     };
 
+
+    const handleBulkDownload = async () => {
+        const selectedFiles = [];
+        
+        // Map selected documents to their corresponding URLs from reports
+        for (const report of filteredReports) {
+            if (selectedDocs.PAYE_PDF && report.PAYE_Link) selectedFiles.push({ url: report.PAYE_Link, name: `PAYE_${report.CompanyName}.pdf` });
+            if (selectedDocs.NSSF_PDF && report.NSSF_Link) selectedFiles.push({ url: report.NSSF_Link, name: `NSSF_${report.CompanyName}.pdf` });
+            if (selectedDocs.NHIF_PDF && report.NHIF_Link) selectedFiles.push({ url: report.NHIF_Link, name: `NHIF_${report.CompanyName}.pdf` });
+            if (selectedDocs.SHIF_PDF && report.SHIF_Link) selectedFiles.push({ url: report.SHIF_Link, name: `SHIF_${report.CompanyName}.pdf` });
+            if (selectedDocs.Housing_Levy_PDF && report.Housing_Levy_Link) selectedFiles.push({ url: report.Housing_Levy_Link, name: `Housing_Levy_${report.CompanyName}.pdf` });
+            if (selectedDocs.NITA_PDF && report.NITA_List) selectedFiles.push({ url: report.NITA_List, name: `NITA_${report.CompanyName}.pdf` });
+            
+            // Excel and CSV files
+            if (selectedDocs.PAYE_CSV && report.PAYE_CSV_Link) selectedFiles.push({ url: report.PAYE_CSV_Link, name: `PAYE_${report.CompanyName}.csv` });
+            if (selectedDocs.Housing_Levy_CSV && report.Housing_Levy_CSV_Link) selectedFiles.push({ url: report.Housing_Levy_CSV_Link, name: `Housing_Levy_${report.CompanyName}.csv` });
+            if (selectedDocs.NSSF_Excel && report.NSSF_Excel_Link) selectedFiles.push({ url: report.NSSF_Excel_Link, name: `NSSF_${report.CompanyName}.xlsx` });
+            if (selectedDocs.NHIF_Excel && report.NHIF_Excel_Link) selectedFiles.push({ url: report.NHIF_Excel_Link, name: `NHIF_${report.CompanyName}.xlsx` });
+            if (selectedDocs.SHIF_Excel && report.SHIF_Excel_Link) selectedFiles.push({ url: report.SHIF_Excel_Link, name: `SHIF_${report.CompanyName}.xlsx` });
+            
+            // Payroll Documents
+            if (selectedDocs.Payroll_Summary_PDF && report.Payroll_Summary_Link) selectedFiles.push({ url: report.Payroll_Summary_Link, name: `Payroll_Summary_${report.CompanyName}.pdf` });
+            if (selectedDocs.Payroll_Summary_Excel && report.Payroll_Summary_Excel_Link) selectedFiles.push({ url: report.Payroll_Summary_Excel_Link, name: `Payroll_Summary_${report.CompanyName}.xlsx` });
+            if (selectedDocs.Payroll_Recon && report.Payroll_Recon_Link) selectedFiles.push({ url: report.Payroll_Recon_Link, name: `Payroll_Recon_${report.CompanyName}.pdf` });
+            if (selectedDocs.Control_Total && report.Control_Total_Link) selectedFiles.push({ url: report.Control_Total_Link, name: `Control_Total_${report.CompanyName}.pdf` });
+            if (selectedDocs.Payslips && report.Payslips_Link) selectedFiles.push({ url: report.Payslips_Link, name: `Payslips_${report.CompanyName}.pdf` });
+            
+            // Payment Lists
+            if (selectedDocs.Bank_List && report.Bank_List_Link) selectedFiles.push({ url: report.Bank_List_Link, name: `Bank_List_${report.CompanyName}.pdf` });
+            if (selectedDocs.Cash_List && report.Cash_List) selectedFiles.push({ url: report.Cash_List, name: `Cash_List_${report.CompanyName}.pdf` });
+            if (selectedDocs.MPESA_List && report.MPESA_List) selectedFiles.push({ url: report.MPESA_List, name: `MPESA_List_${report.CompanyName}.pdf` });
+        }
+
+        if (selectedFiles.length === 0) {
+            alert('Please select at least one document to download');
+            return;
+        }
+
+        // Create a loading state
+        setIsLoading(true);
+
+        try {
+            // Download files in chunks to prevent overwhelming the browser
+            const chunkSize = 5;
+            const zip = new JSZip();
+
+            for (let i = 0; i < selectedFiles.length; i += chunkSize) {
+                const chunk = selectedFiles.slice(i, i + chunkSize);
+                await Promise.all(chunk.map(async (file) => {
+                    try {
+                        const response = await fetch(file.url);
+                        const blob = await response.blob();
+                        zip.file(file.name, blob);
+                    } catch (error) {
+                        console.error(`Error downloading ${file.name}:`, error);
+                    }
+                }));
+            }
+
+            // Generate and download zip file
+            const content = await zip.generateAsync({ type: "blob" });
+            const downloadUrl = URL.createObjectURL(content);
+            const link = document.createElement('a');
+            link.href = downloadUrl;
+            link.download = `bulk_download_${new Date().toISOString().split('T')[0]}.zip`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(downloadUrl);
+        } catch (error) {
+            console.error('Error in bulk download:', error);
+            alert('Error downloading files. Please try again.');
+        } finally {
+            setIsLoading(false);
+            setBulkDownloadOpen(false);
+        }
+    };
 
     return (
         <div className="p-4">
@@ -730,6 +812,10 @@ export default function WinguAppsExtractionReports() {
                                 <Button variant="outline" onClick={() => exportToExcel(latestReports)}>
                                     <Download className="mr-2 h-4 w-4" />
                                     Export
+                                </Button>
+                                <Button variant="outline" onClick={() => setBulkDownloadOpen(true)}>
+                                    <Download className="mr-2 h-4 w-4" />
+                                    Bulk Download
                                 </Button>
                                 <Button variant="outline" onClick={fetchReports}>
                                     <RefreshCw className={`mr-2 h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
@@ -811,8 +897,7 @@ export default function WinguAppsExtractionReports() {
                     </div>
                 </TabsContent>
 
-                
-                 {/* Detailed View */}
+                {/* Detailed View */}
                 <TabsContent value="detailed">
                     <div className="grid grid-cols-[350px_1fr] gap-6">
                         {/* Left Panel - Company List */}
@@ -865,6 +950,14 @@ export default function WinguAppsExtractionReports() {
                                                 >
                                                     <Download className="mr-2 h-4 w-4" />
                                                     Export
+                                                </Button>
+                                                <Button
+                                                    variant="ghost"
+                                                    className="text-white hover:text-blue-100"
+                                                    onClick={() => setBulkDownloadOpen(true)}
+                                                >
+                                                    <Download className="mr-2 h-4 w-4" />
+                                                    Bulk Download
                                                 </Button>
                                                 <DropdownMenu>
                                                     <DropdownMenuTrigger asChild>
@@ -956,6 +1049,86 @@ export default function WinguAppsExtractionReports() {
                 </TabsContent>
 
             </Tabs>
+            <Dialog open={bulkDownloadOpen} onOpenChange={setBulkDownloadOpen}>
+                <DialogContent className="sm:max-w-[600px]">
+                    <DialogHeader>
+                        <DialogTitle>Select Documents to Download</DialogTitle>
+                    </DialogHeader>
+                    <div className="grid gap-4 py-4">
+                        <div className="grid grid-cols-3 gap-4">
+                            {/* Statutory Documents - PDF */}
+                            <div className="space-y-4">
+                                <h3 className="font-semibold">Statutory Documents (PDF)</h3>
+                                {['PAYE_PDF', 'NSSF_PDF', 'NHIF_PDF', 'SHIF_PDF', 'Housing_Levy_PDF', 'NITA_PDF'].map(key => (
+                                    <div key={key} className="flex items-center space-x-2">
+                                        <Checkbox
+                                            id={key}
+                                            checked={selectedDocs[key]}
+                                            onCheckedChange={(checked) =>
+                                                setSelectedDocs(prev => ({ ...prev, [key]: checked as boolean }))
+                                            }
+                                        />
+                                        <Label htmlFor={key}>{key.replace(/_/g, ' ')}</Label>
+                                    </div>
+                                ))}
+                            </div>
+
+                            {/* Excel and CSV Files */}
+                            <div className="space-y-4">
+                                <h3 className="font-semibold">Excel & CSV Files</h3>
+                                {['PAYE_CSV', 'Housing_Levy_CSV', 'NSSF_Excel', 'NHIF_Excel', 'SHIF_Excel'].map(key => (
+                                    <div key={key} className="flex items-center space-x-2">
+                                        <Checkbox
+                                            id={key}
+                                            checked={selectedDocs[key]}
+                                            onCheckedChange={(checked) =>
+                                                setSelectedDocs(prev => ({ ...prev, [key]: checked as boolean }))
+                                            }
+                                        />
+                                        <Label htmlFor={key}>{key.replace(/_/g, ' ')}</Label>
+                                    </div>
+                                ))}
+                            </div>
+
+                            {/* Payroll & Payment Documents */}
+                            <div className="space-y-4">
+                                <h3 className="font-semibold">Payroll & Payment Documents</h3>
+                                {['Payroll_Summary_PDF', 'Payroll_Summary_Excel', 'Payroll_Recon', 'Control_Total', 'Payslips', 'Bank_List', 'Cash_List', 'MPESA_List'].map(key => (
+                                    <div key={key} className="flex items-center space-x-2">
+                                        <Checkbox
+                                            id={key}
+                                            checked={selectedDocs[key]}
+                                            onCheckedChange={(checked) =>
+                                                setSelectedDocs(prev => ({ ...prev, [key]: checked as boolean }))
+                                            }
+                                        />
+                                        <Label htmlFor={key}>{key.replace(/_/g, ' ')}</Label>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                        <div className="flex justify-end space-x-2">
+                            <Button variant="outline" onClick={() => setBulkDownloadOpen(false)}>Cancel</Button>
+                            <Button 
+                                onClick={handleBulkDownload}
+                                disabled={isLoading}
+                            >
+                                {isLoading ? (
+                                    <>
+                                        <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                                        Downloading...
+                                    </>
+                                ) : (
+                                    <>
+                                        <Download className="mr-2 h-4 w-4" />
+                                        Download Selected
+                                    </>
+                                )}
+                            </Button>
+                        </div>
+                    </div>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }

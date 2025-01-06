@@ -40,46 +40,67 @@ export function ReportsTable({
   return (
     <Table>
       <TableHeader className="sticky top-0 z-10">
-        <TableRow className="bg-blue-600 hover:bg-blue-700">
-          <TableHead className="text-center text-white w-[50px]">Index</TableHead>
-          <TableHead className="text-white">Name</TableHead>
+        <TableRow className="bg-primary hover:bg-primary/90">
+          <TableHead className="text-center text-primary-foreground w-[50px]">Index</TableHead>
+          <TableHead className="text-primary-foreground">Name</TableHead>
           {getHeaderCells(activeTab)}
           {getCategoryDateHeaders(categoryFilters)}
-          <TableHead className="text-center text-white">Status</TableHead>
-          <TableHead className="text-center text-white">Last Checked</TableHead>
-          <TableHead className="text-center text-white">Actions</TableHead>
+          <TableHead className="text-center text-primary-foreground">Status</TableHead>
+          <TableHead className="text-center text-primary-foreground">Last Checked</TableHead>
+          <TableHead className="text-center text-primary-foreground">Actions</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
-        {companies.map((company, index) => (
-          <TableRow 
-            key={company.id}
-            className={isAllDatesNA(company) ? 'bg-red-50' : ''}
-          >
-            <TableCell className="text-center">{index + 1}</TableCell>
-            <TableCell>{company.company_name || company.name}</TableCell>
-            {getDataCells(company, activeTab)}
-            {getCategoryDateCells(company, categoryFilters, formatDate)}
-            <TableCell className="text-center">
-              <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(company.status)}`}>
-                {company.status || 'N/A'}
-              </span>
-            </TableCell>
-            <TableCell className="text-center">
-              {company.last_checked ? new Date(company.last_checked).toLocaleString() : 'Never'}
-            </TableCell>
-            <TableCell className="text-center">
-              <div className="flex items-center justify-center space-x-2">
-                <Button variant="ghost" size="sm" onClick={() => onEdit(company)}>
-                  <Edit className="h-4 w-4" />
-                </Button>
-                {/* <Button variant="ghost" size="sm" onClick={() => onDelete(company.id)}>
-                  <Trash2 className="h-4 w-4" />
-                </Button> */}
-              </div>
+        {companies.length === 0 ? (
+          <TableRow>
+            <TableCell colSpan={getColumnCount(activeTab, categoryFilters)} className="h-24 text-center">
+              No companies found.
             </TableCell>
           </TableRow>
-        ))}
+        ) : (
+          companies.map((company, index) => (
+            <TableRow 
+              key={company.id}
+              className={`${
+                isAllDatesNA(company) ? 'bg-destructive/10' : 
+                !company.hasAllCredentials ? 'bg-warning/10' : 
+                ''
+              } hover:bg-muted/50 transition-colors`}
+            >
+              <TableCell className="text-center font-medium">{index + 1}</TableCell>
+              <TableCell className="font-medium">{company.company_name || company.name}</TableCell>
+              {getDataCells(company, activeTab)}
+              {getCategoryDateCells(company, categoryFilters, formatDate)}
+              <TableCell className="text-center">
+                <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(company.status)}`}>
+                  {company.status || 'N/A'}
+                </span>
+              </TableCell>
+              <TableCell className="text-center">
+                {company.last_checked ? (
+                  <span title={new Date(company.last_checked).toLocaleString()}>
+                    {formatTimeAgo(company.last_checked)}
+                  </span>
+                ) : (
+                  'Never'
+                )}
+              </TableCell>
+              <TableCell>
+                <div className="flex items-center justify-center space-x-2">
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    onClick={() => onEdit(company)}
+                    className="hover:bg-primary/10"
+                  >
+                    <Edit className="h-4 w-4" />
+                    <span className="sr-only">Edit</span>
+                  </Button>
+                </div>
+              </TableCell>
+            </TableRow>
+          ))
+        )}
       </TableBody>
     </Table>
   )
@@ -90,46 +111,46 @@ function getHeaderCells(activeTab: string) {
     case 'kra':
       return (
         <>
-          <TableHead className="text-center text-white">KRA PIN</TableHead>
-          <TableHead className="text-center text-white">KRA Password</TableHead>
+          <TableHead className="text-center text-primary-foreground">KRA PIN</TableHead>
+          <TableHead className="text-center text-primary-foreground">KRA Password</TableHead>
         </>
       )
     case 'nhif':
       return (
         <>
-          <TableHead className="text-center text-white">NHIF ID</TableHead>
-          <TableHead className="text-center text-white">NHIF Code</TableHead>
-          <TableHead className="text-center text-white">NHIF Password</TableHead>
+          <TableHead className="text-center text-primary-foreground">NHIF ID</TableHead>
+          <TableHead className="text-center text-primary-foreground">NHIF Code</TableHead>
+          <TableHead className="text-center text-primary-foreground">NHIF Password</TableHead>
         </>
       )
     case 'nssf':
       return (
         <>
-          <TableHead className="text-center text-white">NSSF ID</TableHead>
-          <TableHead className="text-center text-white">NSSF Code</TableHead>
-          <TableHead className="text-center text-white">NSSF Password</TableHead>
+          <TableHead className="text-center text-primary-foreground">NSSF ID</TableHead>
+          <TableHead className="text-center text-primary-foreground">NSSF Code</TableHead>
+          <TableHead className="text-center text-primary-foreground">NSSF Password</TableHead>
         </>
       )
     case 'ecitizen':
       return (
         <>
-          <TableHead className="text-center text-white">eCitizen ID</TableHead>
-          <TableHead className="text-center text-white">eCitizen Password</TableHead>
-          <TableHead className="text-white">Director</TableHead>
+          <TableHead className="text-center text-primary-foreground">eCitizen ID</TableHead>
+          <TableHead className="text-center text-primary-foreground">eCitizen Password</TableHead>
+          <TableHead className="text-primary-foreground">Director</TableHead>
         </>
       )
     case 'quickbooks':
       return (
         <>
-          <TableHead className="text-center text-white">ID</TableHead>
-          <TableHead className="text-center text-white">Password</TableHead>
+          <TableHead className="text-center text-primary-foreground">ID</TableHead>
+          <TableHead className="text-center text-primary-foreground">Password</TableHead>
         </>
       )
     case 'kebs':
       return (
         <>
-          <TableHead className="text-center text-white">ID</TableHead>
-          <TableHead className="text-center text-white">Password</TableHead>
+          <TableHead className="text-center text-primary-foreground">ID</TableHead>
+          <TableHead className="text-center text-primary-foreground">Password</TableHead>
         </>
       )
     default:
@@ -234,29 +255,29 @@ function getCategoryDateHeaders(categoryFilters: CategoryFilter[]) {
         case 'acc':
           return (
             <React.Fragment key={filter.key}>
-              <TableHead className="text-center text-white">ACC From</TableHead>
-              <TableHead className="text-center text-white">ACC To</TableHead>
+              <TableHead className="text-center text-primary-foreground">ACC From</TableHead>
+              <TableHead className="text-center text-primary-foreground">ACC To</TableHead>
             </React.Fragment>
           )
         case 'audit_tax':
           return (
             <React.Fragment key={filter.key}>
-              <TableHead className="text-center text-white">Audit Tax From</TableHead>
-              <TableHead className="text-center text-white">Audit Tax To</TableHead>
+              <TableHead className="text-center text-primary-foreground">Audit Tax From</TableHead>
+              <TableHead className="text-center text-primary-foreground">Audit Tax To</TableHead>
             </React.Fragment>
           )
         case 'cps_sheria':
           return (
             <React.Fragment key={filter.key}>
-              <TableHead className="text-center text-white">CPS Sheria From</TableHead>
-              <TableHead className="text-center text-white">CPS Sheria To</TableHead>
+              <TableHead className="text-center text-primary-foreground">CPS Sheria From</TableHead>
+              <TableHead className="text-center text-primary-foreground">CPS Sheria To</TableHead>
             </React.Fragment>
           )
         case 'imm':
           return (
             <React.Fragment key={filter.key}>
-              <TableHead className="text-center text-white">Immigration From</TableHead>
-              <TableHead className="text-center text-white">Immigration To</TableHead>
+              <TableHead className="text-center text-primary-foreground">Immigration From</TableHead>
+              <TableHead className="text-center text-primary-foreground">Immigration To</TableHead>
             </React.Fragment>
           )
         default:
@@ -329,4 +350,49 @@ function getCategoryDateCells(company: Company, categoryFilters: CategoryFilter[
           return null
       }
     })
+}
+
+function getColumnCount(activeTab: string, categoryFilters: CategoryFilter[]): number {
+  const baseCols = 4 // Index, Name, Status, Actions
+  const activeCategoryCount = categoryFilters.filter(f => f.checked).length * 2 // From and To dates for each category
+  
+  switch (activeTab) {
+    case 'kra':
+      return baseCols + 2 + activeCategoryCount // +2 for KRA PIN and Password
+    case 'nhif':
+      return baseCols + 3 + activeCategoryCount // +3 for NHIF ID, Code, Password
+    case 'nssf':
+      return baseCols + 3 + activeCategoryCount // +3 for NSSF ID, Code, Password
+    case 'ecitizen':
+      return baseCols + 3 + activeCategoryCount // +3 for eCitizen ID, Password, Director
+    case 'quickbooks':
+    case 'kebs':
+      return baseCols + 2 + activeCategoryCount // +2 for ID and Password
+    default:
+      return baseCols + activeCategoryCount
+  }
+}
+
+function formatTimeAgo(dateString: string): string {
+  const date = new Date(dateString)
+  const now = new Date()
+  const seconds = Math.floor((now.getTime() - date.getTime()) / 1000)
+  
+  const intervals = {
+    year: 31536000,
+    month: 2592000,
+    week: 604800,
+    day: 86400,
+    hour: 3600,
+    minute: 60
+  }
+  
+  for (const [unit, secondsInUnit] of Object.entries(intervals)) {
+    const interval = Math.floor(seconds / secondsInUnit)
+    if (interval >= 1) {
+      return `${interval} ${unit}${interval === 1 ? '' : 's'} ago`
+    }
+  }
+  
+  return 'Just now'
 }

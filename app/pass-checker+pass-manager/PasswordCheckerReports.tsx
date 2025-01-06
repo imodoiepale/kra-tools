@@ -26,10 +26,11 @@ export default function PasswordCheckerReports() {
   })
   const [activeTab, setActiveTab] = useState('kra')
   const [companies, setCompanies] = useState<Company[]>([])
+  const [loading, setLoading] = useState(false)
   const [sortConfig, setSortConfig] = useState<{
     key: string | null;
     direction: 'ascending' | 'descending';
-  }>({ key: null, direction: 'ascending' })
+  }>({ key: 'company_name', direction: 'ascending' })
   const [searchTerm, setSearchTerm] = useState('')
   const [isChecking, setIsChecking] = useState(false)
   const [progress, setProgress] = useState(0)
@@ -51,10 +52,11 @@ export default function PasswordCheckerReports() {
   }, [])
 
   const fetchReports = async () => {
+    setLoading(true)
     const tableName = getTableName()
     try {
       const [mainData, duplicateData] = await Promise.all([
-        supabase.from(tableName).select('*'),
+        supabase.from(tableName).select('*').order('company_name', { ascending: true }),
         supabase.from('acc_portal_company_duplicate').select('*')
       ])
 
@@ -82,14 +84,16 @@ export default function PasswordCheckerReports() {
             cps_sheria_client_effective_from: duplicateInfo?.cps_sheria_client_effective_from || null,
             cps_sheria_client_effective_to: duplicateInfo?.cps_sheria_client_effective_to || null,
             imm_client_effective_from: duplicateInfo?.imm_client_effective_from || null,
-            imm_client_effective_to: duplicateInfo?.imm_client_effective_to || null
+            imm_client_effective_to: duplicateInfo?.imm_client_effective_to || null,
+            hasAllCredentials: checkCredentials(company, activeTab)
           }
         })
-        .sort((a, b) => a.company_name.localeCompare(b.company_name))
 
       setCompanies(mergedData)
     } catch (error) {
       console.error('Error fetching reports:', error)
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -130,6 +134,25 @@ export default function PasswordCheckerReports() {
 
     console.error(`No table found for category: ${category}`)
     return 'PasswordChecker'
+  }
+
+  const checkCredentials = (company: Company, tab: string) => {
+    switch (tab) {
+      case 'kra':
+        return Boolean(company.kra_pin && company.kra_password)
+      case 'nhif':
+        return Boolean(company.nhif_id && company.nhif_code && company.nhif_password)
+      case 'nssf':
+        return Boolean(company.nssf_id && company.nssf_code && company.nssf_password)
+      case 'ecitizen':
+        return Boolean(company.ecitizen_identifier && company.ecitizen_password && company.director)
+      case 'quickbooks':
+        return Boolean(company.quickbooks_id && company.quickbooks_password)
+      case 'kebs':
+        return Boolean(company.kebs_id && company.kebs_password)
+      default:
+        return true
+    }
   }
 
   const handleEdit = (company: Company) => {
@@ -252,17 +275,21 @@ export default function PasswordCheckerReports() {
   return (
     <div className="space-y-4">
       <div className="flex flex-col space-y-4">
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <div className="flex justify-between items-center mb-4">
-            <TabsList className="h-10">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <div className="flex flex-col space-y-4 sm:flex-row sm:justify-between sm:items-center sm:space-y-0">
+            <TabsList className="h-10 bg-muted/50">
               {Object.keys(categoriesData).map(category => (
-                <TabsTrigger key={category} value={category.toLowerCase()} className="px-4">
-                  {category}
+                <TabsTrigger 
+                  key={category} 
+                  value={category.toLowerCase()} 
+                  className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+                >
+                  {category.toUpperCase()}
                 </TabsTrigger>
               ))}
             </TabsList>
 
-            <div className="flex items-center space-x-2">
+            <div className="flex flex-wrap gap-2 items-center">
               <SearchBar searchTerm={searchTerm} setSearchTerm={setSearchTerm} />
               <CategoryFilters 
                 categoryFilters={categoryFilters} 
@@ -274,16 +301,24 @@ export default function PasswordCheckerReports() {
           </div>
         </Tabs>
 
-        <div className="rounded-md border max-h-[600px] overflow-auto">
-          <ReportsTable
-            companies={sortedCompanies}
-            activeTab={activeTab}
-            categoryFilters={categoryFilters}
-            onEdit={handleEdit}
-            onDelete={handleDelete}
-            getStatusColor={getStatusColor}
-            formatDate={formatDate}
-          />
+        <div className="rounded-md border">
+          {loading ? (
+            <div className="flex justify-center items-center h-[400px]">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+            </div>
+          ) : (
+            <div className="max-h-[600px] overflow-auto">
+              <ReportsTable
+                companies={sortedCompanies}
+                activeTab={activeTab}
+                categoryFilters={categoryFilters}
+                onEdit={handleEdit}
+                onDelete={handleDelete}
+                getStatusColor={getStatusColor}
+                formatDate={formatDate}
+              />
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -24,13 +24,16 @@ let isRunning = false;
 let progress = 0;
 let totalCompanies = 0;
 let currentCompany = '';
+let browser = null;
+let context = null;
+let page = null;
 
 export default async function handler(req, res) {
     if (req.method !== "POST") {
         return res.status(405).json({ message: "Method not allowed" });
     }
 
-    const { action } = req.body;
+    const { action, runOption, selectedIds } = req.body;
 
     switch (action) {
         case "start":
@@ -42,74 +45,173 @@ export default async function handler(req, res) {
                 progress = 0;
                 totalCompanies = 0;
                 currentCompany = '';
-                // Add selectedIds parameter
-                processAutoPopulation(req.body.selectedIds).catch(error => {
+
+                // Update automation progress in Supabase
+                await supabase
+                    .from('AutoPopulation_AutomationProgress')
+                    .upsert({
+                        id: 1,
+                        progress: 0,
+                        status: 'Running',
+                        current_company: '',
+                        last_updated: new Date().toISOString()
+                    });
+
+                processAutoPopulation(runOption, selectedIds).catch(async error => {
                     console.error("Error in processAutoPopulation:", error);
-                    isRunning = false;
+                    await cleanup();
                 });
                 return res.status(200).json({ message: "Auto-population started successfully" });
             } catch (error) {
-                isRunning = false;
+                await cleanup();
                 return res.status(500).json({ message: "Failed to start auto-population", error: error.message });
             }
 
         case "stop":
-            if (!isRunning) {
-                return res.status(400).json({ message: "Auto-population is not running" });
+            try {
+                await cleanup();
+                return res.status(200).json({ message: "Auto-population stopped successfully" });
+            } catch (error) {
+                return res.status(500).json({ message: "Failed to stop auto-population", error: error.message });
             }
-            automationEmitter.emit('stop');
-            isRunning = false;
-            return res.status(200).json({ message: "Auto-population stop signal sent" });
 
         case "progress":
-            return res.status(200).json({ progress, totalCompanies, isRunning, currentCompany });
+            try {
+                const { data: progressData } = await supabase
+                    .from('AutoPopulation_AutomationProgress')
+                    .select('*')
+                    .single();
+
+                return res.status(200).json({
+                    progress,
+                    totalCompanies,
+                    isRunning,
+                    currentCompany,
+                    status: progressData?.status || 'Stopped'
+                });
+            } catch (error) {
+                return res.status(500).json({ message: "Failed to fetch progress", error: error.message });
+            }
 
         case "getReports":
-            const reports = await getReports();
-            return res.status(200).json(reports);
+            try {
+                const reports = await getReports();
+                return res.status(200).json(reports);
+            } catch (error) {
+                return res.status(500).json({ message: "Failed to get reports", error: error.message });
+            }
 
         default:
             return res.status(400).json({ message: "Invalid action" });
     }
 }
 
-async function processAutoPopulation(selectedIds) {
-    const companies = await readSupabaseData(selectedIds); // Pass selectedIds to filter companies
-    totalCompanies = companies.length;
-
-    const now = new Date();
-    const formattedDateTime = `${now.getDate()}.${(now.getMonth() + 1).toString().padStart(2, '0')}.${now.getFullYear()}`;
-    const downloadFolderPath = path.join(os.homedir(), "Downloads", `AUTO-POPULATE-${formattedDateTime}`);
-    await fs.mkdir(downloadFolderPath, { recursive: true });
-
-    const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet("FILED RETURNS ALL MONTHS");
-
-    const excelFilePath = path.join(downloadFolderPath, `AUTO-POPULATION-SUMMARY-${formattedDateTime}.xlsx`);
-    await workbook.xlsx.writeFile(excelFilePath);
-
-    for (let i = 0; i < companies.length && isRunning; i++) {
-        currentCompany = companies[i].company_name;
-
-        if (!isRunning) {
-            console.log("Stopping auto-population process");
-            break;
+async function cleanup() {
+    isRunning = false;
+    progress = 0;
+    currentCompany = '';
+    
+    try {
+        if (page) {
+            await page.close();
+            page = null;
         }
-
-        await processCompany(companies[i], downloadFolderPath, formattedDateTime, worksheet);
-        progress = Math.round(((i + 1) / totalCompanies) * 100);
-
-        await workbook.xlsx.writeFile(excelFilePath);
+        if (context) {
+            await context.close();
+            context = null;
+        }
+        if (browser) {
+            await browser.close();
+            browser = null;
+        }
+    } catch (error) {
+        console.error("Error during cleanup:", error);
     }
 
-    isRunning = false;
-    currentCompany = '';
-    console.log("Auto-population process completed or stopped");
+    // Update Supabase status
+    await supabase
+        .from('AutoPopulation_AutomationProgress')
+        .upsert({
+            id: 1,
+            progress: 0,
+            status: 'Stopped',
+            current_company: '',
+            last_updated: new Date().toISOString()
+        });
+}
+
+async function processAutoPopulation(runOption, selectedIds) {
+    let companies;
+    try {
+        companies = await readSupabaseData(runOption === 'selected' ? selectedIds : null);
+        totalCompanies = companies.length;
+
+        const now = new Date();
+        const formattedDateTime = `${now.getDate()}.${(now.getMonth() + 1).toString().padStart(2, '0')}.${now.getFullYear()}`;
+        const downloadFolderPath = path.join(os.homedir(), "Downloads", `AUTO-POPULATE-${formattedDateTime}`);
+        await fs.mkdir(downloadFolderPath, { recursive: true });
+
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet("FILED RETURNS ALL MONTHS");
+
+        const excelFilePath = path.join(downloadFolderPath, `AUTO-POPULATION-SUMMARY-${formattedDateTime}.xlsx`);
+        await workbook.xlsx.writeFile(excelFilePath);
+
+        for (let i = 0; i < companies.length && isRunning; i++) {
+            currentCompany = companies[i].company_name;
+
+            // Update progress in Supabase
+            await supabase
+                .from('AutoPopulation_AutomationProgress')
+                .upsert({
+                    id: 1,
+                    progress,
+                    current_company: currentCompany,
+                    last_updated: new Date().toISOString()
+                });
+
+            if (!isRunning) {
+                console.log("Stopping auto-population process");
+                break;
+            }
+
+            await processCompany(companies[i], downloadFolderPath, formattedDateTime, worksheet);
+            progress = Math.round(((i + 1) / totalCompanies) * 100);
+
+            await workbook.xlsx.writeFile(excelFilePath);
+        }
+
+        // Update final status
+        await supabase
+            .from('AutoPopulation_AutomationProgress')
+            .upsert({
+                id: 1,
+                progress: isRunning ? 100 : progress,
+                status: isRunning ? 'Completed' : 'Stopped',
+                current_company: '',
+                last_updated: new Date().toISOString()
+            });
+
+        isRunning = false;
+        currentCompany = '';
+        console.log("Auto-population process completed or stopped");
+    } catch (error) {
+        console.error("Error in processAutoPopulation:", error);
+        // Update error status
+        await supabase
+            .from('AutoPopulation_AutomationProgress')
+            .upsert({
+                id: 1,
+                status: 'Stopped',
+                last_updated: new Date().toISOString()
+            });
+        throw error;
+    }
 }
 
 async function readSupabaseData(selectedIds) {
     try {
-        let query = supabase.from("Autopopulate").select("*");
+        let query = supabase.from("PasswordChecker").select("*");
 
         // If selectedIds is provided, filter by those IDs
         if (selectedIds && selectedIds.length > 0) {
@@ -218,30 +320,32 @@ async function initiateAndHandleDownload(page, worksheet, company, downloadFolde
 }
 
 async function processCompany(company, downloadFolderPath, formattedDateTime, worksheet) {
-    const browser = await chromium.launch({ headless: false, executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe' });
-    const context = await browser.newContext();
-    const page = await context.newPage();
-
-    const stopListener = () => {
-        isRunning = false;
-        console.log(`Stopping processing for ${company.company_name}`);
-    };
-    automationEmitter.once('stop', stopListener);
-
     try {
+        if (!isRunning) return;
+
+        if (!browser) {
+            browser = await chromium.launch({ headless: false, executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe' });
+        }
+        if (!context) {
+            context = await browser.newContext();
+        }
+        if (!page) {
+            page = await context.newPage();
+        }
+
         const companyNameRow = worksheet.addRow([`${company.id}`, `${company.company_name}`, `Extraction Date: ${formattedDateTime}`]);
         highlightCells(companyNameRow, "B", "D", "FFADD8E6", true);
 
-        if (!company.kra_pin || !(company.kra_pin.startsWith("P") || company.kra_pin.startsWith("A"))) {
-            console.log(`Skipping ${company.company_name}: Invalid KRA PIN`);
-            const pinRow = worksheet.addRow(["", " ", "MISSING KRA PIN"]);
+        if (!company.kra_pin || !company.kra_pin.startsWith("P")) {
+            console.log(`Skipping ${company.company_name}: Invalid KRA PIN or PIN doesn't start with P`);
+            const pinRow = worksheet.addRow(["", " ", "INVALID OR NON-P KRA PIN"]);
             highlightCells(pinRow, "C", "D", "FF7474");
             worksheet.addRow();
             return;
         }
 
-        if (company.kra_itax_current_password === null) {
-            console.log(`Skipping ${company.company_name}: Password is null`);
+        if (!company.kra_itax_current_password) {
+            console.log(`Skipping ${company.company_name}: Password is missing`);
             const passwordRow = worksheet.addRow(["", " ", "MISSING KRA PASSWORD"]);
             highlightCells(passwordRow, "C", "D", "FF7474");
             worksheet.addRow();
@@ -249,6 +353,11 @@ async function processCompany(company, downloadFolderPath, formattedDateTime, wo
         }
 
         await loginToKRA(page, company);
+        if (!isRunning) {
+            await cleanup();
+            return;
+        }
+
         await page.waitForLoadState("networkidle");
 
         const menuItemsSelector = [
@@ -328,11 +437,6 @@ async function processCompany(company, downloadFolderPath, formattedDateTime, wo
         const errorRow = worksheet.addRow(["", " ", `ERROR: ${error.message}`]);
         highlightCells(errorRow, "C", "D", "FF0000");
         worksheet.addRow();
-    } finally {
-        automationEmitter.removeListener('stop', stopListener);
-        if (page) await page.close().catch(console.error);
-        if (context) await context.close().catch(console.error);
-        if (browser) await browser.close().catch(console.error);
     }
 }
 
@@ -513,7 +617,6 @@ async function extractAndRenameFiles(zipFilePath, company, startDateFormatted, d
     return extractedFiles;
 }
 
-
 function getPreviousMonthName() {
     const previousMonthDate = subMonths(new Date(), 1);
     return format(previousMonthDate, 'MMMM');
@@ -559,4 +662,3 @@ async function getReports() {
         throw error;
     }
 }
-

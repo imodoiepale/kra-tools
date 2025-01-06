@@ -176,6 +176,44 @@ const getAutomationProgress = async () => {
     }
 };
 
+// Function to stop other running automations
+async function stopOtherAutomations() {
+    try {
+        // Stop auto-population if running
+        const autoPopResponse = await fetch('/api/auto-population', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'stop' })
+        });
+        
+        // Stop NHIF checker if running
+        const nhifResponse = await fetch('/api/nhif-pass-checker', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'stop' })
+        });
+        
+        // Stop NSSF checker if running
+        const nssfResponse = await fetch('/api/nssf-pass-checker', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'stop' })
+        });
+        
+        // Stop eCitizen checker if running
+        const ecitizenResponse = await fetch('/api/ecitizen-pass-checker', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'stop' })
+        });
+
+        // Wait a bit for other automations to clean up
+        await new Promise(resolve => setTimeout(resolve, 2000));
+    } catch (error) {
+        console.error("Error stopping other automations:", error);
+    }
+}
+
 // Main function to process all companies and validate passwords
 export default async function handler(req, res) {
     if (req.method !== "POST") {
@@ -196,22 +234,31 @@ export default async function handler(req, res) {
     }
 
     if (action === "start") {
-        // Check if automation is already running
-        const currentProgress = await getAutomationProgress();
-        if (currentProgress && currentProgress.status === "Running") {
-            return res.status(400).json({ message: "Automation is already in progress." });
+        try {
+            // Check if automation is already running
+            const currentProgress = await getAutomationProgress();
+            if (currentProgress && currentProgress.status === "Running") {
+                return res.status(400).json({ message: "Automation is already in progress." });
+            }
+
+            // Stop any other running automations first
+            await stopOtherAutomations();
+
+            // Reset stop request flag
+            stopRequested = false;
+
+            // Start new automation
+            await updateAutomationProgress(0, "Running", []);
+
+            // Start the automation process in the background
+            processCompanies(runOption, selectedIds).catch(console.error);
+
+            return res.status(200).json({ message: "Automation started." });
+        } catch (error) {
+            console.error("Error starting automation:", error);
+            await updateAutomationProgress(0, "Error", []);
+            return res.status(500).json({ message: "Failed to start automation", error: error.message });
         }
-
-        // Reset stop request flag
-        stopRequested = false;
-
-        // Start new automation
-        await updateAutomationProgress(0, "Running", []);
-
-        // Start the automation process in the background
-        processCompanies(runOption, selectedIds).catch(console.error);
-
-        return res.status(200).json({ message: "Automation started." });
     }
 
     return res.status(400).json({ message: "Invalid action." });

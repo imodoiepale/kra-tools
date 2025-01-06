@@ -87,7 +87,7 @@ export default function PasswordCheckerRunning({ onComplete, progress, status, a
                 Status: {status}
             </p>
             <p className="text-sm text-gray-500">
-                {Math.round(progress / 100 * totalCompanies)} out of {totalCompanies} companies checked ({progress.toFixed(1)}%)
+                {Math.round((progress || 0) / 100 * totalCompanies)} out of {totalCompanies} companies checked ({(progress || 0).toFixed(1)}%)
             </p>
 
             <div className="overflow-x-auto">

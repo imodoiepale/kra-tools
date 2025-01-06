@@ -9,7 +9,22 @@ import { motion } from "framer-motion";
 import { supabase } from '@/lib/supabase';
 
 import { usePathname } from 'next/navigation'
-export default function Start({ activeTab, setStatus, isChecking, setIsChecking, setActiveTab }) {
+
+interface StartProps {
+  activeTab?: string;
+  setStatus: (status: string) => void;
+  isChecking: boolean;
+  setIsChecking: (isChecking: boolean) => void;
+  setActiveTab: (tab: string) => void;
+}
+
+export default function Start({ 
+  activeTab = 'kra', 
+  setStatus, 
+  isChecking = false, 
+  setIsChecking, 
+  setActiveTab 
+}: StartProps) {
   const [selectedCompanies, setSelectedCompanies] = useState([]);
   const [runOption, setRunOption] = useState('all');
   const [automationProgress, setAutomationProgress] = useState(null);
@@ -22,10 +37,12 @@ export default function Start({ activeTab, setStatus, isChecking, setIsChecking,
   }, []);
 
   const fetchAutomationProgress = async () => {
+    if (!activeTab) return;
+
     const { data, error } = await supabase
       .from('PasswordChecker_AutomationProgress')
       .select('*')
-      .eq('tab', activeTab) // Ensure we fetch progress for the current tab
+      .eq('tab', activeTab)
       .order('last_updated', { ascending: false })
       .limit(1)
       .single();
@@ -51,7 +68,7 @@ export default function Start({ activeTab, setStatus, isChecking, setIsChecking,
     try {
       const { data, error } = await supabase
         .from('PasswordChecker')
-        .select('id, company_name, status')
+        .select('*')
         .order('id', { ascending: true });
 
       if (error) {
@@ -71,14 +88,27 @@ export default function Start({ activeTab, setStatus, isChecking, setIsChecking,
   };
 
   const startCheck = async () => {
-    console.log('Current activeTab:', activeTab); // Debugging line
+    if (!activeTab) {
+      console.error('No active tab selected');
+      alert('Please select a tab before starting the check.');
+      return;
+    }
+
+    console.log('Current activeTab:', activeTab);
     if (isChecking) {
       alert('An automation is already running. Please wait for it to complete or stop it before starting a new one.');
       return;
     }
 
+    if (runOption === 'selected' && selectedCompanies.length === 0) {
+      alert('Please select at least one company to check.');
+      return;
+    }
+
+    const currentTab = (activeTab || '').toLowerCase();
     let apiEndpoint = '';
-    switch (activeTab) {
+    
+    switch (currentTab) {
       case 'nssf':
         apiEndpoint = '/api/nssf-pass-checker';
         break;
@@ -92,11 +122,30 @@ export default function Start({ activeTab, setStatus, isChecking, setIsChecking,
         apiEndpoint = '/api/ecitizen-pass-checker';
         break;
       default:
+        console.error('Invalid tab selected:', activeTab);
         alert('Invalid tab selected');
         return;
     }
 
     try {
+      // First, update the automation progress
+      const { error: progressError } = await supabase
+        .from('PasswordChecker_AutomationProgress')
+        .upsert({
+          id: 1,
+          progress: 0,
+          status: 'Running',
+          logs: [],
+          tab: activeTab,
+          last_updated: new Date().toISOString()
+        });
+
+      if (progressError) {
+        console.error('Error updating automation progress:', progressError);
+        throw progressError;
+      }
+
+      // Then start the automation
       const response = await fetch(apiEndpoint, {
         method: 'POST',
         headers: {
@@ -110,29 +159,48 @@ export default function Start({ activeTab, setStatus, isChecking, setIsChecking,
         })
       });
 
-      if (!response.ok) throw new Error('API request failed');
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('API Error:', errorData);
+        throw new Error(errorData.message || 'API request failed');
+      }
 
       const data = await response.json();
       console.log(`Password check started for ${activeTab}:`, data);
+      
       setIsChecking(true);
       setStatus("Running");
-      setActiveTab("running"); // Navigate to the running tab
-
-      // Update automation progress
-      await supabase
-        .from('PasswordChecker_AutomationProgress')
-        .upsert({ id: 1, progress: 0, status: 'Running', logs: [], tab: activeTab });
+      setActiveTab("running");
 
       fetchAutomationProgress();
     } catch (error) {
       console.error(`Error starting password check for ${activeTab}:`, error);
+      // Reset the automation progress on error
+      await supabase
+        .from('PasswordChecker_AutomationProgress')
+        .upsert({
+          id: 1,
+          progress: 0,
+          status: 'Stopped',
+          logs: [],
+          tab: activeTab,
+          last_updated: new Date().toISOString()
+        });
       alert('Failed to start password check. Please try again.');
     }
   };
 
   const resumeCheck = async () => {
+    if (!activeTab) {
+      console.error('No active tab selected');
+      alert('Please select a tab before resuming the check.');
+      return;
+    }
+
+    const currentTab = (activeTab || '').toLowerCase();
     let apiEndpoint = '';
-    switch (activeTab) {
+    
+    switch (currentTab) {
       case 'nssf':
         apiEndpoint = '/api/nssf-pass-checker';
         break;
@@ -146,31 +214,61 @@ export default function Start({ activeTab, setStatus, isChecking, setIsChecking,
         apiEndpoint = '/api/ecitizen-pass-checker';
         break;
       default:
+        console.error('Invalid tab selected:', activeTab);
         alert('Invalid tab selected');
         return;
     }
 
     try {
+      // Update automation progress before resuming
+      const { error: progressError } = await supabase
+        .from('PasswordChecker_AutomationProgress')
+        .upsert({
+          id: 1,
+          status: 'Running',
+          tab: activeTab,
+          last_updated: new Date().toISOString()
+        });
+
+      if (progressError) {
+        console.error('Error updating automation progress:', progressError);
+        throw progressError;
+      }
+
       const response = await fetch(apiEndpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ action: "resume", tab: activeTab }) // Include tab in the request
+        body: JSON.stringify({ 
+          action: "resume", 
+          tab: activeTab 
+        })
       });
 
       if (!response.ok) {
-        const errorData = await response.json(); // Log the error response
+        const errorData = await response.json();
         console.error('Error response:', errorData);
-        throw new Error('Failed to resume automation');
+        throw new Error(errorData.message || 'Failed to resume automation');
       }
 
       setIsChecking(true);
       setStatus("Running");
-      setActiveTab("running"); // Navigate to the running tab
+      setActiveTab("running");
+      
       fetchAutomationProgress();
     } catch (error) {
       console.error('Error resuming automation:', error);
+      // Reset automation progress on error
+      await supabase
+        .from('PasswordChecker_AutomationProgress')
+        .upsert({
+          id: 1,
+          status: 'Stopped',
+          tab: activeTab,
+          last_updated: new Date().toISOString()
+        });
+      alert('Failed to resume automation. Please try again.');
     }
   };
 
@@ -206,26 +304,36 @@ export default function Start({ activeTab, setStatus, isChecking, setIsChecking,
                   <TableHeader>
                     <TableRow>
                       <TableHead className="w-[50px] sticky top-0 bg-white">Select</TableHead>
-                      <TableHead className="sticky top-0 bg-white">#</TableHead>
-                      <TableHead className="sticky top-0 bg-white">Company Name</TableHead>
-                      <TableHead className="sticky top-0 bg-white">Status</TableHead>
+                      <TableHead className="w-[50px] sticky top-0 bg-white">#</TableHead>
+                      <TableHead className="min-w-[200px] sticky top-0 bg-white">Company Name</TableHead>
+                      <TableHead className="w-[120px] sticky top-0 bg-white">KRA PIN</TableHead>
+                      <TableHead className="w-[120px] sticky top-0 bg-white">KRA Password</TableHead>
+                      <TableHead className="w-[100px] sticky top-0 bg-white text-center">Status</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {companies.map((company, index) => (
                       <TableRow key={company.id}>
-                        <TableCell>
+                        <TableCell className="w-[50px]">
                           <Checkbox
                             checked={selectedCompanies.includes(company.id)}
                             onCheckedChange={() => handleCheckboxChange(company.id)}
                           />
                         </TableCell>
-                        <TableCell className="text-center">{index + 1}</TableCell>
-                        <TableCell>{company.company_name}</TableCell>
-                        <TableCell className="">
-                          {company.status?.toLowerCase() === 'valid' && <span className="bg-green-500 text-white px-2 py-1 rounded">{company.status}</span>}
-                          {company.status?.toLowerCase() === 'invalid' && <span className="bg-red-500 text-white px-2 py-1 rounded">{company.status}</span>}
-                          {company.status?.toLowerCase() !== 'valid' && company.status?.toLowerCase() !== 'invalid' && <span className="bg-yellow-500 text-white px-2 py-1 rounded">{company.status}</span>}
+                        <TableCell className="w-[50px] text-center">{index + 1}</TableCell>
+                        <TableCell className="min-w-[200px] whitespace-nowrap overflow-hidden text-ellipsis">
+                          {company.company_name}
+                        </TableCell>
+                        <TableCell className="w-[120px] font-mono">{company.kra_pin}</TableCell>
+                        <TableCell className="w-[120px] font-mono">{company.kra_password}</TableCell>
+                        <TableCell className="w-[100px] text-center">
+                          <span className={`${
+                            company.status?.toLowerCase() === 'valid' ? 'bg-green-500' :
+                            company.status?.toLowerCase() === 'invalid' ? 'bg-red-500' :
+                            'bg-yellow-500'
+                          } text-white px-2 py-1 rounded whitespace-nowrap text-sm`}>
+                            {company.status || 'Pending'}
+                          </span>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -245,20 +353,30 @@ export default function Start({ activeTab, setStatus, isChecking, setIsChecking,
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>#</TableHead>
-                        <TableHead>Company Name</TableHead>
-                        <TableHead>Status</TableHead>
+                        <TableHead className="w-[50px]">#</TableHead>
+                        <TableHead className="min-w-[200px]">Company Name</TableHead>
+                        <TableHead className="w-[120px]">KRA PIN</TableHead>
+                        <TableHead className="w-[120px]">KRA Password</TableHead>
+                        <TableHead className="w-[100px] text-center">Status</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {companies.filter(c => selectedCompanies.includes(c.id)).map((company, index) => (
                         <TableRow key={company.id} className="bg-blue-100">
-                          <TableCell className="text-center">{index + 1}</TableCell>
-                          <TableCell>{company.company_name}</TableCell>
-                          <TableCell className="">
-                            {company.status?.toLowerCase() === 'valid' && <span className="bg-green-500 text-white px-2 py-1 rounded">{company.status}</span>}
-                            {company.status?.toLowerCase() === 'invalid' && <span className="bg-red-500 text-white px-2 py-1 rounded">{company.status}</span>}
-                            {company.status?.toLowerCase() !== 'valid' && company.status?.toLowerCase() !== 'invalid' && <span className="bg-yellow-500 text-white px-2 py-1 rounded">{company.status}</span>}
+                          <TableCell className="w-[50px] text-center">{index + 1}</TableCell>
+                          <TableCell className="min-w-[200px] whitespace-nowrap overflow-hidden text-ellipsis">
+                            {company.company_name}
+                          </TableCell>
+                          <TableCell className="w-[120px] font-mono">{company.kra_pin}</TableCell>
+                          <TableCell className="w-[120px] font-mono">{company.kra_password}</TableCell>
+                          <TableCell className="w-[100px] text-center">
+                            <span className={`${
+                              company.status?.toLowerCase() === 'valid' ? 'bg-green-500' :
+                              company.status?.toLowerCase() === 'invalid' ? 'bg-red-500' :
+                              'bg-yellow-500'
+                            } text-white px-2 py-1 rounded whitespace-nowrap text-sm`}>
+                              {company.status || 'Pending'}
+                            </span>
                           </TableCell>
                         </TableRow>
                       ))}
