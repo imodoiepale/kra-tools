@@ -14,6 +14,7 @@ import { Checkbox } from '../../../components/ui/checkbox';
 
 export function AutoPopulationReports() {
     const [reports, setReports] = useState([]);
+    const [passwordCheckerCompanies, setPasswordCheckerCompanies] = useState([]);
     const [selectedCompany, setSelectedCompany] = useState(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [sortColumn, setSortColumn] = useState('');
@@ -32,7 +33,22 @@ export function AutoPopulationReports() {
 
     useEffect(() => {
         fetchReports();
+        fetchPasswordCheckerCompanies();
     }, []);
+
+    const fetchPasswordCheckerCompanies = async () => {
+        try {
+            const { data, error } = await supabase
+                .from('PasswordChecker')
+                .select('id, company_name')
+                .order('company_name', { ascending: true });
+
+            if (error) throw error;
+            setPasswordCheckerCompanies(data || []);
+        } catch (error) {
+            console.error('Error fetching PasswordChecker companies:', error);
+        }
+    };
 
     const fetchReports = async () => {
         try {
@@ -69,15 +85,84 @@ export function AutoPopulationReports() {
         }
     };
 
+    const getPreviousMonthName = () => {
+        const currentDate = new Date();
+        const previousMonthDate = new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1);
+        return previousMonthDate.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+    };
+
+    const getMostRecentExtraction = (report) => {
+        if (!report.extractions || Object.keys(report.extractions).length === 0) {
+            return null;
+        }
+
+        // Convert extractions object to array of [monthYear, data] pairs
+        const extractionsArray = Object.entries(report.extractions);
+
+        // Sort by date in descending order (most recent first)
+        extractionsArray.sort(([monthYearA], [monthYearB]) => {
+            const dateA = new Date(monthYearA);
+            const dateB = new Date(monthYearB);
+            return dateB.getTime() - dateA.getTime();
+        });
+
+        // Return the most recent extraction's data
+        return extractionsArray[0]?.[1] || null;
+    };
+
+    const getCurrentMonthExtractions = (report) => {
+        if (!report.extractions || Object.keys(report.extractions).length === 0) {
+            return null;
+        }
+
+        const targetMonthYear = getPreviousMonthName();
+        return report.extractions[targetMonthYear] || null;
+    };
+
+    const getMergedAndSortedReports = () => {
+        // Get all company names from Autopopulate
+        const autopopulateCompanies = new Set(reports.map(r => r.companyName.toLowerCase()));
+        
+        // Create entries for companies that are in PasswordChecker but not in Autopopulate
+        const missingCompanies = passwordCheckerCompanies
+            .filter(pc => !autopopulateCompanies.has(pc.company_name.toLowerCase()))
+            .map(pc => ({
+                id: `pc_${pc.id}`,
+                companyName: pc.company_name,
+                lastUpdated: null,
+                extractions: {},
+                isMissing: true
+            }));
+
+        // Combine and sort all reports
+        const allReports = [...reports, ...missingCompanies].sort((a, b) => {
+            // First sort by whether they have any extractions
+            const aHasExtractions = getMostRecentExtraction(a) !== null;
+            const bHasExtractions = getMostRecentExtraction(b) !== null;
+            
+            if (aHasExtractions && !bHasExtractions) return -1;
+            if (!aHasExtractions && bHasExtractions) return 1;
+            
+            // Then sort by missing status
+            if (a.isMissing && !b.isMissing) return 1;
+            if (!a.isMissing && b.isMissing) return -1;
+            
+            // Finally sort by company name
+            return a.companyName.localeCompare(b.companyName);
+        });
+
+        return allReports.filter(report =>
+            report.companyName.toLowerCase().includes(searchTerm.toLowerCase())
+        );
+    };
+
     const sortedReports = [...reports].sort((a, b) => {
         if (a[sortColumn] < b[sortColumn]) return sortOrder === 'asc' ? -1 : 1;
         if (a[sortColumn] > b[sortColumn]) return sortOrder === 'asc' ? 1 : -1;
         return 0;
     });
 
-    const filteredReports = sortedReports.filter(report =>
-        report.companyName.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    const filteredReports = getMergedAndSortedReports();
 
     const exportToExcel = async () => {
         const workbook = new ExcelJS.Workbook();
@@ -87,13 +172,14 @@ export function AutoPopulationReports() {
         worksheet.addRow(headers);
 
         filteredReports.forEach((report) => {
+            const mostRecentFiles = getMostRecentExtraction(report)?.files || [];
             const row = [
                 report.companyName,
                 new Date(report.lastUpdated).toLocaleString(),
-                findFile(report.extractions[0]?.files, 'vat3')?.originalName || 'Missing',
-                findFile(report.extractions[0]?.files, 'sec_b_with_vat')?.originalName || 'Missing',
-                findFile(report.extractions[0]?.files, 'sec_b_without_vat')?.originalName || 'Missing',
-                findFile(report.extractions[0]?.files, 'sec_f')?.originalName || 'Missing',
+                findFile(mostRecentFiles, 'vat3')?.originalName || 'Missing',
+                findFile(mostRecentFiles, 'sec_b_with_vat')?.originalName || 'Missing',
+                findFile(mostRecentFiles, 'sec_b_without_vat')?.originalName || 'Missing',
+                findFile(mostRecentFiles, 'sec_f')?.originalName || 'Missing',
             ];
             worksheet.addRow(row);
         });
@@ -180,7 +266,7 @@ export function AutoPopulationReports() {
                 onClick={() => window.open(file.fullPath, '_blank')}
             >
                 <Download className="mr-1 h-3 w-3" />
-                Download
+                {detailed ? file.originalName : 'Download'}
             </Button>
         );
     };
@@ -277,7 +363,12 @@ export function AutoPopulationReports() {
                             </TableHeader>
                             <TableBody>
                                 {filteredReports.map((report, index) => (
-                                    <TableRow key={report.id} className={index % 2 === 0 ? 'bg-white' : 'bg-blue-50'}>
+                                    <TableRow 
+                                        key={report.id} 
+                                        className={`${index % 2 === 0 ? 'bg-white' : 'bg-blue-50'} ${
+                                            report.isMissing ? 'bg-red-100' : ''
+                                        }`}
+                                    >
                                         <TableCell>
                                             <Checkbox
                                                 checked={selectedReports.includes(report.id)}
@@ -287,10 +378,26 @@ export function AutoPopulationReports() {
                                         <TableCell>{index + 1}</TableCell>
                                         {visibleColumns.company_name && <TableCell>{report.companyName}</TableCell>}
                                         {visibleColumns.last_updated && <TableCell>{new Date(report.lastUpdated).toLocaleString()}</TableCell>}
-                                        {visibleColumns.vat3 && <TableCell className="text-center">{renderFileButton(findFile(report.extractions[0]?.files, 'vat3'))}</TableCell>}
-                                        {visibleColumns.sec_b_with_vat && <TableCell className="text-center">{renderFileButton(findFile(report.extractions[0]?.files, 'sec_b_with_vat'))}</TableCell>}
-                                        {visibleColumns.sec_b_without_vat && <TableCell className="text-center">{renderFileButton(findFile(report.extractions[0]?.files, 'sec_b_without_vat'))}</TableCell>}
-                                        {visibleColumns.sec_f && <TableCell className="text-center">{renderFileButton(findFile(report.extractions[0]?.files, 'sec_f'))}</TableCell>}
+                                        {visibleColumns.vat3 && (
+                                            <TableCell className="text-center">
+                                                {renderFileButton(findFile(getMostRecentExtraction(report)?.files, 'vat3'))}
+                                            </TableCell>
+                                        )}
+                                        {visibleColumns.sec_b_with_vat && (
+                                            <TableCell className="text-center">
+                                                {renderFileButton(findFile(getMostRecentExtraction(report)?.files, 'sec_b_with_vat'))}
+                                            </TableCell>
+                                        )}
+                                        {visibleColumns.sec_b_without_vat && (
+                                            <TableCell className="text-center">
+                                                {renderFileButton(findFile(getMostRecentExtraction(report)?.files, 'sec_b_without_vat'))}
+                                            </TableCell>
+                                        )}
+                                        {visibleColumns.sec_f && (
+                                            <TableCell className="text-center">
+                                                {renderFileButton(findFile(getMostRecentExtraction(report)?.files, 'sec_f'))}
+                                            </TableCell>
+                                        )}
                                     </TableRow>
                                 ))}
                             </TableBody>
@@ -304,10 +411,13 @@ export function AutoPopulationReports() {
                         {reports.map((report, index) => (
                             <React.Fragment key={report.id}>
                                 <div
-                                    className={`p-2 cursor-pointer transition-colors duration-200 text-xs uppercase ${selectedCompany?.id === report.id
-                                        ? 'bg-blue-500 text-white font-bold'
-                                        : 'hover:bg-blue-100'
-                                        }`}
+                                    className={`p-2 cursor-pointer transition-colors duration-200 text-xs uppercase ${
+                                        selectedCompany?.id === report.id
+                                            ? 'bg-blue-500 text-white font-bold'
+                                            : report.isMissing
+                                            ? 'bg-red-100 hover:bg-red-200'
+                                            : 'hover:bg-blue-100'
+                                    }`}
                                     onClick={() => setSelectedCompany(report)}
                                 >
                                     {report.companyName}

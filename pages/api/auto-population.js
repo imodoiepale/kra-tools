@@ -113,6 +113,18 @@ async function cleanup() {
     
     try {
         if (page) {
+            // Attempt to logout
+            try {
+                await page.goto("https://itax.kra.go.ke/KRA-Portal/");
+                const logoutButton = await page.waitForSelector('#logout', { timeout: 5000 });
+                if (logoutButton) {
+                    await logoutButton.click();
+                    await page.waitForTimeout(2000);
+                }
+            } catch (logoutError) {
+                console.log("Logout failed or not needed:", logoutError);
+            }
+            
             await page.close();
             page = null;
         }
@@ -235,7 +247,7 @@ async function loginToKRA(page, company) {
     await page.evaluate(() => {
         CheckPIN();
     });
-    await page.locator('input[name="xxZTT9p2wQ"]').fill(company.kra_itax_current_password);
+    await page.locator('input[name="xxZTT9p2wQ"]').fill(company.kra_password);
     await page.waitForTimeout(1500);
     const image = await page.waitForSelector("#captcha_img");
     const imagePath = path.join(os.tmpdir(), "ocr.png");
@@ -324,7 +336,11 @@ async function processCompany(company, downloadFolderPath, formattedDateTime, wo
         if (!isRunning) return;
 
         if (!browser) {
-            browser = await chromium.launch({ headless: false, executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe' });
+            browser = await chromium.launch({ 
+                headless: false, 
+                channel: "msedge",
+                args: ['--new-instance']  // Start fresh instance each time
+            });
         }
         if (!context) {
             context = await browser.newContext();
@@ -336,19 +352,33 @@ async function processCompany(company, downloadFolderPath, formattedDateTime, wo
         const companyNameRow = worksheet.addRow([`${company.id}`, `${company.company_name}`, `Extraction Date: ${formattedDateTime}`]);
         highlightCells(companyNameRow, "B", "D", "FFADD8E6", true);
 
-        if (!company.kra_pin || !company.kra_pin.startsWith("P")) {
-            console.log(`Skipping ${company.company_name}: Invalid KRA PIN or PIN doesn't start with P`);
-            const pinRow = worksheet.addRow(["", " ", "INVALID OR NON-P KRA PIN"]);
+        if (!company.kra_pin) {
+            const errorMessage = "MISSING KRA PIN";
+            console.log(`Skipping ${company.company_name}: ${errorMessage}`);
+            const pinRow = worksheet.addRow(["", " ", errorMessage]);
             highlightCells(pinRow, "C", "D", "FF7474");
             worksheet.addRow();
+            await updateSupabaseWithError(company, errorMessage, formattedDateTime);
             return;
         }
 
-        if (!company.kra_itax_current_password) {
-            console.log(`Skipping ${company.company_name}: Password is missing`);
-            const passwordRow = worksheet.addRow(["", " ", "MISSING KRA PASSWORD"]);
+        if (!company.kra_pin.startsWith("P")) {
+            const errorMessage = "INDIVIDUAL PIN";
+            console.log(`Skipping ${company.company_name}: ${errorMessage}`);
+            const pinRow = worksheet.addRow(["", " ", errorMessage]);
+            highlightCells(pinRow, "C", "D", "FF7474");
+            worksheet.addRow();
+            await updateSupabaseWithError(company, errorMessage, formattedDateTime);
+            return;
+        }
+
+        if (!company.kra_password) {
+            const errorMessage = "MISSING PASSWORD";
+            console.log(`Skipping ${company.company_name}: ${errorMessage}`);
+            const passwordRow = worksheet.addRow(["", " ", errorMessage]);
             highlightCells(passwordRow, "C", "D", "FF7474");
             worksheet.addRow();
+            await updateSupabaseWithError(company, errorMessage, formattedDateTime);
             return;
         }
 
@@ -424,7 +454,7 @@ async function processCompany(company, downloadFolderPath, formattedDateTime, wo
         await updateSupabaseTable({
             company_name: company.company_name,
             kra_pin: company.kra_pin,
-            kra_itax_current_password: company.kra_itax_current_password
+            kra_itax_current_password: company.kra_password
         }, formattedDateTime, uploadedFiles);
 
         const successRow = worksheet.addRow(["", " ", `SUCCESS - For ${getPreviousMonthName()}`]);
@@ -440,56 +470,188 @@ async function processCompany(company, downloadFolderPath, formattedDateTime, wo
     }
 }
 
-async function uploadToSupabase(files, companyName, extractionDate) {
-    const currentDate = new Date(extractionDate);
+async function updateSupabaseWithError(company, errorMessage, extractionDate) {
+    try {
+        const { data: existingData, error: fetchError } = await supabase
+            .from('Autopopulate')
+            .select('*')
+            .eq('company_name', company.company_name)
+            .single();
+
+        if (fetchError && fetchError.code !== 'PGRST116') {
+            console.error("Error fetching existing data:", fetchError);
+            throw fetchError;
+        }
+
+        const previousMonthName = getPreviousMonthName();
+        const monthYear = previousMonthName;
+
+        let updatedExtractions = existingData?.extractions || {};
+        updatedExtractions[monthYear] = {
+            extraction_date: extractionDate,
+            error: errorMessage,
+            status: 'error'
+        };
+
+        const { error } = await supabase
+            .from('Autopopulate')
+            .upsert({
+                company_name: company.company_name,
+                kra_pin: company.kra_pin,
+                kra_itax_current_password: company.kra_password,
+                extractions: updatedExtractions,
+                last_updated: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                last_error: errorMessage,
+                status: 'error'
+            }, {
+                onConflict: 'company_name',
+                returning: 'minimal'
+            });
+
+        if (error) throw error;
+        console.log(`Error status updated in database for ${company.company_name}: ${errorMessage}`);
+    } catch (error) {
+        console.error("Error updating error status in database:", error);
+    }
+}
+
+async function updateSupabaseTable(company, extractionDate, uploadedFiles) {
     const previousMonth = getPreviousMonthName();
-    const monthYear = `${previousMonth} ${currentDate.getFullYear()}`;
+    const monthYear = previousMonth;
+
+    try {
+        // Get existing data first
+        const { data: existingData, error: fetchError } = await supabase
+            .from('Autopopulate')
+            .select('*')
+            .eq('company_name', company.company_name)
+            .single();
+
+        if (fetchError && fetchError.code !== 'PGRST116') {
+            console.error("Error fetching existing data:", fetchError);
+            throw fetchError;
+        }
+
+        // Initialize or update extractions
+        let updatedExtractions = existingData?.extractions || {};
+        
+        // Clear any existing data for this month
+        if (updatedExtractions[monthYear]) {
+            console.log(`Clearing existing extraction data for ${monthYear}`);
+        }
+
+        // Set new data for this month
+        updatedExtractions[monthYear] = {
+            extraction_date: extractionDate,
+            files: uploadedFiles.map(file => ({
+                path: file.path,
+                fullPath: file.fullPath,
+                originalName: file.originalName,
+                type: file.type
+            })),
+            status: 'success'
+        };
+
+        // Update the database
+        const { error } = await supabase
+            .from('Autopopulate')
+            .upsert({
+                company_name: company.company_name,
+                kra_pin: company.kra_pin,
+                kra_itax_current_password: company.kra_password,
+                extractions: updatedExtractions,
+                last_updated: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                status: 'success',
+                last_error: null
+            }, {
+                onConflict: 'company_name',
+                returning: 'minimal'
+            });
+
+        if (error) throw error;
+        console.log(`Supabase table updated successfully for ${company.company_name}`);
+    } catch (error) {
+        console.error("Error updating Supabase table:", error);
+        throw error;
+    }
+}
+
+async function uploadToSupabase(files, companyName, extractionDate) {
+    const previousMonth = getPreviousMonthName();
+    const monthYear = previousMonth;
     const uploadedFiles = [];
     const failedUploads = [];
 
-    for (const file of files) {
-        const fileName = path.basename(file.path);
-        const storagePath = `${companyName}/auto-populate/${monthYear}/${fileName}`;
+    try {
+        // First, check and delete existing files for this month
+        const { data: existingData } = await supabase
+            .from('Autopopulate')
+            .select('extractions')
+            .eq('company_name', companyName)
+            .single();
 
-        try {
-            const fileContent = await fs.readFile(file.path);
-            const contentType = determineContentType(file.type, fileName);
-
-            const { data, error } = await supabase.storage
-                .from('kra-documents')
-                .upload(storagePath, fileContent, { contentType, upsert: true });
-
-            if (error) {
-                if (error.statusCode === '409') {
-                    console.log(`File ${fileName} already exists. Updating...`);
-                    const { data: updateData, error: updateError } = await supabase.storage
+        if (existingData?.extractions?.[monthYear]?.files) {
+            console.log(`Found existing files for ${monthYear}, deleting...`);
+            const existingFiles = existingData.extractions[monthYear].files;
+            for (const file of existingFiles) {
+                if (file.path) {
+                    const { error: deleteError } = await supabase.storage
                         .from('kra-documents')
-                        .update(storagePath, fileContent, { contentType });
-
-                    if (updateError) {
-                        throw updateError;
-                    }
+                        .remove([file.path]);
                     
-                    uploadedFiles.push(createFileObject(updateData, file, storagePath));
-                } else {
-                    throw error;
+                    if (deleteError) {
+                        console.warn(`Failed to delete file ${file.path}:`, deleteError);
+                    } else {
+                        console.log(`Successfully deleted existing file: ${file.path}`);
+                    }
                 }
-            } else {
-                uploadedFiles.push(createFileObject(data, file, storagePath));
             }
-
-            console.log(`Successfully uploaded: ${fileName}`);
-        } catch (error) {
-            console.error(`Error uploading file ${fileName} to Supabase:`, error);
-            failedUploads.push({ fileName, error: error.message });
         }
-    }
 
-    if (failedUploads.length > 0) {
-        console.warn(`Failed to upload ${failedUploads.length} file(s):`, failedUploads);
-    }
+        // Upload new files
+        for (const file of files) {
+            const fileName = path.basename(file.path);
+            const storagePath = `${companyName}/auto-populate/${monthYear}/${fileName}`;
 
-    return uploadedFiles; // Return only the array of uploaded files
+            try {
+                const fileContent = await fs.readFile(file.path);
+                const contentType = determineContentType(file.type, fileName);
+
+                // Force delete any existing file at this path
+                await supabase.storage
+                    .from('kra-documents')
+                    .remove([storagePath])
+                    .catch(() => {}); // Ignore errors if file doesn't exist
+
+                // Upload new file
+                const { data, error } = await supabase.storage
+                    .from('kra-documents')
+                    .upload(storagePath, fileContent, { 
+                        contentType,
+                        upsert: true
+                    });
+
+                if (error) throw error;
+
+                uploadedFiles.push(createFileObject(data || { path: storagePath }, file, storagePath));
+                console.log(`Successfully uploaded: ${fileName}`);
+            } catch (error) {
+                console.error(`Error uploading file ${fileName} to Supabase:`, error);
+                failedUploads.push({ fileName, error: error.message });
+            }
+        }
+
+        if (failedUploads.length > 0) {
+            console.warn(`Failed to upload ${failedUploads.length} file(s):`, failedUploads);
+        }
+
+        return uploadedFiles;
+    } catch (error) {
+        console.error('Error in uploadToSupabase:', error);
+        throw error;
+    }
 }
 
 function determineContentType(fileType, fileName) {
@@ -514,57 +676,6 @@ function createFileObject(data, file, storagePath) {
 
 function getPublicUrl(path) {
     return `${supabaseUrl}/storage/v1/object/public/kra-documents/${path}`;
-}
-
-async function updateSupabaseTable(company, extractionDate, uploadedFiles) {
-    const currentDate = new Date(extractionDate);
-    const previousMonth = getPreviousMonthName();
-    const monthYear = `${previousMonth} ${currentDate.getFullYear()}`;
-
-    try {
-        const { data: existingData, error: fetchError } = await supabase
-            .from('Autopopulate')
-            .select('*')
-            .eq('company_name', company.company_name)
-            .single();
-
-        if (fetchError && fetchError.code !== 'PGRST116') {
-            console.error("Error fetching existing data:", fetchError);
-            throw fetchError;
-        }
-
-        let updatedExtractions = existingData?.extractions || {};
-        updatedExtractions[monthYear] = {
-            extraction_date: extractionDate,
-            files: uploadedFiles.map(file => ({
-                path: file.path,
-                fullPath: file.fullPath,
-                originalName: file.originalName,
-                type: file.type
-            }))
-        };
-
-        const { data, error } = await supabase
-            .from('Autopopulate')
-            .upsert({
-                company_name: company.company_name,
-                kra_pin: company.kra_pin,
-                kra_itax_current_password: company.kra_itax_current_password,
-                extractions: updatedExtractions,
-                last_updated: new Date().toISOString(),
-                updated_at: new Date().toISOString()
-            }, {
-                onConflict: 'company_name',
-                returning: 'minimal'
-            });
-
-        if (error) throw error;
-        console.log(`Supabase table updated successfully for ${company.company_name}`);
-        return data;
-    } catch (error) {
-        console.error("Error updating Supabase table:", error);
-        throw error;
-    }
 }
 
 async function readZipFile(filePath) {
@@ -618,8 +729,10 @@ async function extractAndRenameFiles(zipFilePath, company, startDateFormatted, d
 }
 
 function getPreviousMonthName() {
-    const previousMonthDate = subMonths(new Date(), 1);
-    return format(previousMonthDate, 'MMMM');
+    const currentDate = new Date();
+    // Subtract one month from current date
+    const previousMonthDate = new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1);
+    return format(previousMonthDate, 'MMMM yyyy');
 }
 
 function highlightCells(row, startCol, endCol, color, bold = false) {
