@@ -122,7 +122,7 @@ export function AutoPopulationReports() {
     const getMergedAndSortedReports = () => {
         // Get all company names from Autopopulate
         const autopopulateCompanies = new Set(reports.map(r => r.companyName.toLowerCase()));
-        
+
         // Create entries for companies that are in PasswordChecker but not in Autopopulate
         const missingCompanies = passwordCheckerCompanies
             .filter(pc => !autopopulateCompanies.has(pc.company_name.toLowerCase()))
@@ -139,14 +139,14 @@ export function AutoPopulationReports() {
             // First sort by whether they have any extractions
             const aHasExtractions = getMostRecentExtraction(a) !== null;
             const bHasExtractions = getMostRecentExtraction(b) !== null;
-            
+
             if (aHasExtractions && !bHasExtractions) return -1;
             if (!aHasExtractions && bHasExtractions) return 1;
-            
+
             // Then sort by missing status
             if (a.isMissing && !b.isMissing) return 1;
             if (!a.isMissing && b.isMissing) return -1;
-            
+
             // Finally sort by company name
             return a.companyName.localeCompare(b.companyName);
         });
@@ -363,11 +363,10 @@ export function AutoPopulationReports() {
                             </TableHeader>
                             <TableBody>
                                 {filteredReports.map((report, index) => (
-                                    <TableRow 
-                                        key={report.id} 
-                                        className={`${index % 2 === 0 ? 'bg-white' : 'bg-blue-50'} ${
-                                            report.isMissing ? 'bg-red-100' : ''
-                                        }`}
+                                    <TableRow
+                                        key={report.id}
+                                        className={`${index % 2 === 0 ? 'bg-white' : 'bg-blue-50'} ${report.isMissing ? 'bg-red-100' : ''
+                                            }`}
                                     >
                                         <TableCell>
                                             <Checkbox
@@ -406,29 +405,43 @@ export function AutoPopulationReports() {
                 </div>
             </TabsContent>
             <TabsContent value="detailed">
-                <div className="flex space-x-8 mb-4">
-                    <ScrollArea className="h-[600px] w-85 rounded-md border">
-                        {reports.map((report, index) => (
-                            <React.Fragment key={report.id}>
+                <div className="flex gap-2">
+                    {/* Sidebar */}
+                    <div className="w-[200px] border rounded-lg shadow-sm overflow-y-auto max-h-[calc(100vh-200px)]">
+                        <div className="sticky top-0 bg-white p-1 border-b">
+                            <Input
+                                placeholder="Search..."
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                className="w-full text-xs"
+                            />
+                        </div>
+                        <div className="divide-y">
+                            {reports.map((report, index) => (
                                 <div
-                                    className={`p-2 cursor-pointer transition-colors duration-200 text-xs uppercase ${
+                                    key={report.id}
+                                    className={`p-2 cursor-pointer transition-colors duration-200 text-xs ${
                                         selectedCompany?.id === report.id
                                             ? 'bg-blue-500 text-white font-bold'
                                             : report.isMissing
-                                            ? 'bg-red-100 hover:bg-red-200'
-                                            : 'hover:bg-blue-100'
+                                                ? 'bg-red-100 hover:bg-red-200'
+                                                : 'hover:bg-blue-100'
                                     }`}
                                     onClick={() => setSelectedCompany(report)}
                                 >
-                                    {report.companyName}
+                                    <div className="font-medium">{report.companyName}</div>
+                                    {report.lastUpdated && (
+                                        <div className="text-[10px] mt-0.5 opacity-75">
+                                            {new Date(report.lastUpdated).toLocaleString()}
+                                        </div>
+                                    )}
                                 </div>
-                                {index < reports.length - 1 && (
-                                    <div className="border-b border-gray-200"></div>
-                                )}
-                            </React.Fragment>
-                        ))}
-                    </ScrollArea>
-                    <div className="flex-1">
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Main Content */}
+                    <div className="flex-1 min-w-0">
                         {selectedCompany && (
                             <Card className="shadow-lg">
                                 <CardHeader className="bg-gradient-to-r from-blue-500 to-purple-500 text-white">
@@ -453,22 +466,22 @@ export function AutoPopulationReports() {
                                                     {selectedCompany.extractions
                                                         .sort((a, b) => new Date(b.monthYear) - new Date(a.monthYear))
                                                         .map((extraction, index) => (
-                                                        <TableRow key={index} className={index % 2 === 0 ? 'bg-white' : 'bg-blue-50'}>
-                                                            <TableCell className="text-xs p-1 text-center">{index + 1}</TableCell>
-                                                            <TableCell className="text-xs p-1 whitespace-nowrap ">{extraction.monthYear}</TableCell>
-                                                            <TableCell className="text-xs p-1 whitespace-nowrap ">
-                                                                {extraction.extractionDate ? (
-                                                                    new Date(extraction.extractionDate).toLocaleString()
-                                                                ) : (
-                                                                    <span className="text-red-500">Missing</span>
-                                                                )}
-                                                            </TableCell>
-                                                            <TableCell className="text-xs p-1 text-center">{renderFileButton(findFile(extraction.files, 'vat3'), true)}</TableCell>
-                                                            <TableCell className="text-xs p-1 text-center">{renderFileButton(findFile(extraction.files, 'sec_b_with_vat'), true)}</TableCell>
-                                                            <TableCell className="text-xs p-1 text-center">{renderFileButton(findFile(extraction.files, 'sec_b_without_vat'), true)}</TableCell>
-                                                            <TableCell className="text-xs p-1 text-center">{renderFileButton(findFile(extraction.files, 'sec_f'), true)}</TableCell>
-                                                        </TableRow>
-                                                    ))}
+                                                            <TableRow key={index} className={index % 2 === 0 ? 'bg-white' : 'bg-blue-50'}>
+                                                                <TableCell className="text-xs p-1 text-center">{index + 1}</TableCell>
+                                                                <TableCell className="text-xs p-1 whitespace-nowrap ">{extraction.monthYear}</TableCell>
+                                                                <TableCell className="text-xs p-1 whitespace-nowrap ">
+                                                                    {extraction.extractionDate ? (
+                                                                        new Date(extraction.extractionDate).toLocaleString()
+                                                                    ) : (
+                                                                        <span className="text-red-500">Missing</span>
+                                                                    )}
+                                                                </TableCell>
+                                                                <TableCell className="text-xs p-1 text-center">{renderFileButton(findFile(extraction.files, 'vat3'), true)}</TableCell>
+                                                                <TableCell className="text-xs p-1 text-center">{renderFileButton(findFile(extraction.files, 'sec_b_with_vat'), true)}</TableCell>
+                                                                <TableCell className="text-xs p-1 text-center">{renderFileButton(findFile(extraction.files, 'sec_b_without_vat'), true)}</TableCell>
+                                                                <TableCell className="text-xs p-1 text-center">{renderFileButton(findFile(extraction.files, 'sec_f'), true)}</TableCell>
+                                                            </TableRow>
+                                                        ))}
                                                 </TableBody>
                                             </Table>
                                         </div>

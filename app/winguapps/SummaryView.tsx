@@ -6,20 +6,19 @@ import { Input } from '@/components/ui/input';
 import { Search, Download, RefreshCw, MoreHorizontal } from 'lucide-react';
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import BulkDownloadDialog from './BulkDownloadDialog';
-import { VisibleColumns, SortConfig, SelectedDocs, ReportRecord } from './types';
 
 interface SummaryViewProps {
     searchTerm: string;
     setSearchTerm: (term: string) => void;
-    visibleColumns: VisibleColumns;
-    setVisibleColumns: (columns: VisibleColumns) => void;
-    latestReports: ReportRecord[];
+    visibleColumns: { StatutoryDocs: boolean; PayrollDocs: boolean; PaymentLists: boolean; };
+    setVisibleColumns: (columns: any) => void;
+    latestReports: any[];
     isLoading: boolean;
     fetchReports: () => void;
-    sortConfig: SortConfig;
+    sortConfig: { key: string; direction: string; };
     renderTableHeader: (showPeriod: boolean) => JSX.Element;
-    renderTableRow: (report: ReportRecord, index: number, showPeriod: boolean) => JSX.Element;
-    exportToExcel: (reports: ReportRecord[]) => void;
+    renderTableRow: (report: any, index: number, showPeriod: boolean) => JSX.Element;
+    exportToExcel: (reports: any[]) => void;
 }
 
 const SummaryView: React.FC<SummaryViewProps> = ({
@@ -36,8 +35,8 @@ const SummaryView: React.FC<SummaryViewProps> = ({
     exportToExcel
 }) => {
     const [bulkDownloadOpen, setBulkDownloadOpen] = useState(false);
-    const currentMonthYear = new Date('2025-01-06T15:27:30+03:00').toLocaleString('default', { month: 'long', year: 'numeric' });
-    const [selectedDocs, setSelectedDocs] = useState<SelectedDocs>({
+    const currentMonthYear = new Date('2025-01-06T15:21:41+03:00').toLocaleString('default', { month: 'long', year: 'numeric' });
+    const [selectedDocs, setSelectedDocs] = useState({
         PAYE_PDF: false,
         NSSF_PDF: false,
         NHIF_PDF: false,
@@ -73,17 +72,23 @@ const SummaryView: React.FC<SummaryViewProps> = ({
                 throw new Error('Download failed');
             }
 
+            // Get the blob from the response
             const blob = await response.blob();
+
+            // Create a download link
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
             a.download = `bulk_download_${new Date().toISOString().split('T')[0]}.zip`;
             document.body.appendChild(a);
             a.click();
+
+            // Cleanup
             window.URL.revokeObjectURL(url);
             document.body.removeChild(a);
         } catch (error) {
-            console.error('Error downloading files:', error instanceof Error ? error.message : 'Unknown error');
+            console.error('Error downloading files:', error);
+            // You might want to show an error message to the user here
         }
     };
 
@@ -126,7 +131,7 @@ const SummaryView: React.FC<SummaryViewProps> = ({
                             <DropdownMenuCheckboxItem
                                 checked={visibleColumns.StatutoryDocs}
                                 onCheckedChange={(checked) =>
-                                    setVisibleColumns({ ...visibleColumns, StatutoryDocs: checked as boolean })
+                                    setVisibleColumns(prev => ({ ...prev, StatutoryDocs: checked }))
                                 }
                             >
                                 Statutory Documents
@@ -134,7 +139,7 @@ const SummaryView: React.FC<SummaryViewProps> = ({
                             <DropdownMenuCheckboxItem
                                 checked={visibleColumns.PayrollDocs}
                                 onCheckedChange={(checked) =>
-                                    setVisibleColumns({ ...visibleColumns, PayrollDocs: checked as boolean })
+                                    setVisibleColumns(prev => ({ ...prev, PayrollDocs: checked }))
                                 }
                             >
                                 Payroll Documents
@@ -142,7 +147,7 @@ const SummaryView: React.FC<SummaryViewProps> = ({
                             <DropdownMenuCheckboxItem
                                 checked={visibleColumns.PaymentLists}
                                 onCheckedChange={(checked) =>
-                                    setVisibleColumns({ ...visibleColumns, PaymentLists: checked as boolean })
+                                    setVisibleColumns(prev => ({ ...prev, PaymentLists: checked }))
                                 }
                             >
                                 Payment Lists

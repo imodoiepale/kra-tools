@@ -1,33 +1,26 @@
 export interface ReportRecord {
     ID: number;
-    CompanyID: number;
     CompanyName: string;
     Month: number;
-    Year: number;
-    // Statutory Documents - PDF
     PAYE_Link?: string;
     NSSF_Link?: string;
     NHIF_Link?: string;
     SHIF_Link?: string;
     Housing_Levy_Link?: string;
     NITA_List?: string;
-    // Statutory Documents - Excel/CSV
     PAYE_CSV_Link?: string;
     Housing_Levy_CSV_Link?: string;
     NSSF_Excel_Link?: string;
     NHIF_Excel_Link?: string;
     SHIF_Excel_Link?: string;
-    // Payroll Documents
     Payroll_Summary_Link?: string;
     Payroll_Summary_Excel_Link?: string;
     Payroll_Recon_Link?: string;
     Control_Total_Link?: string;
     Payslips_Link?: string;
-    // Payment Lists
     Bank_List_Link?: string;
     Cash_List?: string;
     MPESA_List?: string;
-    [key: string]: string | number | undefined;
 }
 
 export interface VisibleColumns {
@@ -64,31 +57,17 @@ export interface SelectedDocs {
 }
 
 export interface DownloadStatus {
-    logs: string[];
-    errors: string[];
-    progress: string;
+    [key: string]: {
+        status: 'pending' | 'downloading' | 'completed' | 'error';
+        message?: string;
+    };
 }
 
 export interface DocumentInfo {
     url: string;
     name: string;
-    isExcel: boolean;
 }
 
 export interface DocumentMap {
     [key: string]: DocumentInfo;
-}
-
-export interface DocumentGroup {
-    key: string;
-    pdfKey?: string;
-    dataKey?: string;
-}
-
-export interface DocumentGroups {
-    statutory_pdf: DocumentGroup[];
-    statutory_excel: DocumentGroup[];
-    statutory_csv: DocumentGroup[];
-    payroll: DocumentGroup[];
-    payments: DocumentGroup[];
 }
