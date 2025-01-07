@@ -100,7 +100,7 @@ async function fetchAndDownloadReports() {
 
         const filteredData = result.recordset.map(report => ({
             CompanyName: report.CompanyName,
-            Month: 11,
+            Month: 12,
             PAYE_CSV_Link: report.PAYE_CSV_Link,
             NSSF_Excel_Link: report.NSSF_Excel_Link,
             NHIF_Excel_Link: report.NHIF_Excel_Link,
@@ -117,11 +117,11 @@ async function fetchAndDownloadReports() {
         const currentDate = new Date();
         currentDate.setMonth(currentDate.getMonth() - 1);
         const formattedDate = currentDate.toISOString().split('T')[0];
-        const folderName = `Payroll ${currentDate.toLocaleString('default', { month: 'long' })} - ${formattedDate}`;
+        const folderName = `AA Payroll ${currentDate.toLocaleString('default', { month: 'long' })} - ${formattedDate}`;
         // Create full folder path
         const folderPath = path.join(downloadsPath, folderName);
         await mkdir(folderPath, { recursive: true });
-        
+         
         // Process all companies concurrently
         console.log('⚡ Starting concurrent downloads for all companies...');
         await Promise.all(
