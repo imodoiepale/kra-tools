@@ -181,105 +181,96 @@ const DetailedView: React.FC<DetailedViewProps> = ({
     );
 
     return (
-        <div className="grid grid-cols-[300px_1fr] gap-6">
+        <div className="grid grid-cols-[250px_1fr] gap-4"> {/* Made more compact */}
             {/* Left Panel - Company List */}
-            <div className="space-y-4">
-                <div className="relative">
-                    <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
-                    <Input
-                        placeholder="Search companies..."
-                        value={companySearchTerm}
-                        onChange={(e) => setCompanySearchTerm(e.target.value)}
-                        className="pl-8 border-gray-200 focus:ring-blue-500 focus:border-blue-500"
-                    />
-                </div>
-                <ScrollArea className="h-[calc(100vh-300px)] rounded-md border border-gray-200">
+            <Card className="h-[calc(100vh-180px)]"> {/* Added Card wrapper */}
+                <CardHeader className="p-3">
+                    <div className="relative">
+                        <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
+                        <Input
+                            placeholder="Search companies..."
+                            value={companySearchTerm}
+                            onChange={(e) => setCompanySearchTerm(e.target.value)}
+                            className="pl-8"
+                        />
+                    </div>
+                </CardHeader>
+                <ScrollArea className="h-[calc(100vh-240px)]">
                     <div className="space-y-0.5 p-2">
                         {uniqueCompanies
                             .filter(report =>
                                 report.CompanyName.toLowerCase().includes(companySearchTerm.toLowerCase())
                             )
                             .map((report) => (
-                                <div
+                                <button
                                     key={report.CompanyID}
                                     onClick={() => setSelectedCompany(report)}
-                                    className={`flex items-center justify-between px-3 py-2 cursor-pointer rounded-md transition-colors duration-150 ease-in-out ${
-                                        selectedCompany?.CompanyID === report.CompanyID
+                                    className={`w-full text-left px-3 py-2 rounded-md transition-all ${selectedCompany?.CompanyID === report.CompanyID
                                             ? 'bg-blue-100 text-blue-900'
                                             : 'hover:bg-gray-50'
-                                    }`}
+                                        }`}
                                 >
-                                    <span className="text-[11px] font-medium">{report.CompanyName}</span>
-                                </div>
+                                    <span className="text-sm font-medium">{report.CompanyName}</span>
+                                </button>
                             ))}
                     </div>
                 </ScrollArea>
-            </div>
+            </Card>
 
-            {/* Right Panel - Detailed Table View */}
-            <div className="bg-white rounded-lg shadow-sm">
+            {/* Right Panel - Table View */}
+            <Card className="h-[calc(100vh-180px)]">
                 {selectedCompany ? (
-                    <Card className="border-none shadow-none">
-                        <CardHeader className="bg-gradient-to-r from-blue-600 to-blue-700 rounded-t-lg">
+                    <>
+                        <CardHeader className="p-3 border-b">
                             <div className="flex items-center justify-between">
-                                <CardTitle className="text-lg text-white font-semibold">
+                                <CardTitle className="text-lg font-semibold">
                                     {selectedCompany.CompanyName}
                                 </CardTitle>
-                                <div className="flex space-x-2">
+                                <div className="flex gap-2">
                                     <Button
-                                        variant="ghost"
-                                        className="text-white hover:text-blue-100 hover:bg-blue-600"
-                                        onClick={() => exportToExcel(reports.filter(r => r.CompanyID === selectedCompany.CompanyID))}
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => exportToExcel([...reports].filter(r => r.CompanyID === selectedCompany.CompanyID))}
                                     >
-                                        <Download className="mr-2 h-4 w-4" />
+                                        <Download className="h-4 w-4 mr-1" />
                                         Export
                                     </Button>
                                     <Button
-                                        variant="ghost"
-                                        className="text-white hover:text-blue-100 hover:bg-blue-600"
+                                        variant="outline"
+                                        size="sm"
                                         onClick={() => setBulkDownloadOpen(true)}
                                     >
-                                        <Download className="mr-2 h-4 w-4" />
-                                        Bulk Download
+                                        <Download className="h-4 w-4 mr-1" />
+                                        Bulk
                                     </Button>
                                 </div>
                             </div>
                         </CardHeader>
-                        <CardContent className="p-0">
-                            <ScrollArea className="h-[calc(100vh-300px)]">
-                                <Table>
-                                    <TableHeader>
-                                        {renderTableHeader()}
-                                    </TableHeader>
-                                    <TableBody>
-                                        {reports
-                                            .filter(r => r.CompanyID === selectedCompany.CompanyID)
-                                            .sort((a, b) => {
-                                                const dateA = new Date(a.Year, a.Month - 1);
-                                                const dateB = new Date(b.Year, b.Month - 1);
-                                                return dateB.getTime() - dateA.getTime();
-                                            })
-                                            .map((report, index) => renderTableRow(report, index))}
-                                    </TableBody>
-                                </Table>
-                            </ScrollArea>
-                        </CardContent>
-                    </Card>
+                        <ScrollArea className="h-[calc(100vh-270px)]">
+                            <Table>
+                                <TableHeader>
+                                    {renderTableHeader()}
+                                </TableHeader>
+                                <TableBody>
+                                    {reports
+                                        .filter(r => r.CompanyID === selectedCompany.CompanyID)
+                                        .sort((a, b) => {
+                                            const dateA = new Date(a.Year, a.Month - 1);
+                                            const dateB = new Date(b.Year, b.Month - 1);
+                                            return dateB.getTime() - dateA.getTime();
+                                        })
+                                        .map((report, index) => renderTableRow(report, index))}
+                                </TableBody>
+                            </Table>
+                        </ScrollArea>
+                    </>
                 ) : (
-                    <div className="flex h-full items-center justify-center text-gray-400 text-[11px] font-medium">
+                    <div className="flex h-full items-center justify-center text-gray-400">
                         Select a company to view details
                     </div>
                 )}
-            </div>
-            <DocumentViewer
-                isOpen={viewerConfig.isOpen}
-                onClose={closeDocument}
-                url={viewerConfig.url}
-                title={viewerConfig.title}
-                fileType={viewerConfig.fileType}
-            />
+            </Card>
         </div>
     );
 };
-
 export default DetailedView;

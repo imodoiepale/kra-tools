@@ -22,81 +22,394 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-let stopRequested = false;
+// Global state management
+let automationState = {
+    isRunning: false,
+    stopRequested: false,
+    currentBrowser: null,
+    currentContext: null,
+    currentPage: null,
+    processedCompanies: 0,
+    totalCompanies: 0,
+    logs: [],
+    tab: null
+};
 
-// Function to log in to KRA iTax portal
-async function loginToKRA(page, company) {
-    await page.goto("https://itax.kra.go.ke/KRA-Portal/");
-    await page.locator("#logid").click();
-    await page.locator("#logid").fill(company.kra_pin);
-    await page.evaluate(() => {
-        CheckPIN();
+// Clean up browser resources
+async function cleanupBrowserResources() {
+    try {
+        if (automationState.currentPage) {
+            await automationState.currentPage.close().catch(() => {});
+        }
+        if (automationState.currentContext) {
+            await automationState.currentContext.close().catch(() => {});
+        }
+        if (automationState.currentBrowser) {
+            await automationState.currentBrowser.close().catch(() => {});
+        }
+    } catch (error) {
+        console.error('Error cleaning up browser resources:', error);
+    } finally {
+        automationState.currentPage = null;
+        automationState.currentContext = null;
+        automationState.currentBrowser = null;
+    }
+}
+
+// Initialize browser
+async function initializeBrowser() {
+    try {
+        // Try Microsoft Edge first
+        automationState.currentBrowser = await chromium.launch({ 
+            headless: false, 
+            channel: "msedge",
+            args: ['--start-maximized']
+        });
+    } catch (error) {
+        console.log("Microsoft Edge not available, using default chromium");
+        // Fall back to default chromium
+        automationState.currentBrowser = await chromium.launch({ 
+            headless: false,
+            args: ['--start-maximized']
+        });
+    }
+
+    automationState.currentContext = await automationState.currentBrowser.newContext({
+        viewport: null
     });
-    await page.locator('input[name="xxZTT9p2wQ"]').fill(company.kra_password);
-    await page.waitForTimeout(500);
+    automationState.currentPage = await automationState.currentContext.newPage();
+    return automationState.currentPage;
+}
 
-    const image = await page.waitForSelector("#captcha_img");
-    const imagePath = path.join(downloadFolderPath, "ocr.png");
-    await image.screenshot({ path: imagePath });
+// Enhanced login function with better error handling
+async function loginToKRA(page, company) {
+    const maxLoginAttempts = 3;
+    let loginAttempt = 0;
 
-    const worker = await createWorker('eng', 1);
-    console.log("Extracting Text...");
-    let result;
-
-    const extractResult = async () => {
-        const ret = await worker.recognize(imagePath);
-        const text1 = ret.data.text.slice(0, -1); // Omit the last character
-        const text = text1.slice(0, -1);
-        const numbers = text.match(/\d+/g);
-        console.log('Extracted Numbers:', numbers);
-
-        if (!numbers || numbers.length < 2) {
-            throw new Error("Unable to extract valid numbers from the text.");
-        }
-
-        if (text.includes("+")) {
-            result = Number(numbers[0]) + Number(numbers[1]);
-        } else if (text.includes("-")) {
-            result = Number(numbers[0]) - Number(numbers[1]);
-        } else {
-            throw new Error("Unsupported operator.");
-        }
-    };
-
-    let attempts = 0;
-    const maxAttempts = 5;
-    // Retry extracting result if unsupported operator error occurs
-    while (attempts < maxAttempts) {
+    while (loginAttempt < maxLoginAttempts) {
         try {
-            await extractResult();
-            break; // Exit the loop if successful
+            await page.goto("https://itax.kra.go.ke/KRA-Portal/", { timeout: 60000 });
+            await page.waitForSelector("#logid", { timeout: 10000 });
+            await page.locator("#logid").click();
+            await page.locator("#logid").fill(company.kra_pin);
+            await page.evaluate(() => {
+                CheckPIN();
+            });
+            await page.locator('input[name="xxZTT9p2wQ"]').fill(company.kra_password);
+            await page.waitForTimeout(500);
+
+            const image = await page.waitForSelector("#captcha_img", { timeout: 10000 });
+            const imagePath = path.join(downloadFolderPath, "ocr.png");
+            await image.screenshot({ path: imagePath });
+
+            const worker = await createWorker('eng', 1);
+            let result;
+
+            const extractResult = async () => {
+                const ret = await worker.recognize(imagePath);
+                const text1 = ret.data.text.trim();
+                const numbers = text1.match(/\d+/g);
+
+                if (!numbers || numbers.length < 2) {
+                    throw new Error("Invalid captcha format");
+                }
+
+                if (text1.includes("+")) {
+                    result = Number(numbers[0]) + Number(numbers[1]);
+                } else if (text1.includes("-")) {
+                    result = Number(numbers[0]) - Number(numbers[1]);
+                } else {
+                    throw new Error("Unsupported operator");
+                }
+            };
+
+            let captchaAttempts = 0;
+            const maxCaptchaAttempts = 3;
+
+            while (captchaAttempts < maxCaptchaAttempts) {
+                try {
+                    await extractResult();
+                    break;
+                } catch (error) {
+                    captchaAttempts++;
+                    if (captchaAttempts === maxCaptchaAttempts) {
+                        throw new Error("Failed to process captcha");
+                    }
+                    await page.waitForTimeout(1000);
+                    await image.screenshot({ path: imagePath });
+                }
+            }
+
+            await worker.terminate();
+            await page.type("#captcahText", result.toString());
+            await page.click("#loginButton");
+
+            // Wait for either success or error indicators
+            const loginResult = await Promise.race([
+                page.waitForSelector('#ddtopmenubar', { timeout: 5000 }).then(() => 'success'),
+                page.waitForSelector('b:has-text("Wrong result")', { timeout: 5000 }).then(() => 'wrong_captcha'),
+                page.waitForSelector('b:has-text("Invalid Login")', { timeout: 5000 }).then(() => 'invalid_login'),
+                page.waitForSelector('.formheading:has-text("PASSWORD HAS EXPIRED")', { timeout: 5000 }).then(() => 'expired'),
+                page.waitForSelector('b:has-text("account has been locked")', { timeout: 5000 }).then(() => 'locked')
+            ]).catch(() => 'timeout');
+
+            if (loginResult === 'success') {
+                return 'Valid';
+            } else if (loginResult === 'expired') {
+                return 'Password Expired';
+            } else if (loginResult === 'locked') {
+                return 'Locked';
+            } else if (loginResult === 'invalid_login') {
+                return 'Invalid';
+            } else if (loginResult === 'wrong_captcha') {
+                loginAttempt++;
+                continue;
+            }
+
+            throw new Error('Login attempt failed');
         } catch (error) {
-            console.log("Re-extracting text from image...");
-            attempts++;
-            if (attempts < maxAttempts) {
-                await page.waitForTimeout(1000); // Wait before re-attempting
-                await image.screenshot({ path: imagePath }); // Re-capture the image
-                continue; // Retry extracting the result
-            } else {
-                console.log("Max attempts reached. Logging in again...");
-                return loginToKRA(page, company);
+            loginAttempt++;
+            if (loginAttempt === maxLoginAttempts) {
+                console.error(`Failed to login after ${maxLoginAttempts} attempts:`, error);
+                return 'Error';
+            }
+            await page.waitForTimeout(2000);
+        }
+    }
+
+    return 'Error';
+}
+
+// Function to get the last automation state
+async function getLastAutomationState(tab) {
+    try {
+        const { data, error } = await supabase
+            .from('PasswordChecker')
+            .select('*')
+            .eq('tab', tab)
+            .order('last_checked', { ascending: true });
+
+        if (error) {
+            throw error;
+        }
+
+        // Find the last processed company
+        const lastProcessed = data.findIndex(company => !company.status || company.status === 'Pending');
+        return {
+            processedCompanies: lastProcessed === -1 ? data.length : lastProcessed,
+            companies: data
+        };
+    } catch (error) {
+        console.error('Error getting last automation state:', error);
+        return { processedCompanies: 0, companies: [] };
+    }
+}
+
+// Main process function with improved error handling and state management
+async function processCompanies(runOption, selectedIds, tab, isResume = false) {
+    if (automationState.isRunning) {
+        throw new Error("Automation is already running");
+    }
+
+    try {
+        automationState.isRunning = true;
+        automationState.stopRequested = false;
+        automationState.tab = tab;
+        automationState.logs = [];
+
+        let data = await readSupabaseData();
+        if (runOption === 'selected' && selectedIds?.length > 0) {
+            data = data.filter(company => selectedIds.includes(company.id));
+        }
+
+        // If resuming, get the last state
+        let startIndex = 0;
+        if (isResume) {
+            const lastState = await getLastAutomationState(tab);
+            startIndex = lastState.processedCompanies;
+            console.log('Resuming from company index:', startIndex);
+        }
+
+        automationState.totalCompanies = data.length;
+        automationState.processedCompanies = startIndex;
+
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet("Password Validation");
+        setupWorksheet(worksheet);
+
+        // Process only remaining companies
+        for (let i = startIndex; i < data.length; i++) {
+            if (automationState.stopRequested) {
+                console.log("Automation stopped by user request");
+                break;
+            }
+
+            const company = data[i];
+            let status;
+
+            try {
+                if (!company.kra_password || !company.kra_pin) {
+                    status = !company.kra_password && !company.kra_pin 
+                        ? "Pin and Password Missing"
+                        : !company.kra_password 
+                            ? "Password Missing" 
+                            : "Pin Missing";
+                } else {
+                    await initializeBrowser();
+                    status = await loginToKRA(automationState.currentPage, company);
+                }
+
+                addWorksheetRow(worksheet, company, status);
+                
+                automationState.processedCompanies = i + 1;
+                automationState.logs.push({
+                    company_name: company.company_name,
+                    kra_pin: company.kra_pin,
+                    status,
+                    timestamp: new Date().toISOString()
+                });
+
+                await Promise.all([
+                    updateSupabaseStatus(company.id, status),
+                    workbook.xlsx.writeFile(path.join(downloadFolderPath, `PASSWORD VALIDATION - KRA - COMPANIES.xlsx`)),
+                    updateAutomationProgress(
+                        Math.round((automationState.processedCompanies / automationState.totalCompanies) * 100),
+                        "Running",
+                        automationState.logs,
+                        tab
+                    )
+                ]);
+
+            } catch (error) {
+                console.error(`Error processing company ${company.company_name}:`, error);
+                status = 'Error';
+            } finally {
+                await cleanupBrowserResources();
             }
         }
+
+        const finalStatus = automationState.stopRequested ? "Stopped" : "Completed";
+        await updateAutomationProgress(
+            automationState.stopRequested ? 
+                Math.round((automationState.processedCompanies / automationState.totalCompanies) * 100) : 
+                100,
+            finalStatus,
+            automationState.logs,
+            tab
+        );
+
+    } catch (error) {
+        console.error("Error in process companies:", error);
+        await updateAutomationProgress(0, "Error", automationState.logs, tab);
+        throw error;
+    } finally {
+        await cleanupBrowserResources();
+        automationState.isRunning = false;
+        automationState.stopRequested = false;
+    }
+}
+
+// API route handler
+export default async function handler(req, res) {
+    if (req.method !== "POST") {
+        return res.status(405).json({ message: "Method not allowed" });
     }
 
-    console.log('Result:', result.toString());
-    await worker.terminate();
-    await page.type("#captcahText", result.toString());
-    await page.click("#loginButton");
+    const { action, runOption, selectedIds, tab = 'kra' } = req.body;
+    console.log('Received request:', { action, runOption, selectedIds, tab });
 
-    // Check if login was successful
-    const isInvalidLogin = await page.waitForSelector('b:has-text("Wrong result of the arithmetic operation.")', { state: 'visible', timeout: 3000 })
-        .catch(() => false);
+    try {
+        switch (action) {
+            case "getProgress":
+                const progress = await getAutomationProgress(tab);
+                return res.status(200).json(progress);
 
-    if (isInvalidLogin) {
-        console.log("Wrong result of the arithmetic operation, retrying...");
-        await loginToKRA(page, company);
+            case "stop":
+                automationState.stopRequested = true;
+                await cleanupBrowserResources();
+                await updateAutomationProgress(
+                    Math.round((automationState.processedCompanies / automationState.totalCompanies) * 100),
+                    "Stopped",
+                    automationState.logs,
+                    tab
+                );
+                return res.status(200).json({ message: "Automation stopped" });
+
+            case "start":
+                if (automationState.isRunning) {
+                    return res.status(400).json({ message: "Automation is already running" });
+                }
+                processCompanies(runOption, selectedIds, tab, false).catch(console.error);
+                return res.status(200).json({ message: "Automation started" });
+
+            case "resume":
+                if (automationState.isRunning) {
+                    return res.status(400).json({ message: "Automation is already running" });
+                }
+                processCompanies(runOption, selectedIds, tab, true).catch(console.error);
+                return res.status(200).json({ message: "Automation resumed" });
+
+            default:
+                console.error('Invalid action received:', action);
+                return res.status(400).json({ message: `Invalid action: ${action}` });
+        }
+    } catch (error) {
+        console.error("API Error:", error);
+        return res.status(500).json({ 
+            message: "Internal server error", 
+            error: error.message 
+        });
     }
+}
+
+// Helper function to set up worksheet
+function setupWorksheet(worksheet) {
+    const headers = ["Company Name", "KRA PIN", "ITAX Password", "Status"];
+    const headerRow = worksheet.getRow(3);
+    headers.forEach((header, index) => {
+        const cell = headerRow.getCell(index + 3);
+        cell.value = header;
+        cell.font = { bold: true };
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+    });
+    worksheet.columns = [
+        { width: 30 }, // Company Name
+        { width: 15 }, // KRA PIN
+        { width: 15 }, // Password
+        { width: 15 }  // Status
+    ];
+    headerRow.commit();
+}
+
+// Helper function to add worksheet row
+function addWorksheetRow(worksheet, company, status) {
+    const row = worksheet.addRow([
+        company.company_name,
+        company.kra_pin,
+        company.kra_password,
+        status
+    ]);
+
+    const statusColors = {
+        'Valid': 'FFB6FBC0',
+        'Invalid': 'FFF56B00',
+        'Password Expired': 'FFFF0000',
+        'Locked': 'FFFFE066',
+        'Error': 'FFFF0000',
+        'Pin Missing': 'FFFFE066',
+        'Password Missing': 'FFFFE066',
+        'Pin and Password Missing': 'FFFFE066'
+    };
+
+    if (statusColors[status]) {
+        row.getCell(4).fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: statusColors[status] }
+        };
+    }
+
+    row.commit();
 }
 
 // Function to read company data from Supabase
@@ -131,7 +444,7 @@ const updateSupabaseStatus = async (id, status) => {
 };
 
 // Function to update or create automation progress
-const updateAutomationProgress = async (progress, status, logs) => {
+const updateAutomationProgress = async (progress, status, logs, tab) => {
     try {
         const { data, error } = await supabase
             .from("PasswordChecker_AutomationProgress")
@@ -152,7 +465,7 @@ const updateAutomationProgress = async (progress, status, logs) => {
 };
 
 // Function to get automation progress
-const getAutomationProgress = async () => {
+const getAutomationProgress = async (tab) => {
     try {
         const { data, error } = await supabase
             .from("PasswordChecker_AutomationProgress")
@@ -211,230 +524,5 @@ async function stopOtherAutomations() {
         await new Promise(resolve => setTimeout(resolve, 2000));
     } catch (error) {
         console.error("Error stopping other automations:", error);
-    }
-}
-
-// Main function to process all companies and validate passwords
-export default async function handler(req, res) {
-    if (req.method !== "POST") {
-        return res.status(405).json({ message: "Method not allowed" });
-    }
-
-    const { action, runOption, selectedIds } = req.body;
-
-    if (action === "getProgress") {
-        const progress = await getAutomationProgress();
-        return res.status(200).json(progress);
-    }
-
-    if (action === "stop") {
-        stopRequested = true;
-        await updateAutomationProgress(0, "Stopped", []);
-        return res.status(200).json({ message: "Automation stop requested." });
-    }
-
-    if (action === "start") {
-        try {
-            // Check if automation is already running
-            const currentProgress = await getAutomationProgress();
-            if (currentProgress && currentProgress.status === "Running") {
-                return res.status(400).json({ message: "Automation is already in progress." });
-            }
-
-            // Stop any other running automations first
-            await stopOtherAutomations();
-
-            // Reset stop request flag
-            stopRequested = false;
-
-            // Start new automation
-            await updateAutomationProgress(0, "Running", []);
-
-            // Start the automation process in the background
-            processCompanies(runOption, selectedIds).catch(console.error);
-
-            return res.status(200).json({ message: "Automation started." });
-        } catch (error) {
-            console.error("Error starting automation:", error);
-            await updateAutomationProgress(0, "Error", []);
-            return res.status(500).json({ message: "Failed to start automation", error: error.message });
-        }
-    }
-
-    return res.status(400).json({ message: "Invalid action." });
-}
-
-async function processCompanies(runOption, selectedIds) {
-    try {
-        let data = await readSupabaseData();
-
-        if (runOption === 'selected' && selectedIds && selectedIds.length > 0) {
-            data = data.filter(company => selectedIds.includes(company.id));
-        }
-
-        const workbook = new ExcelJS.Workbook();
-        const worksheet = workbook.addWorksheet("Password Validation");
-
-        // Headers starting from the 3rd row and 3rd column
-        const headers = ["Company Name", "KRA PIN", "ITAX Password", "Status"];
-        const headerRow = worksheet.getRow(3);
-        headers.forEach((header, index) => {
-            headerRow.getCell(index + 3).value = header; // Start from 3rd column
-            headerRow.getCell(index + 3).font = { bold: true }; // Set headers bold
-        });
-        headerRow.commit();
-
-        let logs = [];
-
-        for (let i = 0; i < data.length; i++) {
-            if (stopRequested) {
-                console.log("Automation stopped by user request.");
-                await updateAutomationProgress(0, "Stopped", logs);
-                return;
-            }
-
-            const browser = await chromium.launch({ headless: false, executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe' });
-            const context = await browser.newContext();
-            const page    = await context.newPage();
-            const company = data[i];
-
-            let status;
-
-            if (company.kra_password === null || company.kra_pin === null) {
-                if (company.kra_password === null && company.kra_pin === null) {
-                    status = "Pin and Password Missing";
-                } else if (company.kra_password === null) {
-                    status = "Password Missing";
-                } else {
-                    status = "Pin Missing";
-                }
-                console.log(`Skipping ${company.company_name}: ${status}`);
-                const row = worksheet.addRow([
-                    company.company_name, // Column 1
-                    company.kra_pin,      // Column 2
-                    company.kra_password, // Column 3
-                    status                // Column 4
-                ]);
-                row.getCell(6).fill = {
-                    type: "pattern",
-                    pattern: "solid",
-                    fgColor: { argb: "FFFFE066" }, // Light Yellow for missing data
-                };
-            } else {
-                console.log("COMPANY:", company.company_name);
-                console.log("KRA PIN:", company.kra_pin);
-                console.log("ITAX Password:", company.kra_password);
-
-                await retry(async (bail) => {
-                    try {
-                        await loginToKRA(page, company);
-
-                        let isPasswordExpired, isAccountLocked, isInvalidLogin, menuItemNotFound;
-
-                        await retry(
-                            async (bail) => {
-                                try {
-                                    menuItemNotFound = await page
-                                        .waitForSelector("#ddtopmenubar > ul > li:nth-child(1) > a", { timeout: 2000 })
-                                        .catch(() => false);
-
-                                    if (!menuItemNotFound) {
-                                        isPasswordExpired = await page
-                                            .waitForSelector('.formheading:has-text("YOUR PASSWORD HAS EXPIRED!")', {
-                                                state: "visible",
-                                                timeout: 1000,
-                                            })
-                                            .catch(() => false);
-
-                                        isAccountLocked = await page
-                                            .waitForSelector('b:has-text("The account has been locked.")', {
-                                                state: "visible",
-                                                timeout: 1000,
-                                            })
-                                            .catch(() => false);
-
-                                        isInvalidLogin =
-                                            !isPasswordExpired &&
-                                            !isAccountLocked &&
-                                            (await page
-                                                .waitForSelector('b:has-text("Invalid Login Id or Password.")', {
-                                                    state: "visible",
-                                                    timeout: 1000,
-                                                })
-                                                .catch(() => false));
-                                    }
-                                } catch (error) {
-                                    bail(error);
-                                }
-                            },
-                            { retries: 3, minTimeout: 1000, maxTimeout: 3000 }
-                        );
-
-                        status = isPasswordExpired
-                            ? "Password Expired"
-                            : isAccountLocked
-                                ? "Locked"
-                                : isInvalidLogin
-                                    ? "Invalid"
-                                    : "Valid";
-
-                        const row = worksheet.addRow([null, company.company_name, company.kra_pin, company.kra_password, status]);
-
-                        // Apply cell colors based on status
-                        if (status === "Valid") {
-                            row.getCell(6).fill = {
-                                type: "pattern",
-                                pattern: "solid",
-                                fgColor: { argb: "FFB6FBC0" }, // Light Green for valid
-                            };
-                        } else if (status === "Invalid") {
-                            row.getCell(6).fill = {
-                                type: "pattern",
-                                pattern: "solid",
-                                fgColor: { argb: "FFF56B00" }, // Orange for invalid
-                            };
-                        } else if (status === "Password Expired") {
-                            row.getCell(6).fill = {
-                                type: "pattern",
-                                pattern: "solid",
-                                fgColor: { argb: "FFFF0000" }, // Red for expired
-                            };
-                        } else if (status === "Locked") {
-                            row.getCell(6).fill = {
-                                type: "pattern",
-                                pattern: "solid",
-                                fgColor: { argb: "FFFFE066" }, // Light Yellow for locked
-                            };
-                        }
-
-                        await context.close();
-                        await browser.close();
-                    } catch (error) {
-                        console.error("Error during validation:", error);
-                        await context.close();
-                        await browser.close();
-                        bail(error);
-                    }
-                });
-            }
-
-            await updateSupabaseStatus(company.id, status);
-            await workbook.xlsx.writeFile(path.join(downloadFolderPath, `PASSWORD VALIDATION - KRA - COMPANIES.xlsx`));
-            
-            logs.push({
-                company_name: company.company_name,
-                kra_pin: company.kra_pin,
-                kra_password: company.kra_password,
-                status: status,
-                timestamp: new Date().toISOString()
-            });
-
-            await updateAutomationProgress(Math.round(((i + 1) / data.length) * 100), "Running", logs);
-        }
-
-        await updateAutomationProgress(100, "Completed", logs);
-    } catch (error) {
-        console.error("Error in process companies:", error);
-        await updateAutomationProgress(0, "Error", []);
     }
 }

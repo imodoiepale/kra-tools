@@ -90,3 +90,26 @@ body {
     @apply bg-background text-foreground;
   }
 }
+
+
+.table-cell {
+    @apply border-r border-gray-200 last:border-r-0;
+}
+
+.table-row {
+    @apply border-b border-gray-200 last:border-b-0;
+}
+
+@layer components {
+    .table-cell {
+        @apply border-r border-b border-gray-200 last:border-r-0;
+    }
+
+    .table-header-cell {
+        @apply border-r border-b border-gray-200 last:border-r-0 bg-gray-50;
+    }
+
+    .table-row {
+        @apply border-b border-gray-200 last:border-b-0;
+    }
+}

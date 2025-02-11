@@ -1,5 +1,4 @@
-// @ts-nocheck
-
+// WinguAppsExtractionReports.tsx
 "use client"
 
 import React, { useState, useEffect } from 'react';
@@ -10,136 +9,184 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { ArrowUpDown, Download, MoreHorizontal, RefreshCw, Search, FolderOpen, ChevronDown, ChevronUp } from "lucide-react";
+import { ArrowUpDown, Download, MoreHorizontal, RefreshCw, Search, ChevronLeft, ChevronRight } from "lucide-react";
 import * as ExcelJS from 'exceljs';
-import FileViewer from '@/components/FileViewer';
-import { Switch } from '@/components/ui/switch';
-import ExcelViewer from './viewer';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Checkbox } from "@/components/ui/checkbox"
-import { Label } from "@/components/ui/label"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import JSZip from 'jszip';
-import SummaryView from './SummaryView';
-import DetailedView from './DetailedView';
+import { cn } from "@/lib/utils";
 
+// Types and Interfaces
 interface ReportRecord {
     ID: number;
     Month: number;
     Year: number;
     CompanyID: number;
     CompanyName: string;
-    // Statutory Documents - PDF
     PAYE_Link: string;
     NSSF_Link: string;
     NHIF_Link: string;
     SHIF_Link: string;
     Housing_Levy_Link: string;
     NITA_List: string;
-    // Statutory Documents - Excel
     NSSF_Excel_Link: string;
     NHIF_Excel_Link: string;
     SHIF_Excel_Link: string;
-    // Statutory Documents - CSV
     PAYE_CSV_Link: string;
     Housing_Levy_CSV_Link: string;
-    // Payroll Documents
     Payroll_Summary_Link: string;
     Payroll_Summary_Excel_Link: string;
     Payroll_Recon_Link: string;
     Control_Total_Link: string;
     Payslips_Link: string;
-    // Payment Lists
     Bank_List_Link: string;
     Cash_List: string;
     MPESA_List: string;
 }
 
+// Document Viewer Component
+interface DocumentViewerProps {
+    isOpen: boolean;
+    onClose: () => void;
+    url: string;
+    title: string;
+    fileType: string;
+}
 
-const getFileTypeFromUrl = (url: string): string => {
-    if (!url) return 'pdf';
-    const extension = url.split('.').pop()?.toLowerCase();
-    const fileTypes = {
-        xlsx: 'excel',
-        xls: 'excel',
-        csv: 'csv',
-        pdf: 'pdf',
-        zip: 'zip'
-    };
-    return fileTypes[extension] || 'pdf';
+const DocumentViewer: React.FC<DocumentViewerProps> = ({
+    isOpen,
+    onClose,
+    url,
+    title,
+    fileType
+}) => {
+    if (!isOpen) return null;
+
+    return (
+        <Dialog open={isOpen} onOpenChange={onClose}>
+            <DialogContent className="max-w-4xl h-[80vh]">
+                <DialogHeader>
+                    <DialogTitle>{title}</DialogTitle>
+                </DialogHeader>
+                <div className="flex-1 h-full">
+                    {fileType === 'pdf' ? (
+                        <iframe src={url} className="w-full h-full" />
+                    ) : (
+                        <div className="flex items-center justify-center h-full">
+                            <a
+                                href={url}
+                                download
+                                className="text-blue-600 hover:text-blue-800 underline"
+                            >
+                                Download {fileType.toUpperCase()} File
+                            </a>
+                        </div>
+                    )}
+                </div>
+            </DialogContent>
+        </Dialog>
+    );
 };
 
+// Document Groups Configuration
+const documentGroups = {
+    statutory_pdf: [
+        { key: 'PAYE_PDF', pdfKey: 'PAYE_Link' },
+        { key: 'NSSF_PDF', pdfKey: 'NSSF_Link' },
+        { key: 'NHIF_PDF', pdfKey: 'NHIF_Link' },
+        { key: 'SHIF_PDF', pdfKey: 'SHIF_Link' },
+        { key: 'Housing_Levy_PDF', pdfKey: 'Housing_Levy_Link' },
+        { key: 'NITA_PDF', pdfKey: 'NITA_List' }
+    ],
+    statutory_excel: [
+        { key: 'NSSF_Excel', dataKey: 'NSSF_Excel_Link' },
+        { key: 'NHIF_Excel', dataKey: 'NHIF_Excel_Link' },
+        { key: 'SHIF_Excel', dataKey: 'SHIF_Excel_Link' }
+    ],
+    statutory_csv: [
+        { key: 'PAYE_CSV', dataKey: 'PAYE_CSV_Link' },
+        { key: 'Housing_Levy_CSV', dataKey: 'Housing_Levy_CSV_Link' }
+    ],
+    payroll: [
+        { key: 'Payroll_Summary', pdfKey: 'Payroll_Summary_Link', dataKey: 'Payroll_Summary_Excel_Link' },
+        { key: 'Payroll_Recon', pdfKey: 'Payroll_Recon_Link' },
+        { key: 'Control_Total', pdfKey: 'Control_Total_Link' },
+        { key: 'Payslips', pdfKey: 'Payslips_Link' }
+    ],
+    payments: [
+        { key: 'Bank_List', pdfKey: 'Bank_List_Link' },
+        { key: 'Cash_List', pdfKey: 'Cash_List' },
+        { key: 'MPESA_List', pdfKey: 'MPESA_List' }
+    ]
+};
+
+// Styles
+const tableStyles = {
+    cell: "py-1.5 px-2 text-xs",
+    header: "py-1.5 px-2 text-xs font-medium bg-gray-50",
+    button: "px-2 py-1 text-xs rounded",
+};
+
+const monthNames = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+];
+
+// Main Component
 export default function WinguAppsExtractionReports() {
     // State Management
     const [reports, setReports] = useState<ReportRecord[]>([]);
     const [searchTerm, setSearchTerm] = useState('');
-    const [sortColumn, setSortColumn] = useState('');
-    const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
-    const [selectedCompany, setSelectedCompany] = useState<ReportRecord | null>(null);
     const [isLoading, setIsLoading] = useState(true);
-    const [companySearchTerm, setCompanySearchTerm] = useState('');
     const [bulkDownloadOpen, setBulkDownloadOpen] = useState(false);
+    const [selectedCompany, setSelectedCompany] = useState<ReportRecord | null>(null);
+    const [viewerConfig, setViewerConfig] = useState({
+        isOpen: false,
+        url: '',
+        title: '',
+        fileType: ''
+    });
+    const [selectedDate, setSelectedDate] = useState(() => {
+        const now = new Date();
+        return {
+            month: now.getMonth() + 1,
+            year: now.getFullYear()
+        };
+    });
+    const [visibleColumns, setVisibleColumns] = useState({
+        StatutoryDocs: true,
+        PayrollDocs: true,
+        PaymentLists: true,
+    });
     const [selectedDocs, setSelectedDocs] = useState({
-        // Statutory Documents - PDF
         PAYE_PDF: false,
         NSSF_PDF: false,
         NHIF_PDF: false,
         SHIF_PDF: false,
         Housing_Levy_PDF: false,
         NITA_PDF: false,
-        // Statutory Documents - Excel/CSV
         PAYE_CSV: false,
         Housing_Levy_CSV: false,
         NSSF_Excel: false,
         NHIF_Excel: false,
         SHIF_Excel: false,
-        // Payroll Documents
         Payroll_Summary_PDF: false,
         Payroll_Summary_Excel: false,
         Payroll_Recon: false,
         Control_Total: false,
         Payslips: false,
-        // Payment Lists
         Bank_List: false,
         Cash_List: false,
         MPESA_List: false
     });
 
-    // Column Visibility State
-    const [visibleColumns, setVisibleColumns] = useState({
-        Index: true,
-        CompanyName: true,
-        StatutoryDocs: true,
-        PayrollDocs: true,
-        PaymentLists: true,
-    });
+    // Effects
+    useEffect(() => {
+        fetchReports();
+    }, []);
 
-    const [columnVisibility, setColumnVisibility] = useState({
-        statutory: true,
-        payroll: true,
-        payment: true
-    });
-
-    const [sortConfig, setSortConfig] = useState({
-        key: '',
-        direction: 'asc'
-    });
-
-    const handleSort = (column: string) => {
-        setSortConfig(current => {
-            if (current.key === column) {
-                return {
-                    key: column,
-                    direction: current.direction === 'asc' ? 'desc' : 'asc'
-                };
-            }
-            return {
-                key: column,
-                direction: 'asc'
-            };
-        });
-    };
-
-    // Data Fetching
+    // Functions
     const fetchReports = async () => {
         setIsLoading(true);
         try {
@@ -155,540 +202,113 @@ export default function WinguAppsExtractionReports() {
         }
     };
 
-    useEffect(() => {
-        fetchReports();
-    }, []);
-
-    // Get latest month reports
-    const latestReports = React.useMemo(() => {
-        const sortedByDate = [...reports].sort((a, b) => {
-            const dateA = new Date(a.Year, a.Month - 1);
-            const dateB = new Date(b.Year, b.Month - 1);
-            return dateB.getTime() - dateA.getTime();
+    const openDocument = (url: string, title: string, fileType: string) => {
+        setViewerConfig({
+            isOpen: true,
+            url,
+            title,
+            fileType
         });
+    };
 
-        const latestMonth = sortedByDate[0]?.Month;
-        const latestYear = sortedByDate[0]?.Year;
+    const handleDateChange = (type: 'month' | 'year', value: number) => {
+        setSelectedDate(prev => ({
+            ...prev,
+            [type]: value
+        }));
+    };
 
-        return sortedByDate.filter(
-            report => report.Month === latestMonth && report.Year === latestYear
-        );
-    }, [reports]);
-
-    // Sorting and Filtering
-    // const handleSort = (column: string) => {
-    //     setSortOrder(sortColumn === column ? (sortOrder === 'asc' ? 'desc' : 'asc') : 'asc');
-    //     setSortColumn(column);
-    // };
-
-    const sortedReports = React.useMemo(() => {
-        if (!sortConfig.key) return reports;
-
-        return [...reports].sort((a, b) => {
-            if (!a[sortConfig.key] || !b[sortConfig.key]) return 0;
-
-            const comparison = a[sortConfig.key].localeCompare(b[sortConfig.key]);
-            return sortConfig.direction === 'asc' ? comparison : -comparison;
+    const handlePreviousMonth = () => {
+        setSelectedDate(prev => {
+            if (prev.month === 1) {
+                return { month: 12, year: prev.year - 1 };
+            }
+            return { month: prev.month - 1, year: prev.year };
         });
-    }, [reports, sortConfig]);
-
-
-    const filteredReports = React.useMemo(() => {
-        return sortedReports.filter(report =>
-            report.CompanyName.toLowerCase().includes(searchTerm.toLowerCase())
-        );
-    }, [sortedReports, searchTerm]);
-
-
-    // Add a function to calculate total cells for colSpan
-    const calculateTotalColumns = (showPeriod: boolean = false) => {
-        let total = 2; // Index and Company Name
-        if (showPeriod) total += 1; // Period column
-        if (visibleColumns.StatutoryDocs) total += 11; // 6 PDF + 3 Excel + 2 CSV
-        if (visibleColumns.PayrollDocs) total += 5;
-        if (visibleColumns.PaymentLists) total += 3;
-        return total;
     };
 
-    const renderLoadingState = (showPeriod: boolean = false) => (
-        <TableRow>
-            <TableCell colSpan={calculateTotalColumns(showPeriod)} className="text-center">
-                <RefreshCw className="h-8 w-8 animate-spin mx-auto text-gray-400" />
-            </TableCell>
-        </TableRow>
-    );
-
-    const renderNoDataState = (showPeriod: boolean = false) => (
-        <TableRow>
-            <TableCell colSpan={calculateTotalColumns(showPeriod)} className="text-center">
-                No reports found
-            </TableCell>
-        </TableRow>
-    );
-
-    // Excel Export Functions
-    const exportToExcel = async (reportData: ReportRecord[] = filteredReports) => {
-        const workbook = new ExcelJS.Workbook();
-        const worksheet = workbook.addWorksheet('Reports');
-
-        // Define headers based on document groups
-        const headers = [
-            'Index',
-            'Company Name',
-            'Period',
-            // Statutory Documents - PDF
-            ...documentGroups.statutory_pdf.map(doc => doc.key.replace('_', ' ')),
-            // Statutory Documents - Excel
-            ...documentGroups.statutory_excel.map(doc => doc.key.replace('_', ' ')),
-            // Statutory Documents - CSV
-            ...documentGroups.statutory_csv.map(doc => doc.key.replace('_', ' ')),
-            // Payroll Documents
-            ...documentGroups.payroll.map(doc => doc.key.replace('_', ' ')),
-            // Payment Lists
-            ...documentGroups.payments.map(doc => doc.key.replace('_', ' '))
-        ];
-
-        // Add headers
-        worksheet.addRow(headers);
-
-        // Add data
-        reportData.forEach((report, index) => {
-            const row = [
-                index + 1,
-                report.CompanyName,
-                `${report.Month}/${report.Year}`
-            ];
-
-            // Add data for each document group
-            const addDocumentStatus = (doc) => {
-                if (doc.pdfKey) row.push(report[doc.pdfKey] ? 'Available' : 'Missing');
-                if (doc.dataKey) row.push(report[doc.dataKey] ? 'Available' : 'Missing');
-            };
-
-            documentGroups.statutory_pdf.forEach(addDocumentStatus);
-            documentGroups.statutory_excel.forEach(addDocumentStatus);
-            documentGroups.statutory_csv.forEach(addDocumentStatus);
-            documentGroups.payroll.forEach(addDocumentStatus);
-            documentGroups.payments.forEach(addDocumentStatus);
-
-            worksheet.addRow(row);
+    const handleNextMonth = () => {
+        setSelectedDate(prev => {
+            if (prev.month === 12) {
+                return { month: 1, year: prev.year + 1 };
+            }
+            return { month: prev.month + 1, year: prev.year };
         });
-
-        // Style the worksheet
-        worksheet.columns.forEach(column => {
-            column.width = 15;
-            column.alignment = { vertical: 'middle', horizontal: 'center' };
-        });
-
-        // Generate and download file
-        const buffer = await workbook.xlsx.writeBuffer();
-        const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-        const link = document.createElement('a');
-        link.href = URL.createObjectURL(blob);
-        link.download = 'wingu_reports.xlsx';
-        link.click();
     };
-    const calculateColumnStats = (columnKey: string) => {
-        const total = reports.length;
-        const available = reports.filter(report => report[columnKey]).length;
-        const missing = total - available;
-
-        return {
-            total,
-            available,
-            missing
-        };
-    };
-
-    // Render file link with both PDF and Excel/CSV options
-    const renderFileLink = (pdfLink: string, dataLink?: string) => {
-        if (!pdfLink) return <div className="flex justify-center"><span className="text-red-500 text-sm font-bold text-center">Missing</span></div>;
-
-        return (
-            <div className="flex items-center justify-center space-x-2">
-                <FileViewer url={pdfLink} fileType="pdf" title="View PDF" />
-                {dataLink && (
-                    <Button variant="outline" size="sm" className="h-8 w-8 p-0">
-                        <Download className="h-4 w-4" />
-                    </Button>
-                )}
-            </div>
-        );
-    };
-
-    // Table Components
-    const renderTableHeader = (showPeriod: boolean = false) => (
-        <>
-            {/* Main Header Row */}
-            <TableRow className="bg-gray-100 border-b-2 border-black">
-                <TableHead rowSpan={2} className="w-14 border-r border-gray-300">#</TableHead>
-                <TableHead rowSpan={2} className="border-r border-gray-300">
-                    <div
-                        className="flex items-center space-x-2 cursor-pointer"
-                        onClick={() => handleSort('CompanyName')}
-                    >
-                        <span>Company Name</span>
-                        <ArrowUpDown className="h-4 w-4" />
-                    </div>
-                </TableHead>
-                {showPeriod && <TableHead rowSpan={2} className="border-r border-gray-300">Period</TableHead>}
-
-                {visibleColumns.StatutoryDocs && (
-                    <TableHead
-                        colSpan={11}
-                        className="text-center font-bold bg-blue-50 border-x-2 border-black"
-                    >
-                        Statutory Documents
-                    </TableHead>
-                )}
-
-                {visibleColumns.PayrollDocs && (
-                    <TableHead
-                        colSpan={5}
-                        className="text-center font-bold bg-purple-50 border-x-2 border-black"
-                    >
-                        Payroll Documents
-                    </TableHead>
-                )}
-
-                {visibleColumns.PaymentLists && (
-                    <TableHead
-                        colSpan={3}
-                        className="text-center font-bold bg-orange-50 border-x-2 border-black"
-                    >
-                        Payment Lists
-                    </TableHead>
-                )}
-            </TableRow>
-
-            {/* Sub-header Row */}
-            <TableRow className="bg-gray-50 border-b-2 border-black">
-                {/* Statutory Documents Subgroups */}
-                {visibleColumns.StatutoryDocs && (
-                    <>
-                        {/* PDF Files */}
-                        <TableHead className="text-center border-r border-gray-300">PAYE Returns</TableHead>
-                        <TableHead className="text-center border-r border-gray-300">NSSF Returns</TableHead>
-                        <TableHead className="text-center border-r border-gray-300">NHIF Returns</TableHead>
-                        <TableHead className="text-center border-r border-gray-300">SHIF Returns</TableHead>
-                        <TableHead className="text-center border-r border-gray-300">Housing Levy Returns</TableHead>
-                        <TableHead className="text-center border-r-2 border-black">NITA Returns</TableHead>
-
-                        {/* Excel Files */}
-                        <TableHead className="text-center border-r border-gray-300">NSSF Excel</TableHead>
-                        <TableHead className="text-center border-r border-gray-300">NHIF Excel</TableHead>
-                        <TableHead className="text-center border-r-2 border-black">SHIF Excel</TableHead>
-
-                        {/* CSV Files */}
-                        <TableHead className="text-center border-r border-gray-300">PAYE CSV</TableHead>
-                        <TableHead className="text-center border-r-2 border-black">Housing Levy CSV</TableHead>
-                    </>
-                )}
-
-                {/* Payroll Documents */}
-                {visibleColumns.PayrollDocs && (
-                    <>
-                        <TableHead className="text-center border-r border-gray-300">Payroll Summary PDF</TableHead>
-                        <TableHead className="text-center border-r border-gray-300">Payroll Summary Excel</TableHead>
-                        <TableHead className="text-center border-r border-gray-300">Payroll Recon</TableHead>
-                        <TableHead className="text-center border-r border-gray-300">Control Total</TableHead>
-                        <TableHead className="text-center border-r-2 border-black">Payslips</TableHead>
-                    </>
-                )}
-
-                {/* Payment Lists */}
-                {visibleColumns.PaymentLists && (
-                    <>
-                        <TableHead className="text-center border-r border-gray-300">Bank List</TableHead>
-                        <TableHead className="text-center border-r border-gray-300">Cash List</TableHead>
-                        <TableHead className="text-center border-r-2 border-black">M-PESA List</TableHead>
-                    </>
-                )}
-            </TableRow>
-
-            {/* Total Documents Row */}
-            <TableRow className="bg-blue-50 border-b border-gray-300">
-                <TableHead colSpan={showPeriod ? 3 : 2} className="border-r-2 border-black font-bold">Total Documents</TableHead>
-                {/* Statutory Documents - PDF */}
-                {visibleColumns.StatutoryDocs && documentGroups.statutory_pdf.map(doc => (
-                    <TableHead key={doc.key} className="text-center border-r border-gray-300">
-                        {calculateColumnStats(doc.pdfKey)?.total}
-                    </TableHead>
-                ))}
-                {/* Statutory Documents - Excel */}
-                {visibleColumns.StatutoryDocs && documentGroups.statutory_excel.map(doc => (
-                    <TableHead key={doc.key} className="text-center border-r border-gray-300">
-                        {calculateColumnStats(doc.dataKey)?.total}
-                    </TableHead>
-                ))}
-                {/* Statutory Documents - CSV */}
-                {visibleColumns.StatutoryDocs && documentGroups.statutory_csv.map(doc => (
-                    <TableHead key={doc.key} className="text-center border-r-2 border-black">
-                        {calculateColumnStats(doc.dataKey)?.total}
-                    </TableHead>
-                ))}
-                {/* Payroll Documents */}
-                {visibleColumns.PayrollDocs && documentGroups.payroll.map(doc => (
-                    <React.Fragment key={doc.key}>
-                        <TableHead className="text-center border-r border-gray-300">
-                            {calculateColumnStats(doc.pdfKey)?.total}
-                        </TableHead>
-                        {doc.dataKey && (
-                            <TableHead className="text-center border-r border-gray-300">
-                                {calculateColumnStats(doc.dataKey)?.total}
-                            </TableHead>
-                        )}
-                    </React.Fragment>
-                ))}
-                {/* Payment Lists */}
-                {visibleColumns.PaymentLists && documentGroups.payments.map(doc => (
-                    <TableHead key={doc.key} className="text-center border-r border-gray-300">
-                        {calculateColumnStats(doc.pdfKey)?.total}
-                    </TableHead>
-                ))}
-            </TableRow>
-
-            {/* Available Documents Row */}
-            <TableRow className="bg-green-50 border-b border-gray-300">
-                <TableHead colSpan={showPeriod ? 3 : 2} className="border-r-2 border-black font-bold">Available Documents</TableHead>
-                {/* Statutory Documents - PDF */}
-                {visibleColumns.StatutoryDocs && documentGroups.statutory_pdf.map(doc => (
-                    <TableHead key={doc.key} className="text-center border-r border-gray-300">
-                        {calculateColumnStats(doc.pdfKey)?.available}
-                    </TableHead>
-                ))}
-                {/* Statutory Documents - Excel */}
-                {visibleColumns.StatutoryDocs && documentGroups.statutory_excel.map(doc => (
-                    <TableHead key={doc.key} className="text-center border-r border-gray-300">
-                        {calculateColumnStats(doc.dataKey)?.available}
-                    </TableHead>
-                ))}
-                {/* Statutory Documents - CSV */}
-                {visibleColumns.StatutoryDocs && documentGroups.statutory_csv.map(doc => (
-                    <TableHead key={doc.key} className="text-center border-r-2 border-black">
-                        {calculateColumnStats(doc.dataKey)?.available}
-                    </TableHead>
-                ))}
-                {/* Payroll Documents */}
-                {visibleColumns.PayrollDocs && documentGroups.payroll.map(doc => (
-                    <React.Fragment key={doc.key}>
-                        <TableHead className="text-center border-r border-gray-300">
-                            {calculateColumnStats(doc.pdfKey)?.available}
-                        </TableHead>
-                        {doc.dataKey && (
-                            <TableHead className="text-center border-r border-gray-300">
-                                {calculateColumnStats(doc.dataKey)?.available}
-                            </TableHead>
-                        )}
-                    </React.Fragment>
-                ))}
-                {/* Payment Lists */}
-                {visibleColumns.PaymentLists && documentGroups.payments.map(doc => (
-                    <TableHead key={doc.key} className="text-center border-r border-gray-300">
-                        {calculateColumnStats(doc.pdfKey)?.available}
-                    </TableHead>
-                ))}
-            </TableRow>
-
-            {/* Missing Documents Row */}
-            <TableRow className="bg-red-50 border-b-2 border-black">
-                <TableHead colSpan={showPeriod ? 3 : 2} className="border-r-2 border-black font-bold">Missing Documents</TableHead>
-                {/* Statutory Documents - PDF */}
-                {visibleColumns.StatutoryDocs && documentGroups.statutory_pdf.map(doc => (
-                    <TableHead key={doc.key} className="text-center border-r border-gray-300">
-                        {calculateColumnStats(doc.pdfKey)?.missing}
-                    </TableHead>
-                ))}
-                {/* Statutory Documents - Excel */}
-                {visibleColumns.StatutoryDocs && documentGroups.statutory_excel.map(doc => (
-                    <TableHead key={doc.key} className="text-center border-r border-gray-300">
-                        {calculateColumnStats(doc.dataKey)?.missing}
-                    </TableHead>
-                ))}
-                {/* Statutory Documents - CSV */}
-                {visibleColumns.StatutoryDocs && documentGroups.statutory_csv.map(doc => (
-                    <TableHead key={doc.key} className="text-center border-r-2 border-black">
-                        {calculateColumnStats(doc.dataKey)?.missing}
-                    </TableHead>
-                ))}
-                {/* Payroll Documents */}
-                {visibleColumns.PayrollDocs && documentGroups.payroll.map(doc => (
-                    <React.Fragment key={doc.key}>
-                        <TableHead className="text-center border-r border-gray-300">
-                            {calculateColumnStats(doc.pdfKey)?.missing}
-                        </TableHead>
-                        {doc.dataKey && (
-                            <TableHead className="text-center border-r border-gray-300">
-                                {calculateColumnStats(doc.dataKey)?.missing}
-                            </TableHead>
-                        )}
-                    </React.Fragment>
-                ))}
-                {/* Payment Lists */}
-                {visibleColumns.PaymentLists && documentGroups.payments.map(doc => (
-                    <TableHead key={doc.key} className="text-center border-r border-gray-300">
-                        {calculateColumnStats(doc.pdfKey)?.missing}
-                    </TableHead>
-                ))}
-            </TableRow>
-        </>
-    );
-
-    const documentGroups = {
-        statutory_pdf: [
-            { key: 'PAYE_PDF', pdfKey: 'PAYE_Link' },
-            { key: 'NSSF_PDF', pdfKey: 'NSSF_Link' },
-            { key: 'NHIF_PDF', pdfKey: 'NHIF_Link' },
-            { key: 'SHIF_PDF', pdfKey: 'SHIF_Link' },
-            { key: 'Housing_Levy_PDF', pdfKey: 'Housing_Levy_Link' },
-            { key: 'NITA_PDF', pdfKey: 'NITA_List' }
-        ],
-        statutory_excel: [
-            { key: 'NSSF_Excel', dataKey: 'NSSF_Excel_Link' },
-            { key: 'NHIF_Excel', dataKey: 'NHIF_Excel_Link' },
-            { key: 'SHIF_Excel', dataKey: 'SHIF_Excel_Link' }
-        ],
-        statutory_csv: [
-            { key: 'PAYE_CSV', dataKey: 'PAYE_CSV_Link' },
-            { key: 'Housing_Levy_CSV', dataKey: 'Housing_Levy_CSV_Link' }
-        ],
-        payroll: [
-            { key: 'Payroll_Summary', pdfKey: 'Payroll_Summary_Link', dataKey: 'Payroll_Summary_Excel_Link' },
-            { key: 'Payroll_Recon', pdfKey: 'Payroll_Recon_Link' },
-            { key: 'Control_Total', pdfKey: 'Control_Total_Link' },
-            { key: 'Payslips', pdfKey: 'Payslips_Link' }
-        ],
-        payments: [
-            { key: 'Bank_List', pdfKey: 'Bank_List_Link' },
-            { key: 'Cash_List', pdfKey: 'Cash_List' },
-            { key: 'MPESA_List', pdfKey: 'MPESA_List' }
-        ]
-    };
-
-
-    const renderTableRow = (report: ReportRecord, index: number, showPeriod: boolean = false) => {
-
-        return (
-            <TableRow key={report.ID} className="hover:bg-gray-50">
-                {/* Basic Info Cells */}
-                <TableCell className="font-medium border-r border-gray-300">{index + 1}</TableCell>
-                <TableCell className="border-r border-gray-300">{report.CompanyName}</TableCell>
-                {showPeriod && <TableCell className="border-r border-gray-300">{`${report.Month}/${report.Year}`}</TableCell>}
-
-                {/* Statutory Documents Section */}
-                {visibleColumns.StatutoryDocs && (
-                    <>
-                        {/* Statutory PDF Documents */}
-                        {documentGroups.statutory_pdf.map(doc => (
-                            <TableCell key={doc.key} className="border-r border-gray-300">
-                                <FileViewer
-                                    url={report[doc.pdfKey]}
-                                    fileType={getFileTypeFromUrl(report[doc.pdfKey])}
-                                    title={`${doc.key.replace('_', ' ')} - ${report.CompanyName}`}
-                                />
-                            </TableCell>
-                        ))}
-
-                        {/* Statutory Excel Documents */}
-                        {documentGroups.statutory_excel.map(doc => (
-                            <TableCell key={doc.key} className="border-r border-gray-300">
-                                <FileViewer
-                                    url={report[doc.dataKey]}
-                                    fileType={getFileTypeFromUrl(report[doc.dataKey])}
-                                    title={`${doc.key.replace('_', ' ')} - ${report.CompanyName}`}
-                                />
-                            </TableCell>
-                        ))}
-
-                        {/* Statutory CSV Documents */}
-                        {documentGroups.statutory_csv.map(doc => (
-                            <TableCell key={doc.key} className="border-r-2 border-black">
-                                <FileViewer
-                                    url={report[doc.dataKey]}
-                                    fileType={getFileTypeFromUrl(report[doc.dataKey])}
-                                    title={`${doc.key.replace('_', ' ')} - ${report.CompanyName}`}
-                                />
-                            </TableCell>
-                        ))}
-                    </>
-                )}
-
-                {/* Payroll Documents Section */}
-                {visibleColumns.PayrollDocs && (
-                    <>
-                        {documentGroups.payroll.map(doc => (
-                            <React.Fragment key={doc.key}>
-                                <TableCell className="border-r border-gray-300">
-                                    <FileViewer
-                                        url={report[doc.pdfKey]}
-                                        fileType={getFileTypeFromUrl(report[doc.pdfKey])}
-                                        title={`${doc.key.replace('_', ' ')} - ${report.CompanyName}`}
-                                    />
-                                </TableCell>
-                                {doc.dataKey && (
-                                    <TableCell className="border-r border-gray-300">
-                                        <FileViewer
-                                            url={report[doc.dataKey]}
-                                            fileType={getFileTypeFromUrl(report[doc.dataKey])}
-                                            title={`${doc.key.replace('_', ' ')} Excel - ${report.CompanyName}`}
-                                        />
-                                    </TableCell>
-                                )}
-                            </React.Fragment>
-                        ))}
-                    </>
-                )}
-
-                {/* Payment Lists Section */}
-                {visibleColumns.PaymentLists && (
-                    <>
-                        {documentGroups.payments.map(doc => (
-                            <TableCell key={doc.key} className="border-r-2 border-black">
-                                <FileViewer
-                                    url={report[doc.pdfKey]}
-                                    fileType={getFileTypeFromUrl(report[doc.pdfKey])}
-                                    title={`${doc.key.replace('_', ' ')} - ${report.CompanyName}`}
-                                />
-                            </TableCell>
-                        ))}
-                    </>
-                )}
-            </TableRow>
-
-        );
-    };
-
 
     const handleBulkDownload = async () => {
         const selectedFiles = [];
-        
+
+        // Get the reports to process (either selected company or all filtered reports)
+        const reportsToProcess = selectedCompany
+            ? reports.filter(r => r.CompanyID === selectedCompany.CompanyID)
+            : filteredReports;
+
         // Map selected documents to their corresponding URLs from reports
-        for (const report of filteredReports) {
-            if (selectedDocs.PAYE_PDF && report.PAYE_Link) selectedFiles.push({ url: report.PAYE_Link, name: `PAYE_${report.CompanyName}.pdf` });
-            if (selectedDocs.NSSF_PDF && report.NSSF_Link) selectedFiles.push({ url: report.NSSF_Link, name: `NSSF_${report.CompanyName}.pdf` });
-            if (selectedDocs.NHIF_PDF && report.NHIF_Link) selectedFiles.push({ url: report.NHIF_Link, name: `NHIF_${report.CompanyName}.pdf` });
-            if (selectedDocs.SHIF_PDF && report.SHIF_Link) selectedFiles.push({ url: report.SHIF_Link, name: `SHIF_${report.CompanyName}.pdf` });
-            if (selectedDocs.Housing_Levy_PDF && report.Housing_Levy_Link) selectedFiles.push({ url: report.Housing_Levy_Link, name: `Housing_Levy_${report.CompanyName}.pdf` });
-            if (selectedDocs.NITA_PDF && report.NITA_List) selectedFiles.push({ url: report.NITA_List, name: `NITA_${report.CompanyName}.pdf` });
-            
+        for (const report of reportsToProcess) {
+            if (selectedDocs.PAYE_PDF && report.PAYE_Link) {
+                selectedFiles.push({ url: report.PAYE_Link, name: `PAYE_${report.CompanyName}.pdf` });
+            }
+            if (selectedDocs.NSSF_PDF && report.NSSF_Link) {
+                selectedFiles.push({ url: report.NSSF_Link, name: `NSSF_${report.CompanyName}.pdf` });
+            }
+            if (selectedDocs.NHIF_PDF && report.NHIF_Link) {
+                selectedFiles.push({ url: report.NHIF_Link, name: `NHIF_${report.CompanyName}.pdf` });
+            }
+            if (selectedDocs.SHIF_PDF && report.SHIF_Link) {
+                selectedFiles.push({ url: report.SHIF_Link, name: `SHIF_${report.CompanyName}.pdf` });
+            }
+            if (selectedDocs.Housing_Levy_PDF && report.Housing_Levy_Link) {
+                selectedFiles.push({ url: report.Housing_Levy_Link, name: `Housing_Levy_${report.CompanyName}.pdf` });
+            }
+            if (selectedDocs.NITA_PDF && report.NITA_List) {
+                selectedFiles.push({ url: report.NITA_List, name: `NITA_${report.CompanyName}.pdf` });
+            }
+
             // Excel and CSV files
-            if (selectedDocs.PAYE_CSV && report.PAYE_CSV_Link) selectedFiles.push({ url: report.PAYE_CSV_Link, name: `PAYE_${report.CompanyName}.csv` });
-            if (selectedDocs.Housing_Levy_CSV && report.Housing_Levy_CSV_Link) selectedFiles.push({ url: report.Housing_Levy_CSV_Link, name: `Housing_Levy_${report.CompanyName}.csv` });
-            if (selectedDocs.NSSF_Excel && report.NSSF_Excel_Link) selectedFiles.push({ url: report.NSSF_Excel_Link, name: `NSSF_${report.CompanyName}.xlsx` });
-            if (selectedDocs.NHIF_Excel && report.NHIF_Excel_Link) selectedFiles.push({ url: report.NHIF_Excel_Link, name: `NHIF_${report.CompanyName}.xlsx` });
-            if (selectedDocs.SHIF_Excel && report.SHIF_Excel_Link) selectedFiles.push({ url: report.SHIF_Excel_Link, name: `SHIF_${report.CompanyName}.xlsx` });
-            
+            if (selectedDocs.PAYE_CSV && report.PAYE_CSV_Link) {
+                selectedFiles.push({ url: report.PAYE_CSV_Link, name: `PAYE_${report.CompanyName}.csv` });
+            }
+            if (selectedDocs.Housing_Levy_CSV && report.Housing_Levy_CSV_Link) {
+                selectedFiles.push({ url: report.Housing_Levy_CSV_Link, name: `Housing_Levy_${report.CompanyName}.csv` });
+            }
+            if (selectedDocs.NSSF_Excel && report.NSSF_Excel_Link) {
+                selectedFiles.push({ url: report.NSSF_Excel_Link, name: `NSSF_${report.CompanyName}.xlsx` });
+            }
+            if (selectedDocs.NHIF_Excel && report.NHIF_Excel_Link) {
+                selectedFiles.push({ url: report.NHIF_Excel_Link, name: `NHIF_${report.CompanyName}.xlsx` });
+            }
+            if (selectedDocs.SHIF_Excel && report.SHIF_Excel_Link) {
+                selectedFiles.push({ url: report.SHIF_Excel_Link, name: `SHIF_${report.CompanyName}.xlsx` });
+            }
+
             // Payroll Documents
-            if (selectedDocs.Payroll_Summary_PDF && report.Payroll_Summary_Link) selectedFiles.push({ url: report.Payroll_Summary_Link, name: `Payroll_Summary_${report.CompanyName}.pdf` });
-            if (selectedDocs.Payroll_Summary_Excel && report.Payroll_Summary_Excel_Link) selectedFiles.push({ url: report.Payroll_Summary_Excel_Link, name: `Payroll_Summary_${report.CompanyName}.xlsx` });
-            if (selectedDocs.Payroll_Recon && report.Payroll_Recon_Link) selectedFiles.push({ url: report.Payroll_Recon_Link, name: `Payroll_Recon_${report.CompanyName}.pdf` });
-            if (selectedDocs.Control_Total && report.Control_Total_Link) selectedFiles.push({ url: report.Control_Total_Link, name: `Control_Total_${report.CompanyName}.pdf` });
-            if (selectedDocs.Payslips && report.Payslips_Link) selectedFiles.push({ url: report.Payslips_Link, name: `Payslips_${report.CompanyName}.pdf` });
-            
+            if (selectedDocs.Payroll_Summary_PDF && report.Payroll_Summary_Link) {
+                selectedFiles.push({ url: report.Payroll_Summary_Link, name: `Payroll_Summary_${report.CompanyName}.pdf` });
+            }
+            if (selectedDocs.Payroll_Summary_Excel && report.Payroll_Summary_Excel_Link) {
+                selectedFiles.push({ url: report.Payroll_Summary_Excel_Link, name: `Payroll_Summary_${report.CompanyName}.xlsx` });
+            }
+            if (selectedDocs.Payroll_Recon && report.Payroll_Recon_Link) {
+                selectedFiles.push({ url: report.Payroll_Recon_Link, name: `Payroll_Recon_${report.CompanyName}.pdf` });
+            }
+            if (selectedDocs.Control_Total && report.Control_Total_Link) {
+                selectedFiles.push({ url: report.Control_Total_Link, name: `Control_Total_${report.CompanyName}.pdf` });
+            }
+            if (selectedDocs.Payslips && report.Payslips_Link) {
+                selectedFiles.push({ url: report.Payslips_Link, name: `Payslips_${report.CompanyName}.pdf` });
+            }
+
             // Payment Lists
-            if (selectedDocs.Bank_List && report.Bank_List_Link) selectedFiles.push({ url: report.Bank_List_Link, name: `Bank_List_${report.CompanyName}.pdf` });
-            if (selectedDocs.Cash_List && report.Cash_List) selectedFiles.push({ url: report.Cash_List, name: `Cash_List_${report.CompanyName}.pdf` });
-            if (selectedDocs.MPESA_List && report.MPESA_List) selectedFiles.push({ url: report.MPESA_List, name: `MPESA_List_${report.CompanyName}.pdf` });
+            if (selectedDocs.Bank_List && report.Bank_List_Link) {
+                selectedFiles.push({ url: report.Bank_List_Link, name: `Bank_List_${report.CompanyName}.pdf` });
+            }
+            if (selectedDocs.Cash_List && report.Cash_List) {
+                selectedFiles.push({ url: report.Cash_List, name: `Cash_List_${report.CompanyName}.pdf` });
+            }
+            if (selectedDocs.MPESA_List && report.MPESA_List) {
+                selectedFiles.push({ url: report.MPESA_List, name: `MPESA_List_${report.CompanyName}.pdf` });
+            }
         }
 
         if (selectedFiles.length === 0) {
@@ -696,11 +316,9 @@ export default function WinguAppsExtractionReports() {
             return;
         }
 
-        // Create a loading state
         setIsLoading(true);
 
         try {
-            // Download files in chunks to prevent overwhelming the browser
             const chunkSize = 5;
             const zip = new JSZip();
 
@@ -717,7 +335,6 @@ export default function WinguAppsExtractionReports() {
                 }));
             }
 
-            // Generate and download zip file
             const content = await zip.generateAsync({ type: "blob" });
             const downloadUrl = URL.createObjectURL(content);
             const link = document.createElement('a');
@@ -736,44 +353,461 @@ export default function WinguAppsExtractionReports() {
         }
     };
 
+    // Filtered Reports
+    const filteredReports = React.useMemo(() => {
+        return reports.filter(report =>
+            report.CompanyName.toLowerCase().includes(searchTerm.toLowerCase()) &&
+            report.Month === selectedDate.month &&
+            report.Year === selectedDate.year
+        );
+    }, [reports, searchTerm, selectedDate]);
+
+    // Render Functions
+    const renderTableHeader = () => (
+        <TableRow className="border-b">
+            <TableHead className={cn(tableStyles.header, "w-12")}>#</TableHead>
+            <TableHead className={cn(tableStyles.header, "w-48")}>Company</TableHead>
+            {visibleColumns.StatutoryDocs && (
+                <>
+                    <TableHead className={tableStyles.header} colSpan={6}>Statutory Documents</TableHead>
+                    <TableHead className={tableStyles.header} colSpan={3}>Excel Files</TableHead>
+                    <TableHead className={tableStyles.header} colSpan={2}>CSV Files</TableHead>
+                </>
+            )}
+            {visibleColumns.PayrollDocs && (
+                <TableHead className={tableStyles.header} colSpan={5}>Payroll Documents</TableHead>
+            )}
+            {visibleColumns.PaymentLists && (
+                <TableHead className={tableStyles.header} colSpan={3}>Payment Lists</TableHead>
+            )}
+        </TableRow>
+    );
+
+    const renderTableRow = (report: ReportRecord, index: number) => (
+        <TableRow
+            key={`${report.CompanyID}-${report.Month}-${report.Year}`}
+            className="hover:bg-gray-50 transition-colors"
+        >
+            <TableCell className={tableStyles.cell}>{index + 1}</TableCell>
+            <TableCell className={tableStyles.cell}>{report.CompanyName}</TableCell>
+
+            {/* Statutory Documents - PDF */}
+            {visibleColumns.StatutoryDocs && documentGroups.statutory_pdf.map(({ key, pdfKey }) => (
+                <TableCell key={key} className={cn(tableStyles.cell, "text-center")}>
+                    {!report[pdfKey] || report[pdfKey].trim() === '' ? (
+                        <span className="text-red-500 text-xs">Missing</span>
+                    ) : (
+                        <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => openDocument(report[pdfKey], `${key.replace('_PDF', '')} - ${report.CompanyName}`, 'pdf')}
+                            className="h-7 px-2 text-xs text-blue-600 bg-blue-50 hover:bg-blue-100"
+                        >
+                            View
+                        </Button>
+                    )}
+                </TableCell>
+            ))}
+
+            {/* Statutory Documents - Excel */}
+            {visibleColumns.StatutoryDocs && documentGroups.statutory_excel.map(({ key, dataKey }) => (
+                <TableCell key={key} className={cn(tableStyles.cell, "text-center")}>
+                    {!report[dataKey] || report[dataKey].trim() === '' ? (
+                        <span className="text-red-500 text-xs">Missing</span>
+                    ) : (
+                        <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => openDocument(report[dataKey], `${key.replace('_Excel', '')} - ${report.CompanyName}`, 'excel')}
+                            className="h-7 px-2 text-xs text-green-600 bg-green-50 hover:bg-green-100"
+                        >
+                            Excel
+                        </Button>
+                    )}
+                </TableCell>
+            ))}
+
+            {/* Statutory Documents - CSV */}
+            {visibleColumns.StatutoryDocs && documentGroups.statutory_csv.map(({ key, dataKey }) => (
+                <TableCell key={key} className={cn(tableStyles.cell, "text-center")}>
+                    {!report[dataKey] || report[dataKey].trim() === '' ? (
+                        <span className="text-red-500 text-xs">Missing</span>
+                    ) : (
+                        <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => openDocument(report[dataKey], `${key.replace('_CSV', '')} - ${report.CompanyName}`, 'csv')}
+                            className="h-7 px-2 text-xs text-orange-600 bg-orange-50 hover:bg-orange-100"
+                        >
+                            CSV
+                        </Button>
+                    )}
+                </TableCell>
+            ))}
+
+            {/* Payroll Documents */}
+            {visibleColumns.PayrollDocs && documentGroups.payroll.map(({ key, pdfKey, dataKey }) => (
+                <TableCell key={key} className={cn(tableStyles.cell, "text-center")}>
+                    <div className="flex flex-col gap-1 items-center">
+                        {!report[pdfKey] || report[pdfKey].trim() === '' ? (
+                            <span className="text-red-500 text-xs">Missing</span>
+                        ) : (
+                            <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => openDocument(report[pdfKey], `${key} PDF - ${report.CompanyName}`, 'pdf')}
+                                className="h-7 px-2 text-xs text-blue-600 bg-blue-50 hover:bg-blue-100"
+                            >
+                                View
+                            </Button>
+                        )}
+                        {dataKey && (!report[dataKey] || report[dataKey].trim() === '' ? (
+                            <span className="text-red-500 text-xs">Missing</span>
+                        ) : (
+                            <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => openDocument(report[dataKey], `${key} Excel - ${report.CompanyName}`, 'excel')}
+                                className="h-7 px-2 text-xs text-green-600 bg-green-50 hover:bg-green-100"
+                            >
+                                Excel
+                            </Button>
+                        ))}
+                    </div>
+                </TableCell>
+            ))}
+
+            {/* Payment Lists */}
+            {visibleColumns.PaymentLists && documentGroups.payments.map(({ key, pdfKey }) => (
+                <TableCell key={key} className={cn(tableStyles.cell, "text-center")}>
+                    {!report[pdfKey] || report[pdfKey].trim() === '' ? (
+                        <span className="text-red-500 text-xs">Missing</span>
+                    ) : (
+                        <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => openDocument(report[pdfKey], `${key} - ${report.CompanyName}`, 'pdf')}
+                            className="h-7 px-2 text-xs text-blue-600 bg-blue-50 hover:bg-blue-100"
+                        >
+                            View
+                        </Button>
+                    )}
+                </TableCell>
+            ))}
+        </TableRow>
+    );
+
     return (
         <div className="p-4">
-            <Tabs defaultValue="summary" className="w-full space-y-6">
+            <Tabs defaultValue="summary" className="w-full space-y-4">
                 <TabsList className="grid w-[400px] grid-cols-2">
                     <TabsTrigger value="summary">Monthly View</TabsTrigger>
-                    <TabsTrigger value="detailed">All Months </TabsTrigger>
+                    <TabsTrigger value="detailed">All Months</TabsTrigger>
                 </TabsList>
 
-                {/* <ExcelViewer/> */}
-
                 <TabsContent value="summary">
-                    <SummaryView
-                        searchTerm={searchTerm}
-                        setSearchTerm={setSearchTerm}
-                        visibleColumns={visibleColumns}
-                        setVisibleColumns={setVisibleColumns}
-                        latestReports={latestReports}
-                        isLoading={isLoading}
-                        fetchReports={fetchReports}
-                        sortConfig={sortConfig}
-                        renderTableHeader={renderTableHeader}
-                        renderTableRow={renderTableRow}
-                        exportToExcel={exportToExcel}
-                        setBulkDownloadOpen={setBulkDownloadOpen}
-                    />
-                </TabsContent>
+                    <div className="space-y-4">
+                        {/* Date Navigation and Search */}
+                        <Card className="p-4">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-4">
+                                    <div className="relative w-[300px]">
+                                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                                        <Input
+                                            placeholder="Search companies..."
+                                            value={searchTerm}
+                                            onChange={(e) => setSearchTerm(e.target.value)}
+                                            className="pl-10"
+                                        />
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <Button variant="outline" size="sm" onClick={handlePreviousMonth}>
+                                            <ChevronLeft className="h-4 w-4" />
+                                        </Button>
+                                        <select
+                                            value={selectedDate.month}
+                                            onChange={(e) => handleDateChange('month', parseInt(e.target.value))}
+                                            className="text-sm border rounded px-2 py-1"
+                                        >
+                                            {monthNames.map((month, index) => (
+                                                <option key={month} value={index + 1}>
+                                                    {month}
+                                                </option>
+                                            ))}
+                                        </select>
+                                        <select
+                                            value={selectedDate.year}
+                                            onChange={(e) => handleDateChange('year', parseInt(e.target.value))}
+                                            className="text-sm border rounded px-2 py-1"
+                                        >
+                                            {Array.from({ length: 5 }, (_, i) =>
+                                                selectedDate.year - 2 + i
+                                            ).map(year => (
+                                                <option key={year} value={year}>
+                                                    {year}
+                                                </option>
+                                            ))}
+                                        </select>
+                                        <Button variant="outline" size="sm" onClick={handleNextMonth}>
+                                            <ChevronRight className="h-4 w-4" />
+                                        </Button>
+                                    </div>
+                                </div>
 
-                {/* Detailed View */}
+                                {/* Action Buttons */}
+                                <div className="flex items-center gap-2">
+                                    <Button variant="outline" size="sm">
+                                        <Download className="h-4 w-4 mr-2" />
+                                        Export
+                                    </Button>
+                                    <Button variant="outline" size="sm">
+                                        <Download className="h-4 w-4 mr-2" />
+                                        Bulk Download
+                                    </Button>
+                                    <Button variant="outline" size="sm" onClick={fetchReports} disabled={isLoading}>
+                                        <RefreshCw className={cn("h-4 w-4", isLoading && "animate-spin")} />
+                                    </Button>
+                                </div>
+                            </div>
+                        </Card>
+
+                        {/* Table */}
+                        <Card className="overflow-hidden">
+                            <ScrollArea className="h-[calc(100vh-280px)]">
+                                <Table>
+                                    <TableHeader>
+                                        {renderTableHeader()}
+                                    </TableHeader>
+                                    <TableBody>
+                                        {isLoading ? (
+                                            <TableRow>
+                                                <TableCell
+                                                    colSpan={20}
+                                                    className="h-24 text-center"
+                                                >
+                                                    <RefreshCw className="h-6 w-6 animate-spin mx-auto" />
+                                                </TableCell>
+                                            </TableRow>
+                                        ) : filteredReports.length === 0 ? (
+                                            <TableRow>
+                                                <TableCell
+                                                    colSpan={20}
+                                                    className="h-24 text-center text-gray-500"
+                                                >
+                                                    No reports found
+                                                </TableCell>
+                                            </TableRow>
+                                        ) : (
+                                            filteredReports.map((report, index) => (
+                                                <TableRow
+                                                    key={`${report.CompanyID}-${report.Month}-${report.Year}`}
+                                                    className="hover:bg-gray-50/50"
+                                                >
+                                                    <TableCell className={tableStyles.cell}>
+                                                        {index + 1}
+                                                    </TableCell>
+                                                    <TableCell className={tableStyles.cell}>
+                                                        {report.CompanyName}
+                                                    </TableCell>
+
+                                                    {/* Statutory Documents - PDF */}
+                                                    {visibleColumns.StatutoryDocs && documentGroups.statutory_pdf.map(({ key, pdfKey }) => (
+                                                        <TableCell key={key} className={cn(tableStyles.cell, "text-center")}>
+                                                            {!report[pdfKey] || report[pdfKey].trim() === '' ? (
+                                                                <span className="text-red-500 text-[11px] font-medium">Missing</span>
+                                                            ) : (
+                                                                <button
+                                                                    onClick={() => openDocument(report[pdfKey], `${key.replace('_PDF', '')} - ${report.CompanyName}`, 'pdf')}
+                                                                    className="inline-flex items-center justify-center px-2 py-1 text-[11px] font-medium text-blue-700 bg-blue-50 rounded-md hover:bg-blue-100 transition-colors duration-150 ease-in-out"
+                                                                >
+                                                                    View
+                                                                </button>
+                                                            )}
+                                                        </TableCell>
+                                                    ))}
+
+                                                    {/* Statutory Documents - Excel */}
+                                                    {visibleColumns.StatutoryDocs && documentGroups.statutory_excel.map(({ key, dataKey }) => (
+                                                        <TableCell key={key} className={cn(tableStyles.cell, "text-center")}>
+                                                            {!report[dataKey] || report[dataKey].trim() === '' ? (
+                                                                <span className="text-red-500 text-[11px] font-medium">Missing</span>
+                                                            ) : (
+                                                                <button
+                                                                    onClick={() => openDocument(report[dataKey], `${key.replace('_Excel', '')} - ${report.CompanyName}`, 'excel')}
+                                                                    className="inline-flex items-center justify-center px-2 py-1 text-[11px] font-medium text-green-700 bg-green-50 rounded-md hover:bg-green-100 transition-colors duration-150 ease-in-out"
+                                                                >
+                                                                    Excel
+                                                                </button>
+                                                            )}
+                                                        </TableCell>
+                                                    ))}
+
+                                                    {/* Statutory Documents - CSV */}
+                                                    {visibleColumns.StatutoryDocs && documentGroups.statutory_csv.map(({ key, dataKey }) => (
+                                                        <TableCell key={key} className={cn(tableStyles.cell, "text-center")}>
+                                                            {!report[dataKey] || report[dataKey].trim() === '' ? (
+                                                                <span className="text-red-500 text-[11px] font-medium">Missing</span>
+                                                            ) : (
+                                                                <button
+                                                                    onClick={() => openDocument(report[dataKey], `${key.replace('_CSV', '')} - ${report.CompanyName}`, 'csv')}
+                                                                    className="inline-flex items-center justify-center px-2 py-1 text-[11px] font-medium text-orange-700 bg-orange-50 rounded-md hover:bg-orange-100 transition-colors duration-150 ease-in-out"
+                                                                >
+                                                                    CSV
+                                                                </button>
+                                                            )}
+                                                        </TableCell>
+                                                    ))}
+
+                                                    {/* Payroll Documents */}
+                                                    {visibleColumns.PayrollDocs && documentGroups.payroll.map(({ key, pdfKey, dataKey }) => (
+                                                        <TableCell key={key} className={cn(tableStyles.cell, "text-center")}>
+                                                            <div className="flex flex-col gap-1 items-center">
+                                                                {!report[pdfKey] || report[pdfKey].trim() === '' ? (
+                                                                    <span className="text-red-500 text-[11px] font-medium">Missing</span>
+                                                                ) : (
+                                                                    <button
+                                                                        onClick={() => openDocument(report[pdfKey], `${key} PDF - ${report.CompanyName}`, 'pdf')}
+                                                                        className="inline-flex items-center justify-center px-2 py-1 text-[11px] font-medium text-blue-700 bg-blue-50 rounded-md hover:bg-blue-100 transition-colors duration-150 ease-in-out"
+                                                                    >
+                                                                        View
+                                                                    </button>
+                                                                )}
+                                                                {dataKey && (!report[dataKey] || report[dataKey].trim() === '' ? (
+                                                                    <span className="text-red-500 text-[11px] font-medium">Missing</span>
+                                                                ) : (
+                                                                    <button
+                                                                        onClick={() => openDocument(report[dataKey], `${key} Excel - ${report.CompanyName}`, 'excel')}
+                                                                        className="inline-flex items-center justify-center px-2 py-1 text-[11px] font-medium text-green-700 bg-green-50 rounded-md hover:bg-green-100 transition-colors duration-150 ease-in-out"
+                                                                    >
+                                                                        Excel
+                                                                    </button>
+                                                                ))}
+                                                            </div>
+                                                        </TableCell>
+                                                    ))}
+
+                                                    {/* Payment Lists */}
+                                                    {visibleColumns.PaymentLists && documentGroups.payments.map(({ key, pdfKey }) => (
+                                                        <TableCell key={key} className={cn(tableStyles.cell, "text-center")}>
+                                                            {!report[pdfKey] || report[pdfKey].trim() === '' ? (
+                                                                <span className="text-red-500 text-[11px] font-medium">Missing</span>
+                                                            ) : (
+                                                                <button
+                                                                    onClick={() => openDocument(report[pdfKey], `${key} - ${report.CompanyName}`, 'pdf')}
+                                                                    className="inline-flex items-center justify-center px-2 py-1 text-[11px] font-medium text-blue-700 bg-blue-50 rounded-md hover:bg-blue-100 transition-colors duration-150 ease-in-out"
+                                                                >
+                                                                    View
+                                                                </button>
+                                                            )}
+                                                        </TableCell>
+                                                    ))}
+                                                </TableRow>
+                                            ))
+                                        )}
+                                    </TableBody>
+                                </Table>
+                            </ScrollArea>
+                        </Card>
+                    </div>
+                </TabsContent>
+        
                 <TabsContent value="detailed">
-                    <DetailedView 
-                        reports={reports}
-                        exportToExcel={exportToExcel}
-                        setBulkDownloadOpen={setBulkDownloadOpen}
-                        documentGroups={documentGroups}
-                    />
-                </TabsContent>
+                    <div className="grid grid-cols-[250px_1fr] gap-4">
+                        {/* Left Panel - Company List */}
+                        <Card className="h-[calc(100vh-180px)]">
+                            <CardHeader className="p-3">
+                                <div className="relative">
+                                    <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
+                                    <Input
+                                        placeholder="Search companies..."
+                                        value={searchTerm}
+                                        onChange={(e) => setSearchTerm(e.target.value)}
+                                        className="pl-8"
+                                    />
+                                </div>
+                            </CardHeader>
+                            <ScrollArea className="h-[calc(100vh-240px)]">
+                                <div className="space-y-0.5 p-2">
+                                    {/* Company List */}
+                                    {Array.from(new Set(reports.map(r => r.CompanyID))).map(companyId => {
+                                        const company = reports.find(r => r.CompanyID === companyId);
+                                        return (
+                                            <button
+                                                key={companyId}
+                                                onClick={() => setSelectedCompany(company)}
+                                                className={cn(
+                                                    "w-full text-left px-3 py-2 rounded-md transition-all",
+                                                    selectedCompany?.CompanyID === companyId
+                                                        ? "bg-blue-100 text-blue-900"
+                                                        : "hover:bg-gray-50"
+                                                )}
+                                            >
+                                                <span className="text-sm font-medium">{company?.CompanyName}</span>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </ScrollArea>
+                        </Card>
 
+                        {/* Right Panel - Detailed View */}
+                        <Card className="h-[calc(100vh-180px)]">
+                            {selectedCompany ? (
+                                <>
+                                    <CardHeader className="p-3 border-b">
+                                        <div className="flex items-center justify-between">
+                                            <CardTitle className="text-lg font-semibold">
+                                                {selectedCompany.CompanyName}
+                                            </CardTitle>
+                                            <div className="flex gap-2">
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={() => exportToExcel(reports.filter(r => r.CompanyID === selectedCompany.CompanyID))}
+                                                >
+                                                    <Download className="h-4 w-4 mr-1" />
+                                                    Export
+                                                </Button>
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={() => setBulkDownloadOpen(true)}
+                                                >
+                                                    <Download className="h-4 w-4 mr-1" />
+                                                    Bulk
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    </CardHeader>
+                                    <ScrollArea className="h-[calc(100vh-270px)]">
+                                        <Table>
+                                            <TableHeader>
+                                                {renderTableHeader()}
+                                            </TableHeader>
+                                            <TableBody>
+                                                {reports
+                                                    .filter(r => r.CompanyID === selectedCompany.CompanyID)
+                                                    .sort((a, b) => {
+                                                        const dateA = new Date(a.Year, a.Month - 1);
+                                                        const dateB = new Date(b.Year, b.Month - 1);
+                                                        return dateB.getTime() - dateA.getTime();
+                                                    })
+                                                    .map((report, index) => renderTableRow(report, index))}
+                                            </TableBody>
+                                        </Table>
+                                    </ScrollArea>
+                                </>
+                            ) : (
+                                <div className="flex h-full items-center justify-center text-gray-400">
+                                    Select a company to view details
+                                </div>
+                            )}
+                        </Card>
+                    </div>
+                </TabsContent>
             </Tabs>
+
+            {/* Bulk Download Dialog */}
             <Dialog open={bulkDownloadOpen} onOpenChange={setBulkDownloadOpen}>
                 <DialogContent className="sm:max-w-[600px]">
                     <DialogHeader>
@@ -833,11 +867,10 @@ export default function WinguAppsExtractionReports() {
                             </div>
                         </div>
                         <div className="flex justify-end space-x-2">
-                            <Button variant="outline" onClick={() => setBulkDownloadOpen(false)}>Cancel</Button>
-                            <Button 
-                                onClick={handleBulkDownload}
-                                disabled={isLoading}
-                            >
+                            <Button variant="outline" onClick={() => setBulkDownloadOpen(false)}>
+                                Cancel
+                            </Button>
+                            <Button onClick={handleBulkDownload} disabled={isLoading}>
                                 {isLoading ? (
                                     <>
                                         <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
@@ -854,6 +887,15 @@ export default function WinguAppsExtractionReports() {
                     </div>
                 </DialogContent>
             </Dialog>
+
+            {/* Document Viewer */}
+            <DocumentViewer
+                isOpen={viewerConfig.isOpen}
+                onClose={() => setViewerConfig(prev => ({ ...prev, isOpen: false }))}
+                url={viewerConfig.url}
+                title={viewerConfig.title}
+                fileType={viewerConfig.fileType}
+            />
         </div>
     );
 }

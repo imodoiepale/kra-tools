@@ -1,5 +1,5 @@
 // @ts-nocheck
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -18,53 +18,78 @@ interface StartProps {
   setActiveTab: (tab: string) => void;
 }
 
-export default function Start({ 
-  activeTab = 'kra', 
-  setStatus, 
-  isChecking = false, 
-  setIsChecking, 
-  setActiveTab 
+export default function Start({
+  activeTab = 'kra',
+  setStatus,
+  isChecking = false,
+  setIsChecking,
+  setActiveTab
 }: StartProps) {
-  const [selectedCompanies, setSelectedCompanies] = useState([]);
+  const [selectedCompanies, setSelectedCompanies] = useState<number[]>([]);
   const [runOption, setRunOption] = useState('all');
   const [automationProgress, setAutomationProgress] = useState(null);
   const [companies, setCompanies] = useState([]);
-  const pathname = usePathname()
+  const pathname = usePathname();
 
-  useEffect(() => {
-    fetchAutomationProgress();
-    fetchCompanies();
-  }, []);
-
-  const fetchAutomationProgress = async () => {
+  const fetchAutomationProgress = useCallback(async () => {
     if (!activeTab) return;
 
-    const { data, error } = await supabase
-      .from('PasswordChecker_AutomationProgress')
-      .select('*')
-      .eq('tab', activeTab)
-      .order('last_updated', { ascending: false })
-      .limit(1)
-      .single();
+    try {
+      const { data, error } = await supabase
+        .from('PasswordChecker_AutomationProgress')
+        .select('*')
+        .eq('tab', activeTab)
+        .order('last_updated', { ascending: false })
+        .limit(1)
+        .maybeSingle();
 
-    if (error) {
-      console.error('Error fetching automation progress:', error);
-    } else if (data) {
-      setAutomationProgress(data);
-      if (data.status === 'Running') {
-        setIsChecking(true);
-        setStatus('Running');
-      } else if (data.status === 'Stopped') {
-        setIsChecking(false);
-        setStatus('Stopped');
-      } else if (data.status === 'Completed') {
-        setIsChecking(false);
-        setStatus('Completed');
+      if (error) {
+        console.error('Error fetching automation progress:', error);
+        // Create initial record if none exists
+        const { error: insertError } = await supabase
+          .from('PasswordChecker_AutomationProgress')
+          .upsert({
+            progress: 0,
+            status: 'Initial',
+            logs: [],
+            tab: activeTab,
+            last_updated: new Date().toISOString()
+          });
+
+        if (!insertError) {
+          setAutomationProgress({ status: 'Initial' });
+          if (typeof setIsChecking === 'function') setIsChecking(false);
+          if (typeof setStatus === 'function') setStatus('Initial');
+        }
+        return;
       }
-    }
-  };
 
-  const fetchCompanies = async () => {
+      setAutomationProgress(data || { status: 'Initial' });
+      if (data) {
+        switch (data.status) {
+          case 'Running':
+            if (typeof setIsChecking === 'function') setIsChecking(true);
+            if (typeof setStatus === 'function') setStatus('Running');
+            break;
+          case 'Stopped':
+            if (typeof setIsChecking === 'function') setIsChecking(false);
+            if (typeof setStatus === 'function') setStatus('Stopped');
+            break;
+          case 'Completed':
+            if (typeof setIsChecking === 'function') setIsChecking(false);
+            if (typeof setStatus === 'function') setStatus('Completed');
+            break;
+          default:
+            if (typeof setIsChecking === 'function') setIsChecking(false);
+            if (typeof setStatus === 'function') setStatus('Initial');
+        }
+      }
+    } catch (error) {
+      console.error('Error in fetchAutomationProgress:', error);
+    }
+  }, [activeTab, setIsChecking, setStatus]);
+
+  const fetchCompanies = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from('PasswordChecker')
@@ -73,19 +98,44 @@ export default function Start({
 
       if (error) {
         console.error('Error fetching companies:', error);
+        return;
+      }
+
+      if (data && Array.isArray(data)) {
+        setCompanies(data);
       } else {
-        setCompanies(data || []);
+        console.error('No companies data or invalid format:', data);
+        setCompanies([]);
       }
     } catch (error) {
-      console.error('Error fetching companies:', error);
+      console.error('Error in fetchCompanies:', error);
+      setCompanies([]);
     }
-  };
+  }, []);
 
-  const handleCheckboxChange = (id) => {
-    setSelectedCompanies(prev =>
-      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
-    );
-  };
+  useEffect(() => {
+    const initializeData = async () => {
+      try {
+        await fetchAutomationProgress();
+        await fetchCompanies();
+      } catch (error) {
+        console.error('Error initializing data:', error);
+      }
+    };
+
+    initializeData();
+  }, [fetchAutomationProgress, fetchCompanies]);
+
+  const handleCheckboxChange = useCallback((id: number) => {
+    setSelectedCompanies(prev => {
+      const isSelected = prev.includes(id);
+      if (isSelected) {
+        return prev.filter(x => x !== id);
+      } else {
+        return [...prev, id];
+      }
+    });
+  }, []);
 
   const startCheck = async () => {
     if (!activeTab) {
@@ -94,10 +144,36 @@ export default function Start({
       return;
     }
 
-    console.log('Current activeTab:', activeTab);
     if (isChecking) {
-      alert('An automation is already running. Please wait for it to complete or stop it before starting a new one.');
-      return;
+      const shouldRestart = window.confirm('An automation is already running. Would you like to stop it and start a new one?');
+      if (!shouldRestart) {
+        return;
+      }
+
+      // Force stop the current automation
+      try {
+        const response = await fetch('/api/password-checker', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            action: "stop",
+            tab: activeTab
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to stop current automation');
+        }
+
+        // Wait for the stop to take effect
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      } catch (error) {
+        console.error('Error stopping automation:', error);
+        alert('Failed to stop current automation. Please try again.');
+        return;
+      }
     }
 
     if (runOption === 'selected' && selectedCompanies.length === 0) {
@@ -107,7 +183,7 @@ export default function Start({
 
     const currentTab = (activeTab || '').toLowerCase();
     let apiEndpoint = '';
-    
+
     switch (currentTab) {
       case 'nssf':
         apiEndpoint = '/api/nssf-pass-checker';
@@ -128,11 +204,10 @@ export default function Start({
     }
 
     try {
-      // First, update the automation progress
+      // First, ensure automation is marked as running in Supabase
       const { error: progressError } = await supabase
         .from('PasswordChecker_AutomationProgress')
         .upsert({
-          id: 1,
           progress: 0,
           status: 'Running',
           logs: [],
@@ -141,7 +216,6 @@ export default function Start({
         });
 
       if (progressError) {
-        console.error('Error updating automation progress:', progressError);
         throw progressError;
       }
 
@@ -160,26 +234,22 @@ export default function Start({
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        console.error('API Error:', errorData);
-        throw new Error(errorData.message || 'API request failed');
+        const data = await response.json();
+        throw new Error(data.message || 'Failed to start automation');
       }
 
-      const data = await response.json();
-      console.log(`Password check started for ${activeTab}:`, data);
-      
-      setIsChecking(true);
-      setStatus("Running");
-      setActiveTab("running");
+      if (typeof setIsChecking === 'function') setIsChecking(true);
+      if (typeof setStatus === 'function') setStatus("Running");
+      if (typeof setActiveTab === 'function') setActiveTab("running");
 
-      fetchAutomationProgress();
+      // Fetch latest progress
+      await fetchAutomationProgress();
     } catch (error) {
       console.error(`Error starting password check for ${activeTab}:`, error);
       // Reset the automation progress on error
       await supabase
         .from('PasswordChecker_AutomationProgress')
         .upsert({
-          id: 1,
           progress: 0,
           status: 'Stopped',
           logs: [],
@@ -199,7 +269,7 @@ export default function Start({
 
     const currentTab = (activeTab || '').toLowerCase();
     let apiEndpoint = '';
-    
+
     switch (currentTab) {
       case 'nssf':
         apiEndpoint = '/api/nssf-pass-checker';
@@ -224,14 +294,12 @@ export default function Start({
       const { error: progressError } = await supabase
         .from('PasswordChecker_AutomationProgress')
         .upsert({
-          id: 1,
           status: 'Running',
           tab: activeTab,
           last_updated: new Date().toISOString()
         });
 
       if (progressError) {
-        console.error('Error updating automation progress:', progressError);
         throw progressError;
       }
 
@@ -240,30 +308,30 @@ export default function Start({
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ 
-          action: "resume", 
-          tab: activeTab 
+        body: JSON.stringify({
+          action: "resume",
+          runOption,
+          selectedIds: runOption === 'selected' ? selectedCompanies : [],
+          tab: activeTab
         })
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        console.error('Error response:', errorData);
-        throw new Error(errorData.message || 'Failed to resume automation');
+        const data = await response.json();
+        throw new Error(data.message || 'Failed to resume automation');
       }
 
-      setIsChecking(true);
-      setStatus("Running");
-      setActiveTab("running");
-      
-      fetchAutomationProgress();
+      if (typeof setIsChecking === 'function') setIsChecking(true);
+      if (typeof setStatus === 'function') setStatus("Running");
+      if (typeof setActiveTab === 'function') setActiveTab("running");
+
+      await fetchAutomationProgress();
     } catch (error) {
       console.error('Error resuming automation:', error);
       // Reset automation progress on error
       await supabase
         .from('PasswordChecker_AutomationProgress')
         .upsert({
-          id: 1,
           status: 'Stopped',
           tab: activeTab,
           last_updated: new Date().toISOString()
@@ -327,11 +395,10 @@ export default function Start({
                         <TableCell className="w-[120px] font-mono">{company.kra_pin}</TableCell>
                         <TableCell className="w-[120px] font-mono">{company.kra_password}</TableCell>
                         <TableCell className="w-[100px] text-center">
-                          <span className={`${
-                            company.status?.toLowerCase() === 'valid' ? 'bg-green-500' :
-                            company.status?.toLowerCase() === 'invalid' ? 'bg-red-500' :
-                            'bg-yellow-500'
-                          } text-white px-2 py-1 rounded whitespace-nowrap text-sm`}>
+                          <span className={`${company.status?.toLowerCase() === 'valid' ? 'bg-green-500' :
+                              company.status?.toLowerCase() === 'invalid' ? 'bg-red-500' :
+                                'bg-yellow-500'
+                            } text-white px-2 py-1 rounded whitespace-nowrap text-sm`}>
                             {company.status || 'Pending'}
                           </span>
                         </TableCell>
@@ -349,7 +416,7 @@ export default function Start({
                 transition={{ duration: 0.3 }}
               >
                 <div className="mb-4">
-                  <h3 className="text-lg font-semibold mb-2">Selected Companies</h3>
+                  <h3 className="text-lg font-semibold mb-2">Selected Companies ({selectedCompanies.length})</h3>
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -361,25 +428,26 @@ export default function Start({
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {companies.filter(c => selectedCompanies.includes(c.id)).map((company, index) => (
-                        <TableRow key={company.id} className="bg-blue-100">
-                          <TableCell className="w-[50px] text-center">{index + 1}</TableCell>
-                          <TableCell className="min-w-[200px] whitespace-nowrap overflow-hidden text-ellipsis">
-                            {company.company_name}
-                          </TableCell>
-                          <TableCell className="w-[120px] font-mono">{company.kra_pin}</TableCell>
-                          <TableCell className="w-[120px] font-mono">{company.kra_password}</TableCell>
-                          <TableCell className="w-[100px] text-center">
-                            <span className={`${
-                              company.status?.toLowerCase() === 'valid' ? 'bg-green-500' :
-                              company.status?.toLowerCase() === 'invalid' ? 'bg-red-500' :
-                              'bg-yellow-500'
-                            } text-white px-2 py-1 rounded whitespace-nowrap text-sm`}>
-                              {company.status || 'Pending'}
-                            </span>
-                          </TableCell>
-                        </TableRow>
-                      ))}
+                      {companies
+                        .filter(company => selectedCompanies.includes(company.id))
+                        .map((company, index) => (
+                          <TableRow key={company.id} className="bg-blue-100">
+                            <TableCell className="w-[50px] text-center">{index + 1}</TableCell>
+                            <TableCell className="min-w-[200px] whitespace-nowrap overflow-hidden text-ellipsis">
+                              {company.company_name}
+                            </TableCell>
+                            <TableCell className="w-[120px] font-mono">{company.kra_pin}</TableCell>
+                            <TableCell className="w-[120px] font-mono">{company.kra_password}</TableCell>
+                            <TableCell className="w-[100px] text-center">
+                              <span className={`${company.status?.toLowerCase() === 'valid' ? 'bg-green-500' :
+                                  company.status?.toLowerCase() === 'invalid' ? 'bg-red-500' :
+                                    'bg-yellow-500'
+                                } text-white px-2 py-1 rounded whitespace-nowrap text-sm`}>
+                                {company.status || 'Pending'}
+                              </span>
+                            </TableCell>
+                          </TableRow>
+                        ))}
                     </TableBody>
                   </Table>
                 </div>
@@ -389,7 +457,10 @@ export default function Start({
                     disabled={isChecking && automationProgress?.status !== 'Stopped'}
                     className={automationProgress?.status === 'Completed' ? 'bg-green-500 text-white' : ''}
                   >
-                    {isChecking ? 'Running...' : automationProgress?.status === 'Stopped' ? 'Resume' : 'Start Password Check'}
+                    {isChecking ? 'Running...' :
+                      automationProgress?.status === 'Stopped' ? 'Resume' :
+                        automationProgress?.status === 'Completed' ? 'Start New Check' :
+                          'Start Password Check'}
                   </Button>
 
                   <Button onClick={() => { setStatus("Stopped"); }} disabled={!isChecking} variant="destructive" className="ml-2">
@@ -408,7 +479,10 @@ export default function Start({
             disabled={isChecking && automationProgress?.status !== 'Stopped'}
             className={automationProgress?.status === 'Completed' ? 'bg-green-500 text-white' : ''}
           >
-            {isChecking ? 'Running...' : automationProgress?.status === 'Stopped' ? 'Resume' : 'Start Password Check'}
+            {isChecking ? 'Running...' :
+              automationProgress?.status === 'Stopped' ? 'Resume' :
+                automationProgress?.status === 'Completed' ? 'Start New Check' :
+                  'Start Password Check'}
           </Button>
 
           <Button onClick={() => { setStatus("Stopped"); }} disabled={!isChecking} variant="destructive" className="ml-2">
