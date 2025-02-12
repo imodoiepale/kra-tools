@@ -20,7 +20,7 @@ const STORAGE_BUCKET = 'pentasoft-reports';
 // Type definitions
     interface FilePreview {
     fileName: string;
-    companyName: string;
+    companyName: string;    
     reportType: string;
     extractionDate: string;
     fullPath: string;
