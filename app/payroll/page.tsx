@@ -3,6 +3,7 @@
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import PayrollManagementWingu from "./PayrollManagementWingu"
+import TaxPaymentSlips from "./tax-payment-slips/TaxPaymentSlips"
 
 export default function PortalPage() {
     return (
@@ -10,13 +11,13 @@ export default function PortalPage() {
             <Tabs defaultValue="wingu-csv" className="space-y-4">
                 <TabsList>
                     <TabsTrigger value="wingu-csv">PAYROLL WINGU CSV AUTO</TabsTrigger>
-                    <TabsTrigger value="other">Other Tab</TabsTrigger>
+                    <TabsTrigger value="tax-payment-slips">TAX PAYMENT SLIPS WEB AUTO</TabsTrigger>
                 </TabsList>
                 <TabsContent value="wingu-csv" className="space-y-4">
                     <PayrollManagementWingu />
                 </TabsContent>
-                <TabsContent value="other">
-                    Other content
+                <TabsContent value="tax-payment-slips">
+                    <TaxPaymentSlips />
                 </TabsContent>
             </Tabs>
         </div>
