@@ -203,9 +203,21 @@ export function PayrollTable({
                                     </Badge>
                                 ) : (
                                     <Button
+                                        variant="outline"
                                         size="sm"
                                         className="bg-red-500 hover:bg-red-600 text-white text-xs px-2 py-1 h-6"
-                                        onClick={() => updateState({ finalizeDialog: { isOpen: true, recordId: record.id, assignedTo: 'Tushar', isNil: false } })}
+                                        onClick={() => {
+                                            setState(prev => ({
+                                                ...prev,
+                                                finalizeDialog: {
+                                                    ...prev.finalizeDialog,
+                                                    isOpen: true,
+                                                    recordId: record.id,
+                                                    isNil: record.status.finalization_date === 'NIL',
+                                                    record: record
+                                                }
+                                            }));
+                                        }}
                                     >
                                         Finalize
                                     </Button>
@@ -304,16 +316,19 @@ export function PayrollTable({
             {/* Finalization Dialog */}
             <FinalizeDialog
                 open={state.finalizeDialog.isOpen}
-                onOpenChange={(isOpen) => !isOpen && updateState({
-                    finalizeDialog: {
-                        isOpen: false,
-                        recordId: null,
-                        assignedTo: 'Tushar',
-                        isNil: false
-                    }
-                })}
-                onFinalize={handleFinalize}
+                onOpenChange={(open) => {
+                    setState(prev => ({
+                        ...prev,
+                        finalizeDialog: {
+                            ...prev.finalizeDialog,
+                            isOpen: open,
+                            recordId: open ? prev.finalizeDialog.recordId : null
+                        }
+                    }));
+                }}
+                onConfirm={handleFinalize}
                 recordId={state.finalizeDialog.recordId}
+                record={records.find(r => r.id === state.finalizeDialog.recordId)}
                 assignedTo={state.finalizeDialog.assignedTo}
                 isNil={state.finalizeDialog.isNil}
             />
