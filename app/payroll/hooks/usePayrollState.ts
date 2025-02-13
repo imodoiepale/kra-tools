@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { format } from 'date-fns';
-import { CompanyPayrollRecord, DocumentType } from '@/types';
+import { CompanyPayrollRecord, DocumentType } from '../../types';
 import { supabase } from '@/lib/supabase';
 
 interface PayrollState {
@@ -81,6 +81,37 @@ export function usePayrollState(
             toast({
                 title: 'Error',
                 description: 'Failed to finalize documents',
+                variant: 'destructive'
+            });
+        }
+    };
+
+    const handleRevertFinalize = async (recordId: string) => {
+        try {
+            await onStatusUpdate(recordId, {
+                finalization_date: null,
+                status: 'pending',
+                assigned_to: null
+            });
+            setState(prev => ({
+                ...prev,
+                finalizeDialog: {
+                    ...prev.finalizeDialog,
+                    isOpen: false,
+                    recordId: null,
+                    assignedTo: 'Tushar',
+                    isNil: false
+                }
+            }));
+            toast({
+                title: 'Success',
+                description: 'Finalization reverted successfully',
+            });
+        } catch (error) {
+            console.error('Revert finalization error:', error);
+            toast({
+                title: 'Error',
+                description: 'Failed to revert finalization',
                 variant: 'destructive'
             });
         }
@@ -334,6 +365,7 @@ export function usePayrollState(
         selectedMonthYear,
         setSelectedMonthYear,
         handleFinalize,
+        handleRevertFinalize,
         handleFilingConfirm,
         handleRemoveFiling,
         handleDeleteAll,

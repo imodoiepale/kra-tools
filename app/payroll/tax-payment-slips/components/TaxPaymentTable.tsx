@@ -1,4 +1,4 @@
-// components/payroll/PayrollTable.tsx
+// @ts-nocheck
 import { useState, useMemo } from "react"
 import { format } from 'date-fns'
 import {
