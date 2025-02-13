@@ -154,6 +154,7 @@ export function PayrollTable({
                         <TableHead className="text-white font-semibold border-b" scope="col">#</TableHead>
                         <TableHead className="text-white font-semibold" scope="col">Company Name</TableHead>
                         <TableHead className="text-white font-semibold" scope="col">Obligation Date</TableHead>
+                        <TableHead className="text-white font-semibold" scope="col">No. of Emp</TableHead>
                         <TableHead className="text-white font-semibold" scope="col">Finalization Date</TableHead>
                         <TableHead className="text-white font-semibold" scope="col">PAYE (CSV)</TableHead>
                         <TableHead className="text-white font-semibold" scope="col">HSLEVY (CSV)</TableHead>
@@ -169,7 +170,7 @@ export function PayrollTable({
                 <TableBody>
                     {loading ? (
                         <TableRow>
-                            <TableCell colSpan={13} className="text-center py-8 border">
+                            <TableCell colSpan={13} className=" py-8 border">
                                 <div role="status" className="animate-pulse">
                                     <div className="h-4 bg-gray-200 rounded-full w-48 mb-4"></div>
                                     <span className="sr-only">Loading...</span>
@@ -194,14 +195,16 @@ export function PayrollTable({
                                 </TableCell>
                             </TooltipProvider>
                             <TableCell></TableCell>
-                            <TableCell className="text-center">
+                            <TableCell></TableCell>
+                            <TableCell className="">
                                 {record.status.finalization_date ? (
-                                    <Badge
-                                        className={record.status.finalization_date === 'NIL' ? 'bg-purple-500' : 'bg-green-500'}
+                                    <p
+                                        // className={record.status.finalization_date === 'NIL' ? 'bg-purple-500' : 'bg-green-500'}
+                                        variant="outline"
                                         onClick={() => updateState({ documentDetailsDialog: { isOpen: true, record } })}
                                     >
                                         {formatDate(record.status.finalization_date)}
-                                    </Badge>
+                                    </p>
                                 ) : (
                                     <Button
                                         variant="outline"
@@ -226,7 +229,7 @@ export function PayrollTable({
                             </TableCell>
                             {/* Document cells */}
                             {Object.entries(DOCUMENT_LABELS).map(([key, label]) => (
-                                <TableCell key={key} className="text-center">
+                                <TableCell key={key} className="">
                                     {key === 'all_csv' ? (
                                         <Badge className={record.status.finalization_date === 'NIL' ? 'bg-purple-500' : 'bg-blue-500'}>
                                             {getDocumentCount(record)}
@@ -245,7 +248,7 @@ export function PayrollTable({
                                     )}
                                 </TableCell>
                             ))}
-                            <TableCell className="text-center">
+                            <TableCell className="">
                                 {record?.status?.filing?.filingDate ? (
                                     <Button
                                         size="sm"
@@ -257,7 +260,7 @@ export function PayrollTable({
                                 ) : (
                                     <Button
                                         size="sm"
-                                            className={`h-6 text-xs text-center px-2 ${(!allDocumentsUploaded(record) && record.status.finalization_date !== 'NIL')
+                                            className={`h-6 text-xs  px-2 ${(!allDocumentsUploaded(record) && record.status.finalization_date !== 'NIL')
                                             ? "bg-red-500 hover:bg-red-500"
                                             : "bg-yellow-500 hover:bg-yellow-500"
                                             }`}
@@ -276,7 +279,7 @@ export function PayrollTable({
                                     {record.status.assigned_to || 'Unassigned'}
                                 </Badge>
                             </TableCell>
-                            <TableCell className="text-center">
+                            <TableCell className="">
                                 <DropdownMenu>
                                     <DropdownMenuTrigger asChild>
                                         <Button variant="ghost" size="sm" className="h-6 w-6 p-0">

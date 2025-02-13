@@ -1,6 +1,7 @@
+// @ts-nocheck
 import { useState } from 'react';
 import { format } from 'date-fns';
-import { CompanyPayrollRecord, DocumentType } from '../../types';
+import { CompanyPayrollRecord, DocumentType } from '../types';
 import { supabase } from '@/lib/supabase';
 
 interface PayrollState {
