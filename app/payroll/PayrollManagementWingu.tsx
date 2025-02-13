@@ -243,6 +243,7 @@ export default function PayrollManagement() {
                 onDocumentDelete={handleDocumentDelete}
                 onStatusUpdate={handleStatusUpdate}
                 loading={loading}
+                setPayrollRecords={setPayrollRecords}
             />
         </div>
     )

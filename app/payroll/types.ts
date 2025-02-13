@@ -22,6 +22,12 @@ export interface CompanyPayrollRecord {
         finalization_date: string | null
         status: 'pending' | 'completed'
         assigned_to: string | null
+        filing?: {
+            isReady: boolean;
+            filingDate: string;
+            isNil: boolean;
+            filedBy: string;
+        }
     }
     filing_status?: {
         isReady: boolean;
@@ -55,6 +61,14 @@ export interface FilingStatus {
     filedBy: string;
 }
 
+export interface FilingDialogState {
+    isOpen: boolean;
+    recordId: string | null;
+    isNil: boolean;
+    confirmOpen: boolean;
+    record?: CompanyPayrollRecord;
+}
+
 export interface CompanyPayrollRecord {
     id: string;
     company: Company;
@@ -66,6 +80,12 @@ export interface CompanyPayrollRecord {
         finalization_date: string | null;
         status: 'pending' | 'completed';
         assigned_to: string | null;
+        filing?: {
+            isReady: boolean;
+            filingDate: string;
+            isNil: boolean;
+            filedBy: string;
+        }
     };
     filing?: FilingStatus;
 }
