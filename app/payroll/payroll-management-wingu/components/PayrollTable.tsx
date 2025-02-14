@@ -140,9 +140,11 @@ export function PayrollTable({
 
     // Memoize sorted records for performance
     const sortedRecords = useMemo(() =>
-        [...records].sort((a, b) =>
-            a.company.company_name.localeCompare(b.company.company_name)
-        ),
+        [...records].sort((a, b) => {
+            const nameA = a?.company?.company_name || '';
+            const nameB = b?.company?.company_name || '';
+            return nameA.localeCompare(nameB);
+        }),
         [records]
     );
 
@@ -181,16 +183,16 @@ export function PayrollTable({
                         <TableRow
                             key={record.id}
                             className={`${index % 2 === 0 ? 'bg-blue-50 hover:bg-blue-100' : 'bg-white hover:bg-gray-50'} [&>td]:border-r [&>td]:border-gray-200 last:[&>td]:border-r-0`}
-                            aria-label={`Payroll record for ${record.company.company_name}`}
+                            aria-label={`Payroll record for ${record?.company?.company_name || 'Unknown Company'}`}
                         >
                             <TableCell>{index + 1}</TableCell>
                             <TooltipProvider>
                                 <TableCell className="font-medium">
                                     <Tooltip>
                                         <TooltipTrigger className=" ">
-                                            {record.company.company_name.split(" ").slice(0, 3).join(" ")}
+                                            {(record?.company?.company_name || 'Unknown Company').split(" ").slice(0, 3).join(" ")}
                                         </TooltipTrigger>
-                                        <TooltipContent>{record.company.company_name}</TooltipContent>
+                                        <TooltipContent>{record?.company?.company_name || 'Unknown Company'}</TooltipContent>
                                     </Tooltip>
                                 </TableCell>
                             </TooltipProvider>
@@ -244,7 +246,7 @@ export function PayrollTable({
                                             label={label}
                                             isNilFiling={record.status.finalization_date === 'NIL'}
                                             allDocuments={getDocumentsForUpload(record)}
-                                            companyName={record.company.company_name}
+                                            companyName={record?.company?.company_name || 'Unknown Company'}
                                         />
                                     )}
                                 </TableCell>

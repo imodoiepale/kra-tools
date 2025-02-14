@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { format } from 'date-fns'
 import { supabase } from '@/lib/supabase'
 import { CompanyPayrollRecord, DocumentType } from '../types'
@@ -41,6 +41,19 @@ export default function PayrollManagementWingu({
         return handleDocumentUpload(recordId, file, documentType, 'PREP DOCS')
     }
 
+    // Filter records based on search term
+    const filteredRecords = useMemo(() => {
+        if (!searchTerm.trim()) return payrollRecords;
+        
+        const searchLower = searchTerm.toLowerCase();
+        return payrollRecords.filter(record => {
+            const companyName = record.company?.company_name || '';
+            const companyId = record.company?.id?.toString() || '';
+            return companyName.toLowerCase().includes(searchLower) || 
+                   companyId.includes(searchLower);
+        });
+    }, [payrollRecords, searchTerm]);
+
     return (
         <div className="space-y-4">
             <div className="flex justify-between items-center">
@@ -63,7 +76,7 @@ export default function PayrollManagementWingu({
             </div>
 
             <PayrollTable
-                records={payrollRecords}
+                records={filteredRecords}
                 onDocumentUpload={handleDocumentUploadWithFolder}
                 onDocumentDelete={handleDocumentDelete}
                 onStatusUpdate={handleStatusUpdate}
