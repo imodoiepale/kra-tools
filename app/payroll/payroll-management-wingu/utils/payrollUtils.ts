@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { format } from 'date-fns';
-import { CompanyPayrollRecord, DocumentType } from '../types';
+import { CompanyPayrollRecord, DocumentType } from '../../types';
 
 export const formatDate = (date: string | null | undefined): string => {
     if (!date) return 'NIL';

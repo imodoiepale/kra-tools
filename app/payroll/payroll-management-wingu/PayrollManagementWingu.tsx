@@ -2,12 +2,11 @@
 import { useEffect, useState } from 'react'
 import { format } from 'date-fns'
 import { supabase } from '@/lib/supabase'
-import { CompanyPayrollRecord, DocumentType } from './types'
+import { CompanyPayrollRecord, DocumentType } from '../types'
 import { PayrollTable } from './components/PayrollTable'
-import { MonthYearSelector } from './components/MonthYearSelector'
+import { MonthYearSelector } from '../components/MonthYearSelector'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { useToast } from '@/hooks/use-toast'
 
 interface PayrollManagementProps {
     payrollRecords: CompanyPayrollRecord[]

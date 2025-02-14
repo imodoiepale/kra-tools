@@ -124,13 +124,25 @@ export const usePayrollCycle = () => {
 
             if (uploadError) throw uploadError
 
+            // First fetch the current documents to ensure we have the latest state
+            const { data: currentRecord, error: fetchError } = await supabase
+                .from('company_payroll_records')
+                .select('documents')
+                .eq('id', recordId)
+                .single()
+
+            if (fetchError) throw fetchError
+
+            // Merge the new document path with existing documents
+            const updatedDocuments = {
+                ...(currentRecord?.documents || {}),
+                [documentType]: uploadData.path
+            }
+
             const { error: updateError } = await supabase
                 .from('company_payroll_records')
                 .update({
-                    documents: {
-                        ...(record.documents || {}),
-                        [documentType]: uploadData.path
-                    }
+                    documents: updatedDocuments
                 })
                 .eq('id', recordId)
 
@@ -141,6 +153,8 @@ export const usePayrollCycle = () => {
                 title: 'Success',
                 description: 'Document uploaded successfully'
             })
+
+            return uploadData.path
         } catch (error) {
             console.error('Upload error:', error)
             toast({

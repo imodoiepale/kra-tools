@@ -21,7 +21,7 @@ import {
     AlertDialogHeader,
     AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { CompanyPayrollRecord } from '../../types';
+import { CompanyPayrollRecord } from '../../../types';
 import { formatDate } from '../../utils/payrollUtils';
 import { RotateCcw } from "lucide-react";
 
@@ -118,7 +118,7 @@ export function FinalizeDialog({
                             </div>
                         </div>
                     </DialogHeader>
-                    
+
                     <div className="space-y-4 py-2">
                         <div className="bg-gray-50 rounded-lg p-4 space-y-3">
                             <div className="flex justify-between items-center">

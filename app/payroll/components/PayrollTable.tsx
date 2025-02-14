@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { useState, useMemo } from "react"
-import { formatDate } from '../utils/payrollUtils';
+import { formatDate } from '../payroll-management-wingu/utils/payrollUtils';
 import {
     MoreHorizontal,
     Download,
@@ -47,10 +47,10 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { DocumentUploadDialog } from './DocumentUploadDialog'
-import { FinalizeDialog } from './dialogs/FinalizeDialog'
-import { FilingDialog } from './dialogs/FilingDialog'
-import { DocumentDetailsDialog } from './dialogs/DocumentDetailsDialog'
+import { DocumentUploadDialog } from '../payroll-management-wingu/components/DocumentUploadDialog'
+import { FinalizeDialog } from '../payroll-management-wingu/components/dialogs/FinalizeDialog'
+import { FilingDialog } from '../payroll-management-wingu/components/dialogs/FilingDialog'
+import { DocumentDetailsDialog } from '../payroll-management-wingu/components/dialogs/DocumentDetailsDialog'
 import { usePayrollState } from '../hooks/usePayrollState'
 import {
     CompanyPayrollRecord,
@@ -261,7 +261,7 @@ export function PayrollTable({
                                 ) : (
                                     <Button
                                         size="sm"
-                                            className={`h-6 text-xs  px-2 ${(!allDocumentsUploaded(record) && record.status.finalization_date !== 'NIL')
+                                        className={`h-6 text-xs  px-2 ${(!allDocumentsUploaded(record) && record.status.finalization_date !== 'NIL')
                                             ? "bg-red-500 hover:bg-red-500"
                                             : "bg-yellow-500 hover:bg-yellow-500"
                                             }`}

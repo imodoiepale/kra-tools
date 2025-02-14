@@ -2,7 +2,7 @@
 'use client'
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import PayrollManagementWingu from "./PayrollManagementWingu"
+import PayrollManagementWingu from "./payroll-management-wingu/PayrollManagementWingu"
 import TaxPaymentSlips from "./tax-payment-slips/TaxPaymentSlips"
 import { usePayrollCycle } from "./hooks/usePayrollCycle"
 import { useEffect } from "react"

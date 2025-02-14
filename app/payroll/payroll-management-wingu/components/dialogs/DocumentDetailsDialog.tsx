@@ -19,7 +19,7 @@ import {
     AlertDialogHeader,
     AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { CompanyPayrollRecord, DocumentType } from '../../types';
+import { CompanyPayrollRecord, DocumentType } from '../../../types';
 import { formatDate } from '../../utils/payrollUtils';
 import React from 'react';
 
