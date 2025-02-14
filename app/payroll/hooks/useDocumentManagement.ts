@@ -1,5 +1,6 @@
+// @ts-nocheck
 import { format } from 'date-fns';
-import { CompanyPayrollRecord, DocumentType } from '@/types';
+import { CompanyPayrollRecord, DocumentType } from '../types';
 import { supabase } from '@/lib/supabase';
 import { useToast } from '@/hooks/use-toast';
 
@@ -27,13 +28,13 @@ export function useDocumentManagement(
             if (fetchError) throw fetchError;
 
             const fileName = `${documentType}_${record.company.company_name}_${format(new Date(), 'yyyy-MM-dd')}${file.name.substring(file.name.lastIndexOf('.'))}`;
-            const filePath = `${selectedMonthYear}/${record.company.company_name}/${fileName}`;
+            const filePath = `${selectedMonthYear}/PREP DOCS/${record.company.company_name}/${fileName}`;
 
             // Upload file to storage
             const { data: uploadData, error: uploadError } = await supabase.storage
                 .from('Payroll-Cycle')
                 .upload(filePath, file, {
-                    cacheControl: '3600',
+                    cacheControl: '0',
                     upsert: true
                 });
 

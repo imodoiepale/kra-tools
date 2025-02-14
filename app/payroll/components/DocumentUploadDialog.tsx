@@ -1,6 +1,6 @@
 // components/payroll/DocumentUploadDialog.tsx
 import { useState } from 'react'
-import { Trash2, Upload, Loader2 } from 'lucide-react'
+import { Trash2, Upload, Loader2, Download, Building2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
     Dialog,
@@ -40,6 +40,7 @@ interface DocumentUploadDialogProps {
     existingDocument: string | null;
     label: string;
     isNilFiling: boolean;
+    companyName: string;
     allDocuments?: {
         type: DocumentType;
         label: string;
@@ -55,6 +56,7 @@ export function DocumentUploadDialog({
     existingDocument,
     label,
     isNilFiling,
+    companyName,
     allDocuments
 }: DocumentUploadDialogProps) {
     const [uploadDialog, setUploadDialog] = useState(false)
@@ -99,6 +101,38 @@ export function DocumentUploadDialog({
         }
     }
 
+    const handleDownload = async (path: string) => {
+        try {
+            const { data, error } = await supabase.storage
+                .from('Payroll-Cycle')
+                .download(path);
+
+            if (error) throw error;
+
+            // Create a download link
+            const url = window.URL.createObjectURL(data);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = path.split('/').pop() || 'document';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            window.URL.revokeObjectURL(url);
+
+            toast({
+                title: "Success",
+                description: "Document downloaded successfully"
+            });
+        } catch (error) {
+            console.error('Download error:', error);
+            toast({
+                title: "Error",
+                description: "Failed to download document",
+                variant: "destructive"
+            });
+        }
+    };
+
     const handleBulkSubmit = async () => {
         if (bulkFiles.size === 0) {
             toast({
@@ -129,8 +163,7 @@ export function DocumentUploadDialog({
             if (successCount > 0) {
                 toast({
                     title: "Upload Complete",
-                    description: `Successfully uploaded ${successCount} document${successCount > 1 ? 's' : ''}${errorCount > 0 ? `. Failed to upload ${errorCount} document${errorCount > 1 ? 's' : ''}.` : ''
-                        }`
+                    description: `Successfully uploaded ${successCount} document${successCount > 1 ? 's' : ''}${errorCount > 0 ? `. Failed to upload ${errorCount} document${errorCount > 1 ? 's' : ''}.` : ''}`
                 });
 
                 if (errorCount === 0) {
@@ -160,7 +193,6 @@ export function DocumentUploadDialog({
         }
     };
 
-    
     const handleDelete = async () => {
         try {
             await onDelete(selectedDocType)
@@ -216,6 +248,10 @@ export function DocumentUploadDialog({
             <Dialog open={uploadDialog} onOpenChange={setUploadDialog}>
                 <DialogContent className="max-w-2xl">
                     <DialogHeader>
+                        <div className="flex items-center gap-2 mb-2">
+                            <Building2 className="h-5 w-5 text-blue-500" />
+                            <span className="text-lg font-semibold text-blue-700">{companyName}</span>
+                        </div>
                         <DialogTitle>{existingDocument ? 'View/Replace' : 'Upload'} {label}</DialogTitle>
                         <DialogDescription>
                             {existingDocument
@@ -250,7 +286,12 @@ export function DocumentUploadDialog({
                                         <span className="text-sm text-gray-500">
                                             {existingDocument.split('/').pop()}
                                         </span>
-                                        <Button size="sm" variant="outline">
+                                        <Button 
+                                            size="sm" 
+                                            variant="outline"
+                                            onClick={() => handleDownload(existingDocument)}
+                                        >
+                                            <Download className="h-3 w-3 mr-1" />
                                             Download
                                         </Button>
                                     </div>
@@ -261,59 +302,67 @@ export function DocumentUploadDialog({
                         <TabsContent value="bulk" className="space-y-4">
                             {allDocuments && allDocuments.length > 0 ? (
                                 <div className="space-y-4">
-                                    <div className="text-sm text-muted-foreground">
-                                        Manage all documents for this company
-                                    </div>
-                                    <div className="grid gap-4">
-                                        {allDocuments.map((doc) => (
-                                            <div key={doc.type} className="flex items-center justify-between p-4 border rounded-lg">
-                                                <div>
-                                                    <h4 className="font-medium">{doc.label}</h4>
-                                                    <p className="text-sm text-muted-foreground">
-                                                        Status: <span className={doc.status === 'missing' ? 'text-yellow-500' : 'text-green-500'}>
-                                                            {doc.status === 'missing' ? 'Missing' : 'Uploaded'}
-                                                        </span>
-                                                        {bulkFiles.has(doc.type) && (
-                                                            <span className="ml-2 text-blue-500">
-                                                                (New file selected)
-                                                            </span>
-                                                        )}
-                                                    </p>
-                                                </div>
-                                                <div className="flex gap-2">
-                                                    <Input
-                                                        type="file"
-                                                        className="w-auto"
-                                                        accept={doc.type.includes('csv') ? '.csv' : '.xlsx,.xls'}
-                                                        onChange={(e) => {
-                                                            const file = e.target.files?.[0];
-                                                            if (file) handleBulkFileSelect(file, doc.type, doc.label);
-                                                        }}
-                                                    />
-                                                    {doc.path && (
-                                                        <div className="flex gap-2">
-                                                            <Button
-                                                                size="sm"
-                                                                variant="outline"
-                                                                onClick={() => {/* Handle download */ }}
-                                                            >
-                                                                Download
-                                                            </Button>
-                                                            <Button
-                                                                size="sm"
-                                                                variant="destructive"
-                                                                onClick={() => {
-                                                                    setSelectedDocType(doc.type);
-                                                                    setConfirmDeleteDialog(true);
-                                                                }}
-                                                            >
-                                                                <Trash2 className="h-3 w-3" />
-                                                            </Button>
+                                    <div className="bg-gray-50 rounded-lg p-4">
+                                        <h4 className="text-sm font-semibold text-gray-900 flex items-center gap-1.5 mb-4">
+                                            <Upload className="h-4 w-4 text-blue-500" />
+                                            Document Management
+                                        </h4>
+                                        <div className="divide-y">
+                                            {allDocuments.map((doc) => (
+                                                <div key={doc.type} className="py-3 first:pt-0 last:pb-0">
+                                                    <div className="flex items-center justify-between gap-4">
+                                                        <div className="min-w-[150px]">
+                                                            <h4 className="font-medium text-sm">{doc.label}</h4>
+                                                            <p className="text-sm text-muted-foreground">
+                                                                <span className={doc.status === 'missing' ? 'text-yellow-500' : 'text-green-500'}>
+                                                                    {doc.status === 'missing' ? 'Missing' : 'Uploaded'}
+                                                                </span>
+                                                                {bulkFiles.has(doc.type) && (
+                                                                    <span className="ml-2 text-blue-500">
+                                                                        (New file selected)
+                                                                    </span>
+                                                                )}
+                                                            </p>
                                                         </div>
-                                                    )}
+                                                        <div className="flex gap-2 items-center flex-1">
+                                                            <Input
+                                                                type="file"
+                                                                className="flex-1"
+                                                                accept={doc.type.includes('csv') ? '.csv' : '.xlsx,.xls'}
+                                                                onChange={(e) => {
+                                                                    const file = e.target.files?.[0];
+                                                                    if (file) handleBulkFileSelect(file, doc.type, doc.label);
+                                                                }}
+                                                            />
+                                                            {doc.path && (
+                                                                <div className="flex gap-2">
+                                                                    <Button
+                                                                        size="sm"
+                                                                        variant="outline"
+                                                                        className="h-7 px-2 gap-1"
+                                                                        onClick={() => handleDownload(doc.path!)}
+                                                                    >
+                                                                        <Download className="h-3 w-3" />
+                                                                        <span className="text-xs">Download</span>
+                                                                    </Button>
+                                                                    <Button
+                                                                        size="sm"
+                                                                        variant="destructive"
+                                                                        className="h-7 px-2"
+                                                                        onClick={() => {
+                                                                            setSelectedDocType(doc.type);
+                                                                            setConfirmDeleteDialog(true);
+                                                                        }}
+                                                                    >
+                                                                        <Trash2 className="h-3 w-3" />
+                                                                    </Button>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </div>
                                                 </div>
-                                            </div>
-                                        ))}
+                                            ))}
+                                        </div>
                                     </div>
                                     <div className="flex justify-end mt-6">
                                         <Button

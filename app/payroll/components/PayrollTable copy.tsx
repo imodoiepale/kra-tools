@@ -146,6 +146,105 @@ export function PayrollTable({
         [records]
     );
 
+    const handleDocumentUpload = async (recordId: string, file: File, documentType: DocumentType) => {
+        try {
+            const path = `${recordId}/${documentType}/${file.name}`;
+            const { error: uploadError } = await supabase.storage
+                .from('Payroll-Cycle')
+                .upload(path, file);
+
+            if (uploadError) throw uploadError;
+
+            // Update the record in the database
+            const { error: updateError } = await supabase
+                .from('payroll_records')
+                .update({
+                    [`documents:${documentType}`]: path
+                })
+                .eq('id', recordId);
+
+            if (updateError) throw updateError;
+
+            // Update local state
+            setPayrollRecords(records.map(record => {
+                if (record.id === recordId) {
+                    return {
+                        ...record,
+                        documents: {
+                            ...record.documents,
+                            [documentType]: path
+                        }
+                    };
+                }
+                return record;
+            }));
+
+            toast({
+                title: "Success",
+                description: "Document uploaded successfully"
+            });
+        } catch (error) {
+            console.error('Upload error:', error);
+            toast({
+                title: "Error",
+                description: "Failed to upload document",
+                variant: "destructive"
+            });
+            throw error;
+        }
+    };
+
+    const handleDocumentDelete = async (recordId: string, documentType: DocumentType) => {
+        try {
+            const record = records.find(r => r.id === recordId);
+            if (!record || !record.documents[documentType]) return;
+
+            // Delete from storage
+            const { error: deleteError } = await supabase.storage
+                .from('Payroll-Cycle')
+                .remove([record.documents[documentType]]);
+
+            if (deleteError) throw deleteError;
+
+            // Update the record in the database
+            const { error: updateError } = await supabase
+                .from('payroll_records')
+                .update({
+                    [`documents:${documentType}`]: null
+                })
+                .eq('id', recordId);
+
+            if (updateError) throw updateError;
+
+            // Update local state
+            setPayrollRecords(records.map(r => {
+                if (r.id === recordId) {
+                    return {
+                        ...r,
+                        documents: {
+                            ...r.documents,
+                            [documentType]: null
+                        }
+                    };
+                }
+                return r;
+            }));
+
+            toast({
+                title: "Success",
+                description: "Document deleted successfully"
+            });
+        } catch (error) {
+            console.error('Delete error:', error);
+            toast({
+                title: "Error",
+                description: "Failed to delete document",
+                variant: "destructive"
+            });
+            throw error;
+        }
+    };
+
     return (
         <div className="rounded-md border h-[calc(100vh-220px)] overflow-auto">
             <Table aria-label="Payroll Records" className="border border-gray-200">
@@ -238,8 +337,8 @@ export function PayrollTable({
                                         <DocumentUploadDialog
                                             documentType={key as DocumentType}
                                             recordId={record.id}
-                                            onUpload={(file, docType) => onDocumentUpload(record.id, file, docType || key as DocumentType)}
-                                            onDelete={(docType) => onDocumentDelete(record.id, docType || key as DocumentType)}
+                                            onUpload={(file, docType) => handleDocumentUpload(record.id, file, docType || key as DocumentType)}
+                                            onDelete={(docType) => handleDocumentDelete(record.id, docType || key as DocumentType)}
                                             existingDocument={record.documents[key as DocumentType]}
                                             label={label}
                                             isNilFiling={record.status.finalization_date === 'NIL'}
@@ -261,7 +360,7 @@ export function PayrollTable({
                                 ) : (
                                     <Button
                                         size="sm"
-                                            className={`h-6 text-xs  px-2 ${(!allDocumentsUploaded(record) && record.status.finalization_date !== 'NIL')
+                                        className={`h-6 text-xs  px-2 ${(!allDocumentsUploaded(record) && record.status.finalization_date !== 'NIL')
                                             ? "bg-red-500 hover:bg-red-500"
                                             : "bg-yellow-500 hover:bg-yellow-500"
                                             }`}

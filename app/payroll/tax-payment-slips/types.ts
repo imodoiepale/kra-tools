@@ -11,24 +11,23 @@ export interface CompanyTaxPaymentRecord {
     company: Company
     payroll_cycle_id: string
     status: {
-        verification_date: string | null
-        status: 'pending' | 'verified' | 'completed'
-        assigned_to: string | null
-        filing?: {
-            isReady: boolean
-            filingDate: string
-            isNil: boolean
-            filedBy: string
-        }
-    }
-    documents: {
-        paye_ack: string | null
-        paye: string | null
-        housing_levy: string | null
-        shif: string | null
-        nssf: string | null
-        all_csv: string | null
-    }
+        finalization_date: string | null;
+        assigned_to: string | null;
+        status: string;
+    };
+    payment_slips_status: {
+        status: string;
+        assigned_to: string | null;
+        verification_date: string | null;
+    };
+    payment_slips_documents: {
+        paye_acknowledgment: string | null;
+        paye_slip: string | null;
+        housing_levy_slip: string | null;
+        shif_slip: string | null;
+        nssf_slip: string | null;
+        nita_slip: string | null;
+    };
 }
 
-export type DocumentType = 'paye_ack' | 'paye' | 'housing_levy' | 'shif' | 'nssf' | 'all_csv';
+export type DocumentType = 'paye_acknowledgment' | 'paye_slip' | 'housing_levy_slip' | 'shif_slip' | 'nssf_slip' | 'nita_slip';

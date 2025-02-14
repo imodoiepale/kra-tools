@@ -60,21 +60,14 @@ import { useToast } from '@/hooks/use-toast'
 import { supabase } from '@/lib/supabase'
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip";
 
-// const DOCUMENT_LABELS: Record<string, string> = {
-//     paye_csv: "PAYE Returns (CSV)",
-//     hslevy_csv: "Housing Levy Returns (CSV)",
-//     shif_exl: "SHIF Returns (Excel)",
-//     nssf_exl: "NSSF Returns (Excel)",
-//     zip_file_kra: "KRA ZIP File",
-//     all_csv: "All CSV Files"
-// };
 
 const DOCUMENT_LABELS: Record<string, string> = {
-    paye_ack: "PAYE Ack.",
-    paye: "PAYE Payment",
-    housing_levy: "Housing Levy",
-    shif: "SHIF",
-    nssf: "NSSF",
+    paye_acknowledgment: "PAYE Ack.",
+    paye_slip: "PAYE Payment",
+    housing_levy_slip: "Housing Levy",
+    shif_slip: "SHIF",
+    nssf_slip: "NSSF",
+    nita_slip: "NITA",
     all_csv: "All CSV Files"
 };
 
@@ -105,8 +98,8 @@ const getDocumentsForUpload = (record: CompanyPayrollRecord) => {
         .map(([type, label]) => ({
             type: type as DocumentType,
             label,
-            status: record.documents[type as DocumentType] ? 'uploaded' as const : 'missing' as const,
-            path: record.documents[type as DocumentType]
+            status: record.payment_slips_documents[type as DocumentType] ? 'uploaded' as const : 'missing' as const,
+            path: record.payment_slips_documents[type as DocumentType]
         }));
 };
 
@@ -146,18 +139,19 @@ export function TaxPaymentTable({
         if (record.status.finalization_date === 'NIL') {
             return 'N/A';
         }
-        const totalDocs = Object.keys(record.documents).length - 1; // Exclude all_csv
-        const uploadedDocs = Object.entries(record.documents)
-            .filter(([key, value]) => key !== 'all_csv' && value !== null)
-            .length;
+        // Count all document types including nita_slip
+        const requiredDocs = ['paye_acknowledgment', 'paye_slip', 'housing_levy_slip', 'shif_slip', 'nssf_slip', 'nita_slip'];
+        const totalDocs = requiredDocs.length;
+        const uploadedDocs = requiredDocs.filter(docType =>
+            record.payment_slips_documents[docType as DocumentType] !== null
+        ).length;
         return `${uploadedDocs}/${totalDocs}`;
     };
 
     const allDocumentsUploaded = (record: CompanyPayrollRecord | undefined): boolean => {
         if (!record) return false;
-        return Object.entries(record.documents)
-            .filter(([key]) => key !== 'all_csv')
-            .every(([_, value]) => value !== null);
+        const requiredDocs = ['paye_acknowledgment', 'paye_slip', 'housing_levy_slip', 'shif_slip', 'nssf_slip', 'nita_slip'];
+        return requiredDocs.every(docType => record.payment_slips_documents[docType as DocumentType] !== null);
     };
 
     // Memoize sorted records for performance
@@ -305,7 +299,7 @@ export function TaxPaymentTable({
             setIsSubmitting(true);
 
             // Filter out null values before using the paths
-            const documentsToDelete = Object.entries(record.documents).filter(([_, path]) => path !== null) as [DocumentType, string][];
+            const documentsToDelete = Object.entries(record.payment_slips_documents).filter(([_, path]) => path !== null) as [DocumentType, string][];
 
             if (documentsToDelete.length === 0) {
                 toast({
@@ -329,13 +323,13 @@ export function TaxPaymentTable({
             const { error: updateError } = await supabase
                 .from('company_payroll_records')
                 .update({
-                    documents: {
-                        paye_csv: null,
-                        hslevy_csv: null,
-                        shif_exl: null,
-                        nssf_exl: null,
-                        zip_file_kra: null,
-                        all_csv: null
+                    payment_slips_documents: {
+                        paye_acknowledgment: null,
+                        paye_slip: null,
+                        housing_levy_slip: null,
+                        shif_slip: null,
+                        nssf_slip: null,
+                        nita_slip: null
                     }
                 })
                 .eq('id', record.id);
@@ -347,13 +341,13 @@ export function TaxPaymentTable({
                 if (r.id === record.id) {
                     return {
                         ...r,
-                        documents: {
-                            paye_csv: null,
-                            hslevy_csv: null,
-                            shif_exl: null,
-                            nssf_exl: null,
-                            zip_file_kra: null,
-                            all_csv: null
+                        payment_slips_documents: {
+                            paye_acknowledgment: null,
+                            paye_slip: null,
+                            housing_levy_slip: null,
+                            shif_slip: null,
+                            nssf_slip: null,
+                            nita_slip: null
                         }
                     };
                 }
@@ -405,7 +399,7 @@ export function TaxPaymentTable({
 
     const handleDownloadAll = async (record: CompanyPayrollRecord) => {
         try {
-            const documentsToDownload = Object.entries(record.documents)
+            const documentsToDownload = Object.entries(record.payment_slips_documents)
                 .filter(([key, value]) => key !== 'all_csv' && value !== null);
 
             for (const [_, path] of documentsToDownload) {
@@ -432,6 +426,10 @@ export function TaxPaymentTable({
                 throw new Error('Record not found');
             }
 
+            if (!record.company || !record.company.company_name) {
+                throw new Error('Company information is missing');
+            }
+
             // First, fetch the current record to get latest document paths
             const { data: currentRecord, error: fetchError } = await supabase
                 .from('company_payroll_records')
@@ -440,15 +438,16 @@ export function TaxPaymentTable({
                 .single();
 
             if (fetchError) throw fetchError;
+            if (!currentRecord) throw new Error('Failed to fetch current record');
 
-            const fileName = `${documentType}_${record.company.company_name}_${format(new Date(), 'yyyy-MM-dd')}${file.name.substring(file.name.lastIndexOf('.'))}`;
-            const filePath = `${selectedMonthYear}/${record.company.company_name}/${fileName}`;
+            const fileName = `${documentType} - ${record.company.company_name} - ${format(new Date(), 'yyyy-MM-dd')}${file.name.substring(file.name.lastIndexOf('.'))}`;
+            const filePath = `${selectedMonthYear}/PAYMENT SLIPS/${record.company.company_name}/${fileName}`;
 
             // Upload file to storage
             const { data: uploadData, error: uploadError } = await supabase.storage
                 .from('Payroll-Cycle')
                 .upload(filePath, file, {
-                    cacheControl: '3600',
+                    cacheControl: '0',
                     upsert: true
                 });
 
@@ -456,7 +455,7 @@ export function TaxPaymentTable({
 
             // Preserve existing document paths and update the new one
             const updatedDocuments = {
-                ...currentRecord.documents,
+                ...currentRecord.payment_slips_documents,
                 [documentType]: uploadData.path
             };
 
@@ -464,7 +463,7 @@ export function TaxPaymentTable({
             const { error: updateError } = await supabase
                 .from('company_payroll_records')
                 .update({
-                    documents: updatedDocuments
+                    payment_slips_documents: updatedDocuments
                 })
                 .eq('id', recordId);
 
@@ -481,14 +480,24 @@ export function TaxPaymentTable({
                 if (r.id === recordId) {
                     return {
                         ...r,
-                        documents: updatedDocuments
+                        payment_slips_documents: updatedDocuments
                     };
                 }
                 return r;
             });
             setPayrollRecords(updatedRecords);
+
+            toast({
+                title: 'Success',
+                description: 'Document uploaded successfully'
+            });
         } catch (error) {
             console.error('Document upload error:', error);
+            toast({
+                title: 'Error',
+                description: error instanceof Error ? error.message : 'Failed to upload document',
+                variant: 'destructive'
+            });
             throw error;
         }
     };
@@ -498,7 +507,7 @@ export function TaxPaymentTable({
             const record = records.find(r => r.id === recordId);
             if (!record) return;
 
-            const documentPath = record.documents[documentType];
+            const documentPath = record.payment_slips_documents[documentType];
             if (!documentPath) return;
 
             const { error: deleteError } = await supabase.storage
@@ -510,8 +519,8 @@ export function TaxPaymentTable({
             const { error: updateError } = await supabase
                 .from('company_payroll_records')
                 .update({
-                    documents: {
-                        ...record.documents,
+                    payment_slips_documents: {
+                        ...record.payment_slips_documents,
                         [documentType]: null
                     }
                 })
@@ -524,8 +533,8 @@ export function TaxPaymentTable({
                 if (r.id === recordId) {
                     return {
                         ...r,
-                        documents: {
-                            ...r.documents,
+                        payment_slips_documents: {
+                            ...r.payment_slips_documents,
                             [documentType]: null
                         }
                     };
@@ -556,14 +565,14 @@ export function TaxPaymentTable({
                         <TableHead className="text-white font-semibold" scope="col">Company Name</TableHead>
                         <TableHead className="text-white font-semibold" scope="col">Ready to File</TableHead>
                         <TableHead className="text-white font-semibold" scope="col">PAYE Ack.</TableHead>
-                        <TableHead className="text-white font-semibold" scope="col">PAYE Payment</TableHead>
-                        <TableHead className="text-white font-semibold" scope="col">Housing Levy</TableHead>
+                        <TableHead className="text-white font-semibold" scope="col">PAYE Slip</TableHead>
+                        <TableHead className="text-white font-semibold" scope="col">Hs. Levy</TableHead>
+                        <TableHead className="text-white font-semibold" scope="col">NITA</TableHead>
                         <TableHead className="text-white font-semibold" scope="col">SHIF</TableHead>
                         <TableHead className="text-white font-semibold" scope="col">NSSF</TableHead>
-                        <TableHead className="text-white font-semibold" scope="col">All CSV</TableHead>
+                        <TableHead className="text-white font-semibold" scope="col">All Tax Slips</TableHead>
                         <TableHead className="text-white font-semibold" scope="col">Email</TableHead>
                         <TableHead className="text-white font-semibold" scope="col">WhatsApp</TableHead>
-                        <TableHead className="text-white font-semibold" scope="col">Assigned To</TableHead>
                         <TableHead className="text-white font-semibold" scope="col">Actions</TableHead>
                     </TableRow>
                 </TableHeader>
@@ -639,10 +648,11 @@ export function TaxPaymentTable({
                                             recordId={record.id}
                                             onUpload={(file, docType) => handleDocumentUpload(record.id, file, docType || key as DocumentType)}
                                             onDelete={(docType) => handleDocumentDelete(record.id, docType || key as DocumentType)}
-                                            existingDocument={record.documents[key as DocumentType]}
+                                            existingDocument={record.payment_slips_documents[key as DocumentType]}
                                             label={label}
                                             isNilFiling={record.status.finalization_date === 'NIL'}
                                             allDocuments={getDocumentsForUpload(record)}
+                                            companyName={record.company.company_name}
                                         />
                                     )}
                                 </TableCell>
@@ -682,11 +692,6 @@ export function TaxPaymentTable({
                                 </Button>
                             </TableCell>
 
-                            <TableCell>
-                                <Badge variant="outline">
-                                    {record.status.assigned_to || 'Unassigned'}
-                                </Badge>
-                            </TableCell>
                             <TableCell className="text-center">
                                 <DropdownMenu>
                                     <DropdownMenuTrigger asChild>
