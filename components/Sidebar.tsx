@@ -19,6 +19,7 @@ const navItems = [
     { href: "/password-manager", icon: Lock, label: "Password Manager", category: "Main", available: true },
     { href: "/pass-checker+pass-manager", icon: Lock, label: "Both", category: "Main", available: true },
     { href: "/checklist", icon: FileCheck, label: "Checklist", category: "Main", available: true },
+    { href: "/payroll", icon: FileSpreadsheet, label: "Payroll Cycle", category: "Main", available: true },
 
     // One-off Tools
     { href: "/password-checker", icon: Key, label: "Password Checker", category: "One-off Tools", available: true },
