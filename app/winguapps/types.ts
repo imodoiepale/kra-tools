@@ -21,6 +21,7 @@ export interface ReportRecord {
     Bank_List_Link?: string;
     Cash_List?: string;
     MPESA_List?: string;
+    [key: string]: string | number | undefined;
 }
 
 export interface VisibleColumns {
