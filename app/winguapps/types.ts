@@ -66,6 +66,7 @@ export interface DownloadStatus {
 export interface DocumentInfo {
     url: string;
     name: string;
+    isExcel: boolean;
 }
 
 export interface DocumentMap {

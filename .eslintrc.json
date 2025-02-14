@@ -1,7 +1,6 @@
 {
   "extends": ["next/core-web-vitals", "next/typescript"],
   "rules": {
-    "@typescript-eslint/ban-ts-comment": "off",
-    // You can add other rules here as needed
+    "@typescript-eslint/ban-ts-comment": "off"
   }
 }
