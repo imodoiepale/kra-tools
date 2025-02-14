@@ -8,6 +8,11 @@
     "start": "next start",
     "lint": "next lint"
   },
+  "eslintConfig": {
+    "root": true,
+    "extends": [],
+    "rules": {}
+  },
   "dependencies": {
     "@cyntler/react-doc-viewer": "^1.17.0",
     "@ducanh2912/next-pwa": "^10.2.9",

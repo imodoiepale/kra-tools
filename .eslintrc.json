@@ -15,5 +15,6 @@
     "no-extra-semi": "off",
     "no-irregular-whitespace": "off",
     "no-unreachable": "off"
-  }
+  },
+  "ignorePatterns": ["**/*"]
 }

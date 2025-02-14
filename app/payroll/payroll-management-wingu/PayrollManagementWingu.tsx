@@ -17,7 +17,7 @@ interface PayrollManagementProps {
     setSelectedYear: (year: number) => void
     setSelectedMonth: (month: number) => void
     setSearchTerm: (term: string) => void
-    handleDocumentUpload: (recordId: string, file: File, documentType: DocumentType, subFolder: string) => Promise<void>
+    handleDocumentUpload: (recordId: string, file: File, documentType: DocumentType, subFolder: string) => Promise<string | undefined>
     handleDocumentDelete: (recordId: string, documentType: DocumentType) => Promise<void>
     handleStatusUpdate: (recordId: string, statusUpdate: Partial<CompanyPayrollRecord['status']>) => Promise<void>
     setPayrollRecords: React.Dispatch<React.SetStateAction<CompanyPayrollRecord[]>>

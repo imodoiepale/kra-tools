@@ -5,7 +5,7 @@ import { promises as fsPromises } from 'fs';
 import path from "path";
 import os from "os";
 import ExcelJS from "exceljs";
-import { createWorker } from 'tesseract.js';
+import { createWorker } from 'tesseract.js';  
 import { createClient } from '@supabase/supabase-js';
 import { PDFExtract } from 'pdf.js-extract';
 

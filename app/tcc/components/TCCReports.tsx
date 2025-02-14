@@ -2,6 +2,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react';
+import Image from 'next/image';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -10,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogTrigger, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ArrowUpDown, Search, Eye, Image, MoreHorizontal, Download, ImageIcon, ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
+import { ArrowUpDown, Search, Eye, ImageIcon, MoreHorizontal, Download, ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
 import { createClient } from '@supabase/supabase-js';
 import * as ExcelJS from 'exceljs';
 
@@ -204,7 +205,7 @@ export function TCCReports() {
         worksheet.columns.forEach(column => {
             let maxLength = 0;
             column.eachCell({ includeEmpty: true }, (cell) => {
-                let cellLength = cell.value ? cell.value.toString().length : 10;
+                const cellLength = cell.value ? cell.value.toString().length : 10;
                 if (cellLength > maxLength) {
                     maxLength = cellLength;
                 }
@@ -317,7 +318,13 @@ export function TCCReports() {
                                                         <Dialog>
                                                             <DialogTrigger asChild>
                                                                 <button className="text-blue-500 hover:underline">
-                                                                    <Eye className="inline-block mr-1 h-4 w-4" />
+                                                                    <Image 
+                                                                        src={report.pdf_link || ''} 
+                                                                        alt={`TCC Report for ${report.company_name}`}
+                                                                        width={24}
+                                                                        height={24}
+                                                                        className="inline-block mr-1"
+                                                                    />
                                                                     View TCC
                                                                 </button>
                                                             </DialogTrigger>
@@ -333,7 +340,13 @@ export function TCCReports() {
                                                         </Dialog>
                                                     ) : (
                                                         <span className="text-gray-500">
-                                                            <Eye className="inline-block mr-1 h-4 w-4" />
+                                                            <Image 
+                                                                src={report.pdf_link || ''} 
+                                                                alt={`TCC Report for ${report.company_name}`}
+                                                                width={24}
+                                                                height={24}
+                                                                className="inline-block mr-1"
+                                                            />
                                                             Missing
                                                         </span>
                                                     )
@@ -355,9 +368,11 @@ export function TCCReports() {
                                                                 <DialogHeader>
                                                                     <DialogTitle>Screenshot</DialogTitle>
                                                                 </DialogHeader>
-                                                                <img
-                                                                    src={report.screenshot_link}
+                                                                <Image 
+                                                                    src={report.screenshot_link} 
                                                                     alt="Screenshot"
+                                                                    width={400}
+                                                                    height={300}
                                                                     className="w-full h-auto max-h-[80vh] object-contain"
                                                                 />
                                                             </DialogContent>
@@ -482,13 +497,25 @@ export function TCCReports() {
                                                     {selectedCompany.screenshot_link && selectedCompany.screenshot_link !== "no doc" ? (
                                                         <Dialog>
                                                             <DialogTrigger asChild>
-                                                                <img src={selectedCompany.screenshot_link} alt="Screenshot" className="w-[400px] h-auto max-h-[300px] object-contain cursor-zoom-in" />
+                                                                <Image 
+                                                                    src={selectedCompany.screenshot_link} 
+                                                                    alt="Screenshot"
+                                                                    width={400}
+                                                                    height={300}
+                                                                    className="w-[400px] h-auto max-h-[300px] object-contain cursor-zoom-in"
+                                                                />
                                                             </DialogTrigger>
                                                             <DialogContent className="max-w-[60vw] max-h-[80vh]">
                                                                 <DialogHeader>
                                                                     <DialogTitle className="text-sm">Screenshot</DialogTitle>
                                                                 </DialogHeader>
-                                                                <img src={selectedCompany.screenshot_link} alt="Screenshot" className="w-full h-auto max-h-[70vh] object-contain" />
+                                                                <Image 
+                                                                    src={selectedCompany.screenshot_link} 
+                                                                    alt="Screenshot"
+                                                                    width={400}
+                                                                    height={300}
+                                                                    className="w-full h-auto max-h-[70vh] object-contain"
+                                                                />
                                                             </DialogContent>
                                                         </Dialog>
                                                     ) : (

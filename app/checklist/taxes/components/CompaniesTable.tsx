@@ -44,7 +44,7 @@ const formatDate = (dateString) => {
             'yyyy/MM/dd',
         ];
 
-        for (let dateFormat of formats) {
+        for (const dateFormat of formats) {
             date = parse(dateString, dateFormat, new Date());
             if (isValid(date)) {
                 return format(date, 'dd/MM/yyyy');

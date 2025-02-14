@@ -161,7 +161,7 @@ export default function PasswordCheckerReports() {
 
   const handleSave = async (updatedCompany: Company) => {
     const { id, ...updateData } = updatedCompany
-    let tableName = getTableName()
+    const tableName = getTableName()
 
     const { error } = await supabase
       .from(tableName)
@@ -177,7 +177,7 @@ export default function PasswordCheckerReports() {
   }
 
   const handleDelete = async (id: number) => {
-    let tableName = getTableName()
+    const tableName = getTableName()
 
     const { error } = await supabase
       .from(tableName)

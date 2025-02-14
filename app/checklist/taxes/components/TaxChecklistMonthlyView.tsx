@@ -327,7 +327,7 @@ const updateTaxStatus = async (companyName, year, month, status, taxType, compan
             .eq('company_name', companyName)
             .maybeSingle();
 
-        let existingTaxes = data?.taxes || {};
+        const existingTaxes = data?.taxes || {};
 
         const updatedTaxes = {
             ...existingTaxes,

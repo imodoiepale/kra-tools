@@ -204,7 +204,7 @@ export function PINProfileReports() {
                                                     </div>
                                                 ) : (
                                                     <span className="text-gray-500 flex items-center justify-center">
-                                                        <Image className="inline-block mr-1 h-4 w-4" />
+                                                        <Image src={report.pdf_link || ''} alt={`PIN Profile for ${report.company_name}`} className="inline-block mr-1 h-4 w-4" />
                                                         Missing
                                                     </span>
                                                 )
