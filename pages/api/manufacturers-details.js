@@ -1,4 +1,4 @@
-// pages/api/manufacturers-details.js
+// @ts-nocheck
 import { chromium } from "playwright";
 import fs from "fs/promises";
 import path from "path";

@@ -304,7 +304,7 @@ export function AutoPopulationReports() {
                         </Button>
                         <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                                <Button variant="outline" className="ml-auto" size="sm" className="px-2 py-1">
+                                <Button variant="outline" size="sm" className="ml-auto px-2 py-1">
                                     Columns <MoreHorizontal className="ml-1 h-4 w-4" />
                                 </Button>
                             </DropdownMenuTrigger>

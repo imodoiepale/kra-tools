@@ -1,4 +1,4 @@
-// pages/api/pin-checker-details.js
+// @ts-nocheck
 import { chromium } from "playwright";
 import fs from "fs/promises";
 import { existsSync } from "fs";

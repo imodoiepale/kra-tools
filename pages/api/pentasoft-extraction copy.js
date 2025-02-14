@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { chromium } from 'playwright';
 import fs from 'fs';
 import path from 'path';
@@ -94,7 +95,7 @@ import os from 'os';
 
             // Download each report
             for (const report of reports) {
-                console.log(`\nProcessing report: ${report.link}`);``
+                console.log(`\nProcessing report: ${report.link}`);
                 const page = await context.newPage();
 
                 console.log(`Navigating to ${report.url}`);

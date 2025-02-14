@@ -429,7 +429,7 @@ export default function ConfirmDocumentDialog({
     <p className="text-sm font-medium">This record will be marked as NIL:</p>
     <ul className="mt-2 text-sm list-disc list-inside space-y-1">
         <li>No documents received for this period</li>
-        <li>All fields will be marked as "NIL"</li>
+        <li>All fields will be marked as &quot;NIL&quot;</li>
         <li>This can be changed later if documents are received</li>
     </ul>
 </div>

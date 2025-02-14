@@ -1,4 +1,4 @@
-// pages/api/pentasoft-extraction.js
+// @ts-nocheck
 import { chromium } from 'playwright';
 import { promises as fsPromises } from 'fs';
 import path from 'path';

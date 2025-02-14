@@ -380,8 +380,6 @@ export default function CompanyListTable() {
                     <Button
                         variant="ghost"
                         size="sm"
-                        variant="ghost"
-                        size="sm"
                         onClick={() => toggleLock(info.row.original.id)}
                         className={`h-6 w-6 p-0 ${info.row.original.is_locked ? "bg-green-100" : "bg-red-100"}`}
                     >
