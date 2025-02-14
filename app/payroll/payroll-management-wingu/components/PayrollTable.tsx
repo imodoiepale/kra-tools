@@ -158,7 +158,7 @@ export function PayrollTable({
                     <TableRow className="bg-blue-600 hover:bg-blue-600 [&>th]:border-r [&>th]:border-blue-500 last:[&>th]:border-r-0">
                         {columnVisibility.index && <TableHead className="text-white font-semibold border-b" scope="col">#</TableHead>}
                         {columnVisibility.companyName && <TableHead className="text-white font-semibold" scope="col">Company Name</TableHead>}
-                        {columnVisibility.obligationDate && <TableHead className="text-white font-semibold" scope="col">Obligation Date</TableHead>}
+                        {columnVisibility.obligationDate && <TableHead className="text-white font-semibold" scope="col">PAYE Obligation Date</TableHead>}
                         {columnVisibility.numberOfEmployees && <TableHead className="text-white font-semibold" scope="col">No. of Emp</TableHead>}
                         {columnVisibility.finalizationDate && <TableHead className="text-white font-semibold" scope="col">Finalization Date</TableHead>}
                         {columnVisibility.payeCsv && <TableHead className="text-white font-semibold" scope="col">PAYE (CSV)</TableHead>}
