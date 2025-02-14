@@ -72,7 +72,7 @@ const DOCUMENT_LABELS: Record<string, string> = {
 
 interface PayrollTableProps {
     records: CompanyPayrollRecord[]
-    onDocumentUpload: (recordId: string, file: File, documentType: DocumentType) => Promise<string | undefined>
+    onDocumentUpload: (recordId: string, file: File, documentType: DocumentType) => Promise<void>
     onDocumentDelete: (recordId: string, documentType: DocumentType) => Promise<void>
     onStatusUpdate: (recordId: string, statusUpdate: any) => Promise<void>
     loading: boolean

@@ -72,3 +72,9 @@ export interface DocumentInfo {
 export interface DocumentMap {
     [key: string]: DocumentInfo;
 }
+
+export interface DocumentGroups {
+    StatutoryDocs: string[];
+    PayrollDocs: string[];
+    PaymentLists: string[];
+}
