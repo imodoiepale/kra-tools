@@ -65,9 +65,9 @@ const DOCUMENT_LABELS: Record<string, string> = {
     paye_acknowledgment: "PAYE Ack.",
     paye_slip: "PAYE Payment",
     housing_levy_slip: "Housing Levy",
+    nita_slip: "NITA",
     shif_slip: "SHIF",
     nssf_slip: "NSSF",
-    nita_slip: "NITA",
     all_csv: "All CSV Files"
 };
 

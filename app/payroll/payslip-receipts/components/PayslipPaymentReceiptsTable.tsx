@@ -64,9 +64,9 @@ import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/comp
 const DOCUMENT_LABELS: Record<string, string> = {
     paye_receipt: "PAYE Payment",
     housing_levy_receipt: "Housing Levy",
+    nita_receipt: "NITA",
     shif_receipt: "SHIF",
     nssf_receipt: "NSSF",
-    nita_receipt: "NITA",
     all_csv: "All CSV Files"
 };
 

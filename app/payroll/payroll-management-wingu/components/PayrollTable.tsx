@@ -65,9 +65,9 @@ import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/comp
 const DOCUMENT_LABELS: Record<string, string> = {
     paye_csv: "PAYE Returns (CSV)",
     hslevy_csv: "Housing Levy Returns (CSV)",
+    zip_file_kra: "KRA ZIP File",
     shif_exl: "SHIF Returns (Excel)",
     nssf_exl: "NSSF Returns (Excel)",
-    zip_file_kra: "KRA ZIP File",
     all_csv: "All CSV Files"
 };
 
@@ -163,9 +163,9 @@ export function PayrollTable({
                         {columnVisibility.finalizationDate && <TableHead className="text-white font-semibold" scope="col">Finalization Date</TableHead>}
                         {columnVisibility.payeCsv && <TableHead className="text-white font-semibold" scope="col">PAYE (CSV)</TableHead>}
                         {columnVisibility.hslevyCsv && <TableHead className="text-white font-semibold" scope="col">HSLEVY (CSV)</TableHead>}
+                        {columnVisibility.zipFileKra && <TableHead className="text-white font-semibold" scope="col">ZIP FILE-KRA</TableHead>}
                         {columnVisibility.shifExl && <TableHead className="text-white font-semibold" scope="col">SHIF (EXL)</TableHead>}
                         {columnVisibility.nssfExl && <TableHead className="text-white font-semibold" scope="col">NSSF (EXL)</TableHead>}
-                        {columnVisibility.zipFileKra && <TableHead className="text-white font-semibold" scope="col">ZIP FILE-KRA</TableHead>}
                         {columnVisibility.allCsv && <TableHead className="text-white font-semibold" scope="col">All CSV</TableHead>}
                         {columnVisibility.readyToFile && <TableHead className="text-white font-semibold" scope="col">Ready to File</TableHead>}
                         {columnVisibility.assignedTo && <TableHead className="text-white font-semibold" scope="col">Assigned To</TableHead>}
@@ -250,6 +250,21 @@ export function PayrollTable({
                                     />
                                 </TableCell>
                             )}
+                            {columnVisibility.zipFileKra && (
+                                <TableCell>
+                                    <DocumentUploadDialog
+                                        documentType="zip_file_kra"
+                                        recordId={record.id}
+                                        onUpload={(file, docType) => onDocumentUpload(record.id, file, docType || "zip_file_kra")}
+                                        onDelete={(docType) => onDocumentDelete(record.id, docType || "zip_file_kra")}
+                                        existingDocument={record.documents.zip_file_kra}
+                                        label="ZIP FILE-KRA"
+                                        isNilFiling={record.status.finalization_date === 'NIL'}
+                                        allDocuments={getDocumentsForUpload(record)}
+                                        companyName={record?.company?.company_name || 'Unknown Company'}
+                                    />
+                                </TableCell>
+                            )}
                             {columnVisibility.shifExl && (
                                 <TableCell>
                                     <DocumentUploadDialog
@@ -274,21 +289,6 @@ export function PayrollTable({
                                         onDelete={(docType) => onDocumentDelete(record.id, docType || "nssf_exl")}
                                         existingDocument={record.documents.nssf_exl}
                                         label="NSSF (EXL)"
-                                        isNilFiling={record.status.finalization_date === 'NIL'}
-                                        allDocuments={getDocumentsForUpload(record)}
-                                        companyName={record?.company?.company_name || 'Unknown Company'}
-                                    />
-                                </TableCell>
-                            )}
-                            {columnVisibility.zipFileKra && (
-                                <TableCell>
-                                    <DocumentUploadDialog
-                                        documentType="zip_file_kra"
-                                        recordId={record.id}
-                                        onUpload={(file, docType) => onDocumentUpload(record.id, file, docType || "zip_file_kra")}
-                                        onDelete={(docType) => onDocumentDelete(record.id, docType || "zip_file_kra")}
-                                        existingDocument={record.documents.zip_file_kra}
-                                        label="ZIP FILE-KRA"
                                         isNilFiling={record.status.finalization_date === 'NIL'}
                                         allDocuments={getDocumentsForUpload(record)}
                                         companyName={record?.company?.company_name || 'Unknown Company'}
