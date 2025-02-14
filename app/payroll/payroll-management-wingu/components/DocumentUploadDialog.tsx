@@ -153,10 +153,11 @@ export function DocumentUploadDialog({
         let successCount = 0;
         let errorCount = 0;
         const errors: string[] = [];
+        const uploadResults = new Map<DocumentType, string>();
 
         try {
-            // Create a map of existing documents
-            const existingDocs = new Map(
+            // Get current document paths
+            const currentPaths = new Map(
                 allDocuments?.map(doc => [doc.type, doc.path]) || []
             );
 
@@ -165,15 +166,15 @@ export function DocumentUploadDialog({
                 try {
                     const result = await onUpload(file, docType);
                     if (result) {
-                        existingDocs.set(docType, result as string);
+                        uploadResults.set(docType, result as string);
+                        successCount++;
                     }
-                    successCount++;
                 } catch (error) {
                     errorCount++;
                     errors.push(`${docType}: ${error instanceof Error ? error.message : 'Unknown error'}`);
-                    // Keep the existing path if upload fails
-                    if (existingDocs.has(docType) && !existingDocs.get(docType)) {
-                        existingDocs.delete(docType);
+                    // Keep existing path if upload fails
+                    if (currentPaths.has(docType)) {
+                        uploadResults.set(docType, currentPaths.get(docType)!);
                     }
                 }
             }
@@ -188,7 +189,7 @@ export function DocumentUploadDialog({
                 // Only remove successfully uploaded files from bulkFiles
                 const updatedBulkFiles = new Map(bulkFiles);
                 for (const [docType] of bulkFiles.entries()) {
-                    if (!errors.some(error => error.startsWith(docType))) {
+                    if (uploadResults.has(docType)) {
                         updatedBulkFiles.delete(docType);
                     }
                 }
@@ -311,7 +312,7 @@ export function DocumentUploadDialog({
                                             handleFileSelect(file, documentType)
                                         }
                                     }}
-                                    accept={documentType.includes('csv') ? '.csv' : '.xlsx,.xls'}
+                                    accept={documentType.includes('csv') ? '.csv, .zip, .pdf' : '.xlsx, .xls, .zip, .pdf'}
                                 />
                                 {isSubmitting && (
                                     <div className="flex items-center gap-2 text-sm text-blue-500">
@@ -369,7 +370,7 @@ export function DocumentUploadDialog({
                                                             <Input
                                                                 type="file"
                                                                 className="flex-1"
-                                                                accept={doc.type.includes('csv') ? '.csv' : '.xlsx,.xls'}
+                                                                accept={doc.type.includes('csv') ? '.csv, .zip, .pdf' : '.xlsx, .xls, .zip, .pdf'}
                                                                 onChange={(e) => {
                                                                     const file = e.target.files?.[0];
                                                                     if (file) handleBulkFileSelect(file, doc.type, doc.label);

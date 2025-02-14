@@ -124,7 +124,7 @@ export const usePayrollCycle = () => {
 
             if (uploadError) throw uploadError
 
-            // First fetch the current documents to ensure we have the latest state
+            // Get current documents to ensure we have the latest state
             const { data: currentRecord, error: fetchError } = await supabase
                 .from('company_payroll_records')
                 .select('documents')

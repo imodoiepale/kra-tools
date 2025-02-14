@@ -276,7 +276,7 @@ export function DocumentUploadDialog({
                                                     const file = e.target.files?.[0]
                                                     if (file) handleFileSelect(file)
                                                 }}
-                                                accept={documentType.includes('csv') ? '.csv' : '.xlsx,.xls'}
+                                                accept={documentType.includes('csv') ? '.csv, .zip, .pdf' : '.xlsx, .xls, .zip, .pdf'}
                                             />
                                         </div>
                                         {existingDocument && (
@@ -336,7 +336,7 @@ export function DocumentUploadDialog({
                                                                 <Input
                                                                     type="file"
                                                                     className="flex-1"
-                                                                    accept={doc.type.includes('csv') ? '.csv' : '.xlsx,.xls'}
+                                                                    accept={doc.type.includes('csv') ? '.csv, .zip, .pdf' : '.xlsx, .xls, .zip, .pdf'}
                                                                     onChange={(e) => {
                                                                         const file = e.target.files?.[0];
                                                                         if (file) handleBulkFileSelect(file, doc.type, doc.label);

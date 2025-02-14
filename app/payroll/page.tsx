@@ -1,4 +1,4 @@
-// app/portal/page.tsx
+// ts-nocheck
 'use client'
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
