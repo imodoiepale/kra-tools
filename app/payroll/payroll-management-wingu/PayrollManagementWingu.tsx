@@ -7,6 +7,16 @@ import { PayrollTable } from './components/PayrollTable'
 import { MonthYearSelector } from '../components/MonthYearSelector'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Checkbox } from "@/components/ui/checkbox"
+import {
+    DropdownMenu,
+    DropdownMenuCheckboxItem,
+    DropdownMenuContent,
+    DropdownMenuLabel,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { Settings2 } from 'lucide-react'
 
 interface PayrollManagementProps {
     payrollRecords: CompanyPayrollRecord[]
@@ -41,6 +51,40 @@ export default function PayrollManagementWingu({
         return handleDocumentUpload(recordId, file, documentType, 'PREP DOCS')
     }
 
+    const columnDefinitions = [
+        { id: 'index', label: 'Index (#)', defaultVisible: true },
+        { id: 'companyName', label: 'Company Name', defaultVisible: true },
+        { id: 'obligationDate', label: 'Obligation Date', defaultVisible: false },
+        { id: 'numberOfEmployees', label: 'No. of Employees', defaultVisible: false },
+        { id: 'finalizationDate', label: 'Finalization Date', defaultVisible: true },
+        { id: 'payeCsv', label: 'PAYE (CSV)', defaultVisible: true },
+        { id: 'hslevyCsv', label: 'HSLEVY (CSV)', defaultVisible: true },
+        { id: 'shifExl', label: 'SHIF (EXL)', defaultVisible: true },
+        { id: 'nssfExl', label: 'NSSF (EXL)', defaultVisible: true },
+        { id: 'zipFileKra', label: 'ZIP FILE-KRA', defaultVisible: true },
+        { id: 'allCsv', label: 'All CSV', defaultVisible: true },
+        { id: 'readyToFile', label: 'Ready to File', defaultVisible: true },
+        { id: 'assignedTo', label: 'Assigned To', defaultVisible: false },
+        { id: 'actions', label: 'Actions', defaultVisible: true },
+    ];
+
+    // Initialize column visibility state from definitions
+    const [columnVisibility, setColumnVisibility] = useState(() => {
+        const initialState = {};
+        columnDefinitions.forEach(col => {
+            initialState[col.id] = col.defaultVisible;
+        });
+        return initialState;
+    });
+
+    // Toggle column visibility
+    const toggleColumnVisibility = (columnId: string, isVisible: boolean) => {
+        setColumnVisibility(prev => ({
+            ...prev,
+            [columnId]: isVisible
+        }));
+    };
+
     // Filter records based on search term
     const filteredRecords = useMemo(() => {
         if (!searchTerm.trim()) return payrollRecords;
@@ -63,13 +107,33 @@ export default function PayrollManagementWingu({
                     onYearChange={setSelectedYear}
                     onMonthChange={setSelectedMonth}
                 />
-                <div className="flex gap-4">
+                <div className="flex gap-4 items-center">
                     <Input
                         placeholder="Search companies..."
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                         className="w-64"
                     />
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button variant="outline" size="icon" className="h-10 w-10">
+                                <Settings2 className="h-4 w-4" />
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-56">
+                            <DropdownMenuLabel>Toggle Columns</DropdownMenuLabel>
+                            <DropdownMenuSeparator />
+                            {columnDefinitions.map(column => (
+                                <DropdownMenuCheckboxItem
+                                    key={column.id}
+                                    checked={columnVisibility[column.id]}
+                                    onCheckedChange={(checked) => toggleColumnVisibility(column.id, checked)}
+                                >
+                                    {column.label}
+                                </DropdownMenuCheckboxItem>
+                            ))}
+                        </DropdownMenuContent>
+                    </DropdownMenu>
                     <Button variant="outline">Export</Button>
                     <Button variant="outline">Extract All</Button>
                 </div>
@@ -82,6 +146,7 @@ export default function PayrollManagementWingu({
                 onStatusUpdate={handleStatusUpdate}
                 loading={loading}
                 setPayrollRecords={setPayrollRecords}
+                columnVisibility={columnVisibility}
             />
         </div>
     )

@@ -7,7 +7,8 @@ import {
     Trash2,
     Eye,
     Mail,
-    MessageSquare
+    MessageSquare,
+    Settings2
 } from 'lucide-react'
 import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
@@ -77,6 +78,7 @@ interface PayrollTableProps {
     onStatusUpdate: (recordId: string, statusUpdate: any) => Promise<void>
     loading: boolean
     setPayrollRecords: (records: CompanyPayrollRecord[]) => void
+    columnVisibility: Record<string, boolean>
 }
 
 const getDocumentsForUpload = (record: CompanyPayrollRecord) => {
@@ -96,7 +98,8 @@ export function PayrollTable({
     onStatusUpdate,
     onDocumentDelete,
     loading,
-    setPayrollRecords
+    setPayrollRecords,
+    columnVisibility
 }: PayrollTableProps) {
     const { toast } = useToast();
     const {
@@ -153,26 +156,26 @@ export function PayrollTable({
             <Table aria-label="Payroll Records" className="border border-gray-200">
                 <TableHeader className="sticky top-0 z-10">
                     <TableRow className="bg-blue-600 hover:bg-blue-600 [&>th]:border-r [&>th]:border-blue-500 last:[&>th]:border-r-0">
-                        <TableHead className="text-white font-semibold border-b" scope="col">#</TableHead>
-                        <TableHead className="text-white font-semibold" scope="col">Company Name</TableHead>
-                        <TableHead className="text-white font-semibold" scope="col">Obligation Date</TableHead>
-                        <TableHead className="text-white font-semibold" scope="col">No. of Emp</TableHead>
-                        <TableHead className="text-white font-semibold" scope="col">Finalization Date</TableHead>
-                        <TableHead className="text-white font-semibold" scope="col">PAYE (CSV)</TableHead>
-                        <TableHead className="text-white font-semibold" scope="col">HSLEVY (CSV)</TableHead>
-                        <TableHead className="text-white font-semibold" scope="col">SHIF (EXL)</TableHead>
-                        <TableHead className="text-white font-semibold" scope="col">NSSF (EXL)</TableHead>
-                        <TableHead className="text-white font-semibold" scope="col">ZIP FILE-KRA</TableHead>
-                        <TableHead className="text-white font-semibold" scope="col">All CSV</TableHead>
-                        <TableHead className="text-white font-semibold" scope="col">Ready to File</TableHead>
-                        <TableHead className="text-white font-semibold" scope="col">Assigned To</TableHead>
-                        <TableHead className="text-white font-semibold" scope="col">Actions</TableHead>
+                        {columnVisibility.index && <TableHead className="text-white font-semibold border-b" scope="col">#</TableHead>}
+                        {columnVisibility.companyName && <TableHead className="text-white font-semibold" scope="col">Company Name</TableHead>}
+                        {columnVisibility.obligationDate && <TableHead className="text-white font-semibold" scope="col">Obligation Date</TableHead>}
+                        {columnVisibility.numberOfEmployees && <TableHead className="text-white font-semibold" scope="col">No. of Emp</TableHead>}
+                        {columnVisibility.finalizationDate && <TableHead className="text-white font-semibold" scope="col">Finalization Date</TableHead>}
+                        {columnVisibility.payeCsv && <TableHead className="text-white font-semibold" scope="col">PAYE (CSV)</TableHead>}
+                        {columnVisibility.hslevyCsv && <TableHead className="text-white font-semibold" scope="col">HSLEVY (CSV)</TableHead>}
+                        {columnVisibility.shifExl && <TableHead className="text-white font-semibold" scope="col">SHIF (EXL)</TableHead>}
+                        {columnVisibility.nssfExl && <TableHead className="text-white font-semibold" scope="col">NSSF (EXL)</TableHead>}
+                        {columnVisibility.zipFileKra && <TableHead className="text-white font-semibold" scope="col">ZIP FILE-KRA</TableHead>}
+                        {columnVisibility.allCsv && <TableHead className="text-white font-semibold" scope="col">All CSV</TableHead>}
+                        {columnVisibility.readyToFile && <TableHead className="text-white font-semibold" scope="col">Ready to File</TableHead>}
+                        {columnVisibility.assignedTo && <TableHead className="text-white font-semibold" scope="col">Assigned To</TableHead>}
+                        {columnVisibility.actions && <TableHead className="text-white font-semibold" scope="col">Actions</TableHead>}
                     </TableRow>
                 </TableHeader>
                 <TableBody>
                     {loading ? (
                         <TableRow>
-                            <TableCell colSpan={13} className=" py-8 border">
+                            <TableCell colSpan={Object.values(columnVisibility).filter(Boolean).length} className="py-8 border">
                                 <div role="status" className="animate-pulse">
                                     <div className="h-4 bg-gray-200 rounded-full w-48 mb-4"></div>
                                     <span className="sr-only">Loading...</span>
@@ -185,136 +188,190 @@ export function PayrollTable({
                             className={`${index % 2 === 0 ? 'bg-blue-50 hover:bg-blue-100' : 'bg-white hover:bg-gray-50'} [&>td]:border-r [&>td]:border-gray-200 last:[&>td]:border-r-0`}
                             aria-label={`Payroll record for ${record?.company?.company_name || 'Unknown Company'}`}
                         >
-                            <TableCell>{index + 1}</TableCell>
-                            <TooltipProvider>
-                                <TableCell className="font-medium">
-                                    <Tooltip>
-                                        <TooltipTrigger className=" ">
-                                            {(record?.company?.company_name || 'Unknown Company').split(" ").slice(0, 3).join(" ")}
-                                        </TooltipTrigger>
-                                        <TooltipContent>{record?.company?.company_name || 'Unknown Company'}</TooltipContent>
-                                    </Tooltip>
-                                </TableCell>
-                            </TooltipProvider>
-                            <TableCell></TableCell>
-                            <TableCell></TableCell>
-                            <TableCell className="">
-                                {record.status.finalization_date ? (
-                                    <p
-                                        // className={record.status.finalization_date === 'NIL' ? 'bg-purple-500' : 'bg-green-500'}
-                                        variant="outline"
-                                        onClick={() => updateState({ documentDetailsDialog: { isOpen: true, record } })}
-                                    >
-                                        {formatDate(record.status.finalization_date)}
-                                    </p>
-                                ) : (
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        className="bg-red-500 hover:bg-red-600 text-white text-xs px-2 py-1 h-6"
-                                        onClick={() => {
-                                            setState(prev => ({
-                                                ...prev,
-                                                finalizeDialog: {
-                                                    ...prev.finalizeDialog,
-                                                    isOpen: true,
-                                                    recordId: record.id,
-                                                    isNil: false,
-                                                    record
-                                                }
-                                            }));
-                                        }}
-                                    >
-                                        Finalize
-                                    </Button>
-                                )}
-                            </TableCell>
-                            {/* Document cells */}
-                            {Object.entries(DOCUMENT_LABELS).map(([key, label]) => (
-                                <TableCell key={key} className="">
-                                    {key === 'all_csv' ? (
-                                        <Badge className={record.status.finalization_date === 'NIL' ? 'bg-purple-500' : 'bg-blue-500'}>
-                                            {getDocumentCount(record)}
-                                        </Badge>
+                            {columnVisibility.index && <TableCell>{index + 1}</TableCell>}
+                            {columnVisibility.companyName && (
+                                <TooltipProvider>
+                                    <TableCell className="font-medium">
+                                        <Tooltip>
+                                            <TooltipTrigger className=" ">
+                                                {(record?.company?.company_name || 'Unknown Company').split(" ").slice(0, 3).join(" ")}
+                                            </TooltipTrigger>
+                                            <TooltipContent>{record?.company?.company_name || 'Unknown Company'}</TooltipContent>
+                                        </Tooltip>
+                                    </TableCell>
+                                </TooltipProvider>
+                            )}
+                            {columnVisibility.obligationDate && <TableCell>{record.obligation_date || 'N/A'}</TableCell>}
+                            {columnVisibility.numberOfEmployees && <TableCell>{record.number_of_employees || 'N/A'}</TableCell>}
+                            {columnVisibility.finalizationDate && (
+                                <TableCell>
+                                    {record.status.finalization_date ? (
+                                        <p className={`text-xs px-2 py-1 rounded-full text-white ${record.status.finalization_date === 'NIL' ? 'bg-purple-500' : 'bg-green-500'}`}>
+                                            {record.status.finalization_date}
+                                        </p>
                                     ) : (
-                                        <DocumentUploadDialog
-                                            documentType={key as DocumentType}
-                                            recordId={record.id}
-                                            onUpload={(file, docType) => onDocumentUpload(record.id, file, docType || key as DocumentType)}
-                                            onDelete={(docType) => onDocumentDelete(record.id, docType || key as DocumentType)}
-                                            existingDocument={record.documents[key as DocumentType]}
-                                            label={label}
-                                            isNilFiling={record.status.finalization_date === 'NIL'}
-                                            allDocuments={getDocumentsForUpload(record)}
-                                            companyName={record?.company?.company_name || 'Unknown Company'}
-                                        />
+                                        <Button
+                                            size="sm"
+                                            className="h-6 text-xs px-2 bg-red-500 hover:bg-red-600 text-white"
+                                            onClick={() => updateState({ finalizeDialog: { isOpen: true, recordId: record.id } })}
+                                        >
+                                            Finalize
+                                        </Button>
                                     )}
                                 </TableCell>
-                            ))}
-                            <TableCell className="">
-                                {record?.status?.filing?.filingDate ? (
-                                    <Button
-                                        size="sm"
-                                        className={`h-6 text-xs px-2 ${record.status.finalization_date === 'NIL' ? 'bg-purple-500 hover:bg-purple-600' : 'bg-green-500 hover:bg-green-600'}`}
-                                        onClick={() => updateState({ filingDialog: { isOpen: true, recordId: record.id, isNil: record.status.finalization_date === 'NIL', confirmOpen: false, record } })}
-                                    >
-                                        {formatDate(record?.status?.filing?.filingDate)}
-                                    </Button>
-                                ) : (
-                                    <Button
-                                        size="sm"
-                                            className={`h-6 text-xs  px-2 ${(!allDocumentsUploaded(record) && record.status.finalization_date !== 'NIL')
-                                            ? "bg-red-500 hover:bg-red-500"
-                                            : "bg-yellow-500 hover:bg-yellow-500"
-                                            }`}
-                                        disabled={!allDocumentsUploaded(record) && record.status.finalization_date !== 'NIL'}
-                                        onClick={() => updateState({ filingDialog: { isOpen: true, recordId: record.id, isNil: record.status.finalization_date === 'NIL', confirmOpen: false, record } })}
-                                    >
-                                        {(!allDocumentsUploaded(record) && record.status.finalization_date !== 'NIL')
-                                            ? 'Pending'
-                                            : 'File Now'
-                                        }
-                                    </Button>
-                                )}
-                            </TableCell>
-                            <TableCell>
-                                <Badge variant="outline">
-                                    {record.status.assigned_to || 'Unassigned'}
-                                </Badge>
-                            </TableCell>
-                            <TableCell className="">
-                                <DropdownMenu>
-                                    <DropdownMenuTrigger asChild>
-                                        <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
-                                            <MoreHorizontal className="h-4 w-4" />
+                            )}
+                            {columnVisibility.payeCsv && (
+                                <TableCell>
+                                    <DocumentUploadDialog
+                                        documentType="paye_csv"
+                                        recordId={record.id}
+                                        onUpload={(file, docType) => onDocumentUpload(record.id, file, docType || "paye_csv")}
+                                        onDelete={(docType) => onDocumentDelete(record.id, docType || "paye_csv")}
+                                        existingDocument={record.documents.paye_csv}
+                                        label="PAYE (CSV)"
+                                        isNilFiling={record.status.finalization_date === 'NIL'}
+                                        allDocuments={getDocumentsForUpload(record)}
+                                        companyName={record?.company?.company_name || 'Unknown Company'}
+                                    />
+                                </TableCell>
+                            )}
+                            {columnVisibility.hslevyCsv && (
+                                <TableCell>
+                                    <DocumentUploadDialog
+                                        documentType="hslevy_csv"
+                                        recordId={record.id}
+                                        onUpload={(file, docType) => onDocumentUpload(record.id, file, docType || "hslevy_csv")}
+                                        onDelete={(docType) => onDocumentDelete(record.id, docType || "hslevy_csv")}
+                                        existingDocument={record.documents.hslevy_csv}
+                                        label="HSLEVY (CSV)"
+                                        isNilFiling={record.status.finalization_date === 'NIL'}
+                                        allDocuments={getDocumentsForUpload(record)}
+                                        companyName={record?.company?.company_name || 'Unknown Company'}
+                                    />
+                                </TableCell>
+                            )}
+                            {columnVisibility.shifExl && (
+                                <TableCell>
+                                    <DocumentUploadDialog
+                                        documentType="shif_exl"
+                                        recordId={record.id}
+                                        onUpload={(file, docType) => onDocumentUpload(record.id, file, docType || "shif_exl")}
+                                        onDelete={(docType) => onDocumentDelete(record.id, docType || "shif_exl")}
+                                        existingDocument={record.documents.shif_exl}
+                                        label="SHIF (EXL)"
+                                        isNilFiling={record.status.finalization_date === 'NIL'}
+                                        allDocuments={getDocumentsForUpload(record)}
+                                        companyName={record?.company?.company_name || 'Unknown Company'}
+                                    />
+                                </TableCell>
+                            )}
+                            {columnVisibility.nssfExl && (
+                                <TableCell>
+                                    <DocumentUploadDialog
+                                        documentType="nssf_exl"
+                                        recordId={record.id}
+                                        onUpload={(file, docType) => onDocumentUpload(record.id, file, docType || "nssf_exl")}
+                                        onDelete={(docType) => onDocumentDelete(record.id, docType || "nssf_exl")}
+                                        existingDocument={record.documents.nssf_exl}
+                                        label="NSSF (EXL)"
+                                        isNilFiling={record.status.finalization_date === 'NIL'}
+                                        allDocuments={getDocumentsForUpload(record)}
+                                        companyName={record?.company?.company_name || 'Unknown Company'}
+                                    />
+                                </TableCell>
+                            )}
+                            {columnVisibility.zipFileKra && (
+                                <TableCell>
+                                    <DocumentUploadDialog
+                                        documentType="zip_file_kra"
+                                        recordId={record.id}
+                                        onUpload={(file, docType) => onDocumentUpload(record.id, file, docType || "zip_file_kra")}
+                                        onDelete={(docType) => onDocumentDelete(record.id, docType || "zip_file_kra")}
+                                        existingDocument={record.documents.zip_file_kra}
+                                        label="ZIP FILE-KRA"
+                                        isNilFiling={record.status.finalization_date === 'NIL'}
+                                        allDocuments={getDocumentsForUpload(record)}
+                                        companyName={record?.company?.company_name || 'Unknown Company'}
+                                    />
+                                </TableCell>
+                            )}
+                            {columnVisibility.allCsv && (
+                                <TableCell>
+                                    <Badge className={record.status.finalization_date === 'NIL' ? 'bg-purple-500' : 'bg-blue-500'}>
+                                        {getDocumentCount(record)}
+                                    </Badge>
+                                </TableCell>
+                            )}
+                            {columnVisibility.readyToFile && (
+                                <TableCell className="">
+                                    {record?.status?.filing?.filingDate ? (
+                                        <Button
+                                            size="sm"
+                                            className={`h-6 text-xs px-2 ${record.status.finalization_date === 'NIL' ? 'bg-purple-500 hover:bg-purple-600' : 'bg-green-500 hover:bg-green-600'}`}
+                                            onClick={() => updateState({ filingDialog: { isOpen: true, recordId: record.id, isNil: record.status.finalization_date === 'NIL', confirmOpen: false, record } })}
+                                        >
+                                            {formatDate(record?.status?.filing?.filingDate)}
                                         </Button>
-                                    </DropdownMenuTrigger>
-                                    <DropdownMenuContent align="end" className="w-48">
-                                        <DropdownMenuItem
-                                            onClick={() => updateState({ documentDetailsDialog: { isOpen: true, record } })}
-                                            className="flex items-center gap-2"
+                                    ) : (
+                                        <Button
+                                            size="sm"
+                                            className={`h-6 text-xs  px-2 ${(!allDocumentsUploaded(record) && record.status.finalization_date !== 'NIL')
+                                                ? "bg-red-500 hover:bg-red-500"
+                                                : "bg-yellow-500 hover:bg-yellow-500"
+                                                }`}
+                                            disabled={!allDocumentsUploaded(record) && record.status.finalization_date !== 'NIL'}
+                                            onClick={() => updateState({ filingDialog: { isOpen: true, recordId: record.id, isNil: record.status.finalization_date === 'NIL', confirmOpen: false, record } })}
                                         >
-                                            <Eye className="h-4 w-4" />
-                                            View Details
-                                        </DropdownMenuItem>
-                                        <DropdownMenuSeparator />
-                                        <DropdownMenuItem
-                                            className="flex items-center gap-2 text-blue-600"
-                                            onClick={() => handleDownloadAll(record)}
-                                        >
-                                            <Download className="h-4 w-4" />
-                                            Download All
-                                        </DropdownMenuItem>
-                                        <DropdownMenuItem
-                                            className="flex items-center gap-2 text-red-600"
-                                            onClick={() => updateState({ deleteAllDialog: { isOpen: true, record } })}
-                                        >
-                                            <Trash2 className="h-4 w-4" />
-                                            Delete All
-                                        </DropdownMenuItem>
-                                    </DropdownMenuContent>
-                                </DropdownMenu>
-                            </TableCell>
+                                            {(!allDocumentsUploaded(record) && record.status.finalization_date !== 'NIL')
+                                                ? 'Pending'
+                                                : 'File Now'
+                                            }
+                                        </Button>
+                                    )}
+                                </TableCell>
+                            )}
+                            {columnVisibility.assignedTo && (
+                                <TableCell>
+                                    <Badge variant="outline">
+                                        {record.status.assigned_to || 'Unassigned'}
+                                    </Badge>
+                                </TableCell>
+                            )}
+                            {columnVisibility.actions && (
+                                <TableCell>
+                                    <DropdownMenu>
+                                        <DropdownMenuTrigger asChild>
+                                            <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                                                <MoreHorizontal className="h-4 w-4" />
+                                            </Button>
+                                        </DropdownMenuTrigger>
+                                        <DropdownMenuContent align="end" className="w-48">
+                                            <DropdownMenuItem
+                                                onClick={() => updateState({ documentDetailsDialog: { isOpen: true, record } })}
+                                                className="flex items-center gap-2"
+                                            >
+                                                <Eye className="h-4 w-4" />
+                                                View Details
+                                            </DropdownMenuItem>
+                                            <DropdownMenuSeparator />
+                                            <DropdownMenuItem
+                                                className="flex items-center gap-2 text-blue-600"
+                                                onClick={() => handleDownloadAll(record)}
+                                            >
+                                                <Download className="h-4 w-4" />
+                                                Download All
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem
+                                                className="flex items-center gap-2 text-red-600"
+                                                onClick={() => updateState({ deleteAllDialog: { isOpen: true, record } })}
+                                            >
+                                                <Trash2 className="h-4 w-4" />
+                                                Delete All
+                                            </DropdownMenuItem>
+                                        </DropdownMenuContent>
+                                    </DropdownMenu>
+                                </TableCell>
+                            )}
                         </TableRow>
                     ))}
                 </TableBody>

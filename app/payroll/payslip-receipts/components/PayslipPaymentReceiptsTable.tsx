@@ -62,12 +62,11 @@ import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/comp
 
 
 const DOCUMENT_LABELS: Record<string, string> = {
-    paye_acknowledgment: "PAYE Ack.",
-    paye_slip: "PAYE Payment",
-    housing_levy_slip: "Housing Levy",
-    shif_slip: "SHIF",
-    nssf_slip: "NSSF",
-    nita_slip: "NITA",
+    paye_receipt: "PAYE Payment",
+    housing_levy_receipt: "Housing Levy",
+    shif_receipt: "SHIF",
+    nssf_receipt: "NSSF",
+    nita_receipt: "NITA",
     all_csv: "All CSV Files"
 };
 
@@ -98,12 +97,40 @@ const getDocumentsForUpload = (record: CompanyPayrollRecord) => {
         .map(([type, label]) => ({
             type: type as DocumentType,
             label,
-            status: record.payment_slips_documents[type as DocumentType] ? 'uploaded' as const : 'missing' as const,
-            path: record.payment_slips_documents[type as DocumentType]
+            status: record.payment_receipts_documents[type as DocumentType] ? 'uploaded' as const : 'missing' as const,
+            path: record.payment_receipts_documents[type as DocumentType]
         }));
 };
 
-export function TaxPaymentTable({
+const handleEmailDateUpdate = async (recordId: string) => {
+    try {
+        const { error: updateError } = await supabase
+            .from('company_payroll_records')
+            .update({
+                receipts_status: {
+                    ...record.receipts_status,
+                    email_date: new Date().toISOString()
+                }
+            })
+            .eq('id', recordId);
+
+        if (updateError) throw updateError;
+
+        toast({
+            title: 'Success',
+            description: 'Email date updated successfully'
+        });
+    } catch (error) {
+        toast({
+            title: 'Error',
+            description: 'Failed to update email date',
+            variant: 'destructive'
+        });
+    }
+};
+
+
+export function PayslipPaymentReceiptsTable({
     records,
     onDocumentUpload,
     onStatusUpdate,
@@ -139,19 +166,20 @@ export function TaxPaymentTable({
         if (record.status.finalization_date === 'NIL') {
             return 'N/A';
         }
-        // Count all document types including nita_slip
-        const requiredDocs = ['paye_acknowledgment', 'paye_slip', 'housing_levy_slip', 'shif_slip', 'nssf_slip', 'nita_slip'];
+        // Count all document types
+        const requiredDocs = ['paye_receipt', 'housing_levy_receipt', 'shif_receipt', 'nssf_receipt', 'nita_receipt'];
         const totalDocs = requiredDocs.length;
         const uploadedDocs = requiredDocs.filter(docType =>
-            record.payment_slips_documents[docType as DocumentType] !== null
+            record.payment_receipts_documents[docType as DocumentType] !== null &&
+            record.payment_receipts_documents[docType as DocumentType] !== undefined
         ).length;
         return `${uploadedDocs}/${totalDocs}`;
     };
 
     const allDocumentsUploaded = (record: CompanyPayrollRecord | undefined): boolean => {
         if (!record) return false;
-        const requiredDocs = ['paye_acknowledgment', 'paye_slip', 'housing_levy_slip', 'shif_slip', 'nssf_slip', 'nita_slip'];
-        return requiredDocs.every(docType => record.payment_slips_documents[docType as DocumentType] !== null);
+        const requiredDocs = ['paye_receipt', 'housing_levy_receipt', 'shif_receipt', 'nssf_receipt', 'nita_receipt'];
+        return requiredDocs.every(docType => record.payment_receipts_documents[docType as DocumentType] !== null);
     };
 
     // Memoize sorted records for performance
@@ -164,7 +192,7 @@ export function TaxPaymentTable({
 
     const handleFinalize = (recordId: string) => {
         onStatusUpdate(recordId, {
-            finalization_date: finalizeDialog.isNil ? 'NIL' : new Date().toISOString(),
+            verification_date: finalizeDialog.isNil ? 'NIL' : new Date().toISOString(),
             status: 'completed',
             assigned_to: finalizeDialog.assignedTo
         });
@@ -202,7 +230,7 @@ export function TaxPaymentTable({
             const { error: updateError } = await supabase
                 .from('company_payroll_records')
                 .update({
-                    payment_slips_status: updatedStatus
+                    status: updatedStatus
                 })
                 .eq('id', recordId);
 
@@ -299,7 +327,7 @@ export function TaxPaymentTable({
             setIsSubmitting(true);
 
             // Filter out null values before using the paths
-            const documentsToDelete = Object.entries(record.payment_slips_documents).filter(([_, path]) => path !== null) as [DocumentType, string][];
+            const documentsToDelete = Object.entries(record.payment_receipts_documents).filter(([_, path]) => path !== null) as [DocumentType, string][];
 
             if (documentsToDelete.length === 0) {
                 toast({
@@ -323,13 +351,12 @@ export function TaxPaymentTable({
             const { error: updateError } = await supabase
                 .from('company_payroll_records')
                 .update({
-                    payment_slips_documents: {
-                        paye_acknowledgment: null,
-                        paye_slip: null,
-                        housing_levy_slip: null,
-                        shif_slip: null,
-                        nssf_slip: null,
-                        nita_slip: null
+                    payment_receipts_documents: {
+                        paye_receipt: null,
+                        housing_levy_receipt: null,
+                        shif_receipt: null,
+                        nssf_receipt: null,
+                        nita_receipt: null
                     }
                 })
                 .eq('id', record.id);
@@ -341,13 +368,12 @@ export function TaxPaymentTable({
                 if (r.id === record.id) {
                     return {
                         ...r,
-                        payment_slips_documents: {
-                            paye_acknowledgment: null,
-                            paye_slip: null,
-                            housing_levy_slip: null,
-                            shif_slip: null,
-                            nssf_slip: null,
-                            nita_slip: null
+                        payment_receipts_documents: {
+                            paye_receipt: null,
+                            housing_levy_receipt: null,
+                            shif_receipt: null,
+                            nssf_receipt: null,
+                            nita_receipt: null
                         }
                     };
                 }
@@ -399,7 +425,7 @@ export function TaxPaymentTable({
 
     const handleDownloadAll = async (record: CompanyPayrollRecord) => {
         try {
-            const documentsToDownload = Object.entries(record.payment_slips_documents)
+            const documentsToDownload = Object.entries(record.payment_receipts_documents)
                 .filter(([key, value]) => key !== 'all_csv' && value !== null);
 
             for (const [_, path] of documentsToDownload) {
@@ -433,7 +459,7 @@ export function TaxPaymentTable({
             // First, fetch the current record to get latest document paths
             const { data: currentRecord, error: fetchError } = await supabase
                 .from('company_payroll_records')
-                .select('payment_slips_documents')
+                .select('payment_receipts_documents')
                 .eq('id', recordId)
                 .single();
 
@@ -441,8 +467,8 @@ export function TaxPaymentTable({
             if (!currentRecord) throw new Error('Failed to fetch current record');
 
             const fileName = `${documentType} - ${record.company.company_name} - ${format(new Date(), 'yyyy-MM-dd')}${file.name.substring(file.name.lastIndexOf('.'))}`;
-            const filePath = `${selectedMonthYear}/PAYMENT SLIPS/${record.company.company_name}/${fileName}`;
-
+            const filePath = `${selectedMonthYear}/PAYMENT RECEIPTS/${record.company.company_name}/${fileName}`;
+            
             // Upload file to storage
             const { data: uploadData, error: uploadError } = await supabase.storage
                 .from('Payroll-Cycle')
@@ -455,7 +481,7 @@ export function TaxPaymentTable({
 
             // Preserve existing document paths and update the new one
             const updatedDocuments = {
-                ...currentRecord.payment_slips_documents,
+                ...currentRecord.payment_receipts_documents,
                 [documentType]: uploadData.path
             };
 
@@ -463,7 +489,7 @@ export function TaxPaymentTable({
             const { error: updateError } = await supabase
                 .from('company_payroll_records')
                 .update({
-                    payment_slips_documents: updatedDocuments
+                    payment_receipts_documents: updatedDocuments
                 })
                 .eq('id', recordId);
 
@@ -480,7 +506,7 @@ export function TaxPaymentTable({
                 if (r.id === recordId) {
                     return {
                         ...r,
-                        payment_slips_documents: updatedDocuments
+                        payment_receipts_documents: updatedDocuments
                     };
                 }
                 return r;
@@ -507,7 +533,7 @@ export function TaxPaymentTable({
             const record = records.find(r => r.id === recordId);
             if (!record) return;
 
-            const documentPath = record.payment_slips_documents[documentType];
+            const documentPath = record.payment_receipts_documents[documentType];
             if (!documentPath) return;
 
             const { error: deleteError } = await supabase.storage
@@ -519,8 +545,8 @@ export function TaxPaymentTable({
             const { error: updateError } = await supabase
                 .from('company_payroll_records')
                 .update({
-                    payment_slips_documents: {
-                        ...record.payment_slips_documents,
+                    payment_receipts_documents: {
+                        ...record.payment_receipts_documents,
                         [documentType]: null
                     }
                 })
@@ -533,8 +559,8 @@ export function TaxPaymentTable({
                 if (r.id === recordId) {
                     return {
                         ...r,
-                        payment_slips_documents: {
-                            ...r.payment_slips_documents,
+                        payment_receipts_documents: {
+                            ...r.payment_receipts_documents,
                             [documentType]: null
                         }
                     };
@@ -563,16 +589,16 @@ export function TaxPaymentTable({
                     <TableRow className="bg-blue-600 hover:bg-blue-600 [&>th]:border-r [&>th]:border-blue-500 last:[&>th]:border-r-0">
                         <TableHead className="text-white font-semibold border-b" scope="col">#</TableHead>
                         <TableHead className="text-white font-semibold" scope="col">Company Name</TableHead>
-                        <TableHead className="text-white font-semibold" scope="col">Ready to File</TableHead>
-                        <TableHead className="text-white font-semibold" scope="col">PAYE Ack.</TableHead>
-                        <TableHead className="text-white font-semibold" scope="col">PAYE Slip</TableHead>
-                        <TableHead className="text-white font-semibold" scope="col">Hs. Levy</TableHead>
-                        <TableHead className="text-white font-semibold" scope="col">NITA</TableHead>
-                        <TableHead className="text-white font-semibold" scope="col">SHIF</TableHead>
-                        <TableHead className="text-white font-semibold" scope="col">NSSF</TableHead>
-                        <TableHead className="text-white font-semibold" scope="col">All Tax Slips</TableHead>
-                        <TableHead className="text-white font-semibold" scope="col">Email</TableHead>
-                        <TableHead className="text-white font-semibold" scope="col">WhatsApp</TableHead>
+                        <TableHead className="text-white font-semibold" scope="col">Email Date</TableHead>
+                        <TableHead className="text-white font-semibold" scope="col">WA Date</TableHead>
+                        {/* <TableHead className="text-white font-semibold" scope="col">Ready to File</TableHead> */}
+                        {/* <TableHead className="text-white font-semibold" scope="col">PAYE Ack.</TableHead> */}
+                        <TableHead className="text-white font-semibold" scope="col">PAYE Rct</TableHead>
+                        <TableHead className="text-white font-semibold" scope="col">Hs. Levy Rct</TableHead>
+                        <TableHead className="text-white font-semibold" scope="col">NITA Rct</TableHead>
+                        <TableHead className="text-white font-semibold" scope="col">SHIF Rct</TableHead>
+                        <TableHead className="text-white font-semibold" scope="col">NSSF Rct</TableHead>
+                        <TableHead className="text-white font-semibold" scope="col">All Tax Rcts</TableHead>
                         <TableHead className="text-white font-semibold" scope="col">Actions</TableHead>
                     </TableRow>
                 </TableHeader>
@@ -603,61 +629,6 @@ export function TaxPaymentTable({
                                     </Tooltip>
                                 </TableCell>
                             </TooltipProvider>
-                            <TableCell className="text-center">
-                                {record?.status?.filing?.filingDate ? (
-                                    <Button
-                                        size="sm"
-                                        className={`h-6 text-xs px-2 ${record.status.finalization_date === 'NIL' ? 'bg-purple-500 hover:bg-purple-600' : 'bg-green-500 hover:bg-green-600'}`}
-                                        onClick={() => setFilingDialog({
-                                            isOpen: true,
-                                            recordId: record.id,
-                                            isNil: record.status.finalization_date === 'NIL',
-                                            confirmOpen: false,
-                                            record
-                                        })}
-                                    >
-                                        {formatDate(record?.status?.filing?.filingDate)}
-                                    </Button>
-                                ) : (
-                                    <Button
-                                        size="sm"
-                                        className={
-                                                !allDocumentsUploaded(record) && record.status.finalization_date !== 'NIL'
-                                                    ? "h-6 text-xs text-center px-2 bg-red-500 hover:bg-red-500"
-                                                : "h-6 text-xs text-center px-2"
-                                        }
-
-                                        disabled={!allDocumentsUploaded(record) && record.status.finalization_date !== 'NIL'}
-                                       
-                                    >
-                                        {(!allDocumentsUploaded(record) && record.status.finalization_date !== 'NIL') && 'Pending'}
-                                    </Button>
-                                )}
-                            </TableCell>
-
-                            {/* Document cells */}
-                            {Object.entries(DOCUMENT_LABELS).map(([key, label]) => (
-                                <TableCell key={key} className="text-center">
-                                    {key === 'all_csv' ? (
-                                        <Badge className={record.status.finalization_date === 'NIL' ? 'bg-purple-500' : 'bg-blue-500'}>
-                                            {getDocumentCount(record)}
-                                        </Badge>
-                                    ) : (
-                                        <DocumentUploadDialog
-                                            documentType={key as DocumentType}
-                                            recordId={record.id}
-                                            onUpload={(file, docType) => handleDocumentUpload(record.id, file, docType || key as DocumentType)}
-                                            onDelete={(docType) => handleDocumentDelete(record.id, docType || key as DocumentType)}
-                                            existingDocument={record.payment_slips_documents[key as DocumentType]}
-                                            label={label}
-                                            isNilFiling={record.status.finalization_date === 'NIL'}
-                                            allDocuments={getDocumentsForUpload(record)}
-                                            companyName={record.company.company_name}
-                                        />
-                                    )}
-                                </TableCell>
-                            ))}
-
 
                             <TableCell className="text-center">
                                 <Button
@@ -691,6 +662,30 @@ export function TaxPaymentTable({
                                     <MessageSquare className="h-4 w-4" />
                                 </Button>
                             </TableCell>
+
+
+                            {/* Document cells */}
+                            {Object.entries(DOCUMENT_LABELS).map(([key, label]) => (
+                                <TableCell key={key} className="text-center">
+                                    {key === 'all_csv' ? (
+                                        <Badge className={record.status.finalization_date === 'NIL' ? 'bg-purple-500' : 'bg-blue-500'}>
+                                            {getDocumentCount(record)}
+                                        </Badge>
+                                    ) : (
+                                        <DocumentUploadDialog
+                                            documentType={key as DocumentType}
+                                            recordId={record.id}
+                                            onUpload={(file, docType) => handleDocumentUpload(record.id, file, docType || key as DocumentType)}
+                                            onDelete={(docType) => handleDocumentDelete(record.id, docType || key as DocumentType)}
+                                            existingDocument={record.payment_receipts_documents[key as DocumentType]}
+                                            label={label}
+                                            isNilFiling={record.status.finalization_date === 'NIL'}
+                                            allDocuments={getDocumentsForUpload(record)}
+                                            companyName={record.company.company_name}
+                                        />
+                                    )}
+                                </TableCell>
+                            ))}
 
                             <TableCell className="text-center">
                                 <DropdownMenu>
