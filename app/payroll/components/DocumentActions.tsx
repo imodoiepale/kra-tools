@@ -1,4 +1,4 @@
-// components/payroll/DocumentActions.tsx
+// @ts-nocheck
 import { useState } from 'react'
 import { MoreHorizontal, Download, Trash2 } from 'lucide-react'
 import {

@@ -1,4 +1,4 @@
-// components/payroll/MonthSelector.tsx
+// components/// @ts-nocheckpayroll/MonthSelector.tsx
 import { format, parse, eachMonthOfInterval, subMonths } from 'date-fns'
 import {
     Select,

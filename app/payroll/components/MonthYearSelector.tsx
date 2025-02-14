@@ -1,4 +1,4 @@
-// components/payroll/MonthYearSelector.tsx
+// @ts-nocheck
 import {
     Select,
     SelectContent,

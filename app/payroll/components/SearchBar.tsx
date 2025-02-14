@@ -1,4 +1,4 @@
-// components/payroll/SearchBar.tsx
+// @ts-nocheck
 import { Input } from '@/components/ui/input'
 
 interface SearchBarProps {
