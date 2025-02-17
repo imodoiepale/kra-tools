@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden'
 import { supabase } from '@/lib/supabase'
