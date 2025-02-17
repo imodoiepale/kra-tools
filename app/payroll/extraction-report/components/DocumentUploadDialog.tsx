@@ -221,47 +221,40 @@ export function DocumentUploadDialog({
 
     if (isNilFiling) {
         return (
-            <Button
+            <p
                 size="sm"
-                className="bg-purple-700 hover:bg-purple-600 h-6 text-xs px-2"
+                className="font-bold text-blue-700 hover:text-blue-600 h-6 text-xs px-2"
                 disabled
             >
                 NIL
-            </Button>
+            </p>
         )
     }
 
     return (
         <div>
             <div className="flex gap-1">
-                <Button
+                <p
                     size="sm"
                     className={existingDocument
-                        ? "bg-green-500 hover:bg-green-600 h-6 text-xs px-2"
-                        : "bg-yellow-500 hover:bg-yellow-600 h-6 text-xs px-2"}
+                        ? "font-bold text-green-500 hover:text-green-600 h-6 text-xs px-2"
+                        : "font-bold text-red-500 hover:text-red-600 h-6 text-xs px-2"}
                     onClick={() => setUploadDialog(true)}
                 >
-                    {existingDocument ? 'View' : 'Missing'}
-                </Button>
+                    {existingDocument ? 'Paid' : 'Missing'}
+                </p>
 
                 {existingDocument && (
                     <>
                         <Button
-                            variant="ghost"
+                            variant="outline"
                             size="sm"
                             className="h-6 text-xs px-2"
                             onClick={() => handleViewDocument(existingDocument, label)}
                         >
                             <Eye className="h-3 w-3" />
                         </Button>
-                        <Button
-                            size="sm"
-                            variant="destructive"
-                            className="h-6 text-xs px-2"
-                            onClick={() => setConfirmDeleteDialog(true)}
-                        >
-                            <Trash2 className="h-3 w-3" />
-                        </Button>
+                        
                     </>
                 )}
             </div>

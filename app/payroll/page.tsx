@@ -7,6 +7,7 @@ import TaxPaymentSlips from "./tax-payment-slips/TaxPaymentSlips"
 import { usePayrollCycle } from "./hooks/usePayrollCycle"
 import { useEffect } from "react"
 import PayslipPaymentReceipts from "./payslip-receipts/PayslipPaymentReceipts"
+import ExtractionReport from "./extraction-report/ExtractionReport"
 
 export default function PortalPage() {
     const payrollCycle = usePayrollCycle()
@@ -22,6 +23,7 @@ export default function PortalPage() {
                     <TabsTrigger value="wingu-csv">PAYROLL WINGU CSV AUTO</TabsTrigger>
                     <TabsTrigger value="tax-payment-slips">TAX PAYMENT SLIPS WEB AUTO</TabsTrigger>
                     <TabsTrigger value="payslip-receipts">PAYSLIP PAYMENT RECEIPTS</TabsTrigger>
+                    <TabsTrigger value="extraction-report">EXTRACTIONS REPORT</TabsTrigger>
                 </TabsList>
                 <TabsContent value="wingu-csv" className="space-y-4">
                     <PayrollManagementWingu {...payrollCycle} />
@@ -31,6 +33,9 @@ export default function PortalPage() {
                 </TabsContent>
                 <TabsContent value="payslip-receipts">
                     <PayslipPaymentReceipts {...payrollCycle} />
+                </TabsContent>
+                <TabsContent value="extraction-report">
+                    <ExtractionReport {...payrollCycle} />
                 </TabsContent>
             </Tabs>
         </div>
