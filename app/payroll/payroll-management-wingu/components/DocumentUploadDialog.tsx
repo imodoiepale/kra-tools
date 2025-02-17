@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { useState } from 'react'
-import { Trash2, Upload, Loader2, Download, Building2 } from 'lucide-react'
+import { Trash2, Upload, Loader2, Download, Building2, Eye } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
     Dialog,
@@ -31,6 +31,8 @@ import { Label } from '@/components/ui/label'
 import { DocumentType } from '../../../types'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/hooks/use-toast'
+import { DocumentViewer } from '../../components/DocumentViewer'
+
 
 interface DocumentUploadDialogProps {
     documentType: DocumentType;
@@ -67,7 +69,29 @@ export function DocumentUploadDialog({
     const [activeTab, setActiveTab] = useState("single")
     const [bulkFiles, setBulkFiles] = useState<Map<DocumentType, { file: File; label: string }>>(new Map());
     const [isSubmitting, setIsSubmitting] = useState(false)
+    const [isViewerOpen, setIsViewerOpen] = useState(false)
     const { toast } = useToast()
+
+    const getFileExtension = (path: string): string => {
+        return path.split('.').pop()?.toLowerCase() || '';
+    }
+
+    const getDocumentType = (path: string): string => {
+        const ext = getFileExtension(path);
+        switch (ext) {
+            case 'pdf':
+                return 'PDF';
+            case 'csv':
+                return 'CSV';
+            case 'xls':
+            case 'xlsx':
+                return 'Excel';
+            case 'zip':
+                return 'ZIP';
+            default:
+                return 'Document';
+        }
+    }
 
     const handleFileSelect = (file: File, docType?: DocumentType) => {
         setSelectedFile(file)
@@ -257,26 +281,46 @@ export function DocumentUploadDialog({
     }
 
     return (
-        <div className="flex gap-1">
-            <Button
-                size="sm"
-                className={existingDocument
-                    ? "bg-green-500 hover:bg-green-600 h-6 text-xs px-2"
-                    : "bg-yellow-500 hover:bg-yellow-600 h-6 text-xs px-2"}
-                onClick={() => setUploadDialog(true)}
-            >
-                {existingDocument ? 'View' : 'Missing'}
-            </Button>
-
-            {existingDocument && (
+        <>
+            <div className="flex gap-1">
                 <Button
                     size="sm"
-                    variant="destructive"
-                    className="h-6 text-xs px-2"
-                    onClick={() => setConfirmDeleteDialog(true)}
+                    className={existingDocument
+                        ? "bg-green-500 hover:bg-green-600 h-6 text-xs px-2"
+                        : "bg-yellow-500 hover:bg-yellow-600 h-6 text-xs px-2"}
+                    onClick={() => existingDocument ? setIsViewerOpen(true) : setUploadDialog(true)}
                 >
-                    <Trash2 className="h-3 w-3" />
+                    {existingDocument ? (
+                        <div className="flex items-center gap-1">
+                            <Eye className="h-3 w-3" />
+                            <span>{getDocumentType(existingDocument)}</span>
+                        </div>
+                    ) : (
+                        'Missing'
+                    )}
                 </Button>
+
+                {existingDocument && (
+                    <Button
+                        size="sm"
+                        variant="destructive"
+                        className="h-6 text-xs px-2"
+                        onClick={() => setConfirmDeleteDialog(true)}
+                    >
+                        <Trash2 className="h-3 w-3" />
+                    </Button>
+                )}
+            </div>
+
+            {/* Document Viewer Dialog */}
+            {existingDocument && (
+                <DocumentViewer
+                    url={existingDocument}
+                    isOpen={isViewerOpen}
+                    onClose={() => setIsViewerOpen(false)}
+                    title={`${label} (${getDocumentType(existingDocument)})`}
+                    companyName={companyName}
+                />
             )}
 
             <Dialog open={uploadDialog} onOpenChange={setUploadDialog}>
@@ -482,6 +526,6 @@ export function DocumentUploadDialog({
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>
-        </div>
+        </>
     )
 }

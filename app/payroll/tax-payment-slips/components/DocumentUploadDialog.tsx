@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { useState } from 'react'
-import { Trash2, Upload, Loader2, Download } from 'lucide-react'
+import { Trash2, Upload, Loader2, Download, Eye } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -29,6 +29,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { DocumentType } from '../types'
 import { useToast } from '@/hooks/use-toast'
+import { DocumentViewer } from './DocumentViewer'
 
 interface DocumentUploadDialogProps {
     documentType: DocumentType;
@@ -65,6 +66,10 @@ export function DocumentUploadDialog({
     const [activeTab, setActiveTab] = useState("single")
     const [bulkFiles, setBulkFiles] = useState<Map<DocumentType, { file: File; label: string }>>(new Map());
     const [isSubmitting, setIsSubmitting] = useState(false)
+    const [selectedDocument, setSelectedDocument] = useState<{
+        url: string;
+        title: string;
+    } | null>(null)
     const { toast } = useToast()
 
     const handleFileSelect = (file: File, docType?: DocumentType) => {
@@ -207,6 +212,13 @@ export function DocumentUploadDialog({
         }
     };
 
+    const handleViewDocument = (path: string, label: string) => {
+        setSelectedDocument({
+            url: path,
+            title: label
+        })
+    }
+
     if (isNilFiling) {
         return (
             <Button
@@ -220,27 +232,39 @@ export function DocumentUploadDialog({
     }
 
     return (
-        <div className="flex gap-1">
-            <Button
-                size="sm"
-                className={existingDocument
-                    ? "bg-green-500 hover:bg-green-600 h-6 text-xs px-2"
-                    : "bg-yellow-500 hover:bg-yellow-600 h-6 text-xs px-2"}
-                onClick={() => setUploadDialog(true)}
-            >
-                {existingDocument ? 'View' : 'Missing'}
-            </Button>
-
-            {existingDocument && (
+        <div>
+            <div className="flex gap-1">
                 <Button
                     size="sm"
-                    variant="destructive"
-                    className="h-6 text-xs px-2"
-                    onClick={() => setConfirmDeleteDialog(true)}
+                    className={existingDocument
+                        ? "bg-green-500 hover:bg-green-600 h-6 text-xs px-2"
+                        : "bg-yellow-500 hover:bg-yellow-600 h-6 text-xs px-2"}
+                    onClick={() => setUploadDialog(true)}
                 >
-                    <Trash2 className="h-3 w-3" />
+                    {existingDocument ? 'View' : 'Missing'}
                 </Button>
-            )}
+
+                {existingDocument && (
+                    <>
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 text-xs px-2"
+                            onClick={() => handleViewDocument(existingDocument, label)}
+                        >
+                            <Eye className="h-3 w-3" />
+                        </Button>
+                        <Button
+                            size="sm"
+                            variant="destructive"
+                            className="h-6 text-xs px-2"
+                            onClick={() => setConfirmDeleteDialog(true)}
+                        >
+                            <Trash2 className="h-3 w-3" />
+                        </Button>
+                    </>
+                )}
+            </div>
 
             <Dialog open={uploadDialog} onOpenChange={setUploadDialog}>
                 <DialogContent className="max-w-2xl">
@@ -289,15 +313,17 @@ export function DocumentUploadDialog({
                                                     <span className="text-sm text-gray-600 flex-1">
                                                         {existingDocument.split('/').pop()}
                                                     </span>
-                                                    <Button
-                                                        size="sm"
-                                                        variant="outline"
-                                                        className="h-7 px-2 gap-1"
-                                                        onClick={() => handleDownload(existingDocument!)}
-                                                    >
-                                                        <Download className="h-3 w-3" />
-                                                        <span className="text-xs">Download</span>
-                                                    </Button>
+                                                    <div className="flex items-center gap-2">
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            className="h-7 px-2"
+                                                            onClick={() => window.open(existingDocument, '_blank')}
+                                                        >
+                                                            <Download className="h-3 w-3" />
+                                                            <span className="text-xs">Download</span>
+                                                        </Button>
+                                                    </div>
                                                 </div>
                                             </div>
                                         )}
@@ -443,6 +469,16 @@ export function DocumentUploadDialog({
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>
+
+            {selectedDocument && (
+                <DocumentViewer
+                    url={selectedDocument.url}
+                    isOpen={!!selectedDocument}
+                    onClose={() => setSelectedDocument(null)}
+                    title={selectedDocument.title}
+                    companyName={companyName}
+                />
+            )}
         </div>
     )
 }
