@@ -9,9 +9,10 @@ interface DocumentViewerProps {
     isOpen: boolean;
     onClose: () => void;
     title: string;
+    companyName: string;
 }
 
-export function DocumentViewer({ url, isOpen, onClose, title }: DocumentViewerProps) {
+export function DocumentViewer({ url, isOpen, onClose, title, companyName }: DocumentViewerProps) {
     const [documentUrl, setDocumentUrl] = useState<string>('')
 
     useEffect(() => {
@@ -39,18 +40,24 @@ export function DocumentViewer({ url, isOpen, onClose, title }: DocumentViewerPr
 
     return (
         <Dialog open={isOpen} onOpenChange={onClose}>
-            <DialogContent className="max-w-[90vw] max-h-[90vh] p-0 overflow-hidden rounded-lg">
+            <DialogContent className="max-w-[50vw] h-[90vh] p-0 overflow-hidden rounded-lg">
                 <DialogHeader className="p-4 border-b">
-                    <DialogTitle>{title}</DialogTitle>
+                    <DialogTitle className="text-lg font-semibold text-gray-900">{companyName}</DialogTitle>
+                    <p className="mt-1 text-sm text-gray-500">{title}</p>
                 </DialogHeader>
-                <div className="relative w-full h-[80vh]">
+                <div className="relative w-full h-[calc(90vh-4rem)]">
                     {documentUrl && (
                         <iframe 
-                            src={documentUrl}
+                            src={`${documentUrl}#view=FitH`}
                             className="absolute inset-0 w-full h-full border-0"
                             title={title}
                             loading="lazy"
                         />
+                    )}
+                    {!documentUrl && (
+                        <div className="flex items-center justify-center h-full">
+                            <p>Loading document...</p>
+                        </div>
                     )}
                 </div>
             </DialogContent>

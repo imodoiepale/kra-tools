@@ -68,7 +68,9 @@ export function DocumentUploadDialog({
     const [selectedDocType, setSelectedDocType] = useState<DocumentType | undefined>()
     const [activeTab, setActiveTab] = useState("single")
     const [bulkFiles, setBulkFiles] = useState<Map<DocumentType, { file: File; label: string }>>(new Map());
+    const [mpesaMessages, setMpesaMessages] = useState<Map<DocumentType, { message: string; label: string }>>(new Map())
     const [isSubmitting, setIsSubmitting] = useState(false)
+    const [isConverting, setIsConverting] = useState(false)
     const [uploadType, setUploadType] = useState<'file' | 'mpesa'>('file')
     const [mpesaMessage, setMpesaMessage] = useState('')
     const [viewerOpen, setViewerOpen] = useState(false)
@@ -175,6 +177,7 @@ export function DocumentUploadDialog({
             return
         }
 
+        setIsConverting(true)
         setIsSubmitting(true)
         try {
             // Step 1: Convert MPESA message to PDF using pdfme
@@ -213,6 +216,84 @@ export function DocumentUploadDialog({
                 variant: "destructive"
             })
         } finally {
+            setIsConverting(false)
+            setIsSubmitting(false)
+        }
+    }
+
+    const handleBulkMpesaUpload = async () => {
+        if (mpesaMessages.size === 0) {
+            toast({
+                title: "No messages",
+                description: "Please enter at least one MPESA message",
+                variant: "destructive"
+            })
+            return
+        }
+
+        setIsSubmitting(true)
+        setIsConverting(true)
+        let successCount = 0
+        let errorCount = 0
+        const errors: string[] = []
+
+        try {
+            for (const [docType, { message, label }] of mpesaMessages.entries()) {
+                try {
+                    const fileName = `MPESA-RECEIPT-${docType}-${new Date().getTime()}.pdf`
+                    const pdfData = await mpesaMessageToPdf({
+                        message,
+                        fileName,
+                        receiptName: `${label} - ${companyName}`
+                    })
+
+                    if (!pdfData) {
+                        throw new Error('Failed to generate PDF')
+                    }
+
+                    const file = new File([pdfData], fileName, {
+                        type: 'application/pdf',
+                        lastModified: new Date().getTime()
+                    })
+
+                    await onUpload(file, docType)
+                    successCount++
+                } catch (error) {
+                    errorCount++
+                    errors.push(`${docType}: ${error instanceof Error ? error.message : 'Unknown error'}`)
+                }
+            }
+
+            if (successCount > 0) {
+                toast({
+                    title: "Upload Complete",
+                    description: `Successfully processed ${successCount} message${successCount > 1 ? 's' : ''}${errorCount > 0 ? `. Failed to process ${errorCount} message${errorCount > 1 ? 's' : ''}.` : ''}`
+                })
+
+                if (errorCount === 0) {
+                    setMpesaMessages(new Map())
+                    setUploadDialog(false)
+                }
+            } else {
+                toast({
+                    title: "Upload Failed",
+                    description: "Failed to process any messages. Please try again.",
+                    variant: "destructive"
+                })
+            }
+
+            if (errors.length > 0) {
+                console.error('Bulk MPESA processing errors:', errors)
+            }
+        } catch (error) {
+            console.error('Bulk MPESA processing error:', error)
+            toast({
+                title: "Error",
+                description: "Failed to complete the process",
+                variant: "destructive"
+            })
+        } finally {
+            setIsConverting(false)
             setIsSubmitting(false)
         }
     }
@@ -390,10 +471,17 @@ export function DocumentUploadDialog({
                                                 />
                                                 <Button
                                                     onClick={handleMpesaUpload}
-                                                    disabled={!mpesaMessage.trim()}
+                                                    disabled={!mpesaMessage.trim() || isConverting}
                                                     className="w-full"
                                                 >
-                                                    Convert & Upload
+                                                    {isConverting ? (
+                                                        <>
+                                                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                                            Converting & Uploading...
+                                                        </>
+                                                    ) : (
+                                                        'Convert & Upload'
+                                                    )}
                                                 </Button>
                                             </div>
                                         )}
@@ -443,23 +531,52 @@ export function DocumentUploadDialog({
                                                                     <span className={doc.status === 'missing' ? 'text-yellow-500' : 'text-green-500'}>
                                                                         {doc.status === 'missing' ? 'Missing' : 'Uploaded'}
                                                                     </span>
-                                                                    {bulkFiles.has(doc.type) && (
+                                                                    {(bulkFiles.has(doc.type) || mpesaMessages.has(doc.type)) && (
                                                                         <span className="ml-2 text-blue-500">
-                                                                            (New file selected)
+                                                                            (New {bulkFiles.has(doc.type) ? 'file' : 'message'} selected)
                                                                         </span>
                                                                     )}
                                                                 </p>
                                                             </div>
                                                             <div className="flex gap-2 items-center flex-1">
-                                                                <Input
-                                                                    type="file"
-                                                                    className="flex-1"
-                                                                    accept={doc.type.includes('pdf') ? '.pdf' : '.pdf,.zip'}
-                                                                    onChange={(e) => {
-                                                                        const file = e.target.files?.[0];
-                                                                        if (file) handleBulkFileSelect(file, doc.type, doc.label);
-                                                                    }}
-                                                                />
+                                                                <div className="flex gap-2 flex-1">
+                                                                    <Input
+                                                                        type="file"
+                                                                        className="flex-1"
+                                                                        accept={doc.type.includes('pdf') ? '.pdf' : '.pdf,.zip'}
+                                                                        onChange={(e) => {
+                                                                            const file = e.target.files?.[0];
+                                                                            if (file) {
+                                                                                handleBulkFileSelect(file, doc.type, doc.label);
+                                                                                // Clear any MPESA message for this type
+                                                                                const newMessages = new Map(mpesaMessages);
+                                                                                newMessages.delete(doc.type);
+                                                                                setMpesaMessages(newMessages);
+                                                                            }
+                                                                        }}
+                                                                    />
+                                                                    <Textarea
+                                                                        placeholder="Paste MPESA message..."
+                                                                        className="flex-1 h-[38px] min-h-[38px]"
+                                                                        value={mpesaMessages.get(doc.type)?.message || ''}
+                                                                        onChange={(e) => {
+                                                                            const newMessages = new Map(mpesaMessages);
+                                                                            if (e.target.value.trim()) {
+                                                                                newMessages.set(doc.type, {
+                                                                                    message: e.target.value,
+                                                                                    label: doc.label
+                                                                                });
+                                                                                // Clear any file for this type
+                                                                                const newFiles = new Map(bulkFiles);
+                                                                                newFiles.delete(doc.type);
+                                                                                setBulkFiles(newFiles);
+                                                                            } else {
+                                                                                newMessages.delete(doc.type);
+                                                                            }
+                                                                            setMpesaMessages(newMessages);
+                                                                        }}
+                                                                    />
+                                                                </div>
                                                                 {doc.path && (
                                                                     <div className="flex gap-2">
                                                                         <Button
@@ -490,24 +607,45 @@ export function DocumentUploadDialog({
                                                 ))}
                                             </div>
                                         </div>
-                                        <div className="flex justify-end">
-                                            <Button
-                                                onClick={handleBulkSubmit}
-                                                disabled={bulkFiles.size === 0 || isSubmitting}
-                                                className="bg-blue-500 hover:bg-blue-600"
-                                            >
-                                                {isSubmitting ? (
-                                                    <>
-                                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                                        Uploading...
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        <Upload className="mr-2 h-4 w-4" />
-                                                        Upload Selected ({bulkFiles.size})
-                                                    </>
-                                                )}
-                                            </Button>
+                                        <div className="flex justify-end gap-2">
+                                            {mpesaMessages.size > 0 && (
+                                                <Button
+                                                    onClick={handleBulkMpesaUpload}
+                                                    disabled={isConverting || isSubmitting}
+                                                    className="bg-green-500 hover:bg-green-600"
+                                                >
+                                                    {isConverting ? (
+                                                        <>
+                                                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                                            Converting Messages...
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <Upload className="mr-2 h-4 w-4" />
+                                                            Process MPESA Messages ({mpesaMessages.size})
+                                                        </>
+                                                    )}
+                                                </Button>
+                                            )}
+                                            {bulkFiles.size > 0 && (
+                                                <Button
+                                                    onClick={handleBulkSubmit}
+                                                    disabled={isSubmitting}
+                                                    className="bg-blue-500 hover:bg-blue-600"
+                                                >
+                                                    {isSubmitting ? (
+                                                        <>
+                                                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                                            Uploading...
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <Upload className="mr-2 h-4 w-4" />
+                                                            Upload Files ({bulkFiles.size})
+                                                        </>
+                                                    )}
+                                                </Button>
+                                            )}
                                         </div>
                                     </div>
                                 ) : (
@@ -527,6 +665,7 @@ export function DocumentUploadDialog({
                     isOpen={viewerOpen}
                     onClose={() => setViewerOpen(false)}
                     title={label}
+                    companyName={companyName}
                 />
             )}
 
