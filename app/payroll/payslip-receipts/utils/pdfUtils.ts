@@ -8,7 +8,7 @@ interface MpesaReceiptData {
     receiptName: string;
 }
 
-const formatMpesaMessage = (message: string): { formatted: string; original: string } => {
+export const formatMpesaMessage = (message: string): { formatted: string; original: string } => {
     // Split messages by double newline to separate different payments
     const payments = message.split(/\n\n+/);
     

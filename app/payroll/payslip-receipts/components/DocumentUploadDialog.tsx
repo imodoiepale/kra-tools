@@ -31,7 +31,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { DocumentViewer } from './DocumentViewer'
 import { DocumentType } from '../types'
 import { useToast } from '@/hooks/use-toast'
-import { mpesaMessageToPdf } from '../utils/pdfUtils'
+import { mpesaMessageToPdf, formatMpesaMessage } from '../utils/pdfUtils'
 import { supabase } from '@/lib/supabase'
 
 interface DocumentUploadDialogProps {
@@ -73,6 +73,9 @@ export function DocumentUploadDialog({
     const [isConverting, setIsConverting] = useState(false)
     const [uploadType, setUploadType] = useState<'file' | 'mpesa'>('file')
     const [mpesaMessage, setMpesaMessage] = useState('')
+    const [mpesaPreview, setMpesaPreview] = useState('')
+    const [mpesaValidationError, setMpesaValidationError] = useState('')
+    const [bulkUploadProgress, setBulkUploadProgress] = useState(0)
     const [viewerOpen, setViewerOpen] = useState(false)
     const { toast } = useToast()
 
@@ -167,11 +170,52 @@ export function DocumentUploadDialog({
         }
     };
 
+    const validateMpesaMessage = (message: string) => {
+        if (!message.trim()) {
+            return 'Please enter an MPESA message'
+        }
+        return ''
+    }
+
+    const handleMpesaMessageChange = (message: string, docType?: DocumentType) => {
+        const error = validateMpesaMessage(message)
+        setMpesaValidationError(error)
+        
+        if (docType) {
+            if (message.trim()) {
+                setMpesaMessages(new Map(mpesaMessages.set(docType, { 
+                    message, 
+                    label: allDocuments?.find(d => d.type === docType)?.label || '' 
+                })))
+            } else {
+                const newMessages = new Map(mpesaMessages)
+                newMessages.delete(docType)
+                setMpesaMessages(newMessages)
+            }
+        } else {
+            setMpesaMessage(message)
+        }
+
+        // Generate preview
+        if (message.trim()) {
+            try {
+                const { formatted } = formatMpesaMessage(message)
+                setMpesaPreview(formatted)
+            } catch (error) {
+                console.error('Error formatting MPESA message:', error)
+                setMpesaPreview(message) // Fallback to original message if formatting fails
+            }
+        } else {
+            setMpesaPreview('')
+        }
+    }
+
     const handleMpesaUpload = async () => {
-        if (!mpesaMessage.trim()) {
+        const error = validateMpesaMessage(mpesaMessage)
+        if (error) {
             toast({
-                title: "Error",
-                description: "Please enter an MPESA message",
+                title: "Validation Error",
+                description: error,
                 variant: "destructive"
             })
             return
@@ -203,6 +247,7 @@ export function DocumentUploadDialog({
             
             // Step 4: Clear form and show success message
             setMpesaMessage('')
+            setMpesaPreview('')
             setUploadDialog(false)
             toast({
                 title: "Success",
@@ -231,11 +276,30 @@ export function DocumentUploadDialog({
             return
         }
 
+        // Validate all messages first
+        const errors: string[] = []
+        for (const [docType, { message }] of mpesaMessages.entries()) {
+            const error = validateMpesaMessage(message)
+            if (error) {
+                errors.push(`${docType}: ${error}`)
+            }
+        }
+
+        if (errors.length > 0) {
+            toast({
+                title: "Validation Errors",
+                description: "Please fix the following errors:\n" + errors.join('\n'),
+                variant: "destructive"
+            })
+            return
+        }
+
         setIsSubmitting(true)
         setIsConverting(true)
         let successCount = 0
         let errorCount = 0
-        const errors: string[] = []
+        const processingErrors: string[] = []
+        const total = mpesaMessages.size
 
         try {
             for (const [docType, { message, label }] of mpesaMessages.entries()) {
@@ -258,9 +322,10 @@ export function DocumentUploadDialog({
 
                     await onUpload(file, docType)
                     successCount++
+                    setBulkUploadProgress((successCount / total) * 100)
                 } catch (error) {
                     errorCount++
-                    errors.push(`${docType}: ${error instanceof Error ? error.message : 'Unknown error'}`)
+                    processingErrors.push(`${docType}: ${error instanceof Error ? error.message : 'Unknown error'}`)
                 }
             }
 
@@ -272,6 +337,7 @@ export function DocumentUploadDialog({
 
                 if (errorCount === 0) {
                     setMpesaMessages(new Map())
+                    setMpesaPreview('')
                     setUploadDialog(false)
                 }
             } else {
@@ -282,8 +348,8 @@ export function DocumentUploadDialog({
                 })
             }
 
-            if (errors.length > 0) {
-                console.error('Bulk MPESA processing errors:', errors)
+            if (processingErrors.length > 0) {
+                console.error('Bulk MPESA processing errors:', processingErrors)
             }
         } catch (error) {
             console.error('Bulk MPESA processing error:', error)
@@ -295,6 +361,7 @@ export function DocumentUploadDialog({
         } finally {
             setIsConverting(false)
             setIsSubmitting(false)
+            setBulkUploadProgress(0)
         }
     }
 
@@ -465,10 +532,27 @@ export function DocumentUploadDialog({
                                                 <Label>Paste MPESA Message</Label>
                                                 <Textarea
                                                     value={mpesaMessage}
-                                                    onChange={(e) => setMpesaMessage(e.target.value)}
+                                                    onChange={(e) => handleMpesaMessageChange(e.target.value)}
                                                     placeholder="Paste your MPESA message here..."
                                                     className="min-h-[100px]"
                                                 />
+                                                {mpesaValidationError && (
+                                                    <div className="text-sm text-red-500 mt-1">
+                                                        {mpesaValidationError}
+                                                    </div>
+                                                )}
+                                                {/* <div className="space-y-2">
+                                                    <Label>MPESA Message Preview</Label>
+                                                    {mpesaPreview ? (
+                                                        <div className="p-4 bg-gray-50 rounded-md font-mono text-sm whitespace-pre-wrap">
+                                                            {mpesaPreview}
+                                                        </div>
+                                                    ) : (
+                                                        <div className="p-4 bg-gray-50 rounded-md text-gray-400 text-sm">
+                                                            Enter an MPESA message to see preview
+                                                        </div>
+                                                    )}
+                                                </div> */}
                                                 <Button
                                                     onClick={handleMpesaUpload}
                                                     disabled={!mpesaMessage.trim() || isConverting}
@@ -490,7 +574,7 @@ export function DocumentUploadDialog({
                                                 <h4 className="text-sm font-medium text-gray-900 mb-2">Current Document</h4>
                                                 <div className="flex items-center gap-2 bg-white p-2 rounded border">
                                                     <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-green-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0112.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
                                                     </svg>
                                                     <span className="text-sm text-gray-600 flex-1">
                                                         {existingDocument.split('/').pop()}
@@ -559,22 +643,7 @@ export function DocumentUploadDialog({
                                                                         placeholder="Paste MPESA message..."
                                                                         className="flex-1 h-[38px] min-h-[38px]"
                                                                         value={mpesaMessages.get(doc.type)?.message || ''}
-                                                                        onChange={(e) => {
-                                                                            const newMessages = new Map(mpesaMessages);
-                                                                            if (e.target.value.trim()) {
-                                                                                newMessages.set(doc.type, {
-                                                                                    message: e.target.value,
-                                                                                    label: doc.label
-                                                                                });
-                                                                                // Clear any file for this type
-                                                                                const newFiles = new Map(bulkFiles);
-                                                                                newFiles.delete(doc.type);
-                                                                                setBulkFiles(newFiles);
-                                                                            } else {
-                                                                                newMessages.delete(doc.type);
-                                                                            }
-                                                                            setMpesaMessages(newMessages);
-                                                                        }}
+                                                                        onChange={(e) => handleMpesaMessageChange(e.target.value, doc.type)}
                                                                     />
                                                                 </div>
                                                                 {doc.path && (
@@ -647,6 +716,14 @@ export function DocumentUploadDialog({
                                                 </Button>
                                             )}
                                         </div>
+                                        {isSubmitting && bulkUploadProgress > 0 && (
+                                            <div className="w-full bg-gray-200 rounded-full h-2.5 mt-4">
+                                                <div 
+                                                    className="bg-blue-600 h-2.5 rounded-full transition-all duration-300"
+                                                    style={{ width: `${bulkUploadProgress}%` }}
+                                                />
+                                            </div>
+                                        )}
                                     </div>
                                 ) : (
                                     <div className="text-center py-4 text-muted-foreground">
