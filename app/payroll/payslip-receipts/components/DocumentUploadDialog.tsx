@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { useState } from 'react'
-import { Trash2, Upload, Loader2, Download } from 'lucide-react'
+import { Trash2, Upload, Loader2, Download, Eye } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -27,8 +27,12 @@ import {
 } from "@/components/ui/tabs"
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
+import { DocumentViewer } from './DocumentViewer'
 import { DocumentType } from '../types'
 import { useToast } from '@/hooks/use-toast'
+import { mpesaMessageToPdf } from '../utils/pdfUtils'
+import { supabase } from '@/lib/supabase'
 
 interface DocumentUploadDialogProps {
     documentType: DocumentType;
@@ -65,6 +69,9 @@ export function DocumentUploadDialog({
     const [activeTab, setActiveTab] = useState("single")
     const [bulkFiles, setBulkFiles] = useState<Map<DocumentType, { file: File; label: string }>>(new Map());
     const [isSubmitting, setIsSubmitting] = useState(false)
+    const [uploadType, setUploadType] = useState<'file' | 'mpesa'>('file')
+    const [mpesaMessage, setMpesaMessage] = useState('')
+    const [viewerOpen, setViewerOpen] = useState(false)
     const { toast } = useToast()
 
     const handleFileSelect = (file: File, docType?: DocumentType) => {
@@ -158,6 +165,58 @@ export function DocumentUploadDialog({
         }
     };
 
+    const handleMpesaUpload = async () => {
+        if (!mpesaMessage.trim()) {
+            toast({
+                title: "Error",
+                description: "Please enter an MPESA message",
+                variant: "destructive"
+            })
+            return
+        }
+
+        setIsSubmitting(true)
+        try {
+            // Step 1: Convert MPESA message to PDF using pdfme
+            const fileName = `mpesa-receipt-${new Date().getTime()}.pdf`
+            const pdfData = await mpesaMessageToPdf({
+                message: mpesaMessage,
+                fileName,
+                receiptName: `${label} - ${companyName}`
+            })
+            
+            if (!pdfData) {
+                throw new Error('Failed to generate PDF from MPESA message')
+            }
+
+            // Step 2: Create a File object from the PDF data
+            const file = new File([pdfData], fileName, { 
+                type: 'application/pdf',
+                lastModified: new Date().getTime()
+            })
+
+            // Step 3: Upload the PDF file
+            await onUpload(file, selectedDocType)
+            
+            // Step 4: Clear form and show success message
+            setMpesaMessage('')
+            setUploadDialog(false)
+            toast({
+                title: "Success",
+                description: "MPESA receipt uploaded successfully"
+            })
+        } catch (error) {
+            console.error('MPESA PDF generation error:', error)
+            toast({
+                title: "Error",
+                description: error instanceof Error ? error.message : "Failed to process MPESA message",
+                variant: "destructive"
+            })
+        } finally {
+            setIsSubmitting(false)
+        }
+    }
+
     const handleDelete = async () => {
         try {
             await onDelete(selectedDocType)
@@ -207,6 +266,19 @@ export function DocumentUploadDialog({
         }
     };
 
+    const handleView = async (path: string) => {
+        try {
+            setViewerOpen(true)
+        } catch (error) {
+            console.error('Error viewing document:', error)
+            toast({
+                title: "Error",
+                description: "Failed to view document",
+                variant: "destructive"
+            })
+        }
+    }
+
     if (isNilFiling) {
         return (
             <Button
@@ -226,20 +298,30 @@ export function DocumentUploadDialog({
                 className={existingDocument
                     ? "bg-green-500 hover:bg-green-600 h-6 text-xs px-2"
                     : "bg-yellow-500 hover:bg-yellow-600 h-6 text-xs px-2"}
-                onClick={() => setUploadDialog(true)}
+                onClick={() => existingDocument ? handleView(existingDocument) : setUploadDialog(true)}
             >
                 {existingDocument ? 'View' : 'Missing'}
             </Button>
 
             {existingDocument && (
-                <Button
-                    size="sm"
-                    variant="destructive"
-                    className="h-6 text-xs px-2"
-                    onClick={() => setConfirmDeleteDialog(true)}
-                >
-                    <Trash2 className="h-3 w-3" />
-                </Button>
+                <>
+                    <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-6 text-xs px-2"
+                        onClick={() => handleView(existingDocument)}
+                    >
+                        <Eye className="h-3 w-3" />
+                    </Button>
+                    <Button
+                        size="sm"
+                        variant="destructive"
+                        className="h-6 text-xs px-2"
+                        onClick={() => setConfirmDeleteDialog(true)}
+                    >
+                        <Trash2 className="h-3 w-3" />
+                    </Button>
+                </>
             )}
 
             <Dialog open={uploadDialog} onOpenChange={setUploadDialog}>
@@ -268,17 +350,53 @@ export function DocumentUploadDialog({
                                         Upload {label}
                                     </h4>
                                     <div className="space-y-4">
-                                        <div className="space-y-2">
-                                            <Label>Select File</Label>
-                                            <Input
-                                                type="file"
-                                                onChange={(e) => {
-                                                    const file = e.target.files?.[0]
-                                                    if (file) handleFileSelect(file)
-                                                }}
-                                                accept={documentType.includes('pdf') ? '.pdf' : '.pdf, .zip'}
-                                            />
+                                        <div className="flex gap-2">
+                                            <Button
+                                                variant={uploadType === 'file' ? 'default' : 'outline'}
+                                                onClick={() => setUploadType('file')}
+                                                size="sm"
+                                            >
+                                                Bank Upload
+                                            </Button>
+                                            <Button
+                                                variant={uploadType === 'mpesa' ? 'default' : 'outline'}
+                                                onClick={() => setUploadType('mpesa')}
+                                                size="sm"
+                                            >
+                                                MPESA Message
+                                            </Button>
                                         </div>
+
+                                        {uploadType === 'file' ? (
+                                            <div className="space-y-2">
+                                                <Label>Select File</Label>
+                                                <Input
+                                                    type="file"
+                                                    onChange={(e) => {
+                                                        const file = e.target.files?.[0]
+                                                        if (file) handleFileSelect(file)
+                                                    }}
+                                                    accept={documentType.includes('pdf') ? '.pdf' : '.pdf, .zip'}
+                                                />
+                                            </div>
+                                        ) : (
+                                            <div className="space-y-2">
+                                                <Label>Paste MPESA Message</Label>
+                                                <Textarea
+                                                    value={mpesaMessage}
+                                                    onChange={(e) => setMpesaMessage(e.target.value)}
+                                                    placeholder="Paste your MPESA message here..."
+                                                    className="min-h-[100px]"
+                                                />
+                                                <Button
+                                                    onClick={handleMpesaUpload}
+                                                    disabled={!mpesaMessage.trim()}
+                                                    className="w-full"
+                                                >
+                                                    Convert & Upload
+                                                </Button>
+                                            </div>
+                                        )}
                                         {existingDocument && (
                                             <div className="pt-4 border-t">
                                                 <h4 className="text-sm font-medium text-gray-900 mb-2">Current Document</h4>
@@ -402,6 +520,15 @@ export function DocumentUploadDialog({
                     </div>
                 </DialogContent>
             </Dialog>
+
+            {existingDocument && (
+                <DocumentViewer
+                    url={existingDocument}
+                    isOpen={viewerOpen}
+                    onClose={() => setViewerOpen(false)}
+                    title={label}
+                />
+            )}
 
             <AlertDialog open={confirmUploadDialog} onOpenChange={setConfirmUploadDialog}>
                 <AlertDialogContent>
