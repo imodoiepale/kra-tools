@@ -8,6 +8,7 @@ import { MonthYearSelector } from '../components/MonthYearSelector'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useToast } from '@/hooks/use-toast'
+import { CategoryFilters, type CategoryFilter } from '../components/CategoryFilters'
 
 interface TaxPaymentSlipsProps {
     payrollRecords: CompanyPayrollRecord[]
@@ -55,6 +56,15 @@ export default function PayslipPaymentReceipts({
         });
     }, [payrollRecords, searchTerm]);
 
+    const handleCategoryFilterChange = (key) => {
+        setCategoryFilters(filters =>
+            filters.map(filter =>
+                filter.key === key ? { ...filter, checked: !filter.checked } : filter
+            )
+        );
+        fetchAllData();
+    };
+
     return (
         <div className="space-y-4">
             <div className="flex justify-between items-center">
@@ -64,15 +74,18 @@ export default function PayslipPaymentReceipts({
                     onYearChange={setSelectedYear}
                     onMonthChange={setSelectedMonth}
                 />
-                <div className="flex gap-4">
-                    <Input
-                        placeholder="Search companies..."
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        className="w-64"
-                    />
-                    <Button variant="outline">Export</Button>
-                    <Button variant="outline">Extract All</Button>
+                <div className="flex flex-col gap-2">
+                    <div className="flex gap-2 items-center">
+                        <Input
+                            placeholder="Search companies..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className="w-48"
+                        />
+                        <CategoryFilters onFilterChange={handleCategoryFilterChange} />
+                        <Button variant="outline" size="sm">Export</Button>
+                        <Button variant="outline" size="sm">Extract All</Button>
+                    </div>
                 </div>
             </div>
 

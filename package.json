@@ -72,6 +72,7 @@
     "framer-motion": "^11.7.0",
     "html2pdf.js": "^0.10.2",
     "input-otp": "^1.2.4",
+    "jspdf": "^2.5.2",
     "jszip": "^3.10.1",
     "kra-tools": "file:",
     "lucide-react": "^0.446.0",

@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { useState } from 'react'
-import { Trash2, Upload, Loader2, Download, Eye } from 'lucide-react'
+import { Trash2, Upload, Loader2, Download, Eye, Image as ImageIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -79,14 +79,107 @@ export function DocumentUploadDialog({
     const [viewerOpen, setViewerOpen] = useState(false)
     const { toast } = useToast()
 
-    const handleFileSelect = (file: File, docType?: DocumentType) => {
-        setSelectedFile(file)
-        setSelectedDocType(docType)
-        setConfirmUploadDialog(true)
-    }
+    const convertImageToPdf = async (imageFile: File): Promise<File> => {
+        try {
+            // Create a new canvas element
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            
+            // Create an image element
+            const img = new Image();
+            const imageUrl = URL.createObjectURL(imageFile);
+            
+            // Wait for image to load
+            await new Promise((resolve, reject) => {
+                img.onload = resolve;
+                img.onerror = reject;
+                img.src = imageUrl;
+            });
+            
+            // Set canvas dimensions to match image
+            canvas.width = img.width;
+            canvas.height = img.height;
+            
+            // Draw image on canvas
+            ctx?.drawImage(img, 0, 0);
+            
+            // Convert canvas to PDF using jsPDF
+            const { jsPDF } = await import('jspdf');
+            const pdf = new jsPDF({
+                orientation: img.width > img.height ? 'l' : 'p',
+                unit: 'px',
+                format: [img.width, img.height]
+            });
+            
+            // Add the image to PDF
+            pdf.addImage(canvas.toDataURL('image/jpeg'), 'JPEG', 0, 0, img.width, img.height);
+            
+            // Generate PDF blob
+            const pdfBlob = pdf.output('blob');
+            
+            // Create a new File from the blob
+            const pdfFile = new File([pdfBlob], `${imageFile.name.split('.')[0]}.pdf`, {
+                type: 'application/pdf',
+                lastModified: Date.now()
+            });
+            
+            // Cleanup
+            URL.revokeObjectURL(imageUrl);
+            
+            return pdfFile;
+        } catch (error) {
+            console.error('Error converting image to PDF:', error);
+            throw new Error('Failed to convert image to PDF');
+        }
+    };
 
-    const handleBulkFileSelect = (file: File, docType: DocumentType, label: string) => {
-        setBulkFiles(new Map(bulkFiles.set(docType, { file, label })));
+    const handleFileSelect = async (file: File, docType?: DocumentType) => {
+        try {
+            let processedFile = file;
+            
+            // Check if file is an image
+            if (file.type.startsWith('image/')) {
+                setIsConverting(true);
+                processedFile = await convertImageToPdf(file);
+                setIsConverting(false);
+            }
+            
+            setSelectedFile(processedFile);
+            setSelectedDocType(docType);
+            setConfirmUploadDialog(true);
+        } catch (error) {
+            toast({
+                title: "Error",
+                description: error instanceof Error ? error.message : "Failed to process file",
+                variant: "destructive"
+            });
+        }
+    };
+
+    const handleBulkFileSelect = async (file: File, docType: DocumentType, label: string) => {
+        try {
+            let processedFile = file;
+            
+            // Check if file is an image
+            if (file.type.startsWith('image/')) {
+                setIsConverting(true);
+                processedFile = await convertImageToPdf(file);
+                setIsConverting(false);
+            }
+            
+            setBulkFiles(new Map(bulkFiles.set(docType, { file: processedFile, label })));
+            
+            // Clear any MPESA message for this type
+            const newMessages = new Map(mpesaMessages);
+            newMessages.delete(docType);
+            setMpesaMessages(newMessages);
+        } catch (error) {
+            toast({
+                title: "Error",
+                description: error instanceof Error ? error.message : "Failed to process file",
+                variant: "destructive"
+            });
+        }
     };
 
     const handleConfirmUpload = async () => {
@@ -112,10 +205,10 @@ export function DocumentUploadDialog({
     }
 
     const handleBulkSubmit = async () => {
-        if (bulkFiles.size === 0) {
+        if (bulkFiles.size === 0 && mpesaMessages.size === 0) {
             toast({
-                title: "No files selected",
-                description: "Please select at least one file to upload",
+                title: "No items to process",
+                description: "Please select files or enter MPESA messages to upload",
                 variant: "destructive"
             });
             return;
@@ -125,48 +218,97 @@ export function DocumentUploadDialog({
         let successCount = 0;
         let errorCount = 0;
         const errors: string[] = [];
+        const totalItems = bulkFiles.size + mpesaMessages.size;
 
         try {
-            for (const [docType, { file }] of bulkFiles.entries()) {
-                try {
-                    await onUpload(file, docType);
-                    successCount++;
-                } catch (error) {
-                    errorCount++;
-                    errors.push(`${docType}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            // Process MPESA messages first
+            if (mpesaMessages.size > 0) {
+                setIsConverting(true);
+                for (const [docType, { message, label }] of mpesaMessages.entries()) {
+                    try {
+                        const fileName = `MPESA-RECEIPT-${docType}-${new Date().getTime()}.pdf`;
+                        const pdfData = await mpesaMessageToPdf({
+                            message,
+                            fileName,
+                            receiptName: `${label} - ${companyName}`
+                        });
+
+                        if (!pdfData) {
+                            throw new Error('Failed to generate PDF');
+                        }
+
+                        const file = new File([pdfData], fileName, {
+                            type: 'application/pdf',
+                            lastModified: new Date().getTime()
+                        });
+
+                        await onUpload(file, docType);
+                        successCount++;
+                        setBulkUploadProgress((successCount / totalItems) * 100);
+                    } catch (error) {
+                        errorCount++;
+                        errors.push(`${docType}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                    }
+                }
+                setIsConverting(false);
+            }
+
+            // Process files next
+            if (bulkFiles.size > 0) {
+                for (const [docType, { file }] of bulkFiles.entries()) {
+                    try {
+                        let processedFile = file;
+                        
+                        // Convert image to PDF if needed
+                        if (file.type.startsWith('image/')) {
+                            setIsConverting(true);
+                            processedFile = await convertImageToPdf(file);
+                            setIsConverting(false);
+                        }
+
+                        await onUpload(processedFile, docType);
+                        successCount++;
+                        setBulkUploadProgress((successCount / totalItems) * 100);
+                    } catch (error) {
+                        errorCount++;
+                        errors.push(`${docType}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                    }
                 }
             }
 
             if (successCount > 0) {
                 toast({
                     title: "Upload Complete",
-                    description: `Successfully uploaded ${successCount} document${successCount > 1 ? 's' : ''}${errorCount > 0 ? `. Failed to upload ${errorCount} document${errorCount > 1 ? 's' : ''}.` : ''}`
+                    description: `Successfully processed ${successCount} item${successCount > 1 ? 's' : ''}${errorCount > 0 ? `. Failed to process ${errorCount} item${errorCount > 1 ? 's' : ''}.` : ''}`
                 });
 
                 if (errorCount === 0) {
                     setBulkFiles(new Map());
+                    setMpesaMessages(new Map());
                     setUploadDialog(false);
                 }
             } else {
                 toast({
                     title: "Upload Failed",
-                    description: "Failed to upload any documents. Please try again.",
+                    description: "Failed to process any items. Please try again.",
                     variant: "destructive"
                 });
             }
 
             if (errors.length > 0) {
-                console.error('Bulk upload errors:', errors);
+                console.error('Processing errors:', errors);
             }
         } catch (error) {
-            console.error('Bulk upload error:', error);
+            console.error('Bulk processing error:', error);
             toast({
                 title: "Error",
-                description: "Failed to complete the upload process",
+                description: "Failed to complete the process",
                 variant: "destructive"
             });
         } finally {
             setIsSubmitting(false);
+            setIsConverting(false);
+            setBulkUploadProgress(0);
         }
     };
 
@@ -524,7 +666,7 @@ export function DocumentUploadDialog({
                                                         const file = e.target.files?.[0]
                                                         if (file) handleFileSelect(file)
                                                     }}
-                                                    accept={documentType.includes('pdf') ? '.pdf' : '.pdf, .zip'}
+                                                    accept={documentType.includes('pdf') ? '.pdf' : '.pdf, .zip, .jpg, .jpeg, .png'}
                                                 />
                                             </div>
                                         ) : (
@@ -627,7 +769,7 @@ export function DocumentUploadDialog({
                                                                     <Input
                                                                         type="file"
                                                                         className="flex-1"
-                                                                        accept={doc.type.includes('pdf') ? '.pdf' : '.pdf,.zip'}
+                                                                        accept={doc.type.includes('pdf') ? '.pdf' : '.pdf,.zip,.jpg,.jpeg,.png'}
                                                                         onChange={(e) => {
                                                                             const file = e.target.files?.[0];
                                                                             if (file) {
@@ -677,46 +819,27 @@ export function DocumentUploadDialog({
                                             </div>
                                         </div>
                                         <div className="flex justify-end gap-2">
-                                            {mpesaMessages.size > 0 && (
-                                                <Button
-                                                    onClick={handleBulkMpesaUpload}
-                                                    disabled={isConverting || isSubmitting}
-                                                    className="bg-green-500 hover:bg-green-600"
-                                                >
-                                                    {isConverting ? (
-                                                        <>
-                                                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                                            Converting Messages...
-                                                        </>
-                                                    ) : (
-                                                        <>
-                                                            <Upload className="mr-2 h-4 w-4" />
-                                                            Process MPESA Messages ({mpesaMessages.size})
-                                                        </>
-                                                    )}
-                                                </Button>
-                                            )}
-                                            {bulkFiles.size > 0 && (
+                                            {(mpesaMessages.size > 0 || bulkFiles.size > 0) && (
                                                 <Button
                                                     onClick={handleBulkSubmit}
-                                                    disabled={isSubmitting}
+                                                    disabled={isSubmitting || isConverting}
                                                     className="bg-blue-500 hover:bg-blue-600"
                                                 >
-                                                    {isSubmitting ? (
+                                                    {isSubmitting || isConverting ? (
                                                         <>
                                                             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                                            Uploading...
+                                                            {isConverting ? 'Converting...' : 'Uploading...'}
                                                         </>
                                                     ) : (
                                                         <>
                                                             <Upload className="mr-2 h-4 w-4" />
-                                                            Upload Files ({bulkFiles.size})
+                                                            Process All ({mpesaMessages.size + bulkFiles.size} items)
                                                         </>
                                                     )}
                                                 </Button>
                                             )}
                                         </div>
-                                        {isSubmitting && bulkUploadProgress > 0 && (
+                                        {(isSubmitting || isConverting) && bulkUploadProgress > 0 && (
                                             <div className="w-full bg-gray-200 rounded-full h-2.5 mt-4">
                                                 <div 
                                                     className="bg-blue-600 h-2.5 rounded-full transition-all duration-300"

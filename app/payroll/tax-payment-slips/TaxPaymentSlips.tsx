@@ -71,8 +71,8 @@ export default function TaxPaymentSlips({
                         onChange={(e) => setSearchTerm(e.target.value)}
                         className="w-64"
                     />
-                    <Button variant="outline">Export</Button>
-                    <Button variant="outline">Extract All</Button>
+                    <Button variant="outline" size="sm">Export</Button>
+                    <Button variant="outline" size="sm">Extract All</Button>
                 </div>
             </div>
 
