@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { useState, useMemo } from "react"
+import React, { useState, useMemo } from "react"
 import { format } from 'date-fns'
 import {
     MoreHorizontal,
@@ -560,41 +560,41 @@ export function ExtractionReportTable({
         return (
         <div className="rounded-md border h-[calc(100vh-220px)] overflow-auto">
             <Table>
-                <TableHeader className="sticky top-0 z-10">
-                    <TableRow className="hover:bg-transparent">
-                        <TableHead
-                            rowSpan={2}
-                            className="border-r border-b border-gray-200 bg-blue-600 text-white font-semibold min-w-[200px] whitespace-nowrap"
-                        >
-                            Company
-                        </TableHead>
-                        {TAX_TYPES.map(tax => (
+                    <TableHeader className="sticky top-0 z-10">
+                        <TableRow className="hover:bg-transparent">
                             <TableHead
-                                key={tax.id}
-                                colSpan={4}
-                                className={`text-center text-white font-semibold ${tax.color} border-r border-b`}
+                                rowSpan={2}
+                                className="border-r border-b border-gray-200 bg-blue-600 text-white font-semibold min-w-[200px] whitespace-nowrap"
                             >
-                                {tax.label}
+                                Company
                             </TableHead>
-                        ))}
-                        <TableHead
-                            rowSpan={2}
-                            className="border-r border-b border-gray-200 bg-blue-600 text-white font-semibold"
-                        >
-                            Actions
-                        </TableHead>
-                    </TableRow>
-                    <TableRow className="hover:bg-transparent">
-                        {TAX_TYPES.map(() => (
-                            <>
-                                <TableHead className="border-r bg-gray-100 text-gray-900 font-medium whitespace-nowrap min-w-[120px]">Amount</TableHead>
-                                <TableHead className="border-r bg-gray-100 text-gray-900 font-medium whitespace-nowrap min-w-[120px]">Payment Mode</TableHead>
-                                <TableHead className="border-r bg-gray-100 text-gray-900 font-medium whitespace-nowrap min-w-[120px]">Payment Date</TableHead>
-                                <TableHead className="border-r bg-gray-100 text-gray-900 font-medium whitespace-nowrap min-w-[80px]">Status</TableHead>
-                            </>
-                        ))}
-                    </TableRow>
-                </TableHeader>
+                            {TAX_TYPES.map(tax => (
+                                <TableHead
+                                    key={tax.id}
+                                    colSpan={4}
+                                    className={`text-center text-white font-semibold ${tax.color} border-r border-b`}
+                                >
+                                    {tax.label}
+                                </TableHead>
+                            ))}
+                            <TableHead
+                                rowSpan={2}
+                                className="border-r border-b border-gray-200 bg-blue-600 text-white font-semibold"
+                            >
+                                Actions
+                            </TableHead>
+                        </TableRow>
+                        <TableRow className="hover:bg-transparent">
+                            {TAX_TYPES.map((tax) => (
+                                <React.Fragment key={tax.id}>
+                                    <TableHead className="border-r bg-gray-100 text-gray-900 font-medium whitespace-nowrap min-w-[120px]">Amount</TableHead>
+                                    <TableHead className="border-r bg-gray-100 text-gray-900 font-medium whitespace-nowrap min-w-[120px]">Payment Mode</TableHead>
+                                    <TableHead className="border-r bg-gray-100 text-gray-900 font-medium whitespace-nowrap min-w-[120px]">Payment Date</TableHead>
+                                    <TableHead className="border-r bg-gray-100 text-gray-900 font-medium whitespace-nowrap min-w-[80px]">Status</TableHead>
+                                </React.Fragment>
+                            ))}
+                        </TableRow>
+                    </TableHeader>
                 <TableBody>
                     {loading ? (
                         <TableRow>

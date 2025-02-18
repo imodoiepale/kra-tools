@@ -33,7 +33,6 @@ import { DocumentType } from '../types'
 import { useToast } from '@/hooks/use-toast'
 import { mpesaMessageToPdf, formatMpesaMessage } from '../utils/pdfUtils'
 import { supabase } from '@/lib/supabase'
-import { PreviewExtractionDialog } from './PreviewExtractionDialog'
 
 interface DocumentUploadDialogProps {
     documentType: DocumentType;
@@ -51,9 +50,9 @@ interface DocumentUploadDialogProps {
     }[];
     companyName: string;
 }
+
 export function DocumentUploadDialog({
     documentType,
-    recordId, // Make sure this prop is here
     onUpload,
     onDelete,
     existingDocument,
@@ -78,20 +77,6 @@ export function DocumentUploadDialog({
     const [mpesaValidationError, setMpesaValidationError] = useState('')
     const [bulkUploadProgress, setBulkUploadProgress] = useState(0)
     const [viewerOpen, setViewerOpen] = useState(false)
-
-    const [previewDialog, setPreviewDialog] = useState(false)
-    const [processedDocs, setProcessedDocs] = useState<Array<{
-        file: File;
-        type: DocumentType;
-        label: string;
-        extractions: {
-            amount: string | null;
-            payment_date: string | null;
-            payment_mode: string | null;
-            bank_name: string | null;
-        };
-    }>>([])
-
     const { toast } = useToast()
 
 
@@ -113,25 +98,25 @@ export function DocumentUploadDialog({
             // Create a new canvas element
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
-
+            
             // Create an image element
             const img = new Image();
             const imageUrl = URL.createObjectURL(imageFile);
-
+            
             // Wait for image to load
             await new Promise((resolve, reject) => {
                 img.onload = resolve;
                 img.onerror = reject;
                 img.src = imageUrl;
             });
-
+            
             // Set canvas dimensions to match image
             canvas.width = img.width;
             canvas.height = img.height;
-
+            
             // Draw image on canvas
             ctx?.drawImage(img, 0, 0);
-
+            
             // Convert canvas to PDF using jsPDF
             const { jsPDF } = await import('jspdf');
             const pdf = new jsPDF({
@@ -139,22 +124,22 @@ export function DocumentUploadDialog({
                 unit: 'px',
                 format: [img.width, img.height]
             });
-
+            
             // Add the image to PDF
             pdf.addImage(canvas.toDataURL('image/jpeg'), 'JPEG', 0, 0, img.width, img.height);
-
+            
             // Generate PDF blob
             const pdfBlob = pdf.output('blob');
-
+            
             // Create a new File from the blob
             const pdfFile = new File([pdfBlob], `${imageFile.name.split('.')[0]}.pdf`, {
                 type: 'application/pdf',
                 lastModified: Date.now()
             });
-
+            
             // Cleanup
             URL.revokeObjectURL(imageUrl);
-
+            
             return pdfFile;
         } catch (error) {
             console.error('Error converting image to PDF:', error);
@@ -165,31 +150,16 @@ export function DocumentUploadDialog({
     const handleFileSelect = async (file: File, docType?: DocumentType) => {
         try {
             let processedFile = file;
-
+            
+            // Check if file is an image
             if (file.type.startsWith('image/')) {
                 setIsConverting(true);
                 processedFile = await convertImageToPdf(file);
                 setIsConverting(false);
             }
-
+            
             setSelectedFile(processedFile);
             setSelectedDocType(docType);
-
-            // Initialize extraction data
-            const extractedData = {
-                amount: null,
-                payment_date: null,
-                payment_mode: null,
-                bank_name: null
-            };
-
-            setProcessedDocs([{
-                file: processedFile,
-                type: docType || documentType,
-                label: label,
-                extractions: extractedData
-            }]);
-
             setConfirmUploadDialog(true);
         } catch (error) {
             toast({
@@ -203,21 +173,20 @@ export function DocumentUploadDialog({
     const handleBulkFileSelect = async (file: File, docType: DocumentType, label: string) => {
         try {
             let processedFile = file;
-
+            
             // Check if file is an image
             if (file.type.startsWith('image/')) {
                 setIsConverting(true);
                 processedFile = await convertImageToPdf(file);
                 setIsConverting(false);
             }
-
+            
             setBulkFiles(new Map(bulkFiles.set(docType, { file: processedFile, label })));
-
+            
             // Clear any MPESA message for this type
             const newMessages = new Map(mpesaMessages);
             newMessages.delete(docType);
             setMpesaMessages(newMessages);
-            
         } catch (error) {
             toast({
                 title: "Error",
@@ -228,31 +197,26 @@ export function DocumentUploadDialog({
     };
 
     const handleConfirmUpload = async () => {
-        if (!selectedFile) return;
+        if (!selectedFile) return
 
         try {
-            setIsSubmitting(true);
-            await onUpload(selectedFile, selectedDocType);
-            setPreviewDialog(true);
-            setSelectedFile(null);
-            setSelectedDocType(undefined);
-            setConfirmUploadDialog(false);
-            setUploadDialog(false);
-
+            await onUpload(selectedFile, selectedDocType)
+            setSelectedFile(null)
+            setSelectedDocType(undefined)
+            setConfirmUploadDialog(false)
+            setUploadDialog(false)
             toast({
                 title: "Success",
                 description: "Document uploaded successfully"
-            });
+            })
         } catch (error) {
             toast({
                 title: "Error",
                 description: "Failed to upload document",
                 variant: "destructive"
-            });
-        } finally {
-            setIsSubmitting(false);
+            })
         }
-    };
+    }
 
     const handleBulkSubmit = async () => {
         if (bulkFiles.size === 0 && mpesaMessages.size === 0) {
@@ -269,17 +233,6 @@ export function DocumentUploadDialog({
         let errorCount = 0;
         const errors: string[] = [];
         const totalItems = bulkFiles.size + mpesaMessages.size;
-        const processedDocuments: Array<{
-            file: File;
-            type: DocumentType;
-            label: string;
-            extractions: {
-                amount: string | null;
-                payment_date: string | null;
-                payment_mode: string | null;
-                bank_name: string | null;
-            };
-        }> = [];
 
         try {
             // Process MPESA messages first
@@ -306,19 +259,6 @@ export function DocumentUploadDialog({
                         await onUpload(file, docType);
                         successCount++;
                         setBulkUploadProgress((successCount / totalItems) * 100);
-
-                        // Add to processed documents
-                        processedDocuments.push({
-                            file,
-                            type: docType,
-                            label,
-                            extractions: {
-                                amount: null,
-                                payment_date: null,
-                                payment_mode: null,
-                                bank_name: null
-                            }
-                        });
                     } catch (error) {
                         errorCount++;
                         errors.push(`${docType}: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -329,10 +269,10 @@ export function DocumentUploadDialog({
 
             // Process files next
             if (bulkFiles.size > 0) {
-                for (const [docType, { file, label }] of bulkFiles.entries()) {
+                for (const [docType, { file }] of bulkFiles.entries()) {
                     try {
                         let processedFile = file;
-
+                        
                         // Convert image to PDF if needed
                         if (file.type.startsWith('image/')) {
                             setIsConverting(true);
@@ -343,19 +283,6 @@ export function DocumentUploadDialog({
                         await onUpload(processedFile, docType);
                         successCount++;
                         setBulkUploadProgress((successCount / totalItems) * 100);
-
-                        // Add to processed documents
-                        processedDocuments.push({
-                            file: processedFile,
-                            type: docType,
-                            label,
-                            extractions: {
-                                amount: null,
-                                payment_date: null,
-                                payment_mode: null,
-                                bank_name: null
-                            }
-                        });
                     } catch (error) {
                         errorCount++;
                         errors.push(`${docType}: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -373,12 +300,6 @@ export function DocumentUploadDialog({
                     setBulkFiles(new Map());
                     setMpesaMessages(new Map());
                     setUploadDialog(false);
-
-                    // Show preview dialog with all processed documents
-                    if (processedDocuments.length > 0) {
-                        setProcessedDocs(processedDocuments);
-                        setPreviewDialog(true);
-                    }
                 }
             } else {
                 toast({
@@ -415,12 +336,12 @@ export function DocumentUploadDialog({
     const handleMpesaMessageChange = (message: string, docType?: DocumentType) => {
         const error = validateMpesaMessage(message)
         setMpesaValidationError(error)
-
+        
         if (docType) {
             if (message.trim()) {
-                setMpesaMessages(new Map(mpesaMessages.set(docType, {
-                    message,
-                    label: allDocuments?.find(d => d.type === docType)?.label || ''
+                setMpesaMessages(new Map(mpesaMessages.set(docType, { 
+                    message, 
+                    label: allDocuments?.find(d => d.type === docType)?.label || '' 
                 })))
             } else {
                 const newMessages = new Map(mpesaMessages)
@@ -466,20 +387,20 @@ export function DocumentUploadDialog({
                 fileName,
                 receiptName: `${label} - ${companyName}`
             })
-
+            
             if (!pdfData) {
                 throw new Error('Failed to generate PDF from MPESA message')
             }
 
             // Step 2: Create a File object from the PDF data
-            const file = new File([pdfData], fileName, {
+            const file = new File([pdfData], fileName, { 
                 type: 'application/pdf',
                 lastModified: new Date().getTime()
             })
 
             // Step 3: Upload the PDF file
             await onUpload(file, selectedDocType)
-
+            
             // Step 4: Clear form and show success message
             setMpesaMessage('')
             setMpesaPreview('')
@@ -688,14 +609,14 @@ export function DocumentUploadDialog({
 
             {existingDocument && (
                 <>
-                    {/* <Button
+                    <Button
                         size="sm"
                         variant="outline"
                         className="h-6 text-xs px-2"
                         onClick={() => handleView(existingDocument)}
                     >
                         <Eye className="h-3 w-3" />
-                    </Button> */}
+                    </Button>
                     <Button
                         size="sm"
                         variant="destructive"
@@ -934,7 +855,7 @@ export function DocumentUploadDialog({
                                         </div>
                                         {(isSubmitting || isConverting) && bulkUploadProgress > 0 && (
                                             <div className="w-full bg-gray-200 rounded-full h-2.5 mt-4">
-                                                <div
+                                                <div 
                                                     className="bg-blue-600 h-2.5 rounded-full transition-all duration-300"
                                                     style={{ width: `${bulkUploadProgress}%` }}
                                                 />
@@ -959,16 +880,6 @@ export function DocumentUploadDialog({
                     onClose={() => setViewerOpen(false)}
                     title={label}
                     companyName={companyName}
-                />
-            )}
-
-            {previewDialog && (
-                <PreviewExtractionDialog
-                    isOpen={previewDialog}
-                    onClose={() => setPreviewDialog(false)}
-                    documents={processedDocs}
-                    companyName={companyName}
-                    recordId={recordId}
                 />
             )}
 

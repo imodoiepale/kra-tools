@@ -1,7 +1,7 @@
 // @ts-nocheck
 'use client'
 
-import { useState } from 'react'
+import React, { useState } from 'react'
 import { format } from 'date-fns'
 import { Loader2, AlertCircle, CheckCircle } from 'lucide-react'
 import {
@@ -86,7 +86,7 @@ export function ExtractAllDialog({
                     <Table>
                         <TableHeader className="sticky top-0 z-10">
                             <TableRow className="hover:bg-transparent">
-                                <TableHead 
+                                <TableHead
                                     rowSpan={2}
                                     className="border-r border-b border-gray-200 bg-blue-600 text-white font-semibold min-w-[200px] whitespace-nowrap"
                                 >
@@ -96,27 +96,33 @@ export function ExtractAllDialog({
                                     <TableHead
                                         key={tax.id}
                                         colSpan={4}
-                                        className={`text-center text-white font-semibold ${tax.color} border-r border-b hover:${tax.color}`}
+                                        className={`text-center text-white font-semibold ${tax.color} border-r border-b`}
                                     >
                                         {tax.label}
                                     </TableHead>
                                 ))}
+                                <TableHead
+                                    rowSpan={2}
+                                    className="border-r border-b border-gray-200 bg-blue-600 text-white font-semibold"
+                                >
+                                    Actions
+                                </TableHead>
                             </TableRow>
                             <TableRow className="hover:bg-transparent">
-                                {TAX_TYPES.map(() => (
-                                    <>
+                                {TAX_TYPES.map((tax) => (
+                                    <React.Fragment key={tax.id}>
                                         <TableHead className="border-r bg-gray-100 text-gray-900 font-medium whitespace-nowrap min-w-[120px]">Amount</TableHead>
                                         <TableHead className="border-r bg-gray-100 text-gray-900 font-medium whitespace-nowrap min-w-[120px]">Payment Mode</TableHead>
                                         <TableHead className="border-r bg-gray-100 text-gray-900 font-medium whitespace-nowrap min-w-[120px]">Payment Date</TableHead>
                                         <TableHead className="border-r bg-gray-100 text-gray-900 font-medium whitespace-nowrap min-w-[80px]">Status</TableHead>
-                                    </>
+                                    </React.Fragment>
                                 ))}
                             </TableRow>
                         </TableHeader>
                         <TableBody>
                             {records.map((record, index) => {
                                 return (
-                                    <TableRow 
+                                    <TableRow
                                         key={record.id}
                                         className={`
                                             ${index % 2 === 0 ? 'bg-blue-50 hover:bg-blue-100' : 'bg-white hover:bg-gray-50'}
@@ -130,7 +136,7 @@ export function ExtractAllDialog({
                                             const slipType = `${tax.id}_slip` as keyof typeof record.payment_slips_extractions
                                             const extractedData = record.payment_slips_extractions?.[slipType]
                                             const result = results.find(r => r.companyName === record.company.company_name && r.taxType === tax.id)
-                                            
+
                                             return (
                                                 <>
                                                     <TableCell className="text-right font-mono">
@@ -164,8 +170,8 @@ export function ExtractAllDialog({
                     <Button variant="outline" onClick={onClose}>
                         Close
                     </Button>
-                    <Button 
-                        onClick={handleExtractAll} 
+                    <Button
+                        onClick={handleExtractAll}
                         disabled={processing}
                         className="bg-blue-600 hover:bg-blue-700"
                     >
