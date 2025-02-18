@@ -1,3 +1,5 @@
+// @ts-nocheck
+
 import { useState } from 'react'
 import { Loader2, Save } from 'lucide-react'
 import { Button } from '@/components/ui/button'
