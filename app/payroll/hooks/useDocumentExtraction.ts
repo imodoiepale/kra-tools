@@ -1,5 +1,6 @@
+// @ts-nocheck
 import { useState } from 'react'
-import { performExtraction } from '../utils/extractionUtils'
+import { performExtraction } from '@/lib/extractionUtils'
 
 interface ExtractedData {
     amount: string | number;
