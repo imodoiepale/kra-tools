@@ -643,15 +643,6 @@ export function ExtractionReportTable({
 
                                 return (
                                     <React.Fragment key={`${record.id}-${tax.id}`}> {/* Unique key added here */}
-                                        <TableCell className="text-right font-mono">
-                                            {extractedData?.amount ?? <span className="text-red-600 font-bold">Missing</span>}
-                                        </TableCell>
-                                        <TableCell className="text-center">
-                                            {extractedData?.payment_mode || <span className="text-red-600 font-bold">Missing</span>}
-                                        </TableCell>
-                                        <TableCell className="text-center">
-                                            {extractedData?.payment_date || <span className="text-red-600 font-bold">Missing</span>}
-                                        </TableCell>
                                         <TableCell>
                                             <DocumentUploadDialog
                                                 documentType={receiptType}
@@ -664,6 +655,15 @@ export function ExtractionReportTable({
                                                 allDocuments={getDocumentsForUpload(record)}
                                                 companyName={record.company.company_name}
                                             />
+                                        </TableCell>
+                                        <TableCell className="text-right">
+                                            {extractedData?.amount ?? <span className="text-red-600 font-bold">Missing</span>}
+                                        </TableCell>
+                                        <TableCell className="text-center">
+                                            {extractedData?.payment_mode || <span className="text-red-600 font-bold">Missing</span>}
+                                        </TableCell>
+                                        <TableCell className="text-center">
+                                            {extractedData?.payment_date || <span className="text-red-600 font-bold">Missing</span>}
                                         </TableCell>
                                     </React.Fragment>
                                 );

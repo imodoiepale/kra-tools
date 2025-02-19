@@ -118,25 +118,25 @@ const DOCUMENT_TYPES = [
 
 const COLUMN_TYPES = [
     {
-        id: 'amount',
-        label: 'Amount',
-        width: 'min-w-[120px]'
-    },
-    {
-        id: 'payment_mode',
-        label: 'Payment Mode',
-        width: 'min-w-[120px]'
-    },
-    {
-        id: 'payment_date',
-        label: 'Payment Date',
-        width: 'min-w-[120px]'
-    },
-    {
         id: 'status',
         label: 'Status',
         width: 'min-w-[80px]'
-    }
+    },
+    {
+        id: 'amount',
+        label: 'Amount',
+        width: 'min-w-[40px]'
+    },
+    {
+        id: 'payment_mode',
+        label: 'Pay Mode',
+        width: 'min-w-[40px]'
+    },
+    {
+        id: 'payment_date',
+        label: 'Pay Date',
+        width: 'min-w-[40px]'
+    },
 ];
 
 
@@ -212,12 +212,6 @@ const renderColumnContent = (
     }
 
     switch (columnType) {
-        case 'amount':
-            return <span className="text-right font-mono">{extractedData.amount}</span>;
-        case 'payment_mode':
-            return <span className="text-center">{extractedData.payment_mode}</span>;
-        case 'payment_date':
-            return <span className="text-center">{extractedData.payment_date}</span>;
         case 'status':
             return (
                 <DocumentUploadDialog
@@ -232,6 +226,12 @@ const renderColumnContent = (
                     companyName={record.company.company_name}
                 />
             );
+        case 'amount':
+            return <span className="text-right font-mono">{extractedData.amount}</span>;
+        case 'payment_mode':
+            return <span className="text-center">{extractedData.payment_mode}</span>;
+        case 'payment_date':
+            return <span className="text-center">{extractedData.payment_date}</span>;
         default:
             return null;
     }
@@ -248,9 +248,8 @@ export function PayslipPaymentReceiptsTable({
 }: PayrollTableProps) {
     const { toast } = useToast()
 
-
-    const [selectedDocTypes, setSelectedDocTypes] = useState<string[]>([]);
-    const [selectedColumns, setSelectedColumns] = useState<string[]>([]);
+    const [selectedDocTypes, setSelectedDocTypes] = useState<string[]>(DOCUMENT_TYPES.map(doc => doc.id));
+    const [selectedColumns, setSelectedColumns] = useState<string[]>(COLUMN_TYPES.map(col => col.id));
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [finalizeDialog, setFinalizeDialog] = useState<{
         isOpen: boolean;
@@ -748,6 +747,12 @@ export function PayslipPaymentReceiptsTable({
                     <TableRow className="hover:bg-transparent">
                         <TableHead
                             rowSpan={2}
+                            className="border-r border-b border-gray-200 bg-blue-600 text-white font-semibold min-w-[20px] whitespace-nowrap"
+                        >
+                            #
+                        </TableHead>
+                        <TableHead
+                            rowSpan={2}
                             className="border-r border-b border-gray-200 bg-blue-600 text-white font-semibold min-w-[200px] whitespace-nowrap"
                         >
                             Company
@@ -797,6 +802,7 @@ export function PayslipPaymentReceiptsTable({
                 [&>td]:border-r [&>td]:border-gray-200 last:[&>td]:border-r-0
             `}
                         >
+                            <TableCell className="font-medium">{index + 1}</TableCell>
                             <TableCell className="font-medium">
                                 <TooltipProvider>
                                     <Tooltip>
