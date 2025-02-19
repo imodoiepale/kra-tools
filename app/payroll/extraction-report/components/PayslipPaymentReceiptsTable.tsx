@@ -713,33 +713,35 @@ export function PayslipPaymentReceiptsTable({
         <div className="rounded-md border h-[calc(100vh-220px)] overflow-auto">
 
             <div className="flex gap-4 mb-4">
-                <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                        <Button variant="outline">Select Document Types</Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent>
-                        {DOCUMENT_TYPES.map(doc => (
-                            <DropdownMenuItem key={doc.id} onClick={() => toggleDocType(doc.id)}>
-                                <Checkbox checked={selectedDocTypes.includes(doc.id)} />
-                                {doc.label}
-                            </DropdownMenuItem>
-                        ))}
-                    </DropdownMenuContent>
-                </DropdownMenu>
+                <div className="space-x-2">
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button variant="outline">Select Document Types</Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent>
+                            {DOCUMENT_TYPES.map(doc => (
+                                <DropdownMenuItem key={doc.id} onClick={() => toggleDocType(doc.id)}>
+                                    <Checkbox className="mr-2" checked={selectedDocTypes.includes(doc.id)} />
+                                    {doc.label}
+                                </DropdownMenuItem>
+                            ))}
+                        </DropdownMenuContent>
+                    </DropdownMenu>
 
-                <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                        <Button variant="outline">Select Columns</Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent>
-                        {COLUMN_TYPES.map(col => (
-                            <DropdownMenuItem key={col.id} onClick={() => toggleColumn(col.id)}>
-                                <Checkbox checked={selectedColumns.includes(col.id)} />
-                                {col.label}
-                            </DropdownMenuItem>
-                        ))}
-                    </DropdownMenuContent>
-                </DropdownMenu>
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button variant="outline">Select Columns</Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent>
+                            {COLUMN_TYPES.map(col => (
+                                <DropdownMenuItem key={col.id} onClick={() => toggleColumn(col.id)}>
+                                    <Checkbox className="mr-2" checked={selectedColumns.includes(col.id)} />
+                                    {col.label}
+                                </DropdownMenuItem>
+                            ))}
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                </div>
             </div>
             <Table aria-label="Payroll Records" className="border border-gray-200">
                 <TableHeader className="sticky top-0 z-10">
