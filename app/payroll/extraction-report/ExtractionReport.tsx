@@ -10,7 +10,7 @@ import { MonthYearSelector } from '../components/MonthYearSelector'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useToast } from '@/hooks/use-toast'
-import { ExtractAllDialog } from './components/ExtractAllDialog'
+
 import { PayslipPaymentReceiptsTable } from './components/PayslipPaymentReceiptsTable'
 import {
     DropdownMenu,
@@ -20,6 +20,7 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Checkbox } from '@/components/ui/checkbox'
+import {ExtractAllDialog} from './components/ExtractAllDialog'
 
 const DOCUMENT_TYPES = [
     {

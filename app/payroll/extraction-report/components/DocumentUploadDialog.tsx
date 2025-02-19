@@ -680,8 +680,9 @@ export function DocumentUploadDialog({
                 size="sm"
                 className={existingDocument
                     ? "bg-green-500 hover:bg-green-600 h-6 text-xs px-2"
-                    : "bg-yellow-500 hover:bg-yellow-600 h-6 text-xs px-2"}
+                    : "bg-red-500 hover:bg-red-600 h-6 text-xs px-2"}
                 onClick={() => existingDocument ? handleView(existingDocument) : setUploadDialog(true)}
+                disabled={!existingDocument}
             >
                 {existingDocument ? 'View' : 'Missing'}
             </Button>
