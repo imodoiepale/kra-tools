@@ -40,7 +40,7 @@ export default function PayslipPaymentReceipts({
     setPayrollRecords
 }: TaxPaymentSlipsProps) {
     const handleDocumentUploadWithFolder = (recordId: string, file: File, documentType: DocumentType) => {
-        return handleDocumentUpload(recordId, file, documentType, 'PAYMENT SLIPS')
+        return handleDocumentUpload(recordId, file, documentType, 'PAYMENT RECEIPTS')
     }
 
     // Filter records based on search term

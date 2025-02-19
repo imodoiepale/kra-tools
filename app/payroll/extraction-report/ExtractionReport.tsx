@@ -1,4 +1,6 @@
 // @ts-nocheck
+'use client'
+
 import { useEffect, useState, useMemo } from 'react'
 import { format } from 'date-fns'
 import { supabase } from '@/lib/supabase'
@@ -9,6 +11,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useToast } from '@/hooks/use-toast'
 import { ExtractAllDialog } from './components/ExtractAllDialog'
+import { PayslipPaymentReceiptsTable } from './components/PayslipPaymentReceiptsTable'
 
 interface ExtractionReportProps {
     payrollRecords: CompanyPayrollRecord[]
@@ -40,24 +43,22 @@ export default function ExtractionReport({
     setPayrollRecords
 }: ExtractionReportProps) {
     const handleDocumentUploadWithFolder = (recordId: string, file: File, documentType: DocumentType) => {
-        return handleDocumentUpload(recordId, file, documentType, 'PAYMENT SLIPS')
+        return handleDocumentUpload(recordId, file, documentType, 'PAYMENT RECEIPTS')
     }
 
     // Filter records based on search term
     const filteredRecords = useMemo(() => {
         if (!searchTerm.trim()) return payrollRecords;
-        
         const searchLower = searchTerm.toLowerCase();
         return payrollRecords.filter(record => {
             const companyName = record.company?.company_name || '';
             const companyId = record.company?.id?.toString() || '';
-            return companyName.toLowerCase().includes(searchLower) || 
-                   companyId.includes(searchLower);
+            return companyName.toLowerCase().includes(searchLower) ||
+                companyId.includes(searchLower);
         });
     }, [payrollRecords, searchTerm]);
 
     const [extractAllDialog, setExtractAllDialog] = useState(false)
-
 
     return (
         <div className="space-y-4">
@@ -86,7 +87,7 @@ export default function ExtractionReport({
                 </div>
             </div>
 
-            <ExtractionReportTable
+            <PayslipPaymentReceiptsTable
                 records={filteredRecords}
                 onDocumentUpload={handleDocumentUploadWithFolder}
                 onDocumentDelete={handleDocumentDelete}

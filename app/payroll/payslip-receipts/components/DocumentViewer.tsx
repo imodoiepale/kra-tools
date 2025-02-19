@@ -237,21 +237,22 @@ export function DocumentViewer({
     }
 
     const handleSave = async () => {
-        const { isValid, errors } = validateExtraction(localExtractions)
+        const { isValid, errors } = validateExtraction(localExtractions);
         if (!isValid) {
-            toast.error(errors.join(', '))
-            return
+            toast.error(errors.join(', '));
+            console.log('Validation errors:', errors);
+            return;
         }
 
         try {
-            setIsSaving(true)
+            setIsSaving(true);
             
             // Validate required parameters
             if (!documentType) {
-                throw new Error('Document type is required')
+                throw new Error('Document type is required');
             }
             if (!recordId) {
-                throw new Error('Record ID is required')
+                throw new Error('Record ID is required');
             }
 
             // Get existing extractions first
@@ -259,11 +260,12 @@ export function DocumentViewer({
                 .from('company_payroll_records')
                 .select('payment_receipts_extractions')
                 .eq('id', recordId)
-                .single()
+                .single();
 
             if (fetchError) {
-                console.error('Fetch error:', fetchError)
-                throw new Error('Error fetching existing record')
+                console.error('Fetch error:', fetchError);
+                toast.error('Error fetching existing record');
+                return;
             }
 
             const docType = documentType.endsWith('_receipt') ? documentType : `${documentType}_receipt`;
@@ -282,34 +284,36 @@ export function DocumentViewer({
                     ...localExtractions,
                     payment_mode: localExtractions.payment_mode === 'Pay Bill' ? PAYMENT_MODES.MPESA : localExtractions.payment_mode
                 }
-            }
+            };
 
             const { error: updateError } = await supabase
                 .from('company_payroll_records')
                 .update({ 
                     payment_receipts_extractions: updatedExtractions
                 })
-                .eq('id', recordId)
+                .eq('id', recordId);
 
             if (updateError) {
-                console.error('Update error:', updateError)
-                throw new Error('Error saving extractions')
+                console.error('Update error:', updateError);
+                toast.error('Error saving extractions');
+                return;
             }
 
-            toast.success('Extractions saved successfully')
-            onClose()
+            toast.success('Extractions saved successfully');
+            onClose();
         } catch (error) {
-            console.error('Error in handleSave:', error)
-            toast.error(error instanceof Error ? error.message : 'Failed to save extractions')
+            console.error('Error in handleSave:', error);
+            toast.error(error instanceof Error ? error.message : 'Failed to save extractions');
         } finally {
-            setIsSaving(false)
+            setIsSaving(false);
         }
-    }
+    };
 
     const renderExtractionField = (field: keyof Extraction, label: string, placeholder: string) => {
-        const value = localExtractions[field]
-        const hasValue = value !== null && value !== ''
-        const isValid = !validation.errors.some(error => error.toLowerCase().includes(field))
+        const value = localExtractions[field];
+        const hasValue = value !== null && value !== '';
+        const isValid = !validation.errors.some(error => error.toLowerCase().includes(field));
+        console.log(`Rendering field: ${field}, hasValue: ${hasValue}, isValid: ${isValid}`);
         
         return (
             <div className="space-y-1">
@@ -334,8 +338,8 @@ export function DocumentViewer({
                     aria-label={label}
                 />
             </div>
-        )
-    }
+        );
+    };
 
     return (
         <Dialog open={isOpen} onOpenChange={onClose}>

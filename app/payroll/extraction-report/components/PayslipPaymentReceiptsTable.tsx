@@ -1,5 +1,5 @@
 // @ts-nocheck
-import React, { useState, useMemo } from "react"
+import { useState, useMemo } from "react"
 import { format } from 'date-fns'
 import {
     MoreHorizontal,
@@ -59,18 +59,89 @@ import {
 import { useToast } from '@/hooks/use-toast'
 import { supabase } from '@/lib/supabase'
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip";
-import { processAllDocuments, ExtractionResult, TAX_TYPES, formatAmount } from '@/lib/extractionUtils'
+
+interface DocumentMetadata {
+    id: string;
+    label: string;
+    color: string;
+}
+
+interface ColumnConfig {
+    id: string;
+    label: string;
+    type: 'amount' | 'payment_mode' | 'payment_date' | 'status' | 'actions';
+}
 
 const DOCUMENT_LABELS: Record<string, string> = {
-    paye_receipt: "PAYE Receipt",
-    housing_levy_receipt: "Housing Levy Receipt",
-    nita_receipt: "NITA Receipt",
-    shif_receipt: "SHIF Receipt",
-    nssf_receipt: "NSSF Receipt",
+    paye_receipt: "PAYE Payment",
+    housing_levy_receipt: "Housing Levy",
+    nita_receipt: "NITA",
+    shif_receipt: "SHIF",
+    nssf_receipt: "NSSF",
     all_csv: "All CSV Files"
 };
 
-interface ExtractionReportTableProps {
+
+
+const DOCUMENT_TYPES = [
+    {
+        id: 'paye',
+        label: 'PAYE',
+        color: 'bg-blue-600',
+        receiptType: 'paye_receipt'
+    },
+    {
+        id: 'housing_levy',
+        label: 'Housing Levy',
+        color: 'bg-green-600',
+        receiptType: 'housing_levy_receipt'
+    },
+    {
+        id: 'nita',
+        label: 'NITA',
+        color: 'bg-purple-600',
+        receiptType: 'nita_receipt'
+    },
+    {
+        id: 'shif',
+        label: 'SHIF',
+        color: 'bg-orange-600',
+        receiptType: 'shif_receipt'
+    },
+    {
+        id: 'nssf',
+        label: 'NSSF',
+        color: 'bg-red-600',
+        receiptType: 'nssf_receipt'
+    }
+];
+
+const COLUMN_TYPES = [
+    {
+        id: 'amount',
+        label: 'Amount',
+        width: 'min-w-[120px]'
+    },
+    {
+        id: 'payment_mode',
+        label: 'Payment Mode',
+        width: 'min-w-[120px]'
+    },
+    {
+        id: 'payment_date',
+        label: 'Payment Date',
+        width: 'min-w-[120px]'
+    },
+    {
+        id: 'status',
+        label: 'Status',
+        width: 'min-w-[80px]'
+    }
+];
+
+
+
+interface PayrollTableProps {
     records: CompanyPayrollRecord[]
     onDocumentUpload: (recordId: string, file: File, documentType: DocumentType) => Promise<void>
     onDocumentDelete: (recordId: string, documentType: DocumentType) => Promise<void>
@@ -97,37 +168,89 @@ const getDocumentsForUpload = (record: CompanyPayrollRecord) => {
         .map(([type, label]) => ({
             type: type as DocumentType,
             label,
-            status: record.receipts?.[type as DocumentType] ? 'uploaded' as const : 'missing' as const,
-            path: record.receipts?.[type as DocumentType]
+            status: record.payment_receipts_documents[type as DocumentType] ? 'uploaded' as const : 'missing' as const,
+            path: record.payment_receipts_documents[type as DocumentType]
         }));
 };
 
-const requiredDocs = ['paye_receipt', 'housing_levy_receipt', 'shif_receipt', 'nssf_receipt', 'nita_receipt'];
+const handleEmailDateUpdate = async (recordId: string) => {
+    try {
+        const { error: updateError } = await supabase
+            .from('company_payroll_records')
+            .update({
+                receipts_status: {
+                    ...record.receipts_status,
+                    email_date: new Date().toISOString()
+                }
+            })
+            .eq('id', recordId);
 
-const allDocumentsUploaded = (record: CompanyPayrollRecord | undefined): boolean => {
-    if (!record) return false;
-    return requiredDocs.every(docType => record.receipts?.[docType as DocumentType] !== null);
-};
+        if (updateError) throw updateError;
 
-const getDocumentCount = (record: CompanyPayrollRecord) => {
-    if (record.status.finalization_date === 'NIL') {
-        return 'N/A';
+        toast({
+            title: 'Success',
+            description: 'Email date updated successfully'
+        });
+    } catch (error) {
+        toast({
+            title: 'Error',
+            description: 'Failed to update email date',
+            variant: 'destructive'
+        });
     }
-    return `${requiredDocs.filter(docType =>
-        record.receipts?.[docType as DocumentType] !== null
-    ).length}/${requiredDocs.length}`;
 };
 
-export function ExtractionReportTable({
+
+const renderColumnContent = (
+    columnType: string,
+    extractedData: any,
+    record: CompanyPayrollRecord,
+    docType: string
+) => {
+    if (!extractedData) {
+        return <span className="text-red-600 font-bold">Missing</span>;
+    }
+
+    switch (columnType) {
+        case 'amount':
+            return <span className="text-right font-mono">{extractedData.amount}</span>;
+        case 'payment_mode':
+            return <span className="text-center">{extractedData.payment_mode}</span>;
+        case 'payment_date':
+            return <span className="text-center">{extractedData.payment_date}</span>;
+        case 'status':
+            return (
+                <DocumentUploadDialog
+                    documentType={`${docType}_receipt`}
+                    recordId={record.id}
+                    onUpload={(file) => handleDocumentUpload(record.id, file, `${docType}_receipt`)}
+                    onDelete={() => handleDocumentDelete(record.id, `${docType}_receipt`)}
+                    existingDocument={record.payment_receipts_documents[`${docType}_receipt`]}
+                    label={DOCUMENT_TYPES.find(d => d.id === docType)?.label || ''}
+                    isNilFiling={record.status.finalization_date === 'NIL'}
+                    allDocuments={getDocumentsForUpload(record)}
+                    companyName={record.company.company_name}
+                />
+            );
+        default:
+            return null;
+    }
+};
+
+
+export function PayslipPaymentReceiptsTable({
     records,
     onDocumentUpload,
     onStatusUpdate,
     onDocumentDelete,
     loading,
     setPayrollRecords
-}: ExtractionReportTableProps) {
+}: PayrollTableProps) {
     const { toast } = useToast()
 
+
+    const [selectedDocTypes, setSelectedDocTypes] = useState<string[]>([]);
+    const [selectedColumns, setSelectedColumns] = useState<string[]>([]);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [finalizeDialog, setFinalizeDialog] = useState<{
         isOpen: boolean;
@@ -150,9 +273,37 @@ export function ExtractionReportTable({
         record: CompanyPayrollRecord | null;
     }>({ isOpen: false, record: null });
 
+    const getDocumentCount = (record: CompanyPayrollRecord) => {
+        if (record.status.finalization_date === 'NIL') {
+            return 'N/A';
+        }
+        // Count all document types
+        const requiredDocs = ['paye_receipt', 'housing_levy_receipt', 'shif_receipt', 'nssf_receipt', 'nita_receipt'];
+        const totalDocs = requiredDocs.length;
+        const uploadedDocs = requiredDocs.filter(docType =>
+            record.payment_receipts_documents[docType as DocumentType] !== null &&
+            record.payment_receipts_documents[docType as DocumentType] !== undefined
+        ).length;
+        return `${uploadedDocs}/${totalDocs}`;
+    };
+
+    const allDocumentsUploaded = (record: CompanyPayrollRecord | undefined): boolean => {
+        if (!record) return false;
+        const requiredDocs = ['paye_receipt', 'housing_levy_receipt', 'shif_receipt', 'nssf_receipt', 'nita_receipt'];
+        return requiredDocs.every(docType => record.payment_receipts_documents[docType as DocumentType] !== null);
+    };
+
+    // Memoize sorted records for performance
+    const sortedRecords = useMemo(() =>
+        [...records].sort((a, b) =>
+            a.company.company_name.localeCompare(b.company.company_name)
+        ),
+        [records]
+    );
+
     const handleFinalize = (recordId: string) => {
         onStatusUpdate(recordId, {
-            finalization_date: finalizeDialog.isNil ? 'NIL' : new Date().toISOString(),
+            verification_date: finalizeDialog.isNil ? 'NIL' : new Date().toISOString(),
             status: 'completed',
             assigned_to: finalizeDialog.assignedTo
         });
@@ -190,7 +341,7 @@ export function ExtractionReportTable({
             const { error: updateError } = await supabase
                 .from('company_payroll_records')
                 .update({
-                    payment_slips_status: updatedStatus
+                    status: updatedStatus
                 })
                 .eq('id', recordId);
 
@@ -287,7 +438,7 @@ export function ExtractionReportTable({
             setIsSubmitting(true);
 
             // Filter out null values before using the paths
-            const documentsToDelete = Object.entries(record.receipts).filter(([_, path]) => path !== null) as [DocumentType, string][];
+            const documentsToDelete = Object.entries(record.payment_receipts_documents).filter(([_, path]) => path !== null) as [DocumentType, string][];
 
             if (documentsToDelete.length === 0) {
                 toast({
@@ -311,13 +462,12 @@ export function ExtractionReportTable({
             const { error: updateError } = await supabase
                 .from('company_payroll_records')
                 .update({
-                    receipts: {
-                        paye_acknowledgment: null,
-                        paye_slip: null,
-                        housing_levy_slip: null,
-                        shif_slip: null,
-                        nssf_slip: null,
-                        nita_slip: null
+                    payment_receipts_documents: {
+                        paye_receipt: null,
+                        housing_levy_receipt: null,
+                        shif_receipt: null,
+                        nssf_receipt: null,
+                        nita_receipt: null
                     }
                 })
                 .eq('id', record.id);
@@ -329,13 +479,12 @@ export function ExtractionReportTable({
                 if (r.id === record.id) {
                     return {
                         ...r,
-                        receipts: {
-                            paye_acknowledgment: null,
-                            paye_slip: null,
-                            housing_levy_slip: null,
-                            shif_slip: null,
-                            nssf_slip: null,
-                            nita_slip: null
+                        payment_receipts_documents: {
+                            paye_receipt: null,
+                            housing_levy_receipt: null,
+                            shif_receipt: null,
+                            nssf_receipt: null,
+                            nita_receipt: null
                         }
                     };
                 }
@@ -387,7 +536,7 @@ export function ExtractionReportTable({
 
     const handleDownloadAll = async (record: CompanyPayrollRecord) => {
         try {
-            const documentsToDownload = Object.entries(record.receipts)
+            const documentsToDownload = Object.entries(record.payment_receipts_documents)
                 .filter(([key, value]) => key !== 'all_csv' && value !== null);
 
             for (const [_, path] of documentsToDownload) {
@@ -421,7 +570,7 @@ export function ExtractionReportTable({
             // First, fetch the current record to get latest document paths
             const { data: currentRecord, error: fetchError } = await supabase
                 .from('company_payroll_records')
-                .select('receipts')
+                .select('payment_receipts_documents')
                 .eq('id', recordId)
                 .single();
 
@@ -429,8 +578,8 @@ export function ExtractionReportTable({
             if (!currentRecord) throw new Error('Failed to fetch current record');
 
             const fileName = `${documentType} - ${record.company.company_name} - ${format(new Date(), 'yyyy-MM-dd')}${file.name.substring(file.name.lastIndexOf('.'))}`;
-            const filePath = `${selectedMonthYear}/PAYMENT SLIPS/${record.company.company_name}/${fileName}`;
-
+            const filePath = `${selectedMonthYear}/PAYMENT RECEIPTS/${record.company.company_name}/${fileName}`;
+            
             // Upload file to storage
             const { data: uploadData, error: uploadError } = await supabase.storage
                 .from('Payroll-Cycle')
@@ -443,7 +592,7 @@ export function ExtractionReportTable({
 
             // Preserve existing document paths and update the new one
             const updatedDocuments = {
-                ...currentRecord.receipts,
+                ...currentRecord.payment_receipts_documents,
                 [documentType]: uploadData.path
             };
 
@@ -451,7 +600,7 @@ export function ExtractionReportTable({
             const { error: updateError } = await supabase
                 .from('company_payroll_records')
                 .update({
-                    receipts: updatedDocuments
+                    payment_receipts_documents: updatedDocuments
                 })
                 .eq('id', recordId);
 
@@ -468,7 +617,7 @@ export function ExtractionReportTable({
                 if (r.id === recordId) {
                     return {
                         ...r,
-                        receipts: updatedDocuments
+                        payment_receipts_documents: updatedDocuments
                     };
                 }
                 return r;
@@ -495,7 +644,7 @@ export function ExtractionReportTable({
             const record = records.find(r => r.id === recordId);
             if (!record) return;
 
-            const documentPath = record.receipts[documentType];
+            const documentPath = record.payment_receipts_documents[documentType];
             if (!documentPath) return;
 
             const { error: deleteError } = await supabase.storage
@@ -507,8 +656,8 @@ export function ExtractionReportTable({
             const { error: updateError } = await supabase
                 .from('company_payroll_records')
                 .update({
-                    receipts: {
-                        ...record.receipts,
+                    payment_receipts_documents: {
+                        ...record.payment_receipts_documents,
                         [documentType]: null
                     }
                 })
@@ -521,8 +670,8 @@ export function ExtractionReportTable({
                 if (r.id === recordId) {
                     return {
                         ...r,
-                        receipts: {
-                            ...r.receipts,
+                        payment_receipts_documents: {
+                            ...r.payment_receipts_documents,
                             [documentType]: null
                         }
                     };
@@ -544,19 +693,55 @@ export function ExtractionReportTable({
         }
     };
 
-    // Memoize sorted records for performance
-    const sortedRecords = useMemo(() =>
-        [...records].sort((a, b) =>
-            a.company.company_name.localeCompare(b.company.company_name)
-        ),
-        [records]
-    );
+    const toggleDocType = (docType: string) => {
+        if (selectedDocTypes.includes(docType)) {
+            setSelectedDocTypes(selectedDocTypes.filter(type => type !== docType));
+        } else {
+            setSelectedDocTypes([...selectedDocTypes, docType]);
+        }
+    };
 
-    console.log('Records:', records); // Log the records to inspect their structure
+    const toggleColumn = (colType: string) => {
+        if (selectedColumns.includes(colType)) {
+            setSelectedColumns(selectedColumns.filter(type => type !== colType));
+        } else {
+            setSelectedColumns([...selectedColumns, colType]);
+        }
+    };
 
     return (
         <div className="rounded-md border h-[calc(100vh-220px)] overflow-auto">
-            <Table>
+
+            <div className="flex gap-4 mb-4">
+                <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                        <Button variant="outline">Select Document Types</Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent>
+                        {DOCUMENT_TYPES.map(doc => (
+                            <DropdownMenuItem key={doc.id} onClick={() => toggleDocType(doc.id)}>
+                                <Checkbox checked={selectedDocTypes.includes(doc.id)} />
+                                {doc.label}
+                            </DropdownMenuItem>
+                        ))}
+                    </DropdownMenuContent>
+                </DropdownMenu>
+
+                <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                        <Button variant="outline">Select Columns</Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent>
+                        {COLUMN_TYPES.map(col => (
+                            <DropdownMenuItem key={col.id} onClick={() => toggleColumn(col.id)}>
+                                <Checkbox checked={selectedColumns.includes(col.id)} />
+                                {col.label}
+                            </DropdownMenuItem>
+                        ))}
+                    </DropdownMenuContent>
+                </DropdownMenu>
+            </div>
+            <Table aria-label="Payroll Records" className="border border-gray-200">
                 <TableHeader className="sticky top-0 z-10">
                     <TableRow className="hover:bg-transparent">
                         <TableHead
@@ -565,15 +750,18 @@ export function ExtractionReportTable({
                         >
                             Company
                         </TableHead>
-                        {TAX_TYPES.map(tax => (
-                            <TableHead
-                                key={tax.id}
-                                colSpan={4}
-                                className={`text-center text-white font-semibold ${tax.color} border-r border-b`}
-                            >
-                                {tax.label}
-                            </TableHead>
-                        ))}
+                        {selectedDocTypes.map(docType => {
+                            const doc = DOCUMENT_TYPES.find(d => d.id === docType);
+                            return (
+                                <TableHead
+                                    key={docType}
+                                    colSpan={selectedColumns.length}
+                                    className={`text-center text-white font-semibold ${doc?.color} border-r border-b`}
+                                >
+                                    {doc?.label}
+                                </TableHead>
+                            );
+                        })}
                         <TableHead
                             rowSpan={2}
                             className="border-r border-b border-gray-200 bg-blue-600 text-white font-semibold"
@@ -582,91 +770,51 @@ export function ExtractionReportTable({
                         </TableHead>
                     </TableRow>
                     <TableRow className="hover:bg-transparent">
-                        {TAX_TYPES.map((tax) => (
-                            <React.Fragment key={tax.id}>
-                                <TableHead className="border-r bg-gray-100 text-gray-900 font-medium whitespace-nowrap min-w-[120px]">Amount</TableHead>
-                                <TableHead className="border-r bg-gray-100 text-gray-900 font-medium whitespace-nowrap min-w-[120px]">Payment Mode</TableHead>
-                                <TableHead className="border-r bg-gray-100 text-gray-900 font-medium whitespace-nowrap min-w-[120px]">Payment Date</TableHead>
-                                <TableHead className="border-r bg-gray-100 text-gray-900 font-medium whitespace-nowrap min-w-[80px]">Status</TableHead>
-                            </React.Fragment>
-                        ))}
+                        {selectedDocTypes.map(docType =>
+                            selectedColumns.map(colType => {
+                                const col = COLUMN_TYPES.find(c => c.id === colType);
+                                return (
+                                    <TableHead
+                                        key={`${docType}-${colType}`}
+                                        className="border-r bg-gray-100 text-gray-900 font-medium whitespace-nowrap min-w-[120px]"
+                                    >
+                                        {col?.label}
+                                    </TableHead>
+                                );
+                            })
+                        )}
                     </TableRow>
                 </TableHeader>
+
                 <TableBody>
-                    {loading ? (
-                        <TableRow>
-                            <TableCell colSpan={21} className="text-center py-8">
-                                <div role="status" className="animate-pulse">
-                                    <div className="h-4 bg-gray-200 rounded-full w-48 mb-4"></div>
-                                    <span className="sr-only">Loading...</span>
-                                </div>
-                            </TableCell>
-                        </TableRow>
-                    ) : sortedRecords.map((record, index) => (
+                    {sortedRecords.map((record, index) => (
                         <TableRow
                             key={record.id}
-                            className={
-                                `${index % 2 === 0 ? 'bg-blue-50 hover:bg-blue-100' : 'bg-white hover:bg-gray-50'}
-                                [&>td]:border-r [&>td]:border-gray-200 last:[&>td]:border-r-0`
-                            }
+                            className={`
+                ${index % 2 === 0 ? 'bg-blue-50 hover:bg-blue-100' : 'bg-white hover:bg-gray-50'}
+                [&>td]:border-r [&>td]:border-gray-200 last:[&>td]:border-r-0
+            `}
                         >
-                            <TooltipProvider>
-                                <TableCell className="font-medium">
+                            <TableCell className="font-medium">
+                                <TooltipProvider>
                                     <Tooltip>
                                         <TooltipTrigger>
                                             {record.company.company_name.split(" ").slice(0, 3).join(" ")}
                                         </TooltipTrigger>
                                         <TooltipContent>{record.company.company_name}</TooltipContent>
                                     </Tooltip>
-                                </TableCell>
-                            </TooltipProvider>
+                                </TooltipProvider>
+                            </TableCell>
 
-                            {TAX_TYPES.map(tax => {
-                                const receiptType = `${tax.id}_receipt` as keyof typeof record.payment_receipts_extractions;
+                            {selectedDocTypes.map(docType => {
+                                const receiptType = `${docType}_receipt`;
+                                const extractedData = record.payment_receipts_extractions?.[receiptType];
 
-                                // Defensive check to ensure payment_receipts_extractions is defined
-                                if (!record.payment_receipts_extractions) {
-                                    console.error(`payment_receipts_extractions is undefined for record ID: ${record.id}`);
-                                    return null; // Skip this iteration if undefined
-                                }
-
-                                // Further check for the specific receipt type
-                                if (!record.payment_receipts_extractions[receiptType]) {
-                                    console.error(`Receipt type ${receiptType} is undefined for record ID: ${record.id}`);
-                                    return null; // Skip this iteration if undefined
-                                }
-
-                                const extractedData = record.payment_receipts_extractions[receiptType];
-                                const documentPath = record.receipts[receiptType];
-
-                                console.log(`Record ID: ${record.id}, Receipt Type: ${receiptType}, Extracted Data:`, extractedData, `Document Path:`, documentPath);
-
-                                return (
-                                    <React.Fragment key={`${record.id}-${tax.id}`}> {/* Unique key added here */}
-                                        <TableCell className="text-right font-mono">
-                                            {extractedData?.amount ?? <span className="text-red-600 font-bold">Missing</span>}
-                                        </TableCell>
-                                        <TableCell className="text-center">
-                                            {extractedData?.payment_mode || <span className="text-red-600 font-bold">Missing</span>}
-                                        </TableCell>
-                                        <TableCell className="text-center">
-                                            {extractedData?.payment_date || <span className="text-red-600 font-bold">Missing</span>}
-                                        </TableCell>
-                                        <TableCell>
-                                            <DocumentUploadDialog
-                                                documentType={receiptType}
-                                                recordId={record.id}
-                                                onUpload={(file) => handleDocumentUpload(record.id, file, receiptType)}
-                                                onDelete={() => handleDocumentDelete(record.id, receiptType)}
-                                                existingDocument={documentPath}
-                                                label={tax.label}
-                                                isNilFiling={record.status.finalization_date === 'NIL'}
-                                                allDocuments={getDocumentsForUpload(record)}
-                                                companyName={record.company.company_name}
-                                            />
-                                        </TableCell>
-                                    </React.Fragment>
-                                );
+                                return selectedColumns.map(colType => (
+                                    <TableCell key={`${docType}-${colType}`}>
+                                        {renderColumnContent(colType, extractedData, record, docType)}
+                                    </TableCell>
+                                ));
                             })}
 
                             <TableCell className="text-center">
@@ -705,6 +853,7 @@ export function ExtractionReportTable({
                         </TableRow>
                     ))}
                 </TableBody>
+           
             </Table>
 
             {/* Finalization Dialog */}
@@ -872,7 +1021,7 @@ export function ExtractionReportTable({
                                 {Object.entries(DOCUMENT_LABELS)
                                     .filter(([key]) => key !== 'all_csv') // Remove All CSV Files
                                     .map(([type, label]) => {
-                                        const document = documentDetailsDialog?.record?.receipts[type as DocumentType];
+                                        const document = documentDetailsDialog?.record?.documents[type as DocumentType];
                                         const isNilFiling = documentDetailsDialog?.record?.status?.finalization_date === 'NIL';
                                         return (
                                             <div key={type} className="flex justify-between items-center">
