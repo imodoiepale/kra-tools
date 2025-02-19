@@ -147,7 +147,7 @@ export default function ExtractionReport({
                     <div className="flex gap-4">
                         <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                                <Button variant="outline">Select Document Types</Button>
+                                <Button variant="outline">Select TAX</Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end" className="w-56">
                                 {DOCUMENT_TYPES.map(doc => (
@@ -173,7 +173,7 @@ export default function ExtractionReport({
 
                         <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                                <Button variant="outline">Select Columns</Button>
+                                <Button variant="outline">Select Fields</Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end" className="w-56">
                                 {COLUMN_TYPES.map(col => (
