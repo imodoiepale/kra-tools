@@ -1,7 +1,7 @@
 // @ts-nocheck
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { format } from 'date-fns'
 import { Loader2, AlertCircle, CheckCircle } from 'lucide-react'
 import {
@@ -19,6 +19,7 @@ import {
     TableRow,
 } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { useToast } from "@/hooks/use-toast"
 import { CompanyPayrollRecord } from '../../types'
 import { processAllDocuments, ExtractionResult, TAX_TYPES, formatAmount } from '@/lib/extractionUtils'
@@ -39,13 +40,35 @@ export function ExtractAllDialog({
     const { toast } = useToast()
     const [processing, setProcessing] = useState(false)
     const [results, setResults] = useState<ExtractionResult[]>([])
+    const [selectedRecords, setSelectedRecords] = useState<CompanyPayrollRecord[]>([])
+    const [loadExisting, setLoadExisting] = useState(false)
+
+    useEffect(() => {
+        if (isOpen) {
+            loadExistingRecords();
+        }
+    }, [isOpen]);
+
+    const loadExistingRecords = async () => {
+        // Fetch existing records from the database or API
+        const existingRecords = await fetchRecords();
+        setPayrollRecords(existingRecords);
+        setSelectedRecords(existingRecords); // Select all by default
+    };
+
+    const handleSelectionChange = (record: CompanyPayrollRecord) => {
+        setSelectedRecords(prev => 
+            prev.includes(record) ? prev.filter(r => r !== record) : [...prev, record]
+        );
+    };
 
     const handleExtractAll = async () => {
         try {
             setProcessing(true)
             setResults([])
 
-            await processAllDocuments(records, (newResults) => {
+            const toExtract = loadExisting ? selectedRecords : records;
+            await processAllDocuments(toExtract, (newResults) => {
                 setResults(newResults)
             })
 
@@ -130,6 +153,10 @@ export function ExtractAllDialog({
                                         `}
                                     >
                                         <TableCell className="font-medium truncate max-w-[200px]" title={record.company.company_name}>
+                                            <Checkbox
+                                                checked={selectedRecords.includes(record)}
+                                                onChange={() => handleSelectionChange(record)}
+                                            />
                                             {record.company.company_name}
                                         </TableCell>
                                         {TAX_TYPES.map(tax => {
@@ -167,6 +194,10 @@ export function ExtractAllDialog({
                 </div>
 
                 <div className="mt-4 flex justify-end gap-2">
+                    <Checkbox
+                        checked={loadExisting}
+                        onChange={() => setLoadExisting(!loadExisting)}
+                    >Load Existing Entries</Checkbox>
                     <Button variant="outline" onClick={onClose}>
                         Close
                     </Button>
