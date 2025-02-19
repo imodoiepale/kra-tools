@@ -781,7 +781,7 @@ export function PayslipPaymentReceiptsTable({
                                 <TooltipProvider>
                                     <Tooltip>
                                         <TooltipTrigger>
-                                            {record.company.company_name.split(" ").slice(0, 3).join(" ")}
+                                            {record.company.company_name.split(" ").slice(0, 1).join(" ")}
                                         </TooltipTrigger>
                                         <TooltipContent>{record.company.company_name}</TooltipContent>
                                     </Tooltip>
