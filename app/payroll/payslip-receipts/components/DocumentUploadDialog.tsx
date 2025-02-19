@@ -959,6 +959,8 @@ export function DocumentUploadDialog({
                     onClose={() => setViewerOpen(false)}
                     title={label}
                     companyName={companyName}
+                    documentType={label.toLowerCase().replace(/\s+/g, '_')}
+                    recordId={recordId}
                 />
             )}
 

@@ -5,8 +5,14 @@ const nextConfig = {
   images: {
     domains: ['zyszsqgdlrpnunkegipk.supabase.co'],
   },
+  transpilePackages: ['mupdf'],
   webpack: (config) => {
-    config.externals = [...(config.externals || []), 'mssql'];
+    // Original externals and fallbacks
+    config.externals = [
+      ...(config.externals || []),
+      'mssql',
+      { canvas: "canvas" }  // Add canvas to externals
+    ];
 
     config.resolve.fallback = {
       ...config.resolve.fallback,
@@ -22,7 +28,8 @@ const nextConfig = {
       http: false,
       https: false,
       os: false,
-      path: false
+      path: false,
+      canvas: false,  // Add canvas fallback
     };
 
     return config;

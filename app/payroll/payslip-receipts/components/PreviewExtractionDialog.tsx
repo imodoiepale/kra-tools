@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { useState } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { Loader2, Save, RotateCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -17,6 +17,14 @@ import { useToast } from '@/hooks/use-toast'
 import { supabase } from '@/lib/supabase'
 import { performExtraction } from '@/lib/extractionUtils'
 import { DocumentViewer } from './DocumentViewer'
+import {
+    validateExtraction,
+    PAYMENT_MODES,
+    determinePaymentMode
+} from '../../utils/documentUtils'
+
+const MAX_RETRIES = 3;
+const RETRY_DELAY = 4000; // 2 seconds
 
 interface Extraction {
     amount: string | null
@@ -53,6 +61,30 @@ export function PreviewExtractionDialog({
     const [loading, setLoading] = useState(false)
     const [localDocs, setLocalDocs] = useState(documents)
     const [previewDoc, setPreviewDoc] = useState<Document | null>(null)
+    const iframeRef = useRef<HTMLIFrameElement>(null);
+
+    // Update iframe source only when necessary
+    useEffect(() => {
+        if (iframeRef.current) {
+            const doc = localDocs[activeDoc];
+            const url = doc?.url || (doc?.file ? URL.createObjectURL(doc.file) : '');
+            if (url) {
+                iframeRef.current.src = url;
+            }
+        }
+    }, [activeDoc, localDocs]);
+
+    // Memoize the preview URL to prevent unnecessary re-renders
+    const previewUrl = useMemo(() => {
+        const doc = localDocs[activeDoc]
+        return doc?.url || (doc?.file ? URL.createObjectURL(doc.file) : '')
+    }, [activeDoc, localDocs])
+
+    useEffect(() => {
+        if (isOpen && localDocs.length > 0) {
+            handleBulkExtract(localDocs);
+        }
+    }, [isOpen]);
 
     const extractionFields = [
         { name: 'amount', type: 'string', required: true },
@@ -77,78 +109,191 @@ export function PreviewExtractionDialog({
         )
     }
 
-    const handleExtract = async (file: File) => {
-        setLoading(true)
+    const handleBulkExtract = async (docs: Document[]) => {
+        setLoading(true);
+        let retryQueue: Document[] = [];
+
         try {
-            const fileUrl = URL.createObjectURL(file)
+            const processDocuments = async (documents: Document[]) => {
+                const extractionPromises = documents.map(async (doc) => {
+                    try {
+                        const fileUrl = URL.createObjectURL(doc.file);
+                        console.log(`Starting extraction for ${doc.label}...`);
+                        
+                        const result = await performExtraction(
+                            fileUrl,
+                            extractionFields,
+                            'payment_receipt',
+                            (message) => console.log(`${doc.label}: ${message}`)
+                        );
+                        
+                        URL.revokeObjectURL(fileUrl);
 
-            const result = await performExtraction(
-                fileUrl,
-                extractionFields,
-                'payment_receipt',
-                (message) => console.log('Extraction progress:', message)
-            )
+                        if (!result.success) {
+                            return {
+                                type: doc.type,
+                                success: false,
+                                error: result.message,
+                                shouldRetry: true
+                            };
+                        }
 
-            if (!result.success) {
-                throw new Error(result.message)
+                        // Enhance extracted data
+                        const extractedContent = result.extractedData?.raw_text || '';
+                        const detectedPaymentMode = determinePaymentMode(extractedContent);
+                        const enhancedData = {
+                            ...result.extractedData,
+                            payment_mode: detectedPaymentMode || result.extractedData?.payment_mode
+                        };
+
+                        // Validate the extraction
+                        const validation = validateExtraction(enhancedData);
+                        
+                        return {
+                            type: doc.type,
+                            success: validation.isValid,
+                            data: enhancedData,
+                            shouldRetry: !validation.isValid
+                        };
+                    } catch (error) {
+                        console.error(`Error extracting ${doc.label}:`, error);
+                        return {
+                            type: doc.type,
+                            success: false,
+                            error: error instanceof Error ? error.message : 'Extraction failed',
+                            shouldRetry: true
+                        };
+                    }
+                });
+
+                return await Promise.all(extractionPromises);
+            };
+
+            // First attempt
+            let results = await processDocuments(docs);
+            
+            // Handle retries
+            for (let attempt = 1; attempt < MAX_RETRIES; attempt++) {
+                // Collect documents that need retry
+                retryQueue = docs.filter((doc, index) => 
+                    results[index].shouldRetry
+                );
+
+                if (retryQueue.length === 0) break;
+
+                console.log(`Retry attempt ${attempt + 1} for ${retryQueue.length} documents...`);
+                await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
+                
+                const retryResults = await processDocuments(retryQueue);
+                
+                // Update results with retry outcomes
+                results = results.map(result => {
+                    const retryResult = retryResults.find(r => r.type === result.type);
+                    return retryResult?.success ? retryResult : result;
+                });
             }
 
-            setLocalDocs(docs =>
-                docs.map((doc, i) =>
-                    i === activeDoc ? {
-                        ...doc,
-                        extractions: result.extractedData
-                    } : doc
-                )
-            )
+            // Update local docs with final results
+            setLocalDocs(prevDocs => 
+                prevDocs.map(doc => {
+                    const result = results.find(r => r.type === doc.type);
+                    if (result?.success && result.data) {
+                        return {
+                            ...doc,
+                            extractions: {
+                                ...doc.extractions,
+                                ...result.data
+                            }
+                        };
+                    }
+                    return doc;
+                })
+            );
 
-            toast({
-                title: "Success",
-                description: "Document data extracted successfully"
-            })
+            // Show final status
+            const successCount = results.filter(r => r.success).length;
+            if (successCount === docs.length) {
+                toast({
+                    title: "Success",
+                    description: "All documents extracted successfully"
+                });
+            } else {
+                toast({
+                    title: "Partial Success",
+                    description: `Successfully extracted ${successCount} out of ${docs.length} documents. Manual review may be needed.`,
+                    variant: "warning"
+                });
+            }
         } catch (error) {
+            console.error('Bulk extraction error:', error);
             toast({
                 title: "Error",
-                description: "Failed to extract document data",
+                description: "Failed to process documents",
                 variant: "destructive"
-            })
+            });
         } finally {
-            setLoading(false)
+            setLoading(false);
         }
-    }
+    };
+
+    const handleManualExtract = () => {
+        const currentDoc = localDocs[activeDoc];
+        handleBulkExtract([currentDoc]);
+    };
 
     const handleSave = async () => {
         setLoading(true)
         try {
-            const currentDoc = localDocs[activeDoc]
-            const docType = `${currentDoc.type}_receipt`
+            // Get existing extractions first
+            const { data: existingRecord, error: fetchError } = await supabase
+                .from('company_payroll_records')
+                .select('payment_receipts_extractions')
+                .eq('id', recordId)
+                .single()
 
-            const { error } = await supabase
+            if (fetchError) {
+                console.error('Fetch error:', fetchError)
+                throw new Error('Error fetching existing record')
+            }
+
+            // Merge all extractions
+            const updatedExtractions = {
+                ...(existingRecord?.payment_receipts_extractions || {})
+            };
+
+            // Add each document's extractions
+            localDocs.forEach(doc => {
+                // Fix: Don't append _receipt if it already exists
+                const docType = doc.type.endsWith('_receipt') ? doc.type : `${doc.type}_receipt`;
+                updatedExtractions[docType] = {
+                    ...doc.extractions,
+                    payment_mode: doc.extractions.payment_mode === 'Pay Bill' ? 
+                        PAYMENT_MODES.MPESA : doc.extractions.payment_mode
+                };
+            });
+
+            const { error: updateError } = await supabase
                 .from('company_payroll_records')
                 .update({
-                    payment_receipts_extractions: {
-                        [docType]: currentDoc.extractions
-                    }
+                    payment_receipts_extractions: updatedExtractions
                 })
                 .eq('id', recordId)
 
-            if (error) throw error
+            if (updateError) {
+                console.error('Update error:', updateError)
+                throw new Error('Error saving extractions')
+            }
 
             toast({
                 title: "Success",
-                description: "Extractions saved successfully"
+                description: "All extractions saved successfully"
             })
-
-            if (activeDoc < localDocs.length - 1) {
-                setActiveDoc(prev => prev + 1)
-            } else {
-                onClose()
-            }
+            onClose()
         } catch (error) {
             console.error('Save error:', error)
             toast({
                 title: "Error",
-                description: "Failed to save extractions",
+                description: error instanceof Error ? error.message : "Failed to save extractions",
                 variant: "destructive"
             })
         } finally {
@@ -215,17 +360,6 @@ export function PreviewExtractionDialog({
                                                         Extracted
                                                     </Badge>
                                                 )}
-                                                <Button
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    className="text-xs"
-                                                    onClick={(e) => {
-                                                        e.stopPropagation()
-                                                        handlePreview(doc)
-                                                    }}
-                                                >
-                                                    Preview
-                                                </Button>
                                             </div>
                                         </div>
                                     </div>
@@ -235,7 +369,7 @@ export function PreviewExtractionDialog({
 
                         <div className="col-span-3 border rounded bg-white overflow-hidden">
                             <iframe
-                                src={URL.createObjectURL(localDocs[activeDoc].file)}
+                                ref={iframeRef}
                                 className="w-full h-full"
                                 title={localDocs[activeDoc].label}
                             />
@@ -250,7 +384,7 @@ export function PreviewExtractionDialog({
                                     <Button
                                         size="sm"
                                         variant="outline"
-                                        onClick={() => handleExtract(localDocs[activeDoc].file)}
+                                        onClick={handleManualExtract}
                                         disabled={loading}
                                         className="w-full"
                                     >
@@ -292,27 +426,6 @@ export function PreviewExtractionDialog({
                 </DialogContent>
             </Dialog>
 
-            {previewDoc && (
-                <DocumentViewer
-                    url={previewDoc.url || URL.createObjectURL(previewDoc.file)}
-                    isOpen={!!previewDoc}
-                    onClose={() => setPreviewDoc(null)}
-                    title={previewDoc.label}
-                    companyName={companyName}
-                    documentType={`${previewDoc.type}_receipt`}
-                    recordId={recordId}
-                    extractions={previewDoc.extractions}
-                    onExtractionsUpdate={(newExtractions) => {
-                        setLocalDocs(docs =>
-                            docs.map(doc =>
-                                doc.type === previewDoc.type
-                                    ? { ...doc, extractions: newExtractions }
-                                    : doc
-                            )
-                        )
-                    }}
-                />
-            )}
         </>
     )
 }
