@@ -266,9 +266,15 @@ export function DocumentViewer({
                 throw new Error('Error fetching existing record')
             }
 
-            // Fix: Don't append _receipt if it already exists
             const docType = documentType.endsWith('_receipt') ? documentType : `${documentType}_receipt`;
-            
+
+            // Check if the data has changed before saving
+            const existingExtractions = existingRecord?.payment_receipts_extractions?.[docType];
+            if (JSON.stringify(existingExtractions) === JSON.stringify(localExtractions)) {
+                toast.info('No changes detected, nothing to save.');
+                return;
+            }
+
             // Merge with existing extractions
             const updatedExtractions = {
                 ...(existingRecord?.payment_receipts_extractions || {}),
@@ -371,6 +377,10 @@ export function DocumentViewer({
                                         variant="outline"
                                         onClick={() => {
                                             if (documentUrl) {
+                                                if (localExtractions.amount || localExtractions.payment_date || localExtractions.payment_mode || localExtractions.bank_name) {
+                                                    const confirmReExtract = window.confirm('Existing data found. Do you want to re-extract?');
+                                                    if (!confirmReExtract) return;
+                                                }
                                                 performExtraction(
                                                     documentUrl,
                                                     [
@@ -404,14 +414,7 @@ export function DocumentViewer({
                                         }}
                                         disabled={isSaving || !documentUrl || isFetching}
                                     >
-                                        {isFetching ? (
-                                            <Loader2 className="h-4 w-4 animate-spin" />
-                                        ) : (
-                                            <>
-                                                <RotateCw className="h-4 w-4 mr-1" />
-                                                Re-Extract
-                                            </>
-                                        )}
+                                        {localExtractions.amount || localExtractions.payment_date || localExtractions.payment_mode || localExtractions.bank_name ? 'Re-Extract' : 'Extract'}
                                     </Button>
                                     <Button
                                         size="sm"
