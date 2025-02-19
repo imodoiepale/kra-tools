@@ -12,6 +12,70 @@ import { Input } from '@/components/ui/input'
 import { useToast } from '@/hooks/use-toast'
 import { ExtractAllDialog } from './components/ExtractAllDialog'
 import { PayslipPaymentReceiptsTable } from './components/PayslipPaymentReceiptsTable'
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { Checkbox } from '@/components/ui/checkbox'
+
+const DOCUMENT_TYPES = [
+    {
+        id: 'paye',
+        label: 'PAYE',
+        color: 'bg-blue-600',
+        receiptType: 'paye_receipt'
+    },
+    {
+        id: 'housing_levy',
+        label: 'Housing Levy',
+        color: 'bg-green-600',
+        receiptType: 'housing_levy_receipt'
+    },
+    {
+        id: 'nita',
+        label: 'NITA',
+        color: 'bg-purple-600',
+        receiptType: 'nita_receipt'
+    },
+    {
+        id: 'shif',
+        label: 'SHIF',
+        color: 'bg-orange-600',
+        receiptType: 'shif_receipt'
+    },
+    {
+        id: 'nssf',
+        label: 'NSSF',
+        color: 'bg-red-600',
+        receiptType: 'nssf_receipt'
+    }
+];
+
+const COLUMN_TYPES = [
+    {
+        id: 'status',
+        label: 'Status',
+        width: 'min-w-[80px]'
+    },
+    {
+        id: 'amount',
+        label: 'Amount',
+        width: 'min-w-[80px]'
+    },
+    {
+        id: 'payment_mode',
+        label: 'Payment Mode',
+        width: 'min-w-[80px]'
+    },
+    {
+        id: 'payment_date',
+        label: 'Payment Date',
+        width: 'min-w-[80px]'
+    },
+];
 
 interface ExtractionReportProps {
     payrollRecords: CompanyPayrollRecord[]
@@ -42,6 +106,10 @@ export default function ExtractionReport({
     handleStatusUpdate,
     setPayrollRecords
 }: ExtractionReportProps) {
+
+    const [selectedDocTypes, setSelectedDocTypes] = useState<string[]>(DOCUMENT_TYPES.map(doc => doc.id));
+    const [selectedColumns, setSelectedColumns] = useState<string[]>(COLUMN_TYPES.map(col => col.id));
+
     const handleDocumentUploadWithFolder = (recordId: string, file: File, documentType: DocumentType) => {
         return handleDocumentUpload(recordId, file, documentType, 'PAYMENT RECEIPTS')
     }
@@ -76,6 +144,59 @@ export default function ExtractionReport({
                         onChange={(e) => setSearchTerm(e.target.value)}
                         className="w-64"
                     />
+                    <div className="flex gap-4">
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <Button variant="outline">Select Document Types</Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-56">
+                                {DOCUMENT_TYPES.map(doc => (
+                                    <DropdownMenuItem
+                                        key={doc.id}
+                                        onClick={(e) => {
+                                            e.preventDefault();
+                                            const newSelected = selectedDocTypes.includes(doc.id)
+                                                ? selectedDocTypes.filter(id => id !== doc.id)
+                                                : [...selectedDocTypes, doc.id];
+                                            setSelectedDocTypes(newSelected);
+                                        }}
+                                    >
+                                        <Checkbox
+                                            checked={selectedDocTypes.includes(doc.id)}
+                                            className="mr-2"
+                                        />
+                                        {doc.label}
+                                    </DropdownMenuItem>
+                                ))}
+                            </DropdownMenuContent>
+                        </DropdownMenu>
+
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <Button variant="outline">Select Columns</Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-56">
+                                {COLUMN_TYPES.map(col => (
+                                    <DropdownMenuItem
+                                        key={col.id}
+                                        onClick={(e) => {
+                                            e.preventDefault();
+                                            const newSelected = selectedColumns.includes(col.id)
+                                                ? selectedColumns.filter(id => id !== col.id)
+                                                : [...selectedColumns, col.id];
+                                            setSelectedColumns(newSelected);
+                                        }}
+                                    >
+                                        <Checkbox
+                                            checked={selectedColumns.includes(col.id)}
+                                            className="mr-2"
+                                        />
+                                        {col.label}
+                                    </DropdownMenuItem>
+                                ))}
+                            </DropdownMenuContent>
+                        </DropdownMenu>
+                    </div>
                     <Button variant="outline" size="sm">Export</Button>
                     <Button
                         variant="outline"
@@ -88,6 +209,8 @@ export default function ExtractionReport({
             </div>
 
             <PayslipPaymentReceiptsTable
+                selectedDocTypes={selectedDocTypes}
+                selectedColumns={selectedColumns}
                 records={filteredRecords}
                 onDocumentUpload={handleDocumentUploadWithFolder}
                 onDocumentDelete={handleDocumentDelete}

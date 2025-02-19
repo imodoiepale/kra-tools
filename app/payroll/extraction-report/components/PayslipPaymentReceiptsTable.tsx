@@ -143,6 +143,8 @@ const COLUMN_TYPES = [
 
 interface PayrollTableProps {
     records: CompanyPayrollRecord[]
+    selectedDocTypes: string[]
+    selectedColumns: string[]
     onDocumentUpload: (recordId: string, file: File, documentType: DocumentType) => Promise<void>
     onDocumentDelete: (recordId: string, documentType: DocumentType) => Promise<void>
     onStatusUpdate: (recordId: string, statusUpdate: any) => Promise<void>
@@ -173,83 +175,22 @@ const getDocumentsForUpload = (record: CompanyPayrollRecord) => {
         }));
 };
 
-const handleEmailDateUpdate = async (recordId: string) => {
-    try {
-        const { error: updateError } = await supabase
-            .from('company_payroll_records')
-            .update({
-                receipts_status: {
-                    ...record.receipts_status,
-                    email_date: new Date().toISOString()
-                }
-            })
-            .eq('id', recordId);
-
-        if (updateError) throw updateError;
-
-        toast({
-            title: 'Success',
-            description: 'Email date updated successfully'
-        });
-    } catch (error) {
-        toast({
-            title: 'Error',
-            description: 'Failed to update email date',
-            variant: 'destructive'
-        });
-    }
-};
-
-
-const renderColumnContent = (
-    columnType: string,
-    extractedData: any,
-    record: CompanyPayrollRecord,
-    docType: string
-) => {
-    if (!extractedData) {
-        return <span className="text-red-600 font-bold">Missing</span>;
-    }
-
-    switch (columnType) {
-        case 'status':
-            return (
-                <DocumentUploadDialog
-                    documentType={`${docType}_receipt`}
-                    recordId={record.id}
-                    onUpload={(file) => handleDocumentUpload(record.id, file, `${docType}_receipt`)}
-                    onDelete={() => handleDocumentDelete(record.id, `${docType}_receipt`)}
-                    existingDocument={record.payment_receipts_documents[`${docType}_receipt`]}
-                    label={DOCUMENT_TYPES.find(d => d.id === docType)?.label || ''}
-                    isNilFiling={record.status.finalization_date === 'NIL'}
-                    allDocuments={getDocumentsForUpload(record)}
-                    companyName={record.company.company_name}
-                />
-            );
-        case 'amount':
-            return <span className="text-right font-mono">{extractedData.amount}</span>;
-        case 'payment_mode':
-            return <span className="text-center">{extractedData.payment_mode}</span>;
-        case 'payment_date':
-            return <span className="text-center">{extractedData.payment_date}</span>;
-        default:
-            return null;
-    }
-};
 
 
 export function PayslipPaymentReceiptsTable({
     records,
+    selectedDocTypes,
+    selectedColumns,
     onDocumentUpload,
-    onStatusUpdate,
     onDocumentDelete,
+    onStatusUpdate,
     loading,
     setPayrollRecords
 }: PayrollTableProps) {
     const { toast } = useToast()
 
-    const [selectedDocTypes, setSelectedDocTypes] = useState<string[]>(DOCUMENT_TYPES.map(doc => doc.id));
-    const [selectedColumns, setSelectedColumns] = useState<string[]>(COLUMN_TYPES.map(col => col.id));
+    // const [selectedDocTypes, setSelectedDocTypes] = useState<string[]>(DOCUMENT_TYPES.map(doc => doc.id));
+    // const [selectedColumns, setSelectedColumns] = useState<string[]>(COLUMN_TYPES.map(col => col.id));
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [finalizeDialog, setFinalizeDialog] = useState<{
         isOpen: boolean;
@@ -299,6 +240,73 @@ export function PayslipPaymentReceiptsTable({
         ),
         [records]
     );
+
+    const handleEmailDateUpdate = async (recordId: string) => {
+        try {
+            const { error: updateError } = await supabase
+                .from('company_payroll_records')
+                .update({
+                    receipts_status: {
+                        ...record.receipts_status,
+                        email_date: new Date().toISOString()
+                    }
+                })
+                .eq('id', recordId);
+
+            if (updateError) throw updateError;
+
+            toast({
+                title: 'Success',
+                description: 'Email date updated successfully'
+            });
+        } catch (error) {
+            toast({
+                title: 'Error',
+                description: 'Failed to update email date',
+                variant: 'destructive'
+            });
+        }
+    };
+
+
+    const renderColumnContent = (
+        columnType: string,
+        extractedData: any,
+        record: CompanyPayrollRecord,
+        docType: string,
+        onDocumentUpload: (recordId: string, file: File, documentType: DocumentType) => Promise<void>,
+        onDocumentDelete: (recordId: string, documentType: DocumentType) => Promise<void>
+    ) => {
+        if (!extractedData) {
+            return <span className="text-red-600 font-bold">Missing</span>;
+        }
+
+        switch (columnType) {
+            case 'status':
+                return (
+                    <DocumentUploadDialog
+                        documentType={`${docType}_receipt`}
+                        recordId={record.id}
+                        onUpload={(file) => onDocumentUpload(record.id, file, `${docType}_receipt`)}
+                        onDelete={() => onDocumentDelete(record.id, `${docType}_receipt`)}
+                        existingDocument={record.payment_receipts_documents[`${docType}_receipt`]}
+                        label={DOCUMENT_TYPES.find(d => d.id === docType)?.label || ''}
+                        isNilFiling={record.status.finalization_date === 'NIL'}
+                        allDocuments={getDocumentsForUpload(record)}
+                        companyName={record.company.company_name}
+                    />
+                );
+            case 'amount':
+                return <span className="text-right font-mono">{extractedData.amount}</span>;
+            case 'payment_mode':
+                return <span className="text-center">{extractedData.payment_mode}</span>;
+            case 'payment_date':
+                return <span className="text-center">{extractedData.payment_date}</span>;
+            default:
+                return null;
+        }
+    };
+
 
     const handleFinalize = (recordId: string) => {
         onStatusUpdate(recordId, {
@@ -578,7 +586,7 @@ export function PayslipPaymentReceiptsTable({
 
             const fileName = `${documentType} - ${record.company.company_name} - ${format(new Date(), 'yyyy-MM-dd')}${file.name.substring(file.name.lastIndexOf('.'))}`;
             const filePath = `${selectedMonthYear}/PAYMENT RECEIPTS/${record.company.company_name}/${fileName}`;
-            
+
             // Upload file to storage
             const { data: uploadData, error: uploadError } = await supabase.storage
                 .from('Payroll-Cycle')
@@ -709,40 +717,9 @@ export function PayslipPaymentReceiptsTable({
     };
 
     return (
+
         <div className="rounded-md border h-[calc(100vh-220px)] overflow-auto">
-
-            <div className="flex gap-4 mb-4">
-                <div className="space-x-2">
-                    <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                            <Button variant="outline">Select Document Types</Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent>
-                            {DOCUMENT_TYPES.map(doc => (
-                                <DropdownMenuItem key={doc.id} onClick={() => toggleDocType(doc.id)}>
-                                    <Checkbox className="mr-2" checked={selectedDocTypes.includes(doc.id)} />
-                                    {doc.label}
-                                </DropdownMenuItem>
-                            ))}
-                        </DropdownMenuContent>
-                    </DropdownMenu>
-
-                    <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                            <Button variant="outline">Select Columns</Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent>
-                            {COLUMN_TYPES.map(col => (
-                                <DropdownMenuItem key={col.id} onClick={() => toggleColumn(col.id)}>
-                                    <Checkbox className="mr-2" checked={selectedColumns.includes(col.id)} />
-                                    {col.label}
-                                </DropdownMenuItem>
-                            ))}
-                        </DropdownMenuContent>
-                    </DropdownMenu>
-                </div>
-            </div>
-            <Table aria-label="Payroll Records" className="border border-gray-200">
+            <Table>
                 <TableHeader className="sticky top-0 z-10">
                     <TableRow className="hover:bg-transparent">
                         <TableHead
@@ -778,17 +755,14 @@ export function PayslipPaymentReceiptsTable({
                     </TableRow>
                     <TableRow className="hover:bg-transparent">
                         {selectedDocTypes.map(docType =>
-                            selectedColumns.map(colType => {
-                                const col = COLUMN_TYPES.find(c => c.id === colType);
-                                return (
-                                    <TableHead
-                                        key={`${docType}-${colType}`}
-                                        className="border-r bg-gray-100 text-gray-900 font-medium whitespace-nowrap min-w-[120px]"
-                                    >
-                                        {col?.label}
-                                    </TableHead>
-                                );
-                            })
+                            COLUMN_TYPES.filter(col => selectedColumns.includes(col.id)).map(col => (
+                                <TableHead
+                                    key={`${docType}-${col.id}`}
+                                    className="border-r bg-gray-100 text-gray-900 font-medium whitespace-nowrap min-w-[120px]"
+                                >
+                                    {col.label}
+                                </TableHead>
+                            ))
                         )}
                     </TableRow>
                 </TableHeader>
@@ -798,9 +772,9 @@ export function PayslipPaymentReceiptsTable({
                         <TableRow
                             key={record.id}
                             className={`
-                ${index % 2 === 0 ? 'bg-blue-50 hover:bg-blue-100' : 'bg-white hover:bg-gray-50'}
-                [&>td]:border-r [&>td]:border-gray-200 last:[&>td]:border-r-0
-            `}
+                                ${index % 2 === 0 ? 'bg-blue-50 hover:bg-blue-100' : 'bg-white hover:bg-gray-50'}
+                                [&>td]:border-r [&>td]:border-gray-200 last:[&>td]:border-r-0
+                            `}
                         >
                             <TableCell className="font-medium">{index + 1}</TableCell>
                             <TableCell className="font-medium">
@@ -818,11 +792,13 @@ export function PayslipPaymentReceiptsTable({
                                 const receiptType = `${docType}_receipt`;
                                 const extractedData = record.payment_receipts_extractions?.[receiptType];
 
-                                return selectedColumns.map(colType => (
-                                    <TableCell key={`${docType}-${colType}`}>
-                                        {renderColumnContent(colType, extractedData, record, docType)}
-                                    </TableCell>
-                                ));
+                                return COLUMN_TYPES
+                                    .filter(col => selectedColumns.includes(col.id))
+                                    .map(col => (
+                                        <TableCell key={`${docType}-${col.id}`}>
+                                            {renderColumnContent(col.id, extractedData, record, docType)}
+                                        </TableCell>
+                                    ));
                             })}
 
                             <TableCell className="text-center">
@@ -861,7 +837,7 @@ export function PayslipPaymentReceiptsTable({
                         </TableRow>
                     ))}
                 </TableBody>
-           
+
             </Table>
 
             {/* Finalization Dialog */}
@@ -942,7 +918,7 @@ export function PayslipPaymentReceiptsTable({
                             )
                         )}
                     </div>
-                    
+
                 </DialogContent>
             </Dialog>
 
@@ -1005,27 +981,6 @@ export function PayslipPaymentReceiptsTable({
                             </div>
 
                             <div className="border rounded-lg p-4 space-y-4">
-                                {/* <div className="flex justify-between items-center">
-                                    <h3 className="font-medium">Documents Status</h3>
-                                    {documentDetailsDialog.record.status.finalization_date !== null && (
-                                        <Button
-                                            size="sm"
-                                            className={documentDetailsDialog.record.status.finalization_date === 'NIL' ? 'bg-amber-500' : 'bg-purple-500'}
-                                            onClick={() => {
-                                                // Toggle between NIL and non-NIL status
-                                                onStatusUpdate(documentDetailsDialog.record!.id, {
-                                                    finalization_date: documentDetailsDialog.record!.status.finalization_date === 'NIL' ?
-                                                        new Date().toISOString() : 'NIL',
-                                                    status: 'completed'
-                                                });
-                                                setDocumentDetailsDialog({ isOpen: false, record: null });
-                                            }}
-                                        >
-                                            {documentDetailsDialog.record.status.finalization_date === 'NIL' ?
-                                                'Remove NIL Status' : 'Mark as NIL'}
-                                        </Button>
-                                    )}
-                                </div> */}
                                 {Object.entries(DOCUMENT_LABELS)
                                     .filter(([key]) => key !== 'all_csv') // Remove All CSV Files
                                     .map(([type, label]) => {
@@ -1107,5 +1062,5 @@ export function PayslipPaymentReceiptsTable({
                 </AlertDialogContent>
             </AlertDialog>
         </div>
-    )
+    );
 }

@@ -8,15 +8,15 @@ import { supabase } from '@/lib/supabase'
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
-import { 
-    validateExtraction, 
+import {
+    validateExtraction,
     PAYMENT_MODES,
     determinePaymentMode
 } from '../../utils/documentUtils'
 import { performExtraction } from "@/lib/extractionUtils"
 
-const RETRY_DELAY = 3000; // 3 seconds
-const MAX_RETRIES = 3;
+const RETRY_DELAY = 3000
+const MAX_RETRIES = 3
 
 export interface Extraction {
     amount: string | null
@@ -44,6 +44,7 @@ interface DocumentState {
     retryCount: number
 }
 
+// Custom hook for managing document URL fetching and retries
 const useDocumentUrl = (storageUrl: string, isOpen: boolean): DocumentState => {
     const [state, setState] = useState<DocumentState>({
         url: '',
@@ -63,20 +64,19 @@ const useDocumentUrl = (storageUrl: string, isOpen: boolean): DocumentState => {
 
             if (error) throw error
 
-            setState(prev => ({ 
-                ...prev, 
-                url: publicUrl, 
-                loading: false, 
+            setState(prev => ({
+                ...prev,
+                url: publicUrl,
+                loading: false,
                 error: null,
                 retryCount: 0
             }))
         } catch (error) {
             const err = error instanceof Error ? error : new Error('Failed to load document')
             setState(prev => {
-                const newRetryCount = prev.retryCount + 1;
+                const newRetryCount = prev.retryCount + 1
                 if (newRetryCount < MAX_RETRIES) {
-                    // Schedule retry
-                    setTimeout(() => fetchUrl(), RETRY_DELAY);
+                    setTimeout(() => fetchUrl(), RETRY_DELAY)
                 }
                 return {
                     ...prev,
@@ -84,9 +84,9 @@ const useDocumentUrl = (storageUrl: string, isOpen: boolean): DocumentState => {
                     loading: false,
                     error: err,
                     retryCount: newRetryCount
-                };
-            });
-            
+                }
+            })
+
             if (state.retryCount >= MAX_RETRIES) {
                 toast.error('Error loading document after multiple attempts')
             }
@@ -97,7 +97,6 @@ const useDocumentUrl = (storageUrl: string, isOpen: boolean): DocumentState => {
         if (storageUrl && isOpen) {
             fetchUrl()
         }
-        // Reset state when dialog closes
         return () => {
             setState({
                 url: '',
@@ -106,120 +105,144 @@ const useDocumentUrl = (storageUrl: string, isOpen: boolean): DocumentState => {
                 retryCount: 0
             })
         }
-    }, [storageUrl, isOpen])
+    }, [storageUrl, isOpen, fetchUrl])
 
     return state
 }
 
-export function DocumentViewer({ 
-    url, 
-    isOpen, 
-    onClose, 
-    title, 
+export function DocumentViewer({
+    url,
+    isOpen,
+    onClose,
+    title,
     companyName,
     documentType,
     recordId,
     extractions: initialExtractions,
     onExtractionsUpdate
 }: DocumentViewerProps) {
-    const { url: documentUrl, loading: urlLoading, error: urlError, retryCount } = useDocumentUrl(url, isOpen)
-    const iframeRef = useRef<HTMLIFrameElement>(null);
-    const [localExtractions, setLocalExtractions] = useState<Extraction>(() => {
-        // Initialize with initialExtractions if available
-        if (initialExtractions) {
-            console.log('Initializing with provided extractions:', initialExtractions);
-            return initialExtractions;
-        }
-        return {
-            amount: null,
-            payment_date: null,
-            payment_mode: null,
-            bank_name: null
-        };
-    });
+    const { url: documentUrl, loading: urlLoading, error: urlError } = useDocumentUrl(url, isOpen)
+    const iframeRef = useRef<HTMLIFrameElement>(null)
+    const [localExtractions, setLocalExtractions] = useState<Extraction>(() => ({
+        amount: initialExtractions?.amount || null,
+        payment_date: initialExtractions?.payment_date || null,
+        payment_mode: initialExtractions?.payment_mode || null,
+        bank_name: initialExtractions?.bank_name || null
+    }))
+    const [isExtracting, setIsExtracting] = useState(false)
     const [isSaving, setIsSaving] = useState(false)
     const [isFetching, setIsFetching] = useState(false)
-    const [validation, setValidation] = useState<{ isValid: boolean; errors: string[] }>({ 
-        isValid: false, 
-        errors: [] 
+    const [validation, setValidation] = useState<{ isValid: boolean; errors: string[] }>({
+        isValid: false,
+        errors: []
     })
 
-    // Fetch existing extractions when component mounts or recordId/documentType changes
+    // Fetch existing extractions
     useEffect(() => {
         const fetchExistingExtractions = async () => {
-            if (!recordId || !documentType) return;
+            if (!recordId || !documentType) return
 
-            setIsFetching(true);
+            setIsFetching(true)
             try {
-                console.log('Fetching extractions for:', { recordId, documentType });
                 const { data: record, error } = await supabase
                     .from('company_payroll_records')
                     .select('payment_receipts_extractions')
                     .eq('id', recordId)
-                    .single();
+                    .single()
 
-                if (error) throw error;
+                if (error) throw error
 
-                const docType = documentType.endsWith('_receipt') ? documentType : `${documentType}_receipt`;
-                const existingData = record?.payment_receipts_extractions?.[docType];
-
-                console.log('Fetched data:', { docType, existingData });
+                const docType = documentType.endsWith('_receipt') ? documentType : `${documentType}_receipt`
+                const existingData = record?.payment_receipts_extractions?.[docType]
 
                 if (existingData) {
-                    // Ensure we're setting all fields
                     const extractionData = {
                         amount: existingData.amount || null,
                         payment_date: existingData.payment_date || null,
                         payment_mode: existingData.payment_mode || null,
                         bank_name: existingData.bank_name || null
-                    };
-                    console.log('Setting extractions:', extractionData);
-                    setLocalExtractions(extractionData);
-                    setValidation(validateExtraction(extractionData));
-                    if (onExtractionsUpdate) {
-                        onExtractionsUpdate(extractionData);
                     }
-                } else {
-                    console.log('No existing extractions found for:', docType);
+                    setLocalExtractions(extractionData)
+                    setValidation(validateExtraction(extractionData))
+                    onExtractionsUpdate?.(extractionData)
                 }
             } catch (error) {
-                console.error('Error fetching extractions:', error);
-                toast.error('Failed to fetch existing extractions');
+                console.error('Error fetching extractions:', error)
+                toast.error('Failed to fetch existing extractions')
             } finally {
-                setIsFetching(false);
+                setIsFetching(false)
             }
-        };
+        }
 
         if (isOpen) {
-            fetchExistingExtractions();
+            fetchExistingExtractions()
         }
-    }, [recordId, documentType, isOpen]);
+    }, [recordId, documentType, isOpen, onExtractionsUpdate])
 
-    // Update iframe source only when documentUrl changes
+    // Update iframe source
     useEffect(() => {
         if (documentUrl && iframeRef.current) {
-            iframeRef.current.src = `${documentUrl}#view=FitH`;
+            iframeRef.current.src = `${documentUrl}#view=FitH`
         }
-    }, [documentUrl]);
+    }, [documentUrl])
 
-    // Effect to handle updates from parent
+    // Handle parent updates
     useEffect(() => {
         if (initialExtractions) {
-            console.log('Received new initialExtractions:', initialExtractions);
             setLocalExtractions(prev => ({
                 ...prev,
                 ...initialExtractions
-            }));
-            setValidation(validateExtraction(initialExtractions));
+            }))
+            setValidation(validateExtraction(initialExtractions))
         }
-    }, [initialExtractions]);
+    }, [initialExtractions])
 
-    useEffect(() => {
-        if (localExtractions && onExtractionsUpdate) {
-            console.log('Updating parent with extractions:', localExtractions);
-            onExtractionsUpdate(localExtractions);
+    const handleExtract = async () => {
+        if (!documentUrl) return
+
+        setIsExtracting(true)
+        try {
+            if (localExtractions.amount || localExtractions.payment_date ||
+                localExtractions.payment_mode || localExtractions.bank_name) {
+                const shouldReExtract = window.confirm('Existing data found. Do you want to re-extract?')
+                if (!shouldReExtract) return
+            }
+
+            const result = await performExtraction(
+                documentUrl,
+                [
+                    { name: 'amount', type: 'string', required: true },
+                    { name: 'payment_date', type: 'date', required: false },
+                    { name: 'payment_mode', type: 'string', required: false },
+                    { name: 'bank_name', type: 'string', required: false }
+                ],
+                'payment_receipt',
+                (message) => console.log('Extraction progress:', message)
+            )
+
+            if (result.success && result.extractedData) {
+                const enhancedData = {
+                    ...result.extractedData,
+                    payment_mode: determinePaymentMode(result.extractedData.raw_text || '') ||
+                        result.extractedData.payment_mode
+                }
+                setLocalExtractions(prev => ({
+                    ...prev,
+                    ...enhancedData
+                }))
+                setValidation(validateExtraction(enhancedData))
+                onExtractionsUpdate?.(enhancedData)
+                toast.success('Document extracted successfully')
+            } else {
+                toast.error('Failed to extract document data')
+            }
+        } catch (error) {
+            console.error('Extraction error:', error)
+            toast.error('Error during extraction')
+        } finally {
+            setIsExtracting(false)
         }
-    }, [localExtractions, onExtractionsUpdate]);
+    }
 
     const handleExtractionUpdate = (field: keyof Extraction, value: string) => {
         const updatedExtractions = {
@@ -227,94 +250,77 @@ export function DocumentViewer({
             [field]: value
         }
 
-        // Convert Pay Bill to Mpesa for consistency
         if (field === 'payment_mode' && value === 'Pay Bill') {
             updatedExtractions.payment_mode = PAYMENT_MODES.MPESA
         }
 
         setLocalExtractions(updatedExtractions)
         setValidation(validateExtraction(updatedExtractions))
+        onExtractionsUpdate?.(updatedExtractions)
     }
 
     const handleSave = async () => {
-        const { isValid, errors } = validateExtraction(localExtractions);
-        if (!isValid) {
-            toast.error(errors.join(', '));
-            console.log('Validation errors:', errors);
-            return;
+        if (!localExtractions.amount) {
+            toast.error('Amount is required')
+            return
         }
 
         try {
-            setIsSaving(true);
-            
-            // Validate required parameters
-            if (!documentType) {
-                throw new Error('Document type is required');
-            }
-            if (!recordId) {
-                throw new Error('Record ID is required');
+            setIsSaving(true)
+
+            if (!documentType || !recordId) {
+                throw new Error('Missing required parameters')
             }
 
-            // Get existing extractions first
             const { data: existingRecord, error: fetchError } = await supabase
                 .from('company_payroll_records')
                 .select('payment_receipts_extractions')
                 .eq('id', recordId)
-                .single();
+                .single()
 
-            if (fetchError) {
-                console.error('Fetch error:', fetchError);
-                toast.error('Error fetching existing record');
-                return;
-            }
+            if (fetchError) throw fetchError
 
-            const docType = documentType.endsWith('_receipt') ? documentType : `${documentType}_receipt`;
+            const docType = documentType.endsWith('_receipt') ? documentType : `${documentType}_receipt`
 
-            // Check if the data has changed before saving
-            const existingExtractions = existingRecord?.payment_receipts_extractions?.[docType];
+            const existingExtractions = existingRecord?.payment_receipts_extractions?.[docType]
             if (JSON.stringify(existingExtractions) === JSON.stringify(localExtractions)) {
-                toast.info('No changes detected, nothing to save.');
-                return;
+                toast.info('No changes detected')
+                return
             }
 
-            // Merge with existing extractions
             const updatedExtractions = {
                 ...(existingRecord?.payment_receipts_extractions || {}),
                 [docType]: {
                     ...localExtractions,
-                    payment_mode: localExtractions.payment_mode === 'Pay Bill' ? PAYMENT_MODES.MPESA : localExtractions.payment_mode
+                    payment_mode: localExtractions.payment_mode === 'Pay Bill' ?
+                        PAYMENT_MODES.MPESA : localExtractions.payment_mode
                 }
-            };
+            }
 
             const { error: updateError } = await supabase
                 .from('company_payroll_records')
-                .update({ 
+                .update({
                     payment_receipts_extractions: updatedExtractions
                 })
-                .eq('id', recordId);
+                .eq('id', recordId)
 
-            if (updateError) {
-                console.error('Update error:', updateError);
-                toast.error('Error saving extractions');
-                return;
-            }
+            if (updateError) throw updateError
 
-            toast.success('Extractions saved successfully');
-            onClose();
+            toast.success('Extractions saved successfully')
+            onClose()
         } catch (error) {
-            console.error('Error in handleSave:', error);
-            toast.error(error instanceof Error ? error.message : 'Failed to save extractions');
+            console.error('Save error:', error)
+            toast.error(error instanceof Error ? error.message : 'Failed to save extractions')
         } finally {
-            setIsSaving(false);
+            setIsSaving(false)
         }
-    };
+    }
 
     const renderExtractionField = (field: keyof Extraction, label: string, placeholder: string) => {
-        const value = localExtractions[field];
-        const hasValue = value !== null && value !== '';
-        const isValid = !validation.errors.some(error => error.toLowerCase().includes(field));
-        console.log(`Rendering field: ${field}, hasValue: ${hasValue}, isValid: ${isValid}`);
-        
+        const value = localExtractions[field]
+        const hasValue = value !== null && value !== ''
+        const isValid = !validation.errors.some(error => error.toLowerCase().includes(field))
+
         return (
             <div className="space-y-1">
                 <Label htmlFor={field} className="text-xs">
@@ -330,16 +336,16 @@ export function DocumentViewer({
                     placeholder={placeholder}
                     className={cn(
                         "text-sm",
-                        hasValue && isValid ? "border-green-500 focus:border-green-500" : 
-                        hasValue ? "border-red-500 focus:border-red-500" : 
-                        "border-gray-200"
+                        hasValue && isValid ? "border-green-500 focus:border-green-500" :
+                            hasValue ? "border-red-500 focus:border-red-500" :
+                                "border-gray-200"
                     )}
                     disabled={field === 'bank_name' && localExtractions.payment_mode === PAYMENT_MODES.MPESA}
                     aria-label={label}
                 />
             </div>
-        );
-    };
+        )
+    }
 
     return (
         <Dialog open={isOpen} onOpenChange={onClose}>
@@ -379,46 +385,20 @@ export function DocumentViewer({
                                     <Button
                                         size="sm"
                                         variant="outline"
-                                        onClick={() => {
-                                            if (documentUrl) {
-                                                if (localExtractions.amount || localExtractions.payment_date || localExtractions.payment_mode || localExtractions.bank_name) {
-                                                    const confirmReExtract = window.confirm('Existing data found. Do you want to re-extract?');
-                                                    if (!confirmReExtract) return;
-                                                }
-                                                performExtraction(
-                                                    documentUrl,
-                                                    [
-                                                        { name: 'amount', type: 'string', required: true },
-                                                        { name: 'payment_date', type: 'date', required: true },
-                                                        { name: 'payment_mode', type: 'string', required: true },
-                                                        { name: 'bank_name', type: 'string', required: true }
-                                                    ],
-                                                    'payment_receipt',
-                                                    (message) => console.log('Extraction progress:', message)
-                                                ).then(result => {
-                                                    if (result.success && result.extractedData) {
-                                                        const enhancedData = {
-                                                            ...result.extractedData,
-                                                            payment_mode: determinePaymentMode(result.extractedData.raw_text || '') || result.extractedData.payment_mode
-                                                        };
-                                                        setLocalExtractions(prev => ({
-                                                            ...prev,
-                                                            ...enhancedData
-                                                        }));
-                                                        setValidation(validateExtraction(enhancedData));
-                                                        toast.success('Document extracted successfully');
-                                                    } else {
-                                                        toast.error('Failed to extract document data');
-                                                    }
-                                                }).catch(error => {
-                                                    console.error('Extraction error:', error);
-                                                    toast.error('Error during extraction');
-                                                });
-                                            }
-                                        }}
-                                        disabled={isSaving || !documentUrl || isFetching}
+                                        onClick={handleExtract}
+                                        disabled={isExtracting || !documentUrl || isFetching}
                                     >
-                                        {localExtractions.amount || localExtractions.payment_date || localExtractions.payment_mode || localExtractions.bank_name ? 'Re-Extract' : 'Extract'}
+                                        {isExtracting ? (
+                                            <>
+                                                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                                                Extracting...
+                                            </>
+                                        ) : (
+                                            <>
+                                                <RotateCw className="h-4 w-4 mr-2" />
+                                                {localExtractions.amount ? 'Re-Extract' : 'Extract'}
+                                            </>
+                                        )}
                                     </Button>
                                     <Button
                                         size="sm"
