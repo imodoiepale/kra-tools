@@ -19,7 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { MonthYearSelector } from '../../components/MonthYearSelector';
 import { useToast } from "@/hooks/use-toast";
-import { performExtraction } from '@/lib/extractionUtils';
+import { performExtraction, performBatchExtraction } from '@/lib/extractionUtils';
 import { supabase } from '@/lib/supabase';
 
 import { ExtractAllPreviewExtractionDialog } from './ExtractAllPreviewExtractionDialog';
@@ -177,6 +177,157 @@ export function ExtractAllDialog({
         }
     };
 
+    // const handleExtractAll = async () => {
+    //     if (selectedRecords.size === 0) {
+    //         toast({
+    //             title: "No Records Selected",
+    //             description: "Please select at least one record to process",
+    //             variant: "destructive"
+    //         });
+    //         return;
+    //     }
+
+    //     // Check cache first
+    //     const cacheKey = Array.from(selectedRecords).join('-');
+    //     const cachedResults = extractionCache.get(cacheKey);
+
+    //     if (cachedResults) {
+    //         setProcessedDocs(cachedResults);
+    //         setCurrentCompanyIndex(0);
+    //         setPreviewDialogOpen(true);
+    //         return;
+    //     }
+
+    //     setProcessing(true);
+    //     const allProcessedDocs = [];
+
+    //     try {
+    //         const recordsToProcess = sortedRecords.filter(r => selectedRecords.has(r.id));
+
+    //         for (const record of recordsToProcess) {
+    //             // Update progress
+    //             setResults(prev => [
+    //                 ...prev,
+    //                 {
+    //                     companyName: record.company.company_name,
+    //                     status: 'processing'
+    //                 }
+    //             ]);
+
+    //             // Gather all documents for this company
+    //             const companyDocs = [];
+    //             for (const tax of TAX_TYPES) {
+    //                 const docPath = record.payment_receipts_documents[tax.receiptType];
+    //                 if (docPath) {
+    //                     const { data: { publicUrl } } = await supabase.storage
+    //                         .from('Payroll-Cycle')
+    //                         .getPublicUrl(docPath);
+
+    //                     if (publicUrl) {
+    //                         companyDocs.push({
+    //                             type: tax.receiptType,
+    //                             url: publicUrl,
+    //                             label: tax.label
+    //                         });
+    //                     }
+    //                 }
+    //             }
+
+    //             if (companyDocs.length === 0) {
+    //                 // Update progress for no documents
+    //                 setResults(prev =>
+    //                     prev.map(r =>
+    //                         r.companyName === record.company.company_name
+    //                             ? { ...r, status: 'error', error: 'No documents found' }
+    //                             : r
+    //                     )
+    //                 );
+    //                 continue;
+    //             }
+
+    //             try {
+    //                 // Process all documents for this company in parallel
+    //                 const extractionPromises = companyDocs.map(doc =>
+    //                     performExtraction(
+    //                         doc.url,
+    //                         EXTRACTION_FIELDS,
+    //                         'payment_receipt',
+    //                         (message) => console.log(`${record.company.company_name} - ${doc.label}: ${message}`)
+    //                     )
+    //                 );
+
+    //                 const extractionResults = await Promise.all(extractionPromises);
+
+    //                 // Map results to documents
+    //                 const processedDocs = companyDocs.map((doc, index) => ({
+    //                     file: null,
+    //                     type: doc.type,
+    //                     label: doc.label,
+    //                     url: doc.url,
+    //                     extractions: extractionResults[index].success ?
+    //                         extractionResults[index].extractedData :
+    //                         {
+    //                             amount: null,
+    //                             payment_date: null,
+    //                             payment_mode: null,
+    //                             bank_name: null
+    //                         }
+    //                 }));
+
+    //                 allProcessedDocs.push({
+    //                     recordId: record.id,
+    //                     companyName: record.company.company_name,
+    //                     documents: processedDocs
+    //                 });
+
+    //                 // Update progress
+    //                 setResults(prev =>
+    //                     prev.map(r =>
+    //                         r.companyName === record.company.company_name
+    //                             ? { ...r, status: 'success' }
+    //                             : r
+    //                     )
+    //                 );
+
+    //             } catch (error) {
+    //                 console.error(`Error processing ${record.company.company_name}:`, error);
+    //                 setResults(prev =>
+    //                     prev.map(r =>
+    //                         r.companyName === record.company.company_name
+    //                             ? { ...r, status: 'error', error: error.message }
+    //                             : r
+    //                     )
+    //                 );
+    //             }
+    //         }
+
+    //         if (allProcessedDocs.length > 0) {
+    //             // Cache the results
+    //             setExtractionCache(prev => new Map(prev).set(cacheKey, allProcessedDocs));
+    //             setProcessedDocs(allProcessedDocs);
+    //             setCurrentCompanyIndex(0);
+    //             setPreviewDialogOpen(true);
+    //         } else {
+    //             toast({
+    //                 title: "No Documents Processed",
+    //                 description: "No documents were successfully processed",
+    //                 variant: "warning"
+    //             });
+    //         }
+
+    //     } catch (error) {
+    //         console.error('Extraction error:', error);
+    //         toast({
+    //             title: "Error",
+    //             description: "Failed to complete extractions",
+    //             variant: "destructive"
+    //         });
+    //     } finally {
+    //         setProcessing(false);
+    //     }
+    // };
+
+
     const handleExtractAll = async () => {
         if (selectedRecords.size === 0) {
             toast({
@@ -234,7 +385,6 @@ export function ExtractAllDialog({
                 }
 
                 if (companyDocs.length === 0) {
-                    // Update progress for no documents
                     setResults(prev =>
                         prev.map(r =>
                             r.companyName === record.company.company_name
@@ -246,48 +396,44 @@ export function ExtractAllDialog({
                 }
 
                 try {
-                    // Process all documents for this company in parallel
-                    const extractionPromises = companyDocs.map(doc =>
-                        performExtraction(
-                            doc.url,
-                            EXTRACTION_FIELDS,
-                            'payment_receipt',
-                            (message) => console.log(`${record.company.company_name} - ${doc.label}: ${message}`)
-                        )
+                    // Use performBatchExtraction for all documents of this company
+                    const batchResult = await performBatchExtraction(
+                        companyDocs,
+                        EXTRACTION_FIELDS,
+                        'payment_receipt',
+                        (message) => console.log(`${record.company.company_name}: ${message}`)
                     );
 
-                    const extractionResults = await Promise.all(extractionPromises);
-
-                    // Map results to documents
-                    const processedDocs = companyDocs.map((doc, index) => ({
-                        file: null,
-                        type: doc.type,
-                        label: doc.label,
-                        url: doc.url,
-                        extractions: extractionResults[index].success ?
-                            extractionResults[index].extractedData :
-                            {
+                    if (batchResult.success) {
+                        const processedDocs = companyDocs.map(doc => ({
+                            file: null,
+                            type: doc.type,
+                            label: doc.label,
+                            url: doc.url,
+                            extractions: batchResult.extractedData[doc.type]?.extractedData || {
                                 amount: null,
                                 payment_date: null,
                                 payment_mode: null,
                                 bank_name: null
                             }
-                    }));
+                        }));
 
-                    allProcessedDocs.push({
-                        recordId: record.id,
-                        companyName: record.company.company_name,
-                        documents: processedDocs
-                    });
+                        allProcessedDocs.push({
+                            recordId: record.id,
+                            companyName: record.company.company_name,
+                            documents: processedDocs
+                        });
 
-                    // Update progress
-                    setResults(prev =>
-                        prev.map(r =>
-                            r.companyName === record.company.company_name
-                                ? { ...r, status: 'success' }
-                                : r
-                        )
-                    );
+                        setResults(prev =>
+                            prev.map(r =>
+                                r.companyName === record.company.company_name
+                                    ? { ...r, status: 'success' }
+                                    : r
+                            )
+                        );
+                    } else {
+                        throw new Error(batchResult.message);
+                    }
 
                 } catch (error) {
                     console.error(`Error processing ${record.company.company_name}:`, error);
@@ -326,7 +472,6 @@ export function ExtractAllDialog({
             setProcessing(false);
         }
     };
-
 
     const handleReopenExtraction = () => {
         const cacheKey = Array.from(selectedRecords).join('-');

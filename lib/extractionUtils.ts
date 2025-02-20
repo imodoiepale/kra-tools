@@ -796,6 +796,7 @@ export const performBatchExtraction = async (
         Amounts must have commas and remove decimals 
         Payment mode should be strictly "Mpesa" or "Bank Transfer"
         Check amount written in words for confirmation (if available)
+        Date in format of DD/MM/YYYY
 
         Process the following documents:
         ${documents.map((doc, i) => `Document ${i + 1}: ${doc.label} (${doc.type})`).join('\n')}
