@@ -528,6 +528,8 @@ export const performExtraction = async (
         Extract the following information from this ${documentType}:
         ${fieldPrompts}
 
+         sTRICTLY Date in format of DD/MM/YYYY
+
         Mpesa patterns:${MPESA_PATTERNS.join(', ')}
 
         Bank Transfer Patterns :${BANK_PATTERNS.join(', ')}
