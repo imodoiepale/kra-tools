@@ -414,6 +414,83 @@ const validateExtractedData = (
   }
 };
 
+
+const BANKS = [
+  /African Banking Corp/i,
+  /Bank of Africa Kenya/i,
+  /Bank of India/i,
+  /Bank of Baroda/i,
+  /Barclays Bank of Kenya/i,
+  /ABSA/i,
+  /CfC Stanbic Bank/i,
+  /Chase Bank/i,
+  /Citibank N.A./i,
+  /Commercial Bank of Africa/i,
+  /Consolidated Bank of Kenya/i,
+  /Co-operative Bank of Kenya/i,
+  /Credit Bank/i,
+  /Development Bank/i,
+  /Diamond Trust Bank/i,
+  /Dubai Bank/i,
+  /Ecobank/i,
+  /Equatorial Commercial Bank/i,
+  /Equity Bank/i,
+  /Family Bank/i,
+  /Faulu Bank/i,
+  /Fidelity Commercial Bank/i,
+  /Fina Bank/i,
+  /First Community Bank/i,
+  /Giro Commercial Bank/i,
+  /Guardian Bank/i,
+  /Gulf African Bank/i,
+  /Habib Bank A.G. Zurich/i,
+  /Habib Bank/i,
+  /Housing Finance Company of Kenya/i,
+  /Imperial Bank/i,
+  /I & M Bank/i,
+  /Jamii Bora Bank/i,
+  /K-Rep Bank/i,
+  /Kenya Commercial Bank/i,
+  /Kenya Women Microfinance Bank/i,
+  /Middle East Bank/i,
+  /National Bank of Kenya/i,
+  /NIC Bank/i,
+  /Oriental Bank/i,
+  /Paramount Universal Bank/i,
+  /Prime Bank/i,
+  /Postbank/i,
+  /Standard Chartered Bank/i,
+  /Transnational Bank/i,
+  /UBA Kenya Bank/i,
+  /Victoria Commercial Bank/i
+];
+
+const MPESA_PATTERNS = [
+  /M-PESA/i,
+  /MPESA/i,
+  /Pay Bill/i,
+  /Transaction ID/i,
+  /REF/i,
+  /Safaricom/i,
+  /KCB-MPESA/i,
+  /COOP-MPESA/i
+];
+
+const BANK_PATTERNS = [
+  /bank/i,
+  /transfer/i,
+  /RTGS/i,
+  /EFT/i,
+  /transaction ref/i,
+  /KCB/i,
+  /EQUITY/i,
+  /COOPERATIVE/i,
+  /STANDARD CHARTERED/i,
+  /ABSA/i
+];
+
+
+
 // Update the performExtraction function
 export const performExtraction = async (
   fileUrl: string,
@@ -443,6 +520,18 @@ export const performExtraction = async (
       const prompt = `
         Extract the following information from this ${documentType}:
         ${fieldPrompts}
+
+        Mpesa patterns:${MPESA_PATTERNS.join(', ')}
+
+        Bank Transfer Patterns :${BANK_PATTERNS.join(', ')}
+
+        Identify Logos and Try to determine The bank from Kenyan Banks : ${BANKS.join(', ')}
+
+        Amounts must have commas and remove decimals 
+
+        Note that Payment ode is strictly Mpesa or Bank Transfer
+
+        Strictly check if the amount is written in words for further confirmation(if available) -more accurate
         
         Please return the extracted data in this JSON format:
         ${JSON.stringify(exampleOutput, null, 2)}
