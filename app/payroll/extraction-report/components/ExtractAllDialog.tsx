@@ -1,6 +1,6 @@
 // @ts-nocheck 
 import React, { useState, useEffect } from 'react';
-import { Loader2, AlertCircle, CheckCircle, Eye } from 'lucide-react';
+import { Loader2, AlertCircle, CheckCircle, Eye, RotateCw } from 'lucide-react';
 import {
     Dialog,
     DialogContent,
@@ -59,6 +59,8 @@ export function ExtractAllDialog({
     const [previewDialogOpen, setPreviewDialogOpen] = useState(false);
     const [processedDocs, setProcessedDocs] = useState([]);
     const [currentCompanyIndex, setCurrentCompanyIndex] = useState(0)
+    const [extractionCache, setExtractionCache] = useState(new Map());
+
 
     useEffect(() => {
         if (isOpen) {
@@ -185,6 +187,17 @@ export function ExtractAllDialog({
             return;
         }
 
+        // Check cache first
+        const cacheKey = Array.from(selectedRecords).join('-');
+        const cachedResults = extractionCache.get(cacheKey);
+
+        if (cachedResults) {
+            setProcessedDocs(cachedResults);
+            setCurrentCompanyIndex(0);
+            setPreviewDialogOpen(true);
+            return;
+        }
+
         setProcessing(true);
         const allProcessedDocs = [];
 
@@ -201,13 +214,70 @@ export function ExtractAllDialog({
                     }
                 ]);
 
-                const extractedDocs = await extractCompanyDocuments(record);
+                // Gather all documents for this company
+                const companyDocs = [];
+                for (const tax of TAX_TYPES) {
+                    const docPath = record.payment_receipts_documents[tax.receiptType];
+                    if (docPath) {
+                        const { data: { publicUrl } } = await supabase.storage
+                            .from('Payroll-Cycle')
+                            .getPublicUrl(docPath);
 
-                if (extractedDocs && extractedDocs.length > 0) {
+                        if (publicUrl) {
+                            companyDocs.push({
+                                type: tax.receiptType,
+                                url: publicUrl,
+                                label: tax.label
+                            });
+                        }
+                    }
+                }
+
+                if (companyDocs.length === 0) {
+                    // Update progress for no documents
+                    setResults(prev =>
+                        prev.map(r =>
+                            r.companyName === record.company.company_name
+                                ? { ...r, status: 'error', error: 'No documents found' }
+                                : r
+                        )
+                    );
+                    continue;
+                }
+
+                try {
+                    // Process all documents for this company in parallel
+                    const extractionPromises = companyDocs.map(doc =>
+                        performExtraction(
+                            doc.url,
+                            EXTRACTION_FIELDS,
+                            'payment_receipt',
+                            (message) => console.log(`${record.company.company_name} - ${doc.label}: ${message}`)
+                        )
+                    );
+
+                    const extractionResults = await Promise.all(extractionPromises);
+
+                    // Map results to documents
+                    const processedDocs = companyDocs.map((doc, index) => ({
+                        file: null,
+                        type: doc.type,
+                        label: doc.label,
+                        url: doc.url,
+                        extractions: extractionResults[index].success ?
+                            extractionResults[index].extractedData :
+                            {
+                                amount: null,
+                                payment_date: null,
+                                payment_mode: null,
+                                bank_name: null
+                            }
+                    }));
+
                     allProcessedDocs.push({
                         recordId: record.id,
                         companyName: record.company.company_name,
-                        documents: extractedDocs
+                        documents: processedDocs
                     });
 
                     // Update progress
@@ -218,12 +288,13 @@ export function ExtractAllDialog({
                                 : r
                         )
                     );
-                } else {
-                    // Update progress for failed extraction
+
+                } catch (error) {
+                    console.error(`Error processing ${record.company.company_name}:`, error);
                     setResults(prev =>
                         prev.map(r =>
                             r.companyName === record.company.company_name
-                                ? { ...r, status: 'error' }
+                                ? { ...r, status: 'error', error: error.message }
                                 : r
                         )
                     );
@@ -231,6 +302,8 @@ export function ExtractAllDialog({
             }
 
             if (allProcessedDocs.length > 0) {
+                // Cache the results
+                setExtractionCache(prev => new Map(prev).set(cacheKey, allProcessedDocs));
                 setProcessedDocs(allProcessedDocs);
                 setCurrentCompanyIndex(0);
                 setPreviewDialogOpen(true);
@@ -254,6 +327,24 @@ export function ExtractAllDialog({
         }
     };
 
+
+    const handleReopenExtraction = () => {
+        const cacheKey = Array.from(selectedRecords).join('-');
+        const cachedResults = extractionCache.get(cacheKey);
+
+        if (cachedResults) {
+            setProcessedDocs(cachedResults);
+            setCurrentCompanyIndex(0);
+            setPreviewDialogOpen(true);
+        } else {
+            toast({
+                title: "No Cached Data",
+                description: "Previous extraction data not found. Please extract again.",
+                variant: "warning"
+            });
+        }
+    };
+    
 
     const handleExtractionsSave = async (recordId: string, extractions: any) => {
         try {
@@ -496,20 +587,34 @@ export function ExtractAllDialog({
                         <Button variant="outline" onClick={onClose}>
                             Cancel
                         </Button>
-                        <Button
-                            onClick={handleExtractAll}
-                            disabled={processing || selectedRecords.size === 0}
-                            className="bg-blue-600 hover:bg-blue-700"
-                        >
-                            {processing ? (
-                                <>
-                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                    Processing...
-                                </>
-                            ) : (
-                                `Extract Selected (${selectedRecords.size})`
-                            )}
-                        </Button>
+                        {selectedRecords.size > 0 && (
+                            <>
+                                {extractionCache.has(Array.from(selectedRecords).join('-')) ? (
+                                    <Button
+                                        onClick={handleExtractAll}
+                                        className="bg-green-600 hover:bg-green-700"
+                                    >
+                                        <RotateCw className="mr-2 h-4 w-4" />
+                                        Resume Previous Extraction ({selectedRecords.size})
+                                    </Button>
+                                ) : (
+                                    <Button
+                                        onClick={handleExtractAll}
+                                        disabled={processing}
+                                        className="bg-blue-600 hover:bg-blue-700"
+                                    >
+                                        {processing ? (
+                                            <>
+                                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                                Processing...
+                                            </>
+                                        ) : (
+                                            `Extract Selected (${selectedRecords.size})`
+                                        )}
+                                    </Button>
+                                )}
+                            </>
+                        )}
                     </div>
                 </DialogContent>
             </Dialog>

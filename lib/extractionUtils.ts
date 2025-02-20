@@ -5,6 +5,13 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import dayjs from 'dayjs'; // Import dayjs library
 import { API_KEYS } from './apiKeys';
 
+
+interface BatchDocumentInput {
+  url: string;
+  type: string;
+  label: string;
+}
+
 // Initialize the Gemini API
 let currentApiKeyIndex = 0;
 let genAI = new GoogleGenerativeAI(API_KEYS[currentApiKeyIndex]);
@@ -748,6 +755,143 @@ export const performExtraction = async (
     message: 'Extraction failed after all attempts. Please enter the data manually.',
     failedImage: fileUrl,
     failedFields: fields
+  };
+};
+
+
+export const performBatchExtraction = async (
+  documents: BatchDocumentInput[],
+  fields: Field[],
+  documentType: string,
+  onProgress?: (message: string) => void
+): Promise<{
+  extractedData: Record<string, ExtractionResult>;
+  success: boolean;
+  message: string;
+}> => {
+  let attempts = 0;
+  const MAX_ATTEMPTS = 3;
+
+  while (attempts < MAX_ATTEMPTS) {
+    try {
+      onProgress?.(`Attempt ${attempts + 1}/${MAX_ATTEMPTS}: Processing ${documents.length} documents...`);
+
+      // Process all documents in parallel
+      const documentParts = await Promise.all(
+        documents.map(doc => fileToGenerativePart(doc.url))
+      );
+
+      // Create a combined prompt for all documents
+      const fieldPrompts = formatFieldPrompts(fields);
+      const exampleOutput = createExampleOutput(fields);
+
+      const prompt = `
+        Extract information from multiple documents. For each document, identify the type and extract:
+        ${fieldPrompts}
+
+        Mpesa patterns: ${MPESA_PATTERNS.join(', ')}
+        Bank Transfer Patterns: ${BANK_PATTERNS.join(', ')}
+        Identify Logos and Try to determine The bank from Kenyan Banks: ${BANKS.join(', ')}
+
+        Amounts must have commas and remove decimals 
+        Payment mode should be strictly "Mpesa" or "Bank Transfer"
+        Check amount written in words for confirmation (if available)
+
+        Process the following documents:
+        ${documents.map((doc, i) => `Document ${i + 1}: ${doc.label} (${doc.type})`).join('\n')}
+
+        Return the extracted data as a JSON object with document types as keys:
+        {
+          "${documents[0].type}": ${JSON.stringify(exampleOutput, null, 2)},
+          "${documents[1].type}": ${JSON.stringify(exampleOutput, null, 2)},
+          ...
+        }
+
+        Only return the JSON data, no other text.
+      `.trim();
+
+      const model = genAI.getGenerativeModel({
+        model: "gemini-2.0-flash",
+        generationConfig,
+      });
+
+      // Send all documents in a single request
+      const result = await model.generateContent([prompt, ...documentParts]);
+      const response = await result.response;
+      const text = response.text();
+
+      if (!text) {
+        throw new Error('No text generated from the model');
+      }
+
+      onProgress?.('Parsing extracted data...');
+      const extractedData = parseExtractionResponse(text);
+
+      // Validate and clean data for each document
+      const processedResults: Record<string, ExtractionResult> = {};
+
+      for (const doc of documents) {
+        const docData = extractedData[doc.type] || {};
+        const cleanedData = cleanExtractedData(docData, fields);
+
+        let validationErrors: ValidationError[] = [];
+        fields.forEach(field => {
+          const value = cleanedData[field.name];
+          const validation = validateField(value, field);
+          if (!validation.isValid) {
+            validationErrors.push({
+              field: field.name,
+              error: validation.error
+            });
+          }
+        });
+
+        processedResults[doc.type] = {
+          extractedData: cleanedData,
+          success: true,
+          message: validationErrors.length > 0
+            ? 'Data extracted with validation issues'
+            : 'Data extracted successfully',
+          validationErrors: validationErrors.length > 0 ? validationErrors : undefined,
+          documentUrl: doc.url
+        };
+      }
+
+      return {
+        extractedData: processedResults,
+        success: true,
+        message: 'Batch extraction completed successfully'
+      };
+
+    } catch (error) {
+      attempts++;
+      console.error(`Batch extraction attempt ${attempts} failed:`, error);
+
+      if (error.message?.includes('429') || error.message?.includes('quota')) {
+        markApiKeyFailure(API_KEYS[currentApiKeyIndex]);
+        const nextKey = getNextApiKey();
+        currentApiKeyIndex = API_KEYS.indexOf(nextKey);
+        genAI = new GoogleGenerativeAI(nextKey);
+      }
+
+      if (attempts < MAX_ATTEMPTS) {
+        onProgress?.(`Extraction failed. Retrying with backup API key (Attempt ${attempts + 1}/${MAX_ATTEMPTS})...`);
+        await delay(1000);
+        continue;
+      }
+
+      return {
+        extractedData: {},
+        success: false,
+        message: `Batch extraction failed after ${MAX_ATTEMPTS} attempts`
+      };
+    }
+  }
+
+  return {
+    extractedData: {},
+    success: false,
+    message: 'Batch extraction failed after all attempts'
   };
 };
 

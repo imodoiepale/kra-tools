@@ -53,17 +53,6 @@ interface ExtractAllPreviewExtractionDialog {
     onSave: (recordId: string, extractions: any) => void
 }
 
-const DOCUMENT_HEADERS = {
-    paye_receipt: {
-        header: "PAYE Payment",
-        subHeaders: ["Amount", "Payment Mode", "Payment Date", "Status"]
-    },
-    housing_levy_receipt: {
-        header: "Housing Levy",
-        subHeaders: ["Amount", "Payment Mode", "Payment Date", "Status"]
-    },
-    // Add other document types similarly
-};
 
 export function ExtractAllPreviewExtractionDialog({
     isOpen,
@@ -91,16 +80,30 @@ export function ExtractAllPreviewExtractionDialog({
     const [expandedCompany, setExpandedCompany] = useState<string | null>(null)
     const [savedCompanies, setSavedCompanies] = useState<Set<string>>(new Set())
 
+    const [documentCache, setDocumentCache] = useState(new Map());
+
+
     // Update iframe source only when necessary
     useEffect(() => {
-        if (iframeRef.current) {
-            const doc = localDocs[0].documents[activeDoc];
-            const url = doc?.url || (doc?.file ? URL.createObjectURL(doc.file) : '');
-            if (url) {
-                iframeRef.current.src = url;
+        if (iframeRef.current && expandedCompany) {
+            const company = localDocs.find(c => c.companyName === expandedCompany);
+            if (company && company.documents[activeDoc]) {
+                const doc = company.documents[activeDoc];
+                const cachedUrl = documentCache.get(`${expandedCompany}-${doc.type}`);
+
+                if (cachedUrl) {
+                    iframeRef.current.src = cachedUrl;
+                } else {
+                    const url = doc.url;
+                    if (url) {
+                        // Cache the URL
+                        setDocumentCache(prev => new Map(prev).set(`${expandedCompany}-${doc.type}`, url));
+                        iframeRef.current.src = url;
+                    }
+                }
             }
         }
-    }, [activeDoc, localDocs]);
+    }, [activeDoc, expandedCompany, localDocs, documentCache]);
 
     // Memoize the preview URL to prevent unnecessary re-renders
     const previewUrl = useMemo(() => {
