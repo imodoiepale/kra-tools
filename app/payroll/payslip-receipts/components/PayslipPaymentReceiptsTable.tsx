@@ -183,12 +183,19 @@ export function PayslipPaymentReceiptsTable({
     };
 
     // Memoize sorted records for performance
-    const sortedRecords = useMemo(() =>
-        [...records].sort((a, b) =>
-            a.company.company_name.localeCompare(b.company.company_name)
-        ),
-        [records]
-    );
+    const sortedRecords = useMemo(() => {
+        // First filter out records with invalid company data
+        const validRecords = records.filter(record =>
+            record && record.company && typeof record.company.company_name === 'string'
+        );
+
+        // Then sort the valid records
+        return [...validRecords].sort((a, b) => {
+            const nameA = a.company.company_name;
+            const nameB = b.company.company_name;
+            return nameA.localeCompare(nameB);
+        });
+    }, [records]);
 
     const handleFinalize = (recordId: string) => {
         onStatusUpdate(recordId, {
@@ -612,7 +619,19 @@ export function PayslipPaymentReceiptsTable({
                                 </div>
                             </TableCell>
                         </TableRow>
-                    ) : sortedRecords.map((record, index) => (
+                    ) : sortedRecords.length === 0 ? (
+                        <TableRow>
+                            <TableCell colSpan={13} className="text-center py-8 border">
+                                No valid records found
+                            </TableCell>
+                        </TableRow>
+                    ) : sortedRecords.map((record, index) => {
+                        // Add safety check
+                        if (!record?.company?.company_name) {
+                            return null;
+                        }
+
+                        return (
                         <TableRow
                             key={record.id}
                             className={`${index % 2 === 0 ? 'bg-blue-50 hover:bg-blue-100' : 'bg-white hover:bg-gray-50'} [&>td]:border-r [&>td]:border-gray-200 last:[&>td]:border-r-0`}
@@ -720,8 +739,9 @@ export function PayslipPaymentReceiptsTable({
                                     </DropdownMenuContent>
                                 </DropdownMenu>
                             </TableCell>
-                        </TableRow>
-                    ))}
+                            </TableRow>
+                        );
+                    })}
                 </TableBody>
             </Table>
 

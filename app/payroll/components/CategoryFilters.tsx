@@ -30,8 +30,6 @@ export function CategoryFilters({ onFilterChange }: CategoryFiltersProps) {
         { label: 'Immigration', key: 'imm', checked: false },
     ]);
     
-
-
     return (
         <DropdownMenu>
             <DropdownMenuTrigger asChild>
