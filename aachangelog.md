@@ -58,3 +58,37 @@
 - No new dependencies added
 - Utilizes existing ShadCN UI components
 - Maintains backward compatibility with existing data structure
+
+## [1.0.3] - 2025-01-07
+### Changed
+- Enhanced Email Communication System
+  - Implemented robust EmailService with retry mechanism
+  - Redesigned ContactModal with improved layout and functionality
+  - Added comprehensive document attachment support
+  - Enhanced error handling and offline support
+
+### Technical Details
+- Files: 
+  - `app/components/ContactModal.tsx`
+  - `app/components/PayslipPaymentReceiptsTable.tsx`
+- Changes:
+  - Added EmailService class with retry logic and offline detection
+  - Redesigned ContactModal with landscape layout
+  - Added To, CC, BCC fields support
+  - Implemented document attachment functionality
+  - Added comprehensive error handling
+  - Enhanced UI with loading states and error messages
+  - Integrated with existing document system
+
+### Reasoning
+- Improved email communication reliability
+- Enhanced user experience with better layout
+- Added robust error handling for better reliability
+- Improved document handling capabilities
+- Better offline support and error recovery
+
+### Dependencies
+- No new dependencies added
+- Utilizes existing UI components
+- Maintains compatibility with external email service
+- Integrates with existing document system
