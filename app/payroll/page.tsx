@@ -26,16 +26,60 @@ export default function PortalPage() {
                     <TabsTrigger value="extraction-report">EXTRACTIONS REPORT</TabsTrigger>
                 </TabsList>
                 <TabsContent value="wingu-csv" className="space-y-4">
-                    <PayrollManagementWingu {...payrollCycle} />
+                    <Tabs defaultValue="monthly" className="space-y-4">
+                        <TabsList>
+                            <TabsTrigger value="monthly">Monthly View</TabsTrigger>
+                            <TabsTrigger value="detailed">Detailed View</TabsTrigger>
+                        </TabsList>
+                        <TabsContent value="monthly">
+                            <PayrollManagementWingu {...payrollCycle} />
+                        </TabsContent>
+                        <TabsContent value="detailed">
+                            <div className="p-4">Detailed view for Payroll Management Wingu</div>
+                        </TabsContent>
+                    </Tabs>
                 </TabsContent>
                 <TabsContent value="tax-payment-slips">
-                    <TaxPaymentSlips {...payrollCycle} />
+                    <Tabs defaultValue="monthly" className="space-y-4">
+                        <TabsList>
+                            <TabsTrigger value="monthly">Monthly View</TabsTrigger>
+                            <TabsTrigger value="detailed">Detailed View</TabsTrigger>
+                        </TabsList>
+                        <TabsContent value="monthly">
+                            <TaxPaymentSlips {...payrollCycle} />
+                        </TabsContent>
+                        <TabsContent value="detailed">
+                            <div className="p-4">Detailed view for Tax Payment Slips</div>
+                        </TabsContent>
+                    </Tabs>
                 </TabsContent>
                 <TabsContent value="payslip-receipts">
-                    <PayslipPaymentReceipts {...payrollCycle} />
+                    <Tabs defaultValue="monthly" className="space-y-4">
+                        <TabsList>
+                            <TabsTrigger value="monthly">Monthly View</TabsTrigger>
+                            <TabsTrigger value="detailed">Detailed View</TabsTrigger>
+                        </TabsList>
+                        <TabsContent value="monthly">
+                            <PayslipPaymentReceipts {...payrollCycle} />
+                        </TabsContent>
+                        <TabsContent value="detailed">
+                            <div className="p-4">Detailed view for Payslip Payment Receipts</div>
+                        </TabsContent>
+                    </Tabs>
                 </TabsContent>
                 <TabsContent value="extraction-report">
-                    <ExtractionReport {...payrollCycle} />
+                    <Tabs defaultValue="monthly" className="space-y-4">
+                        <TabsList>
+                            <TabsTrigger value="monthly">Monthly View</TabsTrigger>
+                            <TabsTrigger value="detailed">Detailed View</TabsTrigger>
+                        </TabsList>
+                        <TabsContent value="monthly">
+                            <ExtractionReport {...payrollCycle} />
+                        </TabsContent>
+                        <TabsContent value="detailed">
+                            <div className="p-4">Detailed view for Extraction Report</div>
+                        </TabsContent>
+                    </Tabs>
                 </TabsContent>
             </Tabs>
         </div>

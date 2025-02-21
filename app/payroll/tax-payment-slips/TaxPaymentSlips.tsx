@@ -3,9 +3,11 @@ import { useEffect, useState, useMemo, useCallback } from 'react'
 import { format } from 'date-fns'
 import { supabase } from '@/lib/supabase'
 import { CompanyPayrollRecord, DocumentType } from '../types'
-import { TaxPaymentTable } from './components/TaxPaymentTable'
-// import { TableControls } from '../components/TableControls'
-import { useToast } from '@/hooks/use-toast'
+import  {TaxPaymentTable}  from './components/TaxPaymentTable'
+import { MonthYearSelector } from '../components/MonthYearSelector'
+import { CategoryFilters } from '../components/CategoryFilters'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 
 interface TaxPaymentSlipsProps {
     payrollRecords: CompanyPayrollRecord[]
@@ -36,31 +38,15 @@ export default function TaxPaymentSlips({
     handleStatusUpdate,
     setPayrollRecords
 }: TaxPaymentSlipsProps) {
-    const { toast } = useToast();
     const [selectedCategories, setSelectedCategories] = useState<string[]>(['acc']);
-    const [visibleColumns, setVisibleColumns] = useState<string[]>(['company', 'status', 'assignedTo', 'documents', 'actions']);
-
-    const handleDocumentUploadWithFolder = useCallback((recordId: string, file: File, documentType: DocumentType) => {
-        return handleDocumentUpload(recordId, file, documentType, 'TAX PAYMENT SLIPS')
-    }, [handleDocumentUpload]);
-
-    const handleExport = useCallback(() => {
-        toast({
-            title: "Export",
-            description: "Export functionality will be implemented soon"
-        });
-    }, [toast]);
-
-    const handleExtractAll = useCallback(() => {
-        toast({
-            title: "Extract All",
-            description: "Extract all functionality will be implemented soon"
-        });
-    }, [toast]);
 
     const handleFilterChange = useCallback((categories: string[]) => {
         setSelectedCategories(categories);
     }, []);
+
+    const handleDocumentUploadWithFolder = (recordId: string, file: File, documentType: DocumentType) => {
+        return handleDocumentUpload(recordId, file, documentType, 'PAYMENT SLIPS')
+    }
 
     const isDateInRange = (date: Date, from?: string | null, to?: string | null): boolean => {
         if (!from || !to) return false;
@@ -82,8 +68,8 @@ export default function TaxPaymentSlips({
 
             const matchesSearch = record.company.company_name?.toLowerCase().includes(searchTerm.toLowerCase()) ?? false;
             
-            // If 'all' is selected or no categories are selected, show all records
-            if (selectedCategories.includes('all') || selectedCategories.length === 0) return matchesSearch;
+            // If no categories are selected (All is selected), show all records
+            if (selectedCategories.length === 0) return matchesSearch;
             
             // Check if record matches any of the selected categories
             const matchesCategory = selectedCategories.some(category => {
@@ -108,21 +94,29 @@ export default function TaxPaymentSlips({
 
     return (
         <div className="space-y-4">
-            <TableControls
-                selectedYear={selectedYear}
-                selectedMonth={selectedMonth}
-                searchTerm={searchTerm}
-                selectedCategories={selectedCategories}
-                visibleColumns={visibleColumns}
-                onYearChange={setSelectedYear}
-                onMonthChange={setSelectedMonth}
-                onSearchChange={setSearchTerm}
-                onCategoryChange={handleFilterChange}
-                onColumnVisibilityChange={setVisibleColumns}
-                onExport={handleExport}
-                onExtractAll={handleExtractAll}
-                currentTab="tax-payment-slips"
-            />
+            <div className="flex justify-between items-center">
+                <MonthYearSelector
+                    selectedYear={selectedYear}
+                    selectedMonth={selectedMonth}
+                    onYearChange={setSelectedYear}
+                    onMonthChange={setSelectedMonth}
+                />
+                <div className="flex items-center gap-4">
+                    <Input
+                        placeholder="Search companies..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="max-w-sm"
+                    />
+                    <CategoryFilters
+                        companyDates={filteredRecords[0]?.company}
+                        onFilterChange={handleFilterChange}
+                        selectedCategories={selectedCategories}
+                    />
+                    <Button variant="outline" size="sm">Export</Button>
+                    <Button variant="outline" size="sm">Extract All</Button>
+                </div>
+            </div>
 
             <TaxPaymentTable
                 records={filteredRecords}
@@ -131,8 +125,7 @@ export default function TaxPaymentSlips({
                 onStatusUpdate={handleStatusUpdate}
                 loading={loading}
                 setPayrollRecords={setPayrollRecords}
-                visibleColumns={visibleColumns}
             />
         </div>
-    );
+    )
 }
