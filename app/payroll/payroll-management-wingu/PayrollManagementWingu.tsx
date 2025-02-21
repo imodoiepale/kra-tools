@@ -145,7 +145,7 @@ export default function PayrollManagementWingu({
                     onYearChange={setSelectedYear}
                     onMonthChange={setSelectedMonth}
                 />
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2">
                     <Input
                         placeholder="Search companies..."
                         value={searchTerm}
@@ -157,28 +157,32 @@ export default function PayrollManagementWingu({
                         onFilterChange={handleFilterChange}
                         selectedCategories={selectedCategories}
                     />
-                    <DropdownMenu>
+                    <DropdownMenu className="bg-white">
                         <DropdownMenuTrigger asChild>
-                            <Button variant="outline" size="icon" className="h-10 w-10">
-                                <Settings2 className="h-4 w-4" />
+                            <Button
+                                className="h-8 flex items-center gap-1 px-2 bg-violet-500 hover:bg-violet-600"
+                            >
+                                <Settings2 className="h-4 w-4 text-white" />
+                                Column Visibility
                             </Button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-56">
-                            <DropdownMenuLabel>Toggle Columns</DropdownMenuLabel>
+                        <DropdownMenuContent align="end" className="w-56 bg-white">
+                            <DropdownMenuLabel className="text-violet-500">Toggle Columns</DropdownMenuLabel>
                             <DropdownMenuSeparator />
                             {columnDefinitions.map(column => (
                                 <DropdownMenuCheckboxItem
                                     key={column.id}
                                     checked={columnVisibility[column.id]}
                                     onCheckedChange={(checked) => toggleColumnVisibility(column.id, checked)}
+                                    className=""
                                 >
                                     {column.label}
                                 </DropdownMenuCheckboxItem>
                             ))}
                         </DropdownMenuContent>
                     </DropdownMenu>
-                    <Button variant="outline">Export</Button>
-                    <Button variant="outline">Extract All</Button>
+                    <Button className="h-8 px-2 bg-blue-500 text-white">Export</Button>
+                    <Button className="h-8 px-2 bg-green-500 text-white hover:bg-green-600">Extract All</Button>
                 </div>
             </div>
 
