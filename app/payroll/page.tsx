@@ -29,13 +29,13 @@ export default function PortalPage() {
                     <Tabs defaultValue="monthly" className="space-y-4">
                         <TabsList>
                             <TabsTrigger value="monthly">Monthly View</TabsTrigger>
-                            <TabsTrigger value="detailed">Detailed View</TabsTrigger>
+                            <TabsTrigger value="detailed">Company View</TabsTrigger>
                         </TabsList>
                         <TabsContent value="monthly">
                             <PayrollManagementWingu {...payrollCycle} />
                         </TabsContent>
                         <TabsContent value="detailed">
-                            <div className="p-4">Detailed view for Payroll Management Wingu</div>
+                            <div className="p-4">Company View for Payroll Management Wingu</div>
                         </TabsContent>
                     </Tabs>
                 </TabsContent>
@@ -43,13 +43,13 @@ export default function PortalPage() {
                     <Tabs defaultValue="monthly" className="space-y-4">
                         <TabsList>
                             <TabsTrigger value="monthly">Monthly View</TabsTrigger>
-                            <TabsTrigger value="detailed">Detailed View</TabsTrigger>
+                            <TabsTrigger value="detailed">Company View</TabsTrigger>
                         </TabsList>
                         <TabsContent value="monthly">
                             <TaxPaymentSlips {...payrollCycle} />
                         </TabsContent>
                         <TabsContent value="detailed">
-                            <div className="p-4">Detailed view for Tax Payment Slips</div>
+                            <div className="p-4">Company View for Tax Payment Slips</div>
                         </TabsContent>
                     </Tabs>
                 </TabsContent>
@@ -57,13 +57,13 @@ export default function PortalPage() {
                     <Tabs defaultValue="monthly" className="space-y-4">
                         <TabsList>
                             <TabsTrigger value="monthly">Monthly View</TabsTrigger>
-                            <TabsTrigger value="detailed">Detailed View</TabsTrigger>
+                            <TabsTrigger value="detailed">Company View</TabsTrigger>
                         </TabsList>
                         <TabsContent value="monthly">
                             <PayslipPaymentReceipts {...payrollCycle} />
                         </TabsContent>
                         <TabsContent value="detailed">
-                            <div className="p-4">Detailed view for Payslip Payment Receipts</div>
+                            <div className="p-4">Company View for Payslip Payment Receipts</div>
                         </TabsContent>
                     </Tabs>
                 </TabsContent>
@@ -71,13 +71,13 @@ export default function PortalPage() {
                     <Tabs defaultValue="monthly" className="space-y-4">
                         <TabsList>
                             <TabsTrigger value="monthly">Monthly View</TabsTrigger>
-                            <TabsTrigger value="detailed">Detailed View</TabsTrigger>
+                            <TabsTrigger value="detailed">Company View</TabsTrigger>
                         </TabsList>
                         <TabsContent value="monthly">
                             <ExtractionReport {...payrollCycle} />
                         </TabsContent>
                         <TabsContent value="detailed">
-                            <div className="p-4">Detailed view for Extraction Report</div>
+                            <div className="p-4">Company View for Extraction Report</div>
                         </TabsContent>
                     </Tabs>
                 </TabsContent>
