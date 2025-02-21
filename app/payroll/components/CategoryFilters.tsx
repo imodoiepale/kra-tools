@@ -60,53 +60,75 @@ interface CategoryFiltersProps {
 export function CategoryFilters({ companyDates = {}, onFilterChange, selectedCategories }: CategoryFiltersProps) {
     const currentDate = new Date();
     
-    const getFilters = useCallback((): ServiceCategory[] => [
-        {
-            label: 'Accounting',
-            key: 'acc',
-            selected: selectedCategories.includes('acc'),
-            isActive: isDateInRange(
-                currentDate,
-                companyDates.acc_client_effective_from,
-                companyDates.acc_client_effective_to
-            )
-        },
-        {
-            label: 'Audit Tax',
-            key: 'audit_tax',
-            selected: selectedCategories.includes('audit_tax'),
-            isActive: isDateInRange(
-                currentDate,
-                companyDates.audit_tax_client_effective_from,
-                companyDates.audit_tax_client_effective_to
-            )
-        },
-        {
-            label: 'Sheria',
-            key: 'cps_sheria',
-            selected: selectedCategories.includes('cps_sheria'),
-            isActive: isDateInRange(
-                currentDate,
-                companyDates.cps_sheria_client_effective_from,
-                companyDates.cps_sheria_client_effective_to
-            )
-        },
-        {
-            label: 'Immigration',
-            key: 'imm',
-            selected: selectedCategories.includes('imm'),
-            isActive: isDateInRange(
-                currentDate,
-                companyDates.imm_client_effective_from,
-                companyDates.imm_client_effective_to
-            )
-        }
-    ], [companyDates, currentDate, selectedCategories]);
+    const getFilters = useCallback((): ServiceCategory[] => {
+        const categories = [
+            {
+                label: 'All',
+                key: 'all',
+                selected: selectedCategories.includes('all'),
+                isActive: true
+            },
+            {
+                label: 'Accounting',
+                key: 'acc',
+                selected: selectedCategories.includes('acc'),
+                isActive: isDateInRange(
+                    currentDate,
+                    companyDates.acc_client_effective_from,
+                    companyDates.acc_client_effective_to
+                )
+            },
+            {
+                label: 'Audit Tax',
+                key: 'audit_tax',
+                selected: selectedCategories.includes('audit_tax'),
+                isActive: isDateInRange(
+                    currentDate,
+                    companyDates.audit_tax_client_effective_from,
+                    companyDates.audit_tax_client_effective_to
+                )
+            },
+            {
+                label: 'Sheria',
+                key: 'cps_sheria',
+                selected: selectedCategories.includes('cps_sheria'),
+                isActive: isDateInRange(
+                    currentDate,
+                    companyDates.cps_sheria_client_effective_from,
+                    companyDates.cps_sheria_client_effective_to
+                )
+            },
+            {
+                label: 'Immigration',
+                key: 'imm',
+                selected: selectedCategories.includes('imm'),
+                isActive: isDateInRange(
+                    currentDate,
+                    companyDates.imm_client_effective_from,
+                    companyDates.imm_client_effective_to
+                )
+            }
+        ];
+
+        return categories;
+    }, [companyDates, currentDate, selectedCategories]);
 
     const handleFilterChange = (key: string) => {
-        const newSelectedCategories = selectedCategories.includes(key)
-            ? selectedCategories.filter(k => k !== key)
-            : [...selectedCategories, key];
+        if (key === 'all') {
+            // If All is selected, clear all filters
+            onFilterChange([]);
+            return;
+        }
+
+        let newSelectedCategories: string[];
+        if (selectedCategories.includes(key)) {
+            // Remove the category
+            newSelectedCategories = selectedCategories.filter(k => k !== key);
+        } else {
+            // Add the category
+            newSelectedCategories = [...selectedCategories, key];
+        }
+
         onFilterChange(newSelectedCategories);
     };
 
@@ -118,7 +140,7 @@ export function CategoryFilters({ companyDates = {}, onFilterChange, selectedCat
             <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm" className="h-8 flex items-center">
                     <Filter className="mr-2 h-4 w-4" />
-                    Filters
+                    Client Category Filters
                     {selectedCount > 0 && (
                         <Badge variant="secondary" className="ml-2">
                             {selectedCount}
@@ -136,15 +158,15 @@ export function CategoryFilters({ companyDates = {}, onFilterChange, selectedCat
                             className="flex items-center space-x-2 mb-2 last:mb-0 cursor-pointer"
                         >
                             <Checkbox
-                                checked={filter.selected}
-                                disabled={!filter.isActive}
+                                checked={filter.key === 'all' ? selectedCategories.length === 0 : filter.selected}
+                                disabled={!filter.isActive && filter.key !== 'all'}
                                 onCheckedChange={() => handleFilterChange(filter.key)}
                                 className="h-4 w-4"
                             />
                             <div className="flex flex-col">
                                 <div className="flex items-center gap-2">
                                     <span className="text-sm">{filter.label}</span>
-                                    {!filter.isActive && (
+                                    {!filter.isActive && filter.key !== 'all' && (
                                         <Badge variant="outline" className="text-xs">
                                             Inactive
                                         </Badge>

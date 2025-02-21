@@ -114,7 +114,7 @@ export default function ExtractionReport({
     const [selectedCategories, setSelectedCategories] = useState<string[]>(['acc']);
 
     const handleFilterChange = useCallback((categories: string[]) => {
-        setSelectedCategories(categories.length > 0 ? categories : ['acc']);
+        setSelectedCategories(categories);
     }, []);
 
     const handleDocumentUploadWithFolder = (recordId: string, file: File, documentType: DocumentType) => {
@@ -141,9 +141,11 @@ export default function ExtractionReport({
 
             const matchesSearch = record.company.company_name?.toLowerCase().includes(searchTerm.toLowerCase()) ?? false;
             
-            const categoriesToCheck = selectedCategories;
+            // If no categories are selected (All is selected), show all records
+            if (selectedCategories.length === 0) return matchesSearch;
             
-            const matchesCategory = categoriesToCheck.every(category => {
+            // Check if record matches any of the selected categories
+            const matchesCategory = selectedCategories.some(category => {
                 const currentDate = new Date();
                 switch (category) {
                     case 'acc':
