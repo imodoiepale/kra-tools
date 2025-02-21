@@ -59,6 +59,39 @@
 - Utilizes existing ShadCN UI components
 - Maintains backward compatibility with existing data structure
 
+## [1.0.3] - 2025-01-06
+### Changed
+- Enhanced Email Communication Modal UI and functionality
+  - Implemented landscape layout with better space utilization
+  - Added real-time network status indicator
+  - Enhanced loading states with visual feedback
+  - Improved document handling with status indicators
+  - Added error states for failed document loading
+  - Made the modal more responsive with sticky footer
+  - Added loading spinners for better UX
+
+### Technical Details
+- Files: 
+  - `app/payroll/payslip-receipts/components/ContactModal.tsx`
+- Changes:
+  - Added online/offline status monitoring with useEffect
+  - Enhanced document loading with status tracking
+  - Improved error handling for document loading
+  - Added visual indicators for network and loading states
+  - Implemented sticky footer with loading spinner
+  - Made the modal layout more spacious and responsive
+
+### Reasoning
+- Improved user experience with better visual feedback
+- Enhanced error handling for better reliability
+- Made the interface more intuitive and responsive
+- Followed ShadCN design patterns for consistency
+
+### Dependencies
+- No new dependencies added
+- Compatible with existing email service
+- Maintains backward compatibility with existing components
+
 ## [1.0.3] - 2025-01-07
 ### Changed
 - Enhanced Email Communication System
@@ -92,3 +125,67 @@
 - Utilizes existing UI components
 - Maintains compatibility with external email service
 - Integrates with existing document system
+
+## [1.0.4] - 2025-01-06
+### Changed
+- Enhanced Email Communication Modal UI and functionality
+  - Added subject line input field with default value
+  - Added CC and BCC fields with comma-separated input support
+  - Improved layout with a more spacious design
+  - Added larger message area with preview
+  - Enhanced document status display with better visual indicators
+  - Added loading state animation for better UX
+  - Improved error handling and validation
+
+### Technical Details
+- File: `app/payroll/payslip-receipts/components/ContactModal.tsx`
+- Changes:
+  - Added emailData state for managing subject, message, CC, and BCC
+  - Enhanced UI layout with better spacing and organization
+  - Improved visual feedback for document status
+  - Added loading spinner animation
+  - Updated email service integration to support CC and BCC
+
+### Reasoning
+- Enhanced user experience with better email composition interface
+- Improved visual feedback for better user interaction
+- Added essential email functionality (CC, BCC) for business communication
+- Maintained existing functionality while adding new features
+
+### Dependencies
+- No new dependencies added
+- Compatible with existing email service
+- Maintains backward compatibility with existing document handling
+
+## [1.0.4] - 2025-02-21
+### Changed
+- Simplified Email Communication Modal
+  - Removed manual file attachment functionality
+  - Focused on sending uploaded company documents only
+  - Added default email template for payment receipts
+  - Enhanced document status display
+  - Added empty state for no available documents
+  - Disabled send button when no documents are available
+
+### Technical Details
+- Files: 
+  - `app/payroll/payslip-receipts/components/ContactModal.tsx`
+- Changes:
+  - Removed file upload functionality
+  - Removed selectedFiles state and handleFileChange
+  - Added better document display with border and label
+  - Enhanced email template with company-specific content
+  - Added validation to prevent sending without documents
+  - Improved UI clarity and focus
+
+### Reasoning
+- Simplified user experience by focusing on core functionality
+- Reduced potential errors from manual file uploads
+- Improved clarity of available documents
+- Enhanced default email content for better communication
+- Maintained existing email service integration
+
+### Dependencies
+- No changes to dependencies
+- Maintains compatibility with existing components
+- Uses existing ShadCN UI components
