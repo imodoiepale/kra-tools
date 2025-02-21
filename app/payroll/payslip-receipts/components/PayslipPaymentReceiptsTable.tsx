@@ -59,6 +59,7 @@ import {
 import { useToast } from '@/hooks/use-toast'
 import { supabase } from '@/lib/supabase'
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip";
+import ContactModal from "./ContactModal"
 
 
 const DOCUMENT_LABELS: Record<string, string> = {
@@ -631,20 +632,20 @@ export function PayslipPaymentReceiptsTable({
                             </TooltipProvider>
 
                             <TableCell className="text-center">
-                                <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    className="h-8 w-8 p-0"
-                                    onClick={() => {
-                                        // TODO: Implement email dialog
-                                        toast({
-                                            title: "Coming Soon",
-                                            description: "Email functionality will be added soon"
-                                        });
-                                    }}
-                                >
-                                    <Mail className="h-4 w-4" />
-                                </Button>
+                                <ContactModal
+                                    trigger={
+                                        <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            className="h-8 w-8 p-0"
+                                        >
+                                            <Mail className="h-4 w-4" />
+                                        </Button>
+                                    }
+                                    companyName={record.company.company_name}
+                                    companyEmail={record.company.email}
+                                    documents={getDocumentsForUpload(record)}
+                                />
                             </TableCell>
                             <TableCell className="text-center">
                                 <Button
