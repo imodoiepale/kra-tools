@@ -107,7 +107,7 @@ export function TaxPaymentTable({
     records,
     onDocumentUpload,
     onStatusUpdate,
-    onDocumentDelete,
+    onDocumentDelete,   
     loading,
     setPayrollRecords
 }: PayrollTableProps) {
