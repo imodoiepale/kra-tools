@@ -4,6 +4,14 @@ export interface Company {
     company_name: string
     created_at: string
     updated_at: string
+    acc_client_effective_from: string
+    acc_client_effective_to: string
+    audit_tax_client_effective_from: string
+    audit_tax_client_effective_to: string
+    cps_sheria_client_effective_from: string
+    cps_sheria_client_effective_to: string
+    imm_client_effective_from: string
+    imm_client_effective_to: string
 }
 
 export interface PayrollCycle {

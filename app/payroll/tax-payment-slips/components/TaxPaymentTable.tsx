@@ -156,12 +156,15 @@ export function TaxPaymentTable({
 
     // Memoize sorted records for performance
     const sortedRecords = useMemo(() =>
-        [...records].sort((a, b) =>
-            a.company.company_name.localeCompare(b.company.company_name)
-        ),
+        [...records].sort((a, b) => {
+            // Safely handle null/undefined company objects
+            const nameA = a?.company?.company_name || '';
+            const nameB = b?.company?.company_name || '';
+            return nameA.localeCompare(nameB);
+        }),
         [records]
     );
-
+    
     const handleFinalize = (recordId: string) => {
         onStatusUpdate(recordId, {
             finalization_date: finalizeDialog.isNil ? 'NIL' : new Date().toISOString(),
@@ -586,23 +589,32 @@ export function TaxPaymentTable({
                                 </div>
                             </TableCell>
                         </TableRow>
-                    ) : sortedRecords.map((record, index) => (
-                        <TableRow
-                            key={record.id}
-                            className={`${index % 2 === 0 ? 'bg-blue-50 hover:bg-blue-100' : 'bg-white hover:bg-gray-50'} [&>td]:border-r [&>td]:border-gray-200 last:[&>td]:border-r-0`}
-                            aria-label={`Payroll record for ${record.company.company_name}`}
-                        >
-                            <TableCell>{index + 1}</TableCell>
-                            <TooltipProvider>
-                                <TableCell className="font-medium">
-                                    <Tooltip>
-                                        <TooltipTrigger className=" ">
-                                            {record.company.company_name.split(" ").slice(0, 3).join(" ")}
-                                        </TooltipTrigger>
-                                        <TooltipContent>{record.company.company_name}</TooltipContent>
-                                    </Tooltip>
-                                </TableCell>
-                            </TooltipProvider>
+                    ) : sortedRecords.map((record, index) => {
+                        // Skip rendering if record or company is null/undefined
+                        if (!record || !record.company) {
+                            console.warn('Invalid record found:', record);
+                            return null;
+                        }
+
+                        const companyName = record.company.company_name || 'Unnamed Company';
+
+                        return (
+                            <TableRow
+                                key={record.id || index}
+                                className={`${index % 2 === 0 ? 'bg-blue-50 hover:bg-blue-100' : 'bg-white hover:bg-gray-50'} [&>td]:border-r [&>td]:border-gray-200 last:[&>td]:border-r-0`}
+                                aria-label={`Payroll record for ${companyName}`}
+                            >
+                                <TableCell>{index + 1}</TableCell>
+                                <TooltipProvider>
+                                    <TableCell className="font-medium">
+                                        <Tooltip>
+                                            <TooltipTrigger className=" ">
+                                                {companyName.split(" ").slice(0, 3).join(" ")}
+                                            </TooltipTrigger>
+                                            <TooltipContent>{companyName}</TooltipContent>
+                                        </Tooltip>
+                                    </TableCell>
+                                </TooltipProvider>
                             <TableCell className="text-center">
                                 {record?.status?.filing?.filingDate ? (
                                     <Button
@@ -725,8 +737,9 @@ export function TaxPaymentTable({
                                     </DropdownMenuContent>
                                 </DropdownMenu>
                             </TableCell>
-                        </TableRow>
-                    ))}
+                            </TableRow>
+                        );
+                    })}
                 </TableBody>
             </Table>
 
