@@ -72,7 +72,15 @@ export const usePayrollCycle = () => {
                     *,
                     company:acc_portal_company_duplicate(
                         id,
-                        company_name
+                        company_name,
+                        acc_client_effective_from,
+                        acc_client_effective_to,
+                        audit_tax_client_effective_from,
+                        audit_tax_client_effective_to,
+                        cps_sheria_client_effective_from,
+                        cps_sheria_client_effective_to,
+                        imm_client_effective_from,
+                        imm_client_effective_to
                     )
                 `)
                 .eq('payroll_cycle_id', cycleId)

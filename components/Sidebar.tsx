@@ -19,8 +19,20 @@ const navItems = [
     { href: "/password-manager", icon: Lock, label: "Password Manager", category: "Main", available: true },
     { href: "/pass-checker+pass-manager", icon: Lock, label: "Both", category: "Main", available: true },
     { href: "/checklist", icon: FileCheck, label: "Checklist", category: "Main", available: true },
-    { href: "/payroll", icon: FileSpreadsheet, label: "Payroll Cycle", category: "Main", available: true },
+    
+    
+    // Accounting Cycles
+    { href: "/checklist", icon: BarChart2, label: "Checklist", category: "Accounting Cycles", available: true },
+    { href: "/payroll", icon: Cloud, label: "Payroll Cycle", category: "Accounting Cycles", available: true },
+    { href: "/vat", icon: CreditCard, label: "VAT Cycle", category: "Accounting Cycles", available: false },
+    { href: "/wh-vat", icon: FileSignature, label: "WH VAT Cycle", category: "Accounting Cycles", available: false },
+    { href: "/kebs", icon: Download, label: "Standard Levy (KEBS) Cycle", category: "Accounting Cycles", available: false },
+    { href: "/tot", icon: ChevronDown, label: "TurnOver Tax (TOT) Cycle", category: "Accounting Cycles", available: false },
+    { href: "/banks", icon: FileSpreadsheet, label: "Bank Statements", category: "Accounting Cycles", available: false },
+    { href: "/suppliers", icon: FileSpreadsheet, label: "Supplier Statements", category: "Accounting Cycles", available: false },
+    { href: "/reports", icon: FileSpreadsheet, label: "Full Reports", category: "Accounting Cycles", available: false },
 
+    
     // One-off Tools
     { href: "/password-checker", icon: Key, label: "Password Checker", category: "One-off Tools", available: true },
     { href: "/manufacturers-details", icon: Factory, label: "Manufacturers Details", category: "One-off Tools", available: true },
@@ -80,7 +92,7 @@ export function Sidebar({ isExpanded, setIsExpanded }: { isExpanded: boolean, se
                             {isExpanded ? (
                                 <button
                                     onClick={() => toggleCategory(category)}
-                                    className="flex items-center justify-between w-full text-xs font-semibold text-gray-400 mt-3 mb-1 hover:bg-gray-700 p-1 rounded"
+                                    className="flex items-center justify-between w-full text-[16px] font-semibold text-gray-400 mt-3 mb-1 hover:bg-gray-700 p-1 rounded"
                                 >
                                     <span>{category}</span>
                                     <ChevronDown className={`w-4 h-4 transition-transform ${openCategories.includes(category) ? 'rotate-180' : ''}`} />
@@ -124,7 +136,7 @@ export function Sidebar({ isExpanded, setIsExpanded }: { isExpanded: boolean, se
                                                             {isExpanded && item.label}
                                                         </button>
                                                     </PopoverTrigger>
-                                                    <PopoverContent className="bg-red-500 text-white p-1 text-xs rounded w-40 h-8">
+                                                    <PopoverContent className="bg-red-500 text-white mt-2 mr-2 p-1 text-xs rounded w-40 h-8">
                                                         Coming soon
                                                     </PopoverContent>
                                                 </Popover>

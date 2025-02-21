@@ -1,10 +1,11 @@
 // @ts-nocheck
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useCallback } from 'react'
 import { format } from 'date-fns'
 import { supabase } from '@/lib/supabase'
 import { CompanyPayrollRecord, DocumentType } from '../types'
 import { PayrollTable } from './components/PayrollTable'
 import { MonthYearSelector } from '../components/MonthYearSelector'
+import { CategoryFilters } from '../components/CategoryFilters'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Checkbox } from "@/components/ui/checkbox"
@@ -51,6 +52,12 @@ export default function PayrollManagementWingu({
         return handleDocumentUpload(recordId, file, documentType, 'PREP DOCS')
     }
 
+    const [selectedCategories, setSelectedCategories] = useState<string[]>(['acc']);
+
+    const handleFilterChange = useCallback((categories: string[]) => {
+        setSelectedCategories(categories.length > 0 ? categories : ['acc']);
+    }, []);
+
     const columnDefinitions = [
         { id: 'index', label: 'Index (#)', defaultVisible: true },
         { id: 'companyName', label: 'Company Name', defaultVisible: true },
@@ -85,34 +92,68 @@ export default function PayrollManagementWingu({
         }));
     };
 
-    // Filter records based on search term
+    const isDateInRange = (date: Date, from?: string | null, to?: string | null): boolean => {
+        if (!from || !to) return false;
+        try {
+            const fromDate = new Date(from.split('/').reverse().join('-'));
+            const toDate = new Date(to.split('/').reverse().join('-'));
+            return date >= fromDate && date <= toDate;
+        } catch (error) {
+            console.error('Error parsing dates:', error);
+            return false;
+        }
+    }
+
+    // Filter records based on search term and selected categories
     const filteredRecords = useMemo(() => {
-        if (!searchTerm.trim()) return payrollRecords;
-        
-        const searchLower = searchTerm.toLowerCase();
         return payrollRecords.filter(record => {
-            const companyName = record.company?.company_name || '';
-            const companyId = record.company?.id?.toString() || '';
-            return companyName.toLowerCase().includes(searchLower) || 
-                   companyId.includes(searchLower);
+            // Check if record and company exist
+            if (!record || !record.company) return false;
+
+            const matchesSearch = record.company.company_name?.toLowerCase().includes(searchTerm.toLowerCase()) ?? false;
+            
+            const categoriesToCheck = selectedCategories;
+            
+            const matchesCategory = categoriesToCheck.every(category => {
+                const currentDate = new Date();
+                switch (category) {
+                    case 'acc':
+                        return isDateInRange(currentDate, record.company.acc_client_effective_from, record.company.acc_client_effective_to);
+                    case 'audit_tax':
+                        return isDateInRange(currentDate, record.company.audit_tax_client_effective_from, record.company.audit_tax_client_effective_to);
+                    case 'cps_sheria':
+                        return isDateInRange(currentDate, record.company.cps_sheria_client_effective_from, record.company.cps_sheria_client_effective_to);
+                    case 'imm':
+                        return isDateInRange(currentDate, record.company.imm_client_effective_from, record.company.imm_client_effective_to);
+                    default:
+                        return false;
+                }
+            });
+
+            return matchesSearch && matchesCategory;
         });
-    }, [payrollRecords, searchTerm]);
+    }, [payrollRecords, searchTerm, selectedCategories]);
 
     return (
         <div className="space-y-4">
-            <div className="flex justify-between items-center">
+            <div className="flex items-center justify-between">
                 <MonthYearSelector
                     selectedYear={selectedYear}
                     selectedMonth={selectedMonth}
                     onYearChange={setSelectedYear}
                     onMonthChange={setSelectedMonth}
                 />
-                <div className="flex gap-4 items-center">
+                <div className="flex items-center gap-4">
                     <Input
                         placeholder="Search companies..."
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
-                        className="w-64"
+                        className="max-w-sm"
+                    />
+                    <CategoryFilters
+                        companyDates={filteredRecords[0]?.company}
+                        onFilterChange={handleFilterChange}
+                        selectedCategories={selectedCategories}
                     />
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>
