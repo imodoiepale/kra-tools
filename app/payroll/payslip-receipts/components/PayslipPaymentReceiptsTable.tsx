@@ -59,7 +59,7 @@ import {
 import { useToast } from '@/hooks/use-toast'
 import { supabase } from '@/lib/supabase'
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip";
-import ContactModal from "./ContactModal"
+import { ContactModal } from "./ContactModal"
 
 
 const DOCUMENT_LABELS: Record<string, string> = {
