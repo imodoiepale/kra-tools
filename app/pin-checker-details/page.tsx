@@ -13,6 +13,8 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { motion } from "framer-motion"
 import { supabase } from '@/lib/supabase'
+import { EditDatesDialog } from './components/EditDatesDialog'
+import { formatDateForDisplay } from './utils/dateUtils'
 
 export default function PinCheckerDetails() {
     const [isChecking, setIsChecking] = useState(false)
@@ -22,10 +24,13 @@ export default function PinCheckerDetails() {
     const [companies, setCompanies] = useState([])
     const [selectedCompanies, setSelectedCompanies] = useState([])
     const [runOption, setRunOption] = useState('all')
+    const [clientType, setClientType] = useState('all')
+    const [selectedCompany, setSelectedCompany] = useState<any>(null);
+    const [editDialogOpen, setEditDialogOpen] = useState(false);
 
     useEffect(() => {
         fetchCompanies()
-    }, [])
+    }, [clientType])
 
     useEffect(() => {
         if (isChecking) {
@@ -35,17 +40,36 @@ export default function PinCheckerDetails() {
     }, [isChecking])
 
     const fetchCompanies = async () => {
-        const { data, error } = await supabase
+        const currentDate = new Date().toISOString().split('T')[0]; // Get current date in YYYY-MM-DD format
+        
+        let query = supabase
             .from('acc_portal_company_duplicate')
-            .select('id, company_name, kra_pin')
-            .order('id', { ascending: true })
+            .select('id, company_name, kra_pin, acc_client_effective_from, acc_client_effective_to, audit_tax_client_effective_from, audit_tax_client_effective_to');
+
+        const { data, error } = await query;
 
         if (error) {
-            console.error('Error fetching companies:', error)
-        } else {
-            setCompanies(data || [])
+            console.error('Error fetching companies:', error);
+            return;
         }
-    }
+
+        // Filter the data in JavaScript
+        const filteredData = data?.filter(company => {
+            if (clientType === 'acc') {
+                return company.acc_client_effective_from <= currentDate && company.acc_client_effective_to >= currentDate;
+            } else if (clientType === 'audit') {
+                return company.audit_tax_client_effective_from <= currentDate && company.audit_tax_client_effective_to >= currentDate;
+            } else {
+                // All clients - either ACC or Audit
+                const isAccClient = company.acc_client_effective_from <= currentDate && company.acc_client_effective_to >= currentDate;
+                const isAuditClient = company.audit_tax_client_effective_from <= currentDate && company.audit_tax_client_effective_to >= currentDate;
+                return isAccClient || isAuditClient;
+            }
+        });
+
+        console.log('Filtered companies:', filteredData); // Debug log
+        setCompanies(filteredData || []);
+    };
 
     const checkProgress = async () => {
         try {
@@ -153,6 +177,22 @@ export default function PinCheckerDetails() {
                                 </CardHeader>
                                 <CardContent>
                                     <div className="mb-4">
+                                        <label className="block mb-2">Client Type:</label>
+                                        <Select value={clientType} onValueChange={(value) => {
+                                            setClientType(value)
+                                            setSelectedCompanies([])
+                                        }}>
+                                            <SelectTrigger className="w-[180px]">
+                                                <SelectValue placeholder="Select client type" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="all">All Clients</SelectItem>
+                                                <SelectItem value="acc">ACC Clients</SelectItem>
+                                                <SelectItem value="audit">Audit Clients</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <div className="mb-4">
                                         <label className="block mb-2">Run option:</label>
                                         <Select value={runOption} onValueChange={(value) => setRunOption(value)}>
                                             <SelectTrigger className="w-[180px]">
@@ -176,10 +216,26 @@ export default function PinCheckerDetails() {
                                                     <Table>
                                                         <TableHeader>
                                                             <TableRow>
-                                                                <TableHead className="w-[50px] sticky top-0 bg-white">Select</TableHead>
+                                                                <TableHead className="w-[50px] sticky top-0 bg-white">
+                                                                    <Checkbox 
+                                                                        checked={selectedCompanies.length === companies.length}
+                                                                        onCheckedChange={(checked) => {
+                                                                            if (checked) {
+                                                                                setSelectedCompanies(companies.map(c => c.id))
+                                                                            } else {
+                                                                                setSelectedCompanies([])
+                                                                            }
+                                                                        }}
+                                                                    />
+                                                                </TableHead>
                                                                 <TableHead className="sticky top-0 bg-white">#</TableHead>
                                                                 <TableHead className="sticky top-0 bg-white">Company Name</TableHead>
                                                                 <TableHead className="sticky top-0 bg-white">KRA PIN</TableHead>
+                                                                <TableHead className="sticky top-0 bg-white">ACC From</TableHead>
+                                                                <TableHead className="sticky top-0 bg-white">ACC To</TableHead>
+                                                                <TableHead className="sticky top-0 bg-white">Audit From</TableHead>
+                                                                <TableHead className="sticky top-0 bg-white">Audit To</TableHead>
+                                                                <TableHead className="sticky top-0 bg-white">Actions</TableHead>
                                                             </TableRow>
                                                         </TableHeader>
                                                         <TableBody>
@@ -194,6 +250,22 @@ export default function PinCheckerDetails() {
                                                                     <TableCell className="text-center">{index + 1}</TableCell>
                                                                     <TableCell>{company.company_name}</TableCell>
                                                                     <TableCell>{company.kra_pin}</TableCell>
+                                                                    <TableCell>{formatDateForDisplay(company.acc_client_effective_from)}</TableCell>
+                                                                    <TableCell>{formatDateForDisplay(company.acc_client_effective_to)}</TableCell>
+                                                                    <TableCell>{formatDateForDisplay(company.audit_tax_client_effective_from)}</TableCell>
+                                                                    <TableCell>{formatDateForDisplay(company.audit_tax_client_effective_to)}</TableCell>
+                                                                    <TableCell>
+                                                                        <Button
+                                                                            variant="outline"
+                                                                            size="sm"
+                                                                            onClick={() => {
+                                                                                setSelectedCompany(company);
+                                                                                setEditDialogOpen(true);
+                                                                            }}
+                                                                        >
+                                                                            Edit Dates
+                                                                        </Button>
+                                                                    </TableCell>
                                                                 </TableRow>
                                                             ))}
                                                         </TableBody>
@@ -215,6 +287,10 @@ export default function PinCheckerDetails() {
                                                                     <TableHead>#</TableHead>
                                                                     <TableHead>Company Name</TableHead>
                                                                     <TableHead>KRA PIN</TableHead>
+                                                                    <TableHead>ACC From</TableHead>
+                                                                    <TableHead>ACC To</TableHead>
+                                                                    <TableHead>Audit From</TableHead>
+                                                                    <TableHead>Audit To</TableHead>
                                                                 </TableRow>
                                                             </TableHeader>
                                                             <TableBody>
@@ -223,6 +299,10 @@ export default function PinCheckerDetails() {
                                                                         <TableCell>{index + 1}</TableCell>
                                                                         <TableCell>{company.company_name}</TableCell>
                                                                         <TableCell>{company.kra_pin}</TableCell>
+                                                                        <TableCell>{formatDateForDisplay(company.acc_client_effective_from)}</TableCell>
+                                                                        <TableCell>{formatDateForDisplay(company.acc_client_effective_to)}</TableCell>
+                                                                        <TableCell>{formatDateForDisplay(company.audit_tax_client_effective_from)}</TableCell>
+                                                                        <TableCell>{formatDateForDisplay(company.audit_tax_client_effective_to)}</TableCell>
                                                                     </TableRow>
                                                                 ))}
                                                             </TableBody>
@@ -273,6 +353,14 @@ export default function PinCheckerDetails() {
                     </Tabs>
                 </CardContent>
             </Card>
+            {selectedCompany && (
+                <EditDatesDialog
+                    open={editDialogOpen}
+                    onOpenChange={setEditDialogOpen}
+                    company={selectedCompany}
+                    onSuccess={fetchCompanies}
+                />
+            )}
         </div>
     )
 }

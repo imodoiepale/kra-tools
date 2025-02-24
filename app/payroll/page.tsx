@@ -17,7 +17,7 @@ export default function PortalPage() {
     }, [payrollCycle.selectedYear, payrollCycle.selectedMonth, payrollCycle.searchTerm])
 
     return (
-        <div className="mx-auto p-4">
+        <div className="mx-auto p-2">
             <Tabs defaultValue="wingu-csv" className="space-y-4">
                 <TabsList>
                     <TabsTrigger value="wingu-csv">PAYROLL WINGU CSV AUTO</TabsTrigger>

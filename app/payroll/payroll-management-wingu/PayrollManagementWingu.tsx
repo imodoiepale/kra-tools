@@ -46,7 +46,8 @@ export default function PayrollManagementWingu({
     handleDocumentUpload,
     handleDocumentDelete,
     handleStatusUpdate,
-    setPayrollRecords
+    setPayrollRecords,
+    updateExistingEmployeeCounts 
 }: PayrollManagementProps) {
     const handleDocumentUploadWithFolder = (recordId: string, file: File, documentType: DocumentType) => {
         return handleDocumentUpload(recordId, file, documentType, 'PREP DOCS')
@@ -61,6 +62,7 @@ export default function PayrollManagementWingu({
     const columnDefinitions = [
         { id: 'index', label: 'Index (#)', defaultVisible: true },
         { id: 'companyName', label: 'Company Name', defaultVisible: true },
+        { id: 'kraPin', label: 'KRA PIN', defaultVisible: true },
         { id: 'obligationDate', label: 'Obligation Date', defaultVisible: false },
         { id: 'numberOfEmployees', label: 'No. of Employees', defaultVisible: false },
         { id: 'finalizationDate', label: 'Finalization Date', defaultVisible: true },
@@ -181,6 +183,12 @@ export default function PayrollManagementWingu({
                             ))}
                         </DropdownMenuContent>
                     </DropdownMenu>
+                    <Button
+                        onClick={updateExistingEmployeeCounts}
+                        className="h-8 px-2 bg-orange-500 text-white hover:bg-orange-600"
+                    >
+                        Update Employee Counts
+                    </Button>
                     <Button className="h-8 px-2 bg-blue-500 text-white">Export</Button>
                     <Button className="h-8 px-2 bg-green-500 text-white hover:bg-green-600">Extract All</Button>
                 </div>

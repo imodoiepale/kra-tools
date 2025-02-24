@@ -152,12 +152,13 @@ export function PayrollTable({
     );
 
     return (
-        <div className="rounded-md border h-[calc(100vh-220px)] overflow-auto">
+        <div className="rounded-md border h-[calc(100vh-240px)] overflow-auto">
             <Table aria-label="Payroll Records" className="border border-gray-200">
                 <TableHeader className="sticky top-0 z-10">
                     <TableRow className="bg-blue-600 hover:bg-blue-600 [&>th]:border-r [&>th]:border-blue-500 last:[&>th]:border-r-0">
                         {columnVisibility.index && <TableHead className="text-white font-semibold border-b" scope="col">#</TableHead>}
                         {columnVisibility.companyName && <TableHead className="text-white font-semibold" scope="col">Company Name</TableHead>}
+                        {columnVisibility.kraPin && <TableHead className="text-white font-semibold" scope="col">KRA PIN</TableHead>}
                         {columnVisibility.obligationDate && <TableHead className="text-white font-semibold" scope="col">PAYE Obligation Date</TableHead>}
                         {columnVisibility.numberOfEmployees && <TableHead className="text-white font-semibold" scope="col">No. of Emp</TableHead>}
                         {columnVisibility.finalizationDate && <TableHead className="text-white font-semibold" scope="col">Finalization Date</TableHead>}
@@ -201,7 +202,41 @@ export function PayrollTable({
                                     </TableCell>
                                 </TooltipProvider>
                             )}
-                            {columnVisibility.obligationDate && <TableCell>{record.obligation_date || 'N/A'}</TableCell>}
+                            {columnVisibility.kraPin && (
+                                <TableCell
+                                    className={
+                                        record.company?.kra_pin || record.pin_details?.kra_pin
+                                            ? "font-medium"
+                                            : "font-bold text-red-600"
+                                    }
+                                >
+                                    {record.company?.kra_pin || record.pin_details?.kra_pin || 'Missing'}
+                                </TableCell>    
+                            )}
+
+                            {columnVisibility.obligationDate && (
+                                <TableCell
+                                    className={
+                                        record.pin_details?.paye_status?.toLowerCase() === 'cancelled' ||
+                                            record.pin_details?.paye_status?.toLowerCase() === 'dormant' ||
+                                            record.pin_details?.paye_to_date
+                                            ? 'text-red-600 font-bold'
+                                            : record.pin_details?.paye_effective_from
+                                                ? 'text-green-600 font-bold'
+                                                : 'text-yellow-600 font-bold'
+                                    }
+                                >
+                                    {record.pin_details?.paye_status?.toLowerCase() === 'cancelled' ||
+                                        record.pin_details?.paye_status?.toLowerCase() === 'dormant'
+                                        ? record.pin_details?.paye_status.charAt(0).toUpperCase() + record.pin_details?.paye_status.slice(1)
+                                        : record.pin_details?.paye_to_date
+                                            ? record.pin_details.paye_to_date
+                                            : record.pin_details?.paye_effective_from
+                                                ? record.pin_details.paye_effective_from
+                                                : 'Missing'}
+                                </TableCell>
+                            )}
+
                             {columnVisibility.numberOfEmployees && <TableCell>{record.number_of_employees || 'N/A'}</TableCell>}
                             {columnVisibility.finalizationDate && (
                                 <TableCell>

@@ -66,29 +66,63 @@ export const usePayrollCycle = () => {
 
     const fetchPayrollRecords = async (cycleId: string) => {
         try {
-            const { data, error } = await supabase
+            // First get records with company details
+            const { data: records, error: recordsError } = await supabase
                 .from('company_payroll_records')
                 .select(`
-                    *,
-                    company:acc_portal_company_duplicate(
-                        id,
-                        company_name,
-                        acc_client_effective_from,
-                        acc_client_effective_to,
-                        audit_tax_client_effective_from,
-                        audit_tax_client_effective_to,
-                        cps_sheria_client_effective_from,
-                        cps_sheria_client_effective_to,
-                        imm_client_effective_from,
-                        imm_client_effective_to
-                    )
-                `)
+                *,
+                company:acc_portal_company_duplicate(
+                    id,
+                    company_name,
+                    kra_pin,
+                    acc_client_effective_from,
+                    acc_client_effective_to,
+                    audit_tax_client_effective_from,
+                    audit_tax_client_effective_to,
+                    cps_sheria_client_effective_from,
+                    cps_sheria_client_effective_to,
+                    imm_client_effective_from,
+                    imm_client_effective_to
+                )
+            `)
                 .eq('payroll_cycle_id', cycleId)
                 .ilike('company.company_name', `%${searchTerm}%`)
 
-            if (error) throw error
-            if (data) setPayrollRecords(data)
+            if (recordsError) throw recordsError
+
+            if (records) {
+                // Filter out records without company data
+                const validRecords = records.filter(record => record.company);
+
+                // Get all company names for valid records
+                const companyNames = validRecords.map(record => record.company.company_name);
+
+                // Fetch all PinCheckerDetails in a single query
+                const { data: pinData, error: pinError } = await supabase
+                    .from('PinCheckerDetails')
+                    .select('*')
+                    .in('company_name', companyNames)
+
+                if (pinError) throw pinError
+
+                // Create a map of company_name to pin details for quick lookup
+                const pinDetailsMap = (pinData || []).reduce((acc, detail) => {
+                    acc[detail.company_name] = detail;
+                    return acc;
+                }, {} as Record<string, any>);
+
+                // Combine records with their pin details
+                const recordsWithPinDetails = records.map(record => ({
+                    ...record,
+                    pin_details: record.company
+                        ? pinDetailsMap[record.company.company_name] || null
+                        : null
+                }));
+
+                setPayrollRecords(recordsWithPinDetails)
+            }
         } catch (error) {
+            console.error('Fetch error:', error)
             toast({
                 title: 'Error',
                 description: 'Failed to fetch payroll records',
@@ -96,7 +130,6 @@ export const usePayrollCycle = () => {
             })
         }
     }
-
     const handleDocumentUpload = async (
         recordId: string,
         file: File,
@@ -155,6 +188,23 @@ export const usePayrollCycle = () => {
                 .eq('id', recordId)
 
             if (updateError) throw updateError
+
+
+            if (documentType === 'paye_csv') {
+                const text = await file.text();
+                const rows = text.split('\n');
+                const employeeCount = rows.length; // Subtract 1 for header row
+
+                // Update record with employee count
+                const { error: updateError } = await supabase
+                    .from('company_payroll_records')
+                    .update({
+                        number_of_employees: employeeCount
+                    })
+                    .eq('id', recordId)
+
+                if (updateError) throw updateError
+            }
 
             await fetchPayrollRecords(record.payroll_cycle_id)
             toast({
@@ -248,6 +298,109 @@ export const usePayrollCycle = () => {
         }
     }
 
+    const updateExistingEmployeeCounts = async () => {
+        try {
+            // First get the current cycle ID
+            const { data: cycle, error: cycleError } = await supabase
+                .from('payroll_cycles')
+                .select('id')
+                .eq('month_year', selectedMonthYear)
+                .single();
+
+            if (cycleError) throw cycleError;
+            if (!cycle) {
+                toast({
+                    title: 'No Cycle Found',
+                    description: 'No payroll cycle exists for the selected month',
+                    variant: 'destructive'
+                });
+                return;
+            }
+
+            // Now get records with PAYE CSV for current cycle
+            const { data: records, error } = await supabase
+                .from('company_payroll_records')
+                .select('*')
+                .eq('payroll_cycle_id', cycle.id)
+                .not('documents->paye_csv', 'is', null);
+
+            if (error) throw error;
+
+            if (records && records.length > 0) {
+                const updates = await Promise.all(records.map(async (record) => {
+                    try {
+                        if (!record.documents?.paye_csv) {
+                            await supabase
+                                .from('company_payroll_records')
+                                .update({ number_of_employees: 0 })
+                                .eq('id', record.id);
+                            return { recordId: record.id, employeeCount: 0, success: true };
+                        }
+
+                        const { data: fileData, error: downloadError } = await supabase.storage
+                            .from('Payroll-Cycle')
+                            .download(record.documents.paye_csv);
+
+                        if (downloadError) {
+                            await supabase
+                                .from('company_payroll_records')
+                                .update({ number_of_employees: 0 })
+                                .eq('id', record.id);
+                            return { recordId: record.id, employeeCount: 0, success: true };
+                        }
+
+                        const text = await fileData.text();
+                        const rows = text.split('\n').filter(row => row.trim());
+                        const employeeCount = rows.length <= 1 ? 0 : rows.length;
+
+                        await supabase
+                            .from('company_payroll_records')
+                            .update({ number_of_employees: employeeCount })
+                            .eq('id', record.id);
+
+                        return {
+                            recordId: record.id,
+                            employeeCount,
+                            success: true
+                        };
+                    } catch (error) {
+                        await supabase
+                            .from('company_payroll_records')
+                            .update({ number_of_employees: 0 })
+                            .eq('id', record.id);
+
+                        return {
+                            recordId: record.id,
+                            employeeCount: 0,
+                            success: true
+                        };
+                    }
+                }));
+
+                await fetchPayrollRecords(cycle.id);
+
+                toast({
+                    title: 'Update Complete',
+                    description: `Updated employee counts for ${updates.length} records`,
+                    variant: 'default'
+                });
+            } else {
+                toast({
+                    title: 'No Updates Needed',
+                    description: 'No PAYE CSV files found for the current cycle',
+                    variant: 'default'
+                });
+            }
+        } catch (error) {
+            console.error('Error updating existing employee counts:', error);
+            toast({
+                title: 'Error',
+                description: 'Failed to update employee counts',
+                variant: 'destructive'
+            });
+        }
+    };
+
     return {
         payrollRecords,
         setPayrollRecords,
@@ -261,6 +414,7 @@ export const usePayrollCycle = () => {
         fetchOrCreatePayrollCycle,
         handleDocumentUpload,
         handleDocumentDelete,
-        handleStatusUpdate
+        handleStatusUpdate,
+        updateExistingEmployeeCounts
     }
 }

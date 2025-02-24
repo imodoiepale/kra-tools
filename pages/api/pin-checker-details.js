@@ -323,7 +323,7 @@ function organizeData(companyName, tableContent) {
 }
 
 async function saveCompanyDetails(details) {
-    const { error } = await supabase.from('PinCheckerDetails').upsert(details);
+    const { error } = await supabase.from('PinCheckerDetails').upsert(details, { onConflict: "company_name" });
     if (error) throw error;
 }
 
