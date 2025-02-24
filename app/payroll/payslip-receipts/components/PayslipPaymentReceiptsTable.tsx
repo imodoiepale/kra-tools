@@ -61,6 +61,21 @@ import { supabase } from '@/lib/supabase'
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip";
 import { ContactModal } from "./ContactModal"
 
+interface EmailHistory {
+    date: string;
+    recipients: string[];
+}
+
+interface PayrollRecord {
+    id: string;
+    company: {
+        company_name: string;
+        email?: string;
+    };
+    payment_receipts_documents: Record<DocumentType, string | null>;
+    status: any;
+    email_history?: EmailHistory[];
+}
 
 const DOCUMENT_LABELS: Record<string, string> = {
     paye_receipt: "PAYE Payment",
@@ -130,6 +145,452 @@ const handleEmailDateUpdate = async (recordId: string) => {
     }
 };
 
+const handleEmailSent = async (recordId: string, emailData: { date: string; recipients: string[] }) => {
+    try {
+        const record = records.find(r => r.id === recordId);
+        if (!record) return;
+
+        // Fetch current record to get latest email history and status
+        const { data: currentRecord, error: fetchError } = await supabase
+            .from('company_payroll_records')
+            .select('email_history, receipts_status')
+            .eq('id', recordId)
+            .single();
+
+        if (fetchError) throw fetchError;
+
+        const emailHistory = currentRecord.email_history || [];
+        const updatedHistory = [...emailHistory, emailData];
+
+        // Update both email history and email date
+        const { error: updateError } = await supabase
+            .from('company_payroll_records')
+            .update({
+                email_history: updatedHistory,
+                receipts_status: {
+                    ...currentRecord.receipts_status,
+                    email_date: emailData.date
+                }
+            })
+            .eq('id', recordId);
+
+        if (updateError) throw updateError;
+
+        // Update local state
+        setPayrollRecords(records.map(r => {
+            if (r.id === recordId) {
+                return {
+                    ...r,
+                    email_history: updatedHistory,
+                    receipts_status: {
+                        ...r.receipts_status,
+                        email_date: emailData.date
+                    }
+                };
+            }
+            return r;
+        }));
+
+        toast({
+            title: "Success",
+            description: "Email sent and history updated successfully"
+        });
+    } catch (error) {
+        console.error('Email history update error:', error);
+        toast({
+            title: "Error",
+            description: "Failed to update email history",
+            variant: "destructive"
+        });
+    }
+};
+
+const handleFinalize = (recordId: string) => {
+    onStatusUpdate(recordId, {
+        verification_date: finalizeDialog.isNil ? 'NIL' : new Date().toISOString(),
+        status: 'completed',
+        assigned_to: finalizeDialog.assignedTo
+    });
+    setFinalizeDialog({ isOpen: false, recordId: null, assignedTo: 'Tushar', isNil: false });
+};
+
+const handleFilingConfirm = async (recordId: string) => {
+    try {
+        const record = records.find(r => r.id === recordId);
+        if (!record) return;
+
+        // Fetch current record to get latest status
+        const { data: currentRecord, error: fetchError } = await supabase
+            .from('company_payroll_records')
+            .select('status')
+            .eq('id', recordId)
+            .single();
+
+        if (fetchError) throw fetchError;
+
+        const currentDate = filingDialog.isNil ? 'NIL' : new Date().toISOString();
+
+        // Create the updated status object
+        const updatedStatus = {
+            ...currentRecord.status, // Preserve existing status fields
+            filing: {
+                isReady: true,
+                filingDate: currentDate,
+                isNil: filingDialog.isNil,
+                filedBy: record.status.assigned_to || 'Unassigned'
+            }
+        };
+
+        // Update the record in Supabase
+        const { error: updateError } = await supabase
+            .from('company_payroll_records')
+            .update({
+                status: updatedStatus
+            })
+            .eq('id', recordId);
+
+        if (updateError) throw updateError;
+
+        // Update local state
+        const updatedRecords = records.map(r => {
+            if (r.id === recordId) {
+                return {
+                    ...r,
+                    status: updatedStatus
+                };
+            }
+            return r;
+        });
+
+        setPayrollRecords(updatedRecords);
+
+        toast({
+            title: "Success",
+            description: "Filing status updated successfully"
+        });
+
+        setFilingDialog({ isOpen: false, recordId: null, isNil: false, confirmOpen: false });
+    } catch (error) {
+        console.error('Filing update error:', error);
+        toast({
+            title: "Error",
+            description: "Failed to update filing status",
+            variant: "destructive"
+        });
+    }
+};
+
+const handleRemoveFiling = async (recordId: string) => {
+    try {
+        const record = records.find(r => r.id === recordId);
+        if (!record) return;
+
+        // Fetch current record to get latest status
+        const { data: currentRecord, error: fetchError } = await supabase
+            .from('company_payroll_records')
+            .select('status')
+            .eq('id', recordId)
+            .single();
+
+        if (fetchError) throw fetchError;
+
+        // Create the updated status object without the filing property
+        const { filing, ...restStatus } = currentRecord.status;
+        const updatedStatus = { ...restStatus };
+
+        // Update the record in Supabase
+        const { error: updateError } = await supabase
+            .from('company_payroll_records')
+            .update({
+                status: updatedStatus
+            })
+            .eq('id', recordId);
+
+        if (updateError) throw updateError;
+
+        // Update local state
+        setPayrollRecords(records.map(r =>
+            r.id === recordId
+                ? { ...r, status: updatedStatus }
+                : r
+        ));
+
+        // Close the dialog and show success message
+        setFilingDialog(prev => ({ ...prev, isOpen: false }));
+        toast({
+            title: "Success",
+            description: "Filing status has been removed successfully.",
+            variant: "default",
+        });
+    } catch (error) {
+        console.error('Error removing filing status:', error);
+        toast({
+            title: "Error",
+            description: "Failed to remove filing status. Please try again.",
+            variant: "destructive",
+        });
+    }
+};
+
+const handleDeleteAll = async (record: CompanyPayrollRecord) => {
+    try {
+        setIsSubmitting(true);
+
+        // Filter out null values before using the paths
+        const documentsToDelete = Object.entries(record.payment_receipts_documents).filter(([_, path]) => path !== null) as [DocumentType, string][];
+
+        if (documentsToDelete.length === 0) {
+            toast({
+                title: 'No documents',
+                description: 'No documents to delete'
+            });
+            return;
+        }
+
+        // Delete all files from storage
+        await Promise.all(
+            documentsToDelete.map(async ([_, path]) => {
+                const { error: deleteError } = await supabase.storage
+                    .from('Payroll-Cycle')
+                    .remove([path]);
+                if (deleteError) throw deleteError;
+            })
+        );
+
+        // Update record to clear all documents
+        const { error: updateError } = await supabase
+            .from('company_payroll_records')
+            .update({
+                payment_receipts_documents: {
+                    paye_receipt: null,
+                    housing_levy_receipt: null,
+                    shif_receipt: null,
+                    nssf_receipt: null,
+                    nita_receipt: null
+                }
+            })
+            .eq('id', record.id);
+
+        if (updateError) throw updateError;
+
+        // Update local state
+        const updatedRecords: CompanyPayrollRecord[] = records.map(r => {
+            if (r.id === record.id) {
+                return {
+                    ...r,
+                    payment_receipts_documents: {
+                        paye_receipt: null,
+                        housing_levy_receipt: null,
+                        shif_receipt: null,
+                        nssf_receipt: null,
+                        nita_receipt: null
+                    }
+                };
+            }
+            return r;
+        });
+        setPayrollRecords(updatedRecords);
+
+        toast({
+            title: 'Success',
+            description: `Successfully deleted ${documentsToDelete.length} documents`
+        });
+    } catch (error) {
+        console.error('Delete all error:', error);
+        toast({
+            title: 'Error',
+            description: 'Failed to delete documents',
+            variant: 'destructive'
+        });
+    } finally {
+        setIsSubmitting(false);
+    }
+};
+
+const handleDownload = async (path: string): Promise<void> => {
+    try {
+        const { data, error } = await supabase.storage
+            .from('Payroll-Cycle')
+            .download(path);
+
+        if (error) throw error;
+
+        // Create download link
+        const url = URL.createObjectURL(data);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = path.split('/').pop() || 'document';
+        document.body.appendChild(a);
+        a.click();
+        URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+    } catch (error) {
+        toast({
+            title: 'Error',
+            description: 'Failed to download document',
+            variant: 'destructive'
+        });
+    }
+};
+
+const handleDownloadAll = async (record: CompanyPayrollRecord) => {
+    try {
+        const documentsToDownload = Object.entries(record.payment_receipts_documents)
+            .filter(([key, value]) => key !== 'all_csv' && value !== null);
+
+        for (const [_, path] of documentsToDownload) {
+            if (path) await handleDownload(path);
+        }
+
+        toast({
+            title: 'Success',
+            description: 'All documents downloaded successfully'
+        });
+    } catch (error) {
+        toast({
+            title: 'Error',
+            description: 'Failed to download all documents',
+            variant: 'destructive'
+        });
+    }
+};
+
+const handleDocumentUpload = async (recordId: string, file: File, documentType: DocumentType): Promise<void> => {
+    try {
+        const record = records.find(r => r.id === recordId);
+        if (!record) {
+            throw new Error('Record not found');
+        }
+
+        if (!record.company || !record.company.company_name) {
+            throw new Error('Company information is missing');
+        }
+
+        // First, fetch the current record to get latest document paths
+        const { data: currentRecord, error: fetchError } = await supabase
+            .from('company_payroll_records')
+            .select('payment_receipts_documents')
+            .eq('id', recordId)
+            .single();
+
+        if (fetchError) throw fetchError;
+        if (!currentRecord) throw new Error('Failed to fetch current record');
+
+        const fileName = `${documentType} - ${record.company.company_name} - ${format(new Date(), 'yyyy-MM-dd')}${file.name.substring(file.name.lastIndexOf('.'))}`;
+        const filePath = `${selectedMonthYear}/PAYMENT RECEIPTS/${record.company.company_name}/${fileName}`;
+        
+        // Upload file to storage
+        const { data: uploadData, error: uploadError } = await supabase.storage
+            .from('Payroll-Cycle')
+            .upload(filePath, file, {
+                cacheControl: '0',
+                upsert: true
+            });
+
+        if (uploadError) throw uploadError;
+
+        // Preserve existing document paths and update the new one
+        const updatedDocuments = {
+            ...currentRecord.payment_receipts_documents,
+            [documentType]: uploadData.path
+        };
+
+        // Update database record with merged document paths
+        const { error: updateError } = await supabase
+            .from('company_payroll_records')
+            .update({
+                payment_receipts_documents: updatedDocuments
+            })
+            .eq('id', recordId);
+
+        if (updateError) {
+            // If database update fails, clean up the uploaded file
+            await supabase.storage
+                .from('Payroll-Cycle')
+                .remove([uploadData.path]);
+            throw updateError;
+        }
+
+        // Update local state
+        const updatedRecords: CompanyPayrollRecord[] = records.map(r => {
+            if (r.id === recordId) {
+                return {
+                    ...r,
+                    payment_receipts_documents: updatedDocuments
+                };
+            }
+            return r;
+        });
+        setPayrollRecords(updatedRecords);
+
+        toast({
+            title: 'Success',
+            description: 'Document uploaded successfully'
+        });
+    } catch (error) {
+        console.error('Document upload error:', error);
+        toast({
+            title: 'Error',
+            description: error instanceof Error ? error.message : 'Failed to upload document',
+            variant: 'destructive'
+        });
+        throw error;
+    }
+};
+
+const handleDocumentDelete = async (recordId: string, documentType: DocumentType) => {
+    try {
+        const record = records.find(r => r.id === recordId);
+        if (!record) return;
+
+        const documentPath = record.payment_receipts_documents[documentType];
+        if (!documentPath) return;
+
+        const { error: deleteError } = await supabase.storage
+            .from('Payroll-Cycle')
+            .remove([documentPath]);
+
+        if (deleteError) throw deleteError;
+
+        const { error: updateError } = await supabase
+            .from('company_payroll_records')
+            .update({
+                payment_receipts_documents: {
+                    ...record.payment_receipts_documents,
+                    [documentType]: null
+                }
+            })
+            .eq('id', recordId);
+
+        if (updateError) throw updateError;
+
+        // Update local state
+        const updatedRecords: CompanyPayrollRecord[] = records.map(r => {
+            if (r.id === recordId) {
+                return {
+                    ...r,
+                    payment_receipts_documents: {
+                        ...r.payment_receipts_documents,
+                        [documentType]: null
+                    }
+                };
+            }
+            return r;
+        });
+        setPayrollRecords(updatedRecords);
+
+        toast({
+            title: 'Success',
+            description: 'Document deleted successfully'
+        });
+    } catch (error) {
+        toast({
+            title: 'Error',
+            description: 'Failed to delete document',
+            variant: 'destructive'
+        });
+    }
+};
 
 export function PayslipPaymentReceiptsTable({
     records,
@@ -198,397 +659,10 @@ export function PayslipPaymentReceiptsTable({
         });
     }, [records]);
 
-    const handleFinalize = (recordId: string) => {
-        onStatusUpdate(recordId, {
-            verification_date: finalizeDialog.isNil ? 'NIL' : new Date().toISOString(),
-            status: 'completed',
-            assigned_to: finalizeDialog.assignedTo
-        });
-        setFinalizeDialog({ isOpen: false, recordId: null, assignedTo: 'Tushar', isNil: false });
-    };
-
-    const handleFilingConfirm = async (recordId: string) => {
-        try {
-            const record = records.find(r => r.id === recordId);
-            if (!record) return;
-
-            // Fetch current record to get latest status
-            const { data: currentRecord, error: fetchError } = await supabase
-                .from('company_payroll_records')
-                .select('status')
-                .eq('id', recordId)
-                .single();
-
-            if (fetchError) throw fetchError;
-
-            const currentDate = filingDialog.isNil ? 'NIL' : new Date().toISOString();
-
-            // Create the updated status object
-            const updatedStatus = {
-                ...currentRecord.status, // Preserve existing status fields
-                filing: {
-                    isReady: true,
-                    filingDate: currentDate,
-                    isNil: filingDialog.isNil,
-                    filedBy: record.status.assigned_to || 'Unassigned'
-                }
-            };
-
-            // Update the record in Supabase
-            const { error: updateError } = await supabase
-                .from('company_payroll_records')
-                .update({
-                    status: updatedStatus
-                })
-                .eq('id', recordId);
-
-            if (updateError) throw updateError;
-
-            // Update local state
-            const updatedRecords = records.map(r => {
-                if (r.id === recordId) {
-                    return {
-                        ...r,
-                        status: updatedStatus
-                    };
-                }
-                return r;
-            });
-
-            setPayrollRecords(updatedRecords);
-
-            toast({
-                title: "Success",
-                description: "Filing status updated successfully"
-            });
-
-            setFilingDialog({ isOpen: false, recordId: null, isNil: false, confirmOpen: false });
-        } catch (error) {
-            console.error('Filing update error:', error);
-            toast({
-                title: "Error",
-                description: "Failed to update filing status",
-                variant: "destructive"
-            });
-        }
-    };
-
-    const handleRemoveFiling = async (recordId: string) => {
-        try {
-            const record = records.find(r => r.id === recordId);
-            if (!record) return;
-
-            // Fetch current record to get latest status
-            const { data: currentRecord, error: fetchError } = await supabase
-                .from('company_payroll_records')
-                .select('status')
-                .eq('id', recordId)
-                .single();
-
-            if (fetchError) throw fetchError;
-
-            // Create the updated status object without the filing property
-            const { filing, ...restStatus } = currentRecord.status;
-            const updatedStatus = { ...restStatus };
-
-            // Update the record in Supabase
-            const { error: updateError } = await supabase
-                .from('company_payroll_records')
-                .update({
-                    status: updatedStatus
-                })
-                .eq('id', recordId);
-
-            if (updateError) throw updateError;
-
-            // Update local state
-            setPayrollRecords(records.map(r =>
-                r.id === recordId
-                    ? { ...r, status: updatedStatus }
-                    : r
-            ));
-
-            // Close the dialog and show success message
-            setFilingDialog(prev => ({ ...prev, isOpen: false }));
-            toast({
-                title: "Success",
-                description: "Filing status has been removed successfully.",
-                variant: "default",
-            });
-        } catch (error) {
-            console.error('Error removing filing status:', error);
-            toast({
-                title: "Error",
-                description: "Failed to remove filing status. Please try again.",
-                variant: "destructive",
-            });
-        }
-    };
-
     const [deleteAllDialog, setDeleteAllDialog] = useState<{
         isOpen: boolean;
         record: CompanyPayrollRecord | null;
     }>({ isOpen: false, record: null });
-
-    const handleDeleteAll = async (record: CompanyPayrollRecord) => {
-        try {
-            setIsSubmitting(true);
-
-            // Filter out null values before using the paths
-            const documentsToDelete = Object.entries(record.payment_receipts_documents).filter(([_, path]) => path !== null) as [DocumentType, string][];
-
-            if (documentsToDelete.length === 0) {
-                toast({
-                    title: 'No documents',
-                    description: 'No documents to delete'
-                });
-                return;
-            }
-
-            // Delete all files from storage
-            await Promise.all(
-                documentsToDelete.map(async ([_, path]) => {
-                    const { error: deleteError } = await supabase.storage
-                        .from('Payroll-Cycle')
-                        .remove([path]);
-                    if (deleteError) throw deleteError;
-                })
-            );
-
-            // Update record to clear all documents
-            const { error: updateError } = await supabase
-                .from('company_payroll_records')
-                .update({
-                    payment_receipts_documents: {
-                        paye_receipt: null,
-                        housing_levy_receipt: null,
-                        shif_receipt: null,
-                        nssf_receipt: null,
-                        nita_receipt: null
-                    }
-                })
-                .eq('id', record.id);
-
-            if (updateError) throw updateError;
-
-            // Update local state
-            const updatedRecords: CompanyPayrollRecord[] = records.map(r => {
-                if (r.id === record.id) {
-                    return {
-                        ...r,
-                        payment_receipts_documents: {
-                            paye_receipt: null,
-                            housing_levy_receipt: null,
-                            shif_receipt: null,
-                            nssf_receipt: null,
-                            nita_receipt: null
-                        }
-                    };
-                }
-                return r;
-            });
-            setPayrollRecords(updatedRecords);
-
-            toast({
-                title: 'Success',
-                description: `Successfully deleted ${documentsToDelete.length} documents`
-            });
-        } catch (error) {
-            console.error('Delete all error:', error);
-            toast({
-                title: 'Error',
-                description: 'Failed to delete documents',
-                variant: 'destructive'
-            });
-        } finally {
-            setIsSubmitting(false);
-        }
-    };
-
-    const handleDownload = async (path: string): Promise<void> => {
-        try {
-            const { data, error } = await supabase.storage
-                .from('Payroll-Cycle')
-                .download(path);
-
-            if (error) throw error;
-
-            // Create download link
-            const url = URL.createObjectURL(data);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = path.split('/').pop() || 'document';
-            document.body.appendChild(a);
-            a.click();
-            URL.revokeObjectURL(url);
-            document.body.removeChild(a);
-        } catch (error) {
-            toast({
-                title: 'Error',
-                description: 'Failed to download document',
-                variant: 'destructive'
-            });
-        }
-    };
-
-    const handleDownloadAll = async (record: CompanyPayrollRecord) => {
-        try {
-            const documentsToDownload = Object.entries(record.payment_receipts_documents)
-                .filter(([key, value]) => key !== 'all_csv' && value !== null);
-
-            for (const [_, path] of documentsToDownload) {
-                if (path) await handleDownload(path);
-            }
-
-            toast({
-                title: 'Success',
-                description: 'All documents downloaded successfully'
-            });
-        } catch (error) {
-            toast({
-                title: 'Error',
-                description: 'Failed to download all documents',
-                variant: 'destructive'
-            });
-        }
-    };
-
-    const handleDocumentUpload = async (recordId: string, file: File, documentType: DocumentType): Promise<void> => {
-        try {
-            const record = records.find(r => r.id === recordId);
-            if (!record) {
-                throw new Error('Record not found');
-            }
-
-            if (!record.company || !record.company.company_name) {
-                throw new Error('Company information is missing');
-            }
-
-            // First, fetch the current record to get latest document paths
-            const { data: currentRecord, error: fetchError } = await supabase
-                .from('company_payroll_records')
-                .select('payment_receipts_documents')
-                .eq('id', recordId)
-                .single();
-
-            if (fetchError) throw fetchError;
-            if (!currentRecord) throw new Error('Failed to fetch current record');
-
-            const fileName = `${documentType} - ${record.company.company_name} - ${format(new Date(), 'yyyy-MM-dd')}${file.name.substring(file.name.lastIndexOf('.'))}`;
-            const filePath = `${selectedMonthYear}/PAYMENT RECEIPTS/${record.company.company_name}/${fileName}`;
-            
-            // Upload file to storage
-            const { data: uploadData, error: uploadError } = await supabase.storage
-                .from('Payroll-Cycle')
-                .upload(filePath, file, {
-                    cacheControl: '0',
-                    upsert: true
-                });
-
-            if (uploadError) throw uploadError;
-
-            // Preserve existing document paths and update the new one
-            const updatedDocuments = {
-                ...currentRecord.payment_receipts_documents,
-                [documentType]: uploadData.path
-            };
-
-            // Update database record with merged document paths
-            const { error: updateError } = await supabase
-                .from('company_payroll_records')
-                .update({
-                    payment_receipts_documents: updatedDocuments
-                })
-                .eq('id', recordId);
-
-            if (updateError) {
-                // If database update fails, clean up the uploaded file
-                await supabase.storage
-                    .from('Payroll-Cycle')
-                    .remove([uploadData.path]);
-                throw updateError;
-            }
-
-            // Update local state
-            const updatedRecords: CompanyPayrollRecord[] = records.map(r => {
-                if (r.id === recordId) {
-                    return {
-                        ...r,
-                        payment_receipts_documents: updatedDocuments
-                    };
-                }
-                return r;
-            });
-            setPayrollRecords(updatedRecords);
-
-            toast({
-                title: 'Success',
-                description: 'Document uploaded successfully'
-            });
-        } catch (error) {
-            console.error('Document upload error:', error);
-            toast({
-                title: 'Error',
-                description: error instanceof Error ? error.message : 'Failed to upload document',
-                variant: 'destructive'
-            });
-            throw error;
-        }
-    };
-
-    const handleDocumentDelete = async (recordId: string, documentType: DocumentType) => {
-        try {
-            const record = records.find(r => r.id === recordId);
-            if (!record) return;
-
-            const documentPath = record.payment_receipts_documents[documentType];
-            if (!documentPath) return;
-
-            const { error: deleteError } = await supabase.storage
-                .from('Payroll-Cycle')
-                .remove([documentPath]);
-
-            if (deleteError) throw deleteError;
-
-            const { error: updateError } = await supabase
-                .from('company_payroll_records')
-                .update({
-                    payment_receipts_documents: {
-                        ...record.payment_receipts_documents,
-                        [documentType]: null
-                    }
-                })
-                .eq('id', recordId);
-
-            if (updateError) throw updateError;
-
-            // Update local state
-            const updatedRecords: CompanyPayrollRecord[] = records.map(r => {
-                if (r.id === recordId) {
-                    return {
-                        ...r,
-                        payment_receipts_documents: {
-                            ...r.payment_receipts_documents,
-                            [documentType]: null
-                        }
-                    };
-                }
-                return r;
-            });
-            setPayrollRecords(updatedRecords);
-
-            toast({
-                title: 'Success',
-                description: 'Document deleted successfully'
-            });
-        } catch (error) {
-            toast({
-                title: 'Error',
-                description: 'Failed to delete document',
-                variant: 'destructive'
-            });
-        }
-    };
 
     return (
         <div className="rounded-md border h-[calc(100vh-220px)] overflow-auto">
@@ -608,12 +682,13 @@ export function PayslipPaymentReceiptsTable({
                         <TableHead className="text-white font-semibold" scope="col">NSSF Rct</TableHead>
                         <TableHead className="text-white font-semibold" scope="col">All Tax Rcts</TableHead>
                         <TableHead className="text-white font-semibold" scope="col">Actions</TableHead>
+                        <TableHead className="text-white font-semibold" scope="col">Email Status</TableHead>
                     </TableRow>
                 </TableHeader>
                 <TableBody>
                     {loading ? (
                         <TableRow>
-                            <TableCell colSpan={13} className="text-center py-8 border">
+                            <TableCell colSpan={14} className="text-center py-8 border">
                                 <div role="status" className="animate-pulse">
                                     <div className="h-4 bg-gray-200 rounded-full w-48 mb-4"></div>
                                     <span className="sr-only">Loading...</span>
@@ -622,7 +697,7 @@ export function PayslipPaymentReceiptsTable({
                         </TableRow>
                     ) : sortedRecords.length === 0 ? (
                         <TableRow>
-                            <TableCell colSpan={13} className="text-center py-8 border">
+                            <TableCell colSpan={14} className="text-center py-8 border">
                                 No valid records found
                             </TableCell>
                         </TableRow>
@@ -651,20 +726,56 @@ export function PayslipPaymentReceiptsTable({
                             </TooltipProvider>
 
                             <TableCell className="text-center">
-                                <ContactModal
-                                    trigger={
-                                        <Button
-                                            size="sm"
-                                            variant="ghost"
-                                            className="h-8 w-8 p-0"
-                                        >
-                                            <Mail className="h-4 w-4" />
-                                        </Button>
-                                    }
-                                    companyName={record.company.company_name}
-                                    companyEmail={record.company.email}
-                                    documents={getDocumentsForUpload(record)}
-                                />
+                                <TooltipProvider>
+                                    <Tooltip>
+                                        <TooltipTrigger asChild>
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                className="relative h-8 w-8 p-0"
+                                                onClick={() => {
+                                                    const emailHistory = record.email_history || [];
+                                                    if (emailHistory.length > 0) {
+                                                        toast({
+                                                            title: "Email History",
+                                                            description: (
+                                                                <div className="mt-2 space-y-1">
+                                                                    {emailHistory.map((history, i) => (
+                                                                        <div key={i} className="text-sm">
+                                                                            <p>Sent: {format(new Date(history.date), 'dd/MM/yyyy HH:mm')}</p>
+                                                                            <p className="text-xs text-gray-500">To: {history.recipients.join(', ')}</p>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            ),
+                                                            duration: 5000,
+                                                        });
+                                                    }
+                                                }}
+                                            >
+                                                <Mail className="h-4 w-4" />
+                                                {record.email_history?.length > 0 && (
+                                                    <Badge
+                                                        className="absolute -top-2 -right-2 h-5 w-5 rounded-full bg-green-500"
+                                                        variant="secondary"
+                                                    >
+                                                        {record.email_history.length}
+                                                    </Badge>
+                                                )}
+                                            </Button>
+                                        </TooltipTrigger>
+                                        <TooltipContent>
+                                            {record.email_history?.length > 0 ? (
+                                                <div className="space-y-2">
+                                                    <p className="font-semibold">Latest Email: {format(new Date(record.email_history[record.email_history.length - 1].date), 'dd/MM/yyyy HH:mm')}</p>
+                                                    <p className="text-sm text-gray-500">Click to view full history</p>
+                                                </div>
+                                            ) : (
+                                                "No emails sent yet"
+                                            )}
+                                        </TooltipContent>
+                                    </Tooltip>
+                                </TooltipProvider>
                             </TableCell>
                             <TableCell className="text-center">
                                 <Button
@@ -682,7 +793,6 @@ export function PayslipPaymentReceiptsTable({
                                     <MessageSquare className="h-4 w-4" />
                                 </Button>
                             </TableCell>
-
 
                             {/* Document cells */}
                             {Object.entries(DOCUMENT_LABELS).map(([key, label]) => (
@@ -739,6 +849,68 @@ export function PayslipPaymentReceiptsTable({
                                         </DropdownMenuItem>
                                     </DropdownMenuContent>
                                 </DropdownMenu>
+                            </TableCell>
+                            <TableCell>
+                                <div className="flex items-center gap-2">
+                                    <TooltipProvider>
+                                        <Tooltip>
+                                            <TooltipTrigger asChild>
+                                                <ContactModal
+                                                    trigger={
+                                                        <Button
+                                                            variant="outline"
+                                                            size="icon"
+                                                            className="relative"
+                                                        >
+                                                            <Mail className="h-4 w-4" />
+                                                            {record.email_history?.length > 0 && (
+                                                                <div className="absolute -top-2 -right-2">
+                                                                    <Badge
+                                                                        className="h-5 w-5 rounded-full bg-green-500 text-white"
+                                                                        variant="secondary"
+                                                                    >
+                                                                        {record.email_history.length}
+                                                                    </Badge>
+                                                                </div>
+                                                            )}
+                                                        </Button>
+                                                    }
+                                                    companyName={record.company?.company_name || ''}
+                                                    companyEmail={record.company?.email}
+                                                    documents={getDocumentsForUpload(record)}
+                                                    onEmailSent={(data) => handleEmailSent(record.id, data)}
+                                                />
+                                            </TooltipTrigger>
+                                            <TooltipContent side="left" align="center" className="w-72">
+                                                {record.email_history?.length > 0 ? (
+                                                    <div className="space-y-2">
+                                                        <div className="flex items-center justify-between">
+                                                            <p className="font-semibold">Email History</p>
+                                                            <Badge variant="outline" className="ml-2">
+                                                                {record.email_history.length} {record.email_history.length === 1 ? 'time' : 'times'}
+                                                            </Badge>
+                                                        </div>
+                                                        <div className="max-h-48 overflow-y-auto space-y-2">
+                                                            {record.email_history.map((history, i) => (
+                                                                <div key={i} className="text-sm bg-gray-50 p-2 rounded">
+                                                                    <p className="font-medium">{format(new Date(history.date), 'dd/MM/yyyy HH:mm')}</p>
+                                                                    <p className="text-xs text-gray-500 truncate">
+                                                                        To: {history.recipients.join(', ')}
+                                                                    </p>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <div className="text-center py-2">
+                                                        <p>No emails sent yet</p>
+                                                        <p className="text-xs text-gray-500 mt-1">Click to send documents</p>
+                                                    </div>
+                                                )}
+                                            </TooltipContent>
+                                        </Tooltip>
+                                    </TooltipProvider>
+                                </div>
                             </TableCell>
                             </TableRow>
                         );

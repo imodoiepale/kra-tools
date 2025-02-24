@@ -13,6 +13,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogFooter,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -41,6 +42,7 @@ interface ContactModalProps {
     status: "uploaded" | "missing";
     path: string | null;
   }[];
+  onEmailSent?: (data: { date: string; recipients: string[]; }) => void;
 }
 
 export function ContactModal({
@@ -48,6 +50,7 @@ export function ContactModal({
   companyName,
   companyEmail: initialCompanyEmail,
   documents,
+  onEmailSent
 }: ContactModalProps) {
   const { toast } = useToast();
   const [isOpen, setIsOpen] = useState(false);
@@ -157,8 +160,15 @@ export function ContactModal({
         throw new Error("No documents available to send");
       }
 
+      if (uploadedDocuments.length > 5) {
+        throw new Error("Cannot send more than 5 documents at once. Please select fewer documents.");
+      }
+
       // Get files from storage
       const attachments: File[] = [];
+      let totalSize = 0;
+      const MAX_TOTAL_SIZE = 10 * 1024 * 1024; // 10MB limit
+
       for (const doc of uploadedDocuments) {
         if (!doc.path) continue;
 
@@ -170,7 +180,21 @@ export function ContactModal({
           if (error) throw error;
 
           const filename = doc.path.split("/").pop() || "document";
-          attachments.push(new File([data], filename, { type: data.type }));
+          const fileSize = data.size;
+
+          // Check if adding this file would exceed the total size limit
+          if (totalSize + fileSize > MAX_TOTAL_SIZE) {
+            toast({
+              title: "Warning",
+              description: `Skipping ${doc.label} - Total file size would exceed 10MB limit`,
+              variant: "destructive",
+            });
+            continue;
+          }
+
+          const file = new File([data], filename, { type: data.type });
+          attachments.push(file);
+          totalSize += fileSize;
         } catch (error) {
           console.error(`Failed to download ${doc.label}:`, error);
           toast({
@@ -179,6 +203,10 @@ export function ContactModal({
             variant: "destructive",
           });
         }
+      }
+
+      if (attachments.length === 0) {
+        throw new Error("No documents could be prepared for sending. Please try with fewer or smaller files.");
       }
 
       // Send email using EmailService
@@ -232,6 +260,13 @@ export function ContactModal({
                 `,
         attachments,
       });
+
+      if (onEmailSent) {
+        onEmailSent({
+          date: new Date().toISOString(),
+          recipients: selectedEmails
+        });
+      }
 
       toast({
         title: "Success",

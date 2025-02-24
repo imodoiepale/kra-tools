@@ -61,16 +61,10 @@ import { useToast } from '@/hooks/use-toast'
 import { supabase } from '@/lib/supabase'
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip";
 
-
-const DOCUMENT_LABELS: Record<string, string> = {
-    paye_acknowledgment: "PAYE Ack.",
-    paye_slip: "PAYE Payment",
-    housing_levy_slip: "Housing Levy",
-    nita_slip: "NITA",
-    shif_slip: "SHIF",
-    nssf_slip: "NSSF",
-    all_csv: "All CSV Files"
-};
+interface EmailHistory {
+    date: string;
+    recipients: string[];
+}
 
 interface PayrollTableProps {
     records: CompanyPayrollRecord[]
@@ -81,6 +75,16 @@ interface PayrollTableProps {
     setPayrollRecords: (records: CompanyPayrollRecord[]) => void
     visibleColumns: string[]
 }
+
+const DOCUMENT_LABELS: Record<string, string> = {
+    paye_acknowledgment: "PAYE Ack.",
+    paye_slip: "PAYE Payment",
+    housing_levy_slip: "Housing Levy",
+    nita_slip: "NITA",
+    shif_slip: "SHIF",
+    nssf_slip: "NSSF",
+    all_csv: "All CSV Files"
+};
 
 const formatDate = (date: string | null | undefined): string => {
     if (!date) return 'NIL';
@@ -562,6 +566,58 @@ export function TaxPaymentTable({
         }
     };
 
+    const handleEmailSent = async (recordId: string, emailData: { date: string; recipients: string[] }) => {
+        try {
+            const record = records.find(r => r.id === recordId);
+            if (!record) return;
+
+            // Fetch current record to get latest email history
+            const { data: currentRecord, error: fetchError } = await supabase
+                .from('company_payroll_records')
+                .select('email_history')
+                .eq('id', recordId)
+                .single();
+
+            if (fetchError) throw fetchError;
+
+            const emailHistory = currentRecord.email_history || [];
+            const updatedHistory = [...emailHistory, emailData];
+
+            // Update the record in Supabase
+            const { error: updateError } = await supabase
+                .from('company_payroll_records')
+                .update({
+                    email_history: updatedHistory
+                })
+                .eq('id', recordId);
+
+            if (updateError) throw updateError;
+
+            // Update local state
+            setPayrollRecords(records.map(r => {
+                if (r.id === recordId) {
+                    return {
+                        ...r,
+                        email_history: updatedHistory
+                    };
+                }
+                return r;
+            }));
+
+            toast({
+                title: "Success",
+                description: "Email history updated successfully"
+            });
+        } catch (error) {
+            console.error('Email history update error:', error);
+            toast({
+                title: "Error",
+                description: "Failed to update email history",
+                variant: "destructive"
+            });
+        }
+    };
+
     return (
         <div className="rounded-md border h-[calc(100vh-220px)] overflow-auto">
             <Table aria-label="Payroll Records" className="border border-gray-200">
@@ -577,6 +633,7 @@ export function TaxPaymentTable({
                         <TableHead className="text-white font-semibold" scope="col">SHIF</TableHead>
                         <TableHead className="text-white font-semibold" scope="col">NSSF</TableHead>
                         <TableHead className="text-white font-semibold" scope="col">All Tax Slips</TableHead>
+                        <TableHead className="text-white font-semibold" scope="col">Email Status</TableHead>
                         <TableHead className="text-white font-semibold" scope="col">Email</TableHead>
                         <TableHead className="text-white font-semibold" scope="col">WhatsApp</TableHead>
                         <TableHead className="text-white font-semibold" scope="col">Actions</TableHead>
@@ -673,31 +730,55 @@ export function TaxPaymentTable({
                                 </TableCell>
                             ))}
 
-
-                            <TableCell className="text-center">
-                                <ContactModal
-                                    trigger={
-                                        <Button
-                                            size="sm"
-                                            variant="ghost"
-                                            className="h-8 w-8 p-0"
-                                        >
-                                            <Mail className="h-4 w-4" />
-                                        </Button>
-                                    }
-                                    companyName={record.company.company_name}
-                                    companyEmail={record.company.current_communication_email}
-                                    documents={Object.entries(DOCUMENT_LABELS)
-                                        .filter(([key]) => key !== 'all_csv')
-                                        .map(([type, label]) => ({
-                                            type: type as DocumentType,
-                                            label,
-                                            status: record.payment_slips_documents[type as DocumentType] ? "uploaded" : "missing",
-                                            path: record.payment_slips_documents[type as DocumentType] || null
-                                        }))
-                                    }
-                                />
+                            <TableCell>
+                                <div className="flex items-center gap-2">
+                                    <TooltipProvider>
+                                        <Tooltip>
+                                            <TooltipTrigger asChild>
+                                                <ContactModal
+                                                    trigger={
+                                                        <Button
+                                                            variant="outline"
+                                                            size="icon"
+                                                            className="relative"
+                                                        >
+                                                            <Mail className="h-4 w-4" />
+                                                            {record.email_history?.length > 0 && (
+                                                                <Badge
+                                                                    className="absolute -top-2 -right-2 h-5 w-5 rounded-full bg-green-500"
+                                                                    variant="secondary"
+                                                                >
+                                                                    {record.email_history.length}
+                                                                </Badge>
+                                                            )}
+                                                        </Button>
+                                                    }
+                                                    companyName={record.company?.company_name || ''}
+                                                    companyEmail={record.company?.email}
+                                                    documents={getDocumentsForUpload(record)}
+                                                    onEmailSent={(data) => handleEmailSent(record.id, data)}
+                                                />
+                                            </TooltipTrigger>
+                                            <TooltipContent>
+                                                {record.email_history?.length > 0 ? (
+                                                    <div className="space-y-2">
+                                                        <p className="font-semibold">Email History:</p>
+                                                        {record.email_history.map((history, i) => (
+                                                            <div key={i} className="text-sm">
+                                                                <p>Sent: {format(new Date(history.date), 'dd/MM/yyyy HH:mm')}</p>
+                                                                <p>To: {history.recipients.join(', ')}</p>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                ) : (
+                                                    "Send documents via email"
+                                                )}
+                                            </TooltipContent>
+                                        </Tooltip>
+                                    </TooltipProvider>
+                                </div>
                             </TableCell>
+
                             <TableCell className="text-center">
                                 <Button
                                     size="sm"
