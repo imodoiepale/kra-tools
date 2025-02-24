@@ -4,8 +4,9 @@ import { format } from 'date-fns'
 import { supabase } from '@/lib/supabase'
 import { CompanyPayrollRecord, DocumentType } from '../types'
 import { TaxPaymentTable } from './components/TaxPaymentTable'
-// import { TableControls } from '../components/TableControls'
+import { TableControls } from '../components/TableControls'
 import { useToast } from '@/hooks/use-toast'
+import { ContactModal } from '../payslip-receipts/components/ContactModal'
 
 interface TaxPaymentSlipsProps {
     payrollRecords: CompanyPayrollRecord[]

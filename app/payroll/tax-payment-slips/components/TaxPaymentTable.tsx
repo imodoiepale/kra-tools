@@ -17,6 +17,7 @@ import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Button } from '@/components/ui/button'
+import { ContactModal } from '../../payslip-receipts/components/ContactModal'
 import {
     Table,
     TableBody,
@@ -78,6 +79,7 @@ interface PayrollTableProps {
     onStatusUpdate: (recordId: string, statusUpdate: any) => Promise<void>
     loading: boolean
     setPayrollRecords: (records: CompanyPayrollRecord[]) => void
+    visibleColumns: string[]
 }
 
 const formatDate = (date: string | null | undefined): string => {
@@ -109,7 +111,8 @@ export function TaxPaymentTable({
     onStatusUpdate,
     onDocumentDelete,   
     loading,
-    setPayrollRecords
+    setPayrollRecords,
+    visibleColumns
 }: PayrollTableProps) {
     const { toast } = useToast()
 
@@ -672,20 +675,28 @@ export function TaxPaymentTable({
 
 
                             <TableCell className="text-center">
-                                <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    className="h-8 w-8 p-0"
-                                    onClick={() => {
-                                        // TODO: Implement email dialog
-                                        toast({
-                                            title: "Coming Soon",
-                                            description: "Email functionality will be added soon"
-                                        });
-                                    }}
-                                >
-                                    <Mail className="h-4 w-4" />
-                                </Button>
+                                <ContactModal
+                                    trigger={
+                                        <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            className="h-8 w-8 p-0"
+                                        >
+                                            <Mail className="h-4 w-4" />
+                                        </Button>
+                                    }
+                                    companyName={record.company.company_name}
+                                    companyEmail={record.company.current_communication_email}
+                                    documents={Object.entries(DOCUMENT_LABELS)
+                                        .filter(([key]) => key !== 'all_csv')
+                                        .map(([type, label]) => ({
+                                            type: type as DocumentType,
+                                            label,
+                                            status: record.payment_slips_documents[type as DocumentType] ? "uploaded" : "missing",
+                                            path: record.payment_slips_documents[type as DocumentType] || null
+                                        }))
+                                    }
+                                />
                             </TableCell>
                             <TableCell className="text-center">
                                 <Button
@@ -733,6 +744,32 @@ export function TaxPaymentTable({
                                         >
                                             <Trash2 className="h-4 w-4" />
                                             Delete All
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem
+                                            onClick={(e) => {
+                                                e.preventDefault()
+                                                e.stopPropagation()
+                                            }}
+                                        >
+                                            <ContactModal
+                                                trigger={
+                                                    <div className="flex items-center w-full">
+                                                        <Mail className="mr-2 h-4 w-4" />
+                                                        <span>Send Documents</span>
+                                                    </div>
+                                                }
+                                                companyName={record.company.company_name}
+                                                companyEmail={record.company.current_communication_email}
+                                                documents={Object.entries(DOCUMENT_LABELS)
+                                                    .filter(([key]) => key !== 'all_csv')
+                                                    .map(([type, label]) => ({
+                                                        type: type as DocumentType,
+                                                        label,
+                                                        status: record.payment_slips_documents[type as DocumentType] ? "uploaded" : "missing",
+                                                        path: record.payment_slips_documents[type as DocumentType] || null
+                                                    }))
+                                                }
+                                            />
                                         </DropdownMenuItem>
                                     </DropdownMenuContent>
                                 </DropdownMenu>
