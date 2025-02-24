@@ -3,18 +3,15 @@ import { useEffect, useState, useMemo, useCallback } from 'react'
 import { format } from 'date-fns'
 import { supabase } from '@/lib/supabase'
 import { CompanyPayrollRecord, DocumentType } from '../types'
-<<<<<<< HEAD
 import { TaxPaymentTable } from './components/TaxPaymentTable'
 import { TableControls } from '../components/TableControls'
 import { useToast } from '@/hooks/use-toast'
 import { ContactModal } from '../payslip-receipts/components/ContactModal'
-=======
 import  {TaxPaymentTable}  from './components/TaxPaymentTable'
 import { MonthYearSelector } from '../components/MonthYearSelector'
 import { CategoryFilters } from '../components/CategoryFilters'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
->>>>>>> 9cdc6816eb33192b283e321836e869d7968d2bb9
 
 interface TaxPaymentSlipsProps {
     payrollRecords: CompanyPayrollRecord[]
