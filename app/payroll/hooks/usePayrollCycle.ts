@@ -317,19 +317,20 @@ export const usePayrollCycle = () => {
                 return;
             }
 
-            // Now get records with PAYE CSV for current cycle
+            // Get ALL records for current cycle
             const { data: records, error } = await supabase
                 .from('company_payroll_records')
                 .select('*')
-                .eq('payroll_cycle_id', cycle.id)
-                .not('documents->paye_csv', 'is', null);
+                .eq('payroll_cycle_id', cycle.id);
 
             if (error) throw error;
 
             if (records && records.length > 0) {
                 const updates = await Promise.all(records.map(async (record) => {
                     try {
+                        // Check if PAYE CSV exists
                         if (!record.documents?.paye_csv) {
+                            // No PAYE CSV, set to 0
                             await supabase
                                 .from('company_payroll_records')
                                 .update({ number_of_employees: 0 })
@@ -342,6 +343,7 @@ export const usePayrollCycle = () => {
                             .download(record.documents.paye_csv);
 
                         if (downloadError) {
+                            // Failed to download, set to 0
                             await supabase
                                 .from('company_payroll_records')
                                 .update({ number_of_employees: 0 })
@@ -349,9 +351,24 @@ export const usePayrollCycle = () => {
                             return { recordId: record.id, employeeCount: 0, success: true };
                         }
 
-                        const text = await fileData.text();
-                        const rows = text.split('\n').filter(row => row.trim());
-                        const employeeCount = rows.length <= 1 ? 0 : rows.length;
+                        // Determine file type
+                        const filePath = record.documents.paye_csv;
+                        const fileExt = filePath.split('.').pop().toLowerCase();
+
+                        let employeeCount = 0;
+
+                        if (fileExt === 'csv') {
+                            // Handle CSV file - No header row, so count all rows
+                            const text = await fileData.text();
+                            const rows = text.split('\n').filter(row => row.trim());
+                            employeeCount = rows.length; // Count all rows as they're all employee data
+                        } else if (['xls', 'xlsx'].includes(fileExt)) {
+                            // For Excel files, set to 1 as placeholder
+                            employeeCount = 1;
+                        } else {
+                            // Unknown file type, set to 0
+                            employeeCount = 0;
+                        }
 
                         await supabase
                             .from('company_payroll_records')
@@ -364,6 +381,7 @@ export const usePayrollCycle = () => {
                             success: true
                         };
                     } catch (error) {
+                        // On any error, set to 0
                         await supabase
                             .from('company_payroll_records')
                             .update({ number_of_employees: 0 })
@@ -387,7 +405,7 @@ export const usePayrollCycle = () => {
             } else {
                 toast({
                     title: 'No Updates Needed',
-                    description: 'No PAYE CSV files found for the current cycle',
+                    description: 'No records found for the current cycle',
                     variant: 'default'
                 });
             }
