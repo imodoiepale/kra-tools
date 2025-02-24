@@ -111,6 +111,7 @@ export default function TaxPaymentSlips({
                         onChange={(e) => setSearchTerm(e.target.value)}
                         className="max-w-sm"
                     />
+                    
                     <CategoryFilters
                         companyDates={filteredRecords[0]?.company}
                         onFilterChange={handleFilterChange}
