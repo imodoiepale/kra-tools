@@ -211,7 +211,7 @@ export function PayrollTable({
                                     }
                                 >
                                     {record.company?.kra_pin || record.pin_details?.kra_pin || 'Missing'}
-                                </TableCell>    
+                                </TableCell>
                             )}
 
                             {columnVisibility.obligationDate && (
@@ -240,7 +240,18 @@ export function PayrollTable({
                                 </TableCell>
                             )}
 
-                            {columnVisibility.numberOfEmployees && <TableCell>{record.number_of_employees || 'N/A'}</TableCell>}
+                            {columnVisibility.numberOfEmployees && (
+                                <TableCell>
+                                    {record.number_of_employees ? (
+                                        <div className="flex justify-center font-bold">
+                                            {record.number_of_employees}
+
+                                        </div>
+                                    ) : (
+                                            <span className="flex text-red-600 font-bold text-xs justify-center italic">N/A</span>
+                                    )}
+                                </TableCell>
+                            )}
                             {columnVisibility.finalizationDate && (
                                 <TableCell>
                                     {record.status.finalization_date ? (

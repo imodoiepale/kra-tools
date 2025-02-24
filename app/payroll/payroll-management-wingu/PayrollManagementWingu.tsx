@@ -18,6 +18,7 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Settings2 } from 'lucide-react'
+import { ObligationFilters } from '../components/ObligationFilters'
 
 interface PayrollManagementProps {
     payrollRecords: CompanyPayrollRecord[]
@@ -54,9 +55,14 @@ export default function PayrollManagementWingu({
     }
 
     const [selectedCategories, setSelectedCategories] = useState<string[]>(['acc']);
+    const [selectedObligations, setSelectedObligations] = useState<string[]>(['active']);
 
     const handleFilterChange = useCallback((categories: string[]) => {
         setSelectedCategories(categories);
+    }, []);
+
+    const handleObligationFilterChange = useCallback((obligations: string[]) => {
+        setSelectedObligations(obligations);
     }, []);
 
     const columnDefinitions = [
@@ -112,31 +118,62 @@ export default function PayrollManagementWingu({
             // Check if record and company exist
             if (!record || !record.company) return false;
 
+            // Check if record matches search term
             const matchesSearch = record.company.company_name?.toLowerCase().includes(searchTerm.toLowerCase()) ?? false;
-            
-            // If no categories are selected (All is selected), show all records
-            if (selectedCategories.length === 0) return matchesSearch;
-            
-            // Check if record matches any of the selected categories
-            const matchesCategory = selectedCategories.some(category => {
-                const currentDate = new Date();
-                switch (category) {
-                    case 'acc':
-                        return isDateInRange(currentDate, record.company.acc_client_effective_from, record.company.acc_client_effective_to);
-                    case 'audit_tax':
-                        return isDateInRange(currentDate, record.company.audit_tax_client_effective_from, record.company.audit_tax_client_effective_to);
-                    case 'cps_sheria':
-                        return isDateInRange(currentDate, record.company.cps_sheria_client_effective_from, record.company.cps_sheria_client_effective_to);
-                    case 'imm':
-                        return isDateInRange(currentDate, record.company.imm_client_effective_from, record.company.imm_client_effective_to);
-                    default:
-                        return false;
-                }
-            });
 
-            return matchesSearch && matchesCategory;
+            // Check category filters
+            let matchesCategory = true;
+            if (selectedCategories.length > 0) {
+                matchesCategory = selectedCategories.some(category => {
+                    const currentDate = new Date();
+                    switch (category) {
+                        case 'acc':
+                            return isDateInRange(currentDate, record.company.acc_client_effective_from, record.company.acc_client_effective_to);
+                        case 'audit_tax':
+                            return isDateInRange(currentDate, record.company.audit_tax_client_effective_from, record.company.audit_tax_client_effective_to);
+                        case 'cps_sheria':
+                            return isDateInRange(currentDate, record.company.cps_sheria_client_effective_from, record.company.cps_sheria_client_effective_to);
+                        case 'imm':
+                            return isDateInRange(currentDate, record.company.imm_client_effective_from, record.company.imm_client_effective_to);
+                        default:
+                            return false;
+                    }
+                });
+            }
+
+            // Check obligation filters
+            let matchesObligation = true;
+            if (selectedObligations.length > 0) {
+                const obligationStatus = record.pin_details?.paye_status?.toLowerCase();
+                const effectiveFrom = record.pin_details?.paye_effective_from;
+
+                // Determine specific status types
+                const isCancelled = obligationStatus === 'cancelled';
+                const isDormant = obligationStatus === 'dormant';
+                const isNoObligation = effectiveFrom?.toLowerCase() === 'no obligation';
+                const isMissing = !effectiveFrom || effectiveFrom === 'Missing';
+
+                // Explicitly check if it has an active date (not any of the special cases)
+                const hasActiveDate = effectiveFrom &&
+                    !isNoObligation &&
+                    !isCancelled &&
+                    !isDormant &&
+                    !isMissing;
+
+                // Match against selected filters
+                matchesObligation = (
+                    (selectedObligations.includes('active') && hasActiveDate) ||
+                    (selectedObligations.includes('cancelled') && isCancelled) ||
+                    (selectedObligations.includes('dormant') && isDormant) ||
+                    (selectedObligations.includes('no_obligation') && isNoObligation) ||
+                    (selectedObligations.includes('missing') && isMissing)
+                );
+            }
+
+            // Return true only if record matches all active filters
+            return matchesSearch && matchesCategory && matchesObligation;
         });
-    }, [payrollRecords, searchTerm, selectedCategories]);
+    }, [payrollRecords, searchTerm, selectedCategories, selectedObligations]);
 
     return (
         <div className="space-y-4">
@@ -153,6 +190,11 @@ export default function PayrollManagementWingu({
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                         className="max-w-sm"
+                    />
+                    <ObligationFilters
+                        payrollRecords={payrollRecords} // Changed from records to payrollRecords
+                        onFilterChange={handleObligationFilterChange}
+                        selectedObligations={selectedObligations}
                     />
                     <CategoryFilters
                         companyDates={filteredRecords[0]?.company}
