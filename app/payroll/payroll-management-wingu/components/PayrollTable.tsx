@@ -219,7 +219,8 @@ export function PayrollTable({
                                     className={
                                         record.pin_details?.paye_status?.toLowerCase() === 'cancelled' ||
                                             record.pin_details?.paye_status?.toLowerCase() === 'dormant' ||
-                                            record.pin_details?.paye_to_date
+                                            record.pin_details?.paye_to_date ||
+                                            record.pin_details?.paye_effective_from?.toLowerCase() === 'no obligation'
                                             ? 'text-red-600 font-bold'
                                             : record.pin_details?.paye_effective_from
                                                 ? 'text-green-600 font-bold'
@@ -231,9 +232,11 @@ export function PayrollTable({
                                         ? record.pin_details?.paye_status.charAt(0).toUpperCase() + record.pin_details?.paye_status.slice(1)
                                         : record.pin_details?.paye_to_date
                                             ? record.pin_details.paye_to_date
-                                            : record.pin_details?.paye_effective_from
-                                                ? record.pin_details.paye_effective_from
-                                                : 'Missing'}
+                                            : record.pin_details?.paye_effective_from?.toLowerCase() === 'no obligation'
+                                                ? 'No Obligation'
+                                                : record.pin_details?.paye_effective_from
+                                                    ? record.pin_details.paye_effective_from
+                                                    : 'Missing'}
                                 </TableCell>
                             )}
 
