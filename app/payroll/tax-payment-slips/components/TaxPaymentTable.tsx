@@ -18,8 +18,9 @@ import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Button } from '@/components/ui/button'
 import { ContactModal } from '../../payslip-receipts/components/ContactModal'
+import { WhatsAppModal } from '../../payslip-receipts/components/WhatsappModal';
 import {
-    Table,
+    Table,   
     TableBody,
     TableCell,
     TableHead,
@@ -618,6 +619,58 @@ export function TaxPaymentTable({
         }
     };
 
+    const handleMessageSent = async (recordId: string, messageData: { date: string; recipients: string[] }) => {
+        try {
+            const record = records.find(r => r.id === recordId);
+            if (!record) return;
+
+            // Fetch current record to get latest message history
+            const { data: currentRecord, error: fetchError } = await supabase
+                .from('company_payroll_records')
+                .select('whatsapp_history')
+                .eq('id', recordId)
+                .single();
+
+            if (fetchError) throw fetchError;
+
+            const messageHistory = currentRecord?.whatsapp_history || [];
+            const updatedHistory = [...messageHistory, messageData];
+
+            // Update the message history
+            const { error: updateError } = await supabase
+                .from('company_payroll_records')
+                .update({
+                    whatsapp_history: updatedHistory
+                })
+                .eq('id', recordId);
+
+            if (updateError) throw updateError;
+
+            // Update local state
+            setPayrollRecords(records.map(r => {
+                if (r.id === recordId) {
+                    return {
+                        ...r,
+                        whatsapp_history: updatedHistory
+                    };
+                }
+                return r;
+            }));
+
+            toast({
+                title: "Success",
+                description: "WhatsApp message history updated"
+            });
+        } catch (error) {
+            console.error('WhatsApp history update error:', error);
+            toast({
+                title: "Error",
+                description: "Failed to update WhatsApp history",
+                variant: "destructive"
+            });
+        }
+    };
+
     return (
         <div className="rounded-md border h-[calc(100vh-220px)] overflow-auto">
             <Table aria-label="Payroll Records" className="border border-gray-200">
@@ -666,14 +719,12 @@ export function TaxPaymentTable({
                             >
                                 <TableCell>{index + 1}</TableCell>
                                 <TooltipProvider>
-                                    <TableCell className="font-medium">
-                                        <Tooltip>
-                                            <TooltipTrigger className=" ">
-                                                {companyName.split(" ").slice(0, 3).join(" ")}
-                                            </TooltipTrigger>
-                                            <TooltipContent>{companyName}</TooltipContent>
-                                        </Tooltip>
-                                    </TableCell>
+                                    <Tooltip>
+                                        <TooltipTrigger className=" ">
+                                            {companyName.split(" ").slice(0, 3).join(" ")}
+                                        </TooltipTrigger>
+                                        <TooltipContent>{companyName}</TooltipContent>
+                                    </Tooltip>
                                 </TooltipProvider>
                             <TableCell className="text-center">
                                 {record?.status?.filing?.filingDate ? (
@@ -780,20 +831,50 @@ export function TaxPaymentTable({
                             </TableCell>
 
                             <TableCell className="text-center">
-                                <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    className="h-8 w-8 p-0"
-                                    onClick={() => {
-                                        // TODO: Implement WhatsApp dialog
-                                        toast({
-                                            title: "Coming Soon",
-                                            description: "WhatsApp functionality will be added soon"
-                                        });
-                                    }}
-                                >
-                                    <MessageSquare className="h-4 w-4" />
-                                </Button>
+                                <TooltipProvider>
+                                    <Tooltip>
+                                        <TooltipTrigger>
+                                            <WhatsAppModal
+                                                trigger={
+                                                    <Button
+                                                        size="sm"
+                                                        variant="ghost"
+                                                        className="h-8 w-8 p-0 relative"
+                                                    >
+                                                        <MessageSquare className="h-4 w-4" />
+                                                        {record.whatsapp_history?.length > 0 && (
+                                                            <Badge
+                                                                className="absolute -top-2 -right-2 h-5 w-5 rounded-full bg-green-500"
+                                                                variant="secondary"
+                                                            >
+                                                                {record.whatsapp_history.length}
+                                                            </Badge>
+                                                        )}
+                                                    </Button>
+                                                }
+                                                companyName={record.company.company_name}
+                                                companyPhone={record.company.phone_number}
+                                                documents={getDocumentsForUpload(record)}
+                                                onMessageSent={(data) => handleMessageSent(record.id, data)}
+                                            />
+                                        </TooltipTrigger>
+                                        <TooltipContent>
+                                            {record.whatsapp_history?.length > 0 ? (
+                                                <div className="space-y-2">
+                                                    <p className="font-semibold">WhatsApp History:</p>
+                                                    {record.whatsapp_history.map((history, i) => (
+                                                        <div key={i} className="text-sm">
+                                                            <p>Sent: {format(new Date(history.date), 'dd/MM/yyyy HH:mm')}</p>
+                                                            <p>To: {history.recipients.join(', ')}</p>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                "Send documents via WhatsApp"
+                                            )}
+                                        </TooltipContent>
+                                    </Tooltip>
+                                </TooltipProvider>
                             </TableCell>
 
                             <TableCell className="text-center">

@@ -60,6 +60,7 @@ import { useToast } from '@/hooks/use-toast'
 import { supabase } from '@/lib/supabase'
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip";
 import { ContactModal } from "./ContactModal"
+import { WhatsAppModal } from "./WhatsappModal";
 
 interface EmailHistory {
     date: string;
@@ -71,6 +72,7 @@ interface PayrollRecord {
     company: {
         company_name: string;
         email?: string;
+        phone_number?: string;
     };
     payment_receipts_documents: Record<DocumentType, string | null>;
     status: any;
@@ -592,6 +594,58 @@ const handleDocumentDelete = async (recordId: string, documentType: DocumentType
     }
 };
 
+const handleMessageSent = async (recordId: string, messageData: { date: string; recipients: string[] }) => {
+    try {
+        const record = records.find(r => r.id === recordId);
+        if (!record) return;
+
+        // Fetch current record to get latest message history
+        const { data: currentRecord, error: fetchError } = await supabase
+            .from('company_payroll_records')
+            .select('whatsapp_history')
+            .eq('id', recordId)
+            .single();
+
+        if (fetchError) throw fetchError;
+
+        const messageHistory = currentRecord.whatsapp_history || [];
+        const updatedHistory = [...messageHistory, messageData];
+
+        // Update the message history
+        const { error: updateError } = await supabase
+            .from('company_payroll_records')
+            .update({
+                whatsapp_history: updatedHistory
+            })
+            .eq('id', recordId);
+
+        if (updateError) throw updateError;
+
+        // Update local state
+        setPayrollRecords(records.map(r => {
+            if (r.id === recordId) {
+                return {
+                    ...r,
+                    whatsapp_history: updatedHistory
+                };
+            }
+            return r;
+        }));
+
+        toast({
+            title: "Success",
+            description: "WhatsApp message history updated"
+        });
+    } catch (error) {
+        console.error('WhatsApp history update error:', error);
+        toast({
+            title: "Error",
+            description: "Failed to update WhatsApp history",
+            variant: "destructive"
+        });
+    }
+};
+
 export function PayslipPaymentReceiptsTable({
     records,
     onDocumentUpload,
@@ -778,20 +832,24 @@ export function PayslipPaymentReceiptsTable({
                                 </TooltipProvider>
                             </TableCell>
                             <TableCell className="text-center">
-                                <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    className="h-8 w-8 p-0"
-                                    onClick={() => {
-                                        // TODO: Implement WhatsApp dialog
-                                        toast({
-                                            title: "Coming Soon",
-                                            description: "WhatsApp functionality will be added soon"
-                                        });
+                                <WhatsAppModal
+                                    trigger={
+                                        <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            className="h-8 w-8 p-0"
+                                        >
+                                            <MessageSquare className="h-4 w-4" />
+                                        </Button>
+                                    }
+                                    companyName={record.company.company_name}
+                                    companyPhone={record.company.phone_number}
+                                    documents={getDocumentsForUpload(record)}
+                                    onMessageSent={(data) => {
+                                        // Update message history if needed
+                                        handleMessageSent(record.id, data);
                                     }}
-                                >
-                                    <MessageSquare className="h-4 w-4" />
-                                </Button>
+                                />
                             </TableCell>
 
                             {/* Document cells */}
