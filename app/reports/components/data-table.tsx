@@ -239,7 +239,7 @@ export function DataTable({
                           key={`${tax.id}-date-header`}
                           className={`font-semibold text-slate-700 text-center py-3 px-3 border-2 border-slate-300 ${tax.headerBg}`}
                         >
-                          Date
+                          Pay Date
                         </TableHead>
                       </>
                     )

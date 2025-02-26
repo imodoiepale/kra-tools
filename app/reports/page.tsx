@@ -74,23 +74,28 @@ export default function CompanyReports() {
           {loading && companies.length === 0 ? (
             <div className="p-2 text-sm text-muted-foreground">Loading companies...</div>
           ) : (
-            companies.map((company) => {
-              const { short, full } = getTruncatedCompanyName(company.name)
-              return (
-                <Card
-                  key={company.id}
-                  className={`p-2 mb-1 cursor-pointer hover:bg-muted/50 text-sm group relative ${
-                    selectedCompany === company.id ? "bg-muted" : ""
-                  }`}
-                  onClick={() => setSelectedCompany(company.id)}
-                >
-                  <span>{short}</span>
-                  <div className="absolute z-50 invisible group-hover:visible bg-white border rounded-md p-2 mt-1 shadow-lg">
-                    {full}
+            <div className="space-y-1">
+              {companies.map((company, index) => {
+                const { short, full } = getTruncatedCompanyName(company.name)
+                return (
+                  <div
+                    key={company.id}
+                    className={`p-2 cursor-pointer hover:bg-muted/50 text-sm group relative rounded-md transition-colors ${
+                      selectedCompany === company.id ? "bg-muted" : ""
+                    }`}
+                    onClick={() => setSelectedCompany(company.id)}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="text-muted-foreground w-5">{index + 1}.</span>
+                      <span className="truncate">{short}</span>
+                    </div>
+                    <div className="absolute z-50 left-7 invisible group-hover:visible bg-white border rounded-md p-2 mt-1 shadow-lg">
+                      {full}
+                    </div>
                   </div>
-                </Card>
-              )
-            })
+                )
+              })}
+            </div>
           )}
         </ScrollArea>
       </div>
