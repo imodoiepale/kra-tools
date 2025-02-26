@@ -5,8 +5,11 @@ import { Card } from "@/components/ui/card"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { DataTable } from "./components/data-table"
-import { ColumnFilter } from "./components/column-filter"
 import { Input } from "@/components/ui/input"
+import { useCompanyTaxReports } from "./hooks/useCompanyTaxReports"
+import { useState } from "react"
+import * as XLSX from 'xlsx'
+import { Button } from "@/components/ui/button"
 import {
   Select,
   SelectContent,
@@ -14,10 +17,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { useCompanyTaxReports } from "./hooks/useCompanyTaxReports"
-import { useState } from "react"
 
 const taxTypes = [
+  { id: 'all', name: 'All Taxes' },
   { id: 'paye', name: 'PAYE' },
   { id: 'housingLevy', name: 'Housing Levy' },
   { id: 'nita', name: 'NITA' },
@@ -38,8 +40,9 @@ export default function CompanyReports() {
     setSelectedColumns
   } = useCompanyTaxReports()
   
-  const [selectedTaxType, setSelectedTaxType] = useState<typeof taxTypes[number]['id']>('paye')
   const years = Object.keys(reportData).sort().reverse()
+  const [selectedYear, setSelectedYear] = useState(years[0] || '')
+  const [selectedTaxType, setSelectedTaxType] = useState<typeof taxTypes[number]['id']>('all')
   const selectedCompanyName = companies.find(c => c.id === selectedCompany)?.name || ""
 
   const getTruncatedCompanyName = (name: string) => {
@@ -50,13 +53,44 @@ export default function CompanyReports() {
     }
   }
 
-  const YearlyView = ({ year }: { year: string }) => (
-    <DataTable 
-      data={reportData[year] || []} 
-      title={`Year ${year}`}
-      selectedColumns={selectedColumns}
-    />
-  )
+  const getFilteredColumns = () => {
+    if (selectedTaxType === 'all') return selectedColumns
+    return ['month', selectedTaxType]
+  }
+
+  const exportToExcel = () => {
+    if (!selectedYear || !reportData[selectedYear]) return
+
+    const data = reportData[selectedYear].map(entry => {
+      const row: any = { Month: entry.month }
+      if (selectedTaxType === 'all' || selectedTaxType === 'paye') {
+        row['PAYE Amount'] = entry.paye.amount
+        row['PAYE Pay Date'] = entry.paye.date || '-'
+      }
+      if (selectedTaxType === 'all' || selectedTaxType === 'housingLevy') {
+        row['Housing Levy Amount'] = entry.housingLevy.amount
+        row['Housing Levy Pay Date'] = entry.housingLevy.date || '-'
+      }
+      if (selectedTaxType === 'all' || selectedTaxType === 'nita') {
+        row['NITA Amount'] = entry.nita.amount
+        row['NITA Pay Date'] = entry.nita.date || '-'
+      }
+      if (selectedTaxType === 'all' || selectedTaxType === 'shif') {
+        row['SHIF Amount'] = entry.shif.amount
+        row['SHIF Pay Date'] = entry.shif.date || '-'
+      }
+      if (selectedTaxType === 'all' || selectedTaxType === 'nssf') {
+        row['NSSF Amount'] = entry.nssf.amount
+        row['NSSF Pay Date'] = entry.nssf.date || '-'
+      }
+      return row
+    })
+
+    const ws = XLSX.utils.json_to_sheet(data)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Tax Report')
+    XLSX.writeFile(wb, `${selectedCompanyName}_${selectedYear}_tax_report.xlsx`)
+  }
 
   return (
     <div className="flex h-screen max-h-screen">
@@ -107,64 +141,52 @@ export default function CompanyReports() {
           </div>
         ) : selectedCompany ? (
           <>
-            <div className="flex items-center gap-4">
+            <div className="flex items-center justify-between">
               <h2 className="text-xl font-bold">{selectedCompanyName}</h2>
+              <Button onClick={exportToExcel} variant="outline" className="ml-auto">
+                Export to Excel
+              </Button>
             </div>
 
-            <Tabs defaultValue="yearly" className="w-full">
-              <TabsList className="mb-4">
-                <TabsTrigger value="yearly">Recent Tax Reports</TabsTrigger>
-                <TabsTrigger value="detailed">Historical Overview</TabsTrigger>
-              </TabsList>
-              <TabsContent value="yearly" className="space-y-8">
-                {years.slice(0, 2).map(year => (
-                  <div key={year} className="relative">
-                    <YearlyView year={year} />
-                    {loading && (
-                      <div className="absolute inset-0 bg-white/50 flex items-center justify-center">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </TabsContent>
-              <TabsContent value="detailed" className="space-y-4">
-                <div className="flex items-center gap-4">
-                  <Select value={selectedTaxType} onValueChange={setSelectedTaxType}>
-                    <SelectTrigger className="w-[180px]">
-                      <SelectValue placeholder="Select tax type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {taxTypes.map(tax => (
-                        <SelectItem key={tax.id} value={tax.id}>
-                          {tax.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <ColumnFilter
-                    columns={[
-                      { id: 'month', name: 'Month' },
-                      { id: 'paye', name: 'PAYE' },
-                      { id: 'housingLevy', name: 'Housing Levy' },
-                      { id: 'nita', name: 'NITA' },
-                      { id: 'shif', name: 'SHIF' },
-                      { id: 'nssf', name: 'NSSF' }
-                    ]}
-                    selectedColumns={selectedColumns}
-                    onColumnChange={setSelectedColumns}
-                  />
+            <div className="flex items-center gap-4 mb-4">
+              <Select value={selectedYear} onValueChange={setSelectedYear}>
+                <SelectTrigger className="w-[120px]">
+                  <SelectValue placeholder="Select year" />
+                </SelectTrigger>
+                <SelectContent>
+                  {years.map(year => (
+                    <SelectItem key={year} value={year}>
+                      {year}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <Select value={selectedTaxType} onValueChange={setSelectedTaxType}>
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="Select tax type" />
+                </SelectTrigger>
+                <SelectContent>
+                  {taxTypes.map(tax => (
+                    <SelectItem key={tax.id} value={tax.id}>
+                      {tax.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="relative">
+              <DataTable 
+                data={reportData[selectedYear] || []}
+                selectedColumns={getFilteredColumns()}
+              />
+              {loading && (
+                <div className="absolute inset-0 bg-white/50 flex items-center justify-center">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
                 </div>
-                <DataTable
-                  data={reportData[years[0]] || []}
-                  taxType={selectedTaxType}
-                  yearlyData={reportData}
-                  isHorizontalView={true}
-                  title={`${taxTypes.find(t => t.id === selectedTaxType)?.name} History`}
-                  selectedColumns={selectedColumns}
-                />
-              </TabsContent>
-            </Tabs>
+              )}
+            </div>
           </>
         ) : (
           <div className="flex items-center justify-center h-full">
