@@ -339,55 +339,51 @@ export async function performBankStatementExtraction(
             const filePart = await fileToGenerativePart(fileUrl);
 
             const monthName = new Date(params.year, params.month - 1, 1).toLocaleString('en-US', { month: 'long' });
-
             const prompt = `
-        Analyze this bank statement PDF and extract the following information:
+    Analyze this bank statement PDF and extract the following information:
 
-        1. Bank Name: Look for the official bank name, often in the header or footer of the document.
-        2. Account Number: Find the full account number or last 4-5 digits if partially masked.
-        3. Currency: Identify the currency used in the statement (e.g., KES OR KSH, USD).
-        4. Statement Period: Extract the full date range covered by this statement.
-        5. Opening Balance: Find the opening/starting balance for ${monthName} ${params.year}.
-        6. Closing Balance: Find the closing/ending balance for ${monthName} ${params.year}.
-        7. Monthly Balances: If this statement covers multiple months, extract opening and closing balances for each month.
-        7. Company Name: Look for the official Company name, often in the header or footer of the document.
+    1. Bank Name: Look for the official bank name, often in the header or footer of the document.
+    2. Account Number: Find the full account number or last 4-5 digits if partially masked.
+    3. Currency: Identify the currency used in the statement (e.g., KES OR KSH, USD).
+    4. Statement Period: Extract the full date range covered by this statement.
+    5. Opening Balance: Find the opening/starting balance for the first date in the statement.
+    6. Closing Balance: Find the closing/ending balance for the last date in the statement.
+    7. Monthly Balances: For each month in the statement:
+       - Find the first balance shown for that month (opening)
+       - Find the last balance shown for that month (closing)
+       - Note the page number where each balance is found
+       - Note any running or carried forward balances between months
+    8. Company Name: Look for the official Company name.
 
-        Common Kenyan banks: ${KENYAN_BANKS.join(', ')}
-        
-        For each balance you find, note the page number and approximate location (coordinates).
-        
-        Look for sections labeled "Balance Summary", "Account Summary", "Opening Balance", "Closing Balance", 
-        "Statement Summary", or tables at the beginning or end of the statement.
-        
-        Please return the extracted data in this JSON format:
+    IMPORTANT: For EACH MONTH in the statement:
+    - Look for "Balance B/F", "Brought Forward", or the first transaction balance for month opening
+    - Look for "Balance C/F", "Carried Forward", or the last transaction balance for month closing
+    - Record the exact date and page number for each balance found
+    
+    Examine ALL pages carefully for balance information.
+    
+    Return the data in this JSON format:
+    {
+      "bank_name": "Bank Name",
+      "account_number": "Account Number",
+      "currency": "Currency Code",
+      "statement_period": "Start Date - End Date",
+      "opening_balance": number,
+      "closing_balance": number,
+      "company_name": "Company Name",
+      "monthly_balances": [
         {
-          "bank_name": "Bank Name",
-          "account_number": "Account Number",
-          "currency": "Currency Code",
-          "statement_period": "Start Date - End Date",
+          "month": month_number,
+          "year": year_number,
           "opening_balance": number,
           "closing_balance": number,
-          "company_name": "Company Name",
-          "monthly_balances": [
-            {
-              "month": month_number,
-              "year": year_number,
-              "opening_balance": number,
-              "closing_balance": number,
-              "statement_page": page_number,
-              "highlight_coordinates": {
-                "x1": number,
-                "y1": number,
-                "x2": number,
-                "y2": number,
-                "page": page_number
-              }
-            }
-          ]
+          "statement_page": page_number,
+          "opening_date": "YYYY-MM-DD",
+          "closing_date": "YYYY-MM-DD"
         }
-        
-        Only return the JSON data, no other text or explanations.
-      `;
+      ],
+      "pages_checked": [1, 2, 3]
+    }`;
 
             onProgress?.('Extracting data from bank statement...');
 
@@ -427,13 +423,18 @@ export async function performBankStatementExtraction(
                 console.error('JSON parsing error:', jsonError);
                 throw new Error('Failed to parse JSON from model response');
             }
-
+            // After extracting data
+            console.log('Raw extracted data:', extractedData);
+            console.log('Pages checked:', extractedData.pages_checked || 'Not reported');
             // Normalize the data
+
             const normalizedData = {
                 bank_name: extractedData.bank_name || null,
                 company_name: extractedData.company_name || null,
                 account_number: extractedData.account_number || null,
-                currency: extractedData.currency || null,
+                currency: extractedData.currency ?
+                    (extractedData.currency.toUpperCase().trim() === 'KSH' ? 'KES' : extractedData.currency.toUpperCase().trim())
+                    : null,
                 statement_period: extractedData.statement_period || null,
                 opening_balance: typeof extractedData.opening_balance === 'string'
                     ? parseCurrencyAmount(extractedData.opening_balance)
@@ -441,26 +442,57 @@ export async function performBankStatementExtraction(
                 closing_balance: typeof extractedData.closing_balance === 'string'
                     ? parseCurrencyAmount(extractedData.closing_balance)
                     : extractedData.closing_balance,
-                raw_text: text,
-                monthly_balances: Array.isArray(extractedData.monthly_balances)
-                    ? extractedData.monthly_balances.map(balance => ({
-                        month: balance.month,
-                        year: balance.year,
-                        opening_balance: typeof balance.opening_balance === 'string'
-                            ? parseCurrencyAmount(balance.opening_balance) || 0
-                            : balance.opening_balance || 0,
-                        closing_balance: typeof balance.closing_balance === 'string'
-                            ? parseCurrencyAmount(balance.closing_balance) || 0
-                            : balance.closing_balance || 0,
-                        statement_page: balance.statement_page || 1,
-                        highlight_coordinates: balance.highlight_coordinates || null,
-                        is_verified: false,
-                        verified_by: null,
-                        verified_at: null
-                    }))
-                    : []
+                monthly_balances: []
             };
 
+            if (extractedData.statement_period) {
+                const datePattern = /(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/g;
+                const dates = Array.from(extractedData.statement_period.matchAll(datePattern));
+
+                if (dates.length >= 2) {
+                    const startDate = new Date(parseInt(dates[0][3]), parseInt(dates[0][2]) - 1, parseInt(dates[0][1]));
+                    const endDate = new Date(parseInt(dates[1][3]), parseInt(dates[1][2]) - 1, parseInt(dates[1][1]));
+
+                    let currentDate = new Date(startDate);
+                    let lastBalance = normalizedData.opening_balance || 0;
+
+                    while (currentDate <= endDate) {
+                        const month = currentDate.getMonth() + 1;
+                        const year = currentDate.getFullYear();
+
+                        const monthData = Array.isArray(extractedData.monthly_balances)
+                            ? extractedData.monthly_balances.find(b => b.month === month && b.year === year)
+                            : null;
+
+                        const balance = {
+                            month,
+                            year,
+                            opening_balance: monthData?.opening_balance || lastBalance,
+                            closing_balance: monthData?.closing_balance || 0,
+                            statement_page: monthData?.statement_page || 1,
+                            highlight_coordinates: monthData?.highlight_coordinates || null,
+                            is_verified: false,
+                            verified_by: null,
+                            verified_at: null,
+                            opening_date: monthData?.opening_date || null,
+                            closing_date: monthData?.closing_date || null
+                        };
+
+                        lastBalance = balance.closing_balance || balance.opening_balance;
+                        normalizedData.monthly_balances.push(balance);
+
+                        console.log(`Month ${year}-${month} balance:`, {
+                            opening: balance.opening_balance,
+                            closing: balance.closing_balance,
+                            page: balance.statement_page
+                        });
+
+                        currentDate.setMonth(currentDate.getMonth() + 1);
+                    }
+                }
+            }
+
+            console.log('Final monthly balances:', normalizedData.monthly_balances);
             // If no monthly balances were found but we have opening/closing balance,
             // create a monthly balance entry for the requested month
             if (normalizedData.monthly_balances.length === 0 &&
