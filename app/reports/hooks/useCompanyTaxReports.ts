@@ -176,9 +176,12 @@ export const useCompanyTaxReports = () => {
             // Update the tax entry with extracted data
             if (result[year][monthIdx] && result[year][monthIdx][mappedTaxType]) {
               result[year][monthIdx][mappedTaxType] = {
-                amount: parseFloat(data.amount || '0'),
+                amount: parseAmount(data.amount || '0'),
                 date: parseDate(data.payment_date || null)
               }
+              
+
+              
             }
           })
         })
@@ -194,6 +197,15 @@ export const useCompanyTaxReports = () => {
     }
   }, [])
 
+
+  const parseAmount = (amountStr: string): number => {
+    if (!amountStr) return 0;
+    // Remove all commas and other non-numeric characters except decimal point
+    const cleanedStr = amountStr.replace(/[^0-9.-]/g, '');
+    return parseFloat(cleanedStr) || 0;
+  }
+
+  
   // Generate sample data for development/fallback
   const generateSampleData = (year: string): TaxEntry[] => {
     const months = ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"]
