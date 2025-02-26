@@ -44,9 +44,27 @@ interface DataTableProps {
   selectedColumns?: string[]
 }
 
+const formatAmount = (amount: number): string => {
+  return amount.toString()
+}
+
 const getStatusColor = (date: string | null) => {
   if (!date) return 'text-red-500'
   return 'text-green-500'
+}
+
+const getDateColor = (dateStr: string | null): string => {
+  if (!dateStr) return 'text-red-500'
+  try {
+    // Assuming date format is dd/MM/yyyy
+    const [day] = dateStr.split('/')
+    const dayNum = parseInt(day, 10)
+    if (dayNum > 9) return 'text-red-500'
+    if (dayNum >= 1 && dayNum <= 9) return 'text-green-500'
+    return 'text-black'
+  } catch (e) {
+    return 'text-black'
+  }
 }
 
 const formatDate = (date: string | null) => {
@@ -103,7 +121,7 @@ export function DataTable({ data, title, taxType, yearlyData, isHorizontalView, 
                     const amount = entry ? entry[taxType!].amount : 0
                     return (
                       <TableCell key={year} className="text-center">
-                        {amount.toLocaleString()}
+                        {formatAmount(amount)}
                       </TableCell>
                     )
                   })}
@@ -113,9 +131,9 @@ export function DataTable({ data, title, taxType, yearlyData, isHorizontalView, 
                 <TableCell>TOTAL</TableCell>
                 {years.map(year => (
                   <TableCell key={year} className="text-center">
-                    {yearlyData[year].reduce((sum, entry) => 
+                    {formatAmount(yearlyData[year].reduce((sum, entry) => 
                       sum + entry[taxType!].amount, 0
-                    ).toLocaleString()}
+                    ))}
                   </TableCell>
                 ))}
               </TableRow>
@@ -196,13 +214,13 @@ export function DataTable({ data, title, taxType, yearlyData, isHorizontalView, 
                         <>
                           <TableCell 
                             key={`${tax.id}-amount`}
-                            className={`${tax.bg} border-r text-right px-4 ${getStatusColor(entry[tax.id].date)}`}
+                            className={`${tax.bg} border-r text-right px-4`}
                           >
-                            {entry[tax.id].amount.toLocaleString()}
+                            {formatAmount(entry[tax.id].amount)}
                           </TableCell>
                           <TableCell 
                             key={`${tax.id}-date`}
-                            className={`${tax.bg} border-r text-center ${getStatusColor(entry[tax.id].date)}`}
+                            className={`${tax.bg} border-r text-center ${getDateColor(entry[tax.id].date)}`}
                           >
                             {formatDate(entry[tax.id].date)}
                           </TableCell>
@@ -213,10 +231,12 @@ export function DataTable({ data, title, taxType, yearlyData, isHorizontalView, 
                 ) : (
                   <>
                     {selectedColumns.includes('amount') && (
-                      <TableCell className="text-right px-4">{getTaxData(entry)?.amount.toLocaleString()}</TableCell>
+                      <TableCell className="text-right px-4">
+                        {formatAmount(getTaxData(entry)?.amount || 0)}
+                      </TableCell>
                     )}
                     {selectedColumns.includes('date') && (
-                      <TableCell className="text-center">
+                      <TableCell className={`text-center ${getDateColor(getTaxData(entry)?.date)}`}>
                         {getTaxData(entry)?.date 
                           ? format(new Date(getTaxData(entry)?.date!), 'dd/MM/yyyy') 
                           : '-'}
@@ -244,7 +264,7 @@ export function DataTable({ data, title, taxType, yearlyData, isHorizontalView, 
                           key={`${tax.id}-amount-total`}
                           className={`${tax.bg} border-r font-bold text-right px-4`}
                         >
-                          {data.reduce((sum, e) => sum + e[tax.id].amount, 0).toLocaleString()}
+                          {formatAmount(data.reduce((sum, e) => sum + e[tax.id].amount, 0))}
                         </TableCell>
                         <TableCell 
                           key={`${tax.id}-date-total`}
@@ -257,7 +277,9 @@ export function DataTable({ data, title, taxType, yearlyData, isHorizontalView, 
               ) : (
                 <>
                   {selectedColumns.includes('amount') && (
-                    <TableCell className="font-bold text-right px-4">{total.toLocaleString()}</TableCell>
+                    <TableCell className="font-bold text-right px-4">
+                      {formatAmount(total)}
+                    </TableCell>
                   )}
                   {selectedColumns.includes('date') && (
                     <TableCell />

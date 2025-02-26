@@ -42,6 +42,14 @@ export default function CompanyReports() {
   const years = Object.keys(reportData).sort().reverse()
   const selectedCompanyName = companies.find(c => c.id === selectedCompany)?.name || ""
 
+  const getTruncatedCompanyName = (name: string) => {
+    const words = name.split(' ')
+    return {
+      short: words.slice(0, 2).join(' '),
+      full: name
+    }
+  }
+
   const YearlyView = ({ year }: { year: string }) => (
     <DataTable 
       data={reportData[year] || []} 
@@ -66,17 +74,23 @@ export default function CompanyReports() {
           {loading && companies.length === 0 ? (
             <div className="p-2 text-sm text-muted-foreground">Loading companies...</div>
           ) : (
-            companies.map((company) => (
-              <Card
-                key={company.id}
-                className={`p-2 mb-1 cursor-pointer hover:bg-muted/50 text-sm ${
-                  selectedCompany === company.id ? "bg-muted" : ""
-                }`}
-                onClick={() => setSelectedCompany(company.id)}
-              >
-                {company.name}
-              </Card>
-            ))
+            companies.map((company) => {
+              const { short, full } = getTruncatedCompanyName(company.name)
+              return (
+                <Card
+                  key={company.id}
+                  className={`p-2 mb-1 cursor-pointer hover:bg-muted/50 text-sm group relative ${
+                    selectedCompany === company.id ? "bg-muted" : ""
+                  }`}
+                  onClick={() => setSelectedCompany(company.id)}
+                >
+                  <span>{short}</span>
+                  <div className="absolute z-50 invisible group-hover:visible bg-white border rounded-md p-2 mt-1 shadow-lg">
+                    {full}
+                  </div>
+                </Card>
+              )
+            })
           )}
         </ScrollArea>
       </div>
@@ -99,7 +113,14 @@ export default function CompanyReports() {
               </TabsList>
               <TabsContent value="yearly" className="space-y-8">
                 {years.slice(0, 2).map(year => (
-                  <YearlyView key={year} year={year} />
+                  <div key={year} className="relative">
+                    <YearlyView year={year} />
+                    {loading && (
+                      <div className="absolute inset-0 bg-white/50 flex items-center justify-center">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                      </div>
+                    )}
+                  </div>
                 ))}
               </TabsContent>
               <TabsContent value="detailed" className="space-y-4">
