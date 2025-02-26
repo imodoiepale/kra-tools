@@ -108,8 +108,8 @@ export default function CompanyReports() {
 
             <Tabs defaultValue="yearly" className="w-full">
               <TabsList className="mb-4">
-                <TabsTrigger value="yearly">Yearly View</TabsTrigger>
-                <TabsTrigger value="detailed">Detailed View</TabsTrigger>
+                <TabsTrigger value="yearly">Recent Tax Reports</TabsTrigger>
+                <TabsTrigger value="detailed">Historical Overview</TabsTrigger>
               </TabsList>
               <TabsContent value="yearly" className="space-y-8">
                 {years.slice(0, 2).map(year => (

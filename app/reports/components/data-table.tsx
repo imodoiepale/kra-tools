@@ -54,16 +54,15 @@ const getStatusColor = (date: string | null) => {
 }
 
 const getDateColor = (dateStr: string | null): string => {
-  if (!dateStr) return 'text-red-500'
+  if (!dateStr) return 'text-rose-600 font-medium'
   try {
-    // Assuming date format is dd/MM/yyyy
     const [day] = dateStr.split('/')
     const dayNum = parseInt(day, 10)
-    if (dayNum > 9) return 'text-red-500'
-    if (dayNum >= 1 && dayNum <= 9) return 'text-green-500'
-    return 'text-black'
+    if (dayNum > 9) return 'text-rose-600 font-medium'
+    if (dayNum >= 1 && dayNum <= 9) return 'text-emerald-600 font-medium'
+    return 'text-slate-900 font-medium'
   } catch (e) {
-    return 'text-black'
+    return 'text-slate-900 font-medium'
   }
 }
 
@@ -73,12 +72,15 @@ const formatDate = (date: string | null) => {
 }
 
 const taxColumns = [
-  { id: 'paye', name: 'PAYE', bg: 'bg-[#E8EFF7]' },
-  { id: 'housingLevy', name: 'Housing Levy', bg: 'bg-[#F5F5F5]' },
-  { id: 'nita', name: 'NITA', bg: 'bg-[#E8EFF7]' },
-  { id: 'shif', name: 'SHIF', bg: 'bg-[#F5F5F5]' },
-  { id: 'nssf', name: 'NSSF', bg: 'bg-[#E8EFF7]' }
+  { id: 'paye', name: 'PAYE', bg: 'bg-[#E8EFF7]', headerBg: 'bg-blue-100' },
+  { id: 'housingLevy', name: 'Housing Levy', bg: 'bg-[#F5F5F5]', headerBg: 'bg-purple-100' },
+  { id: 'nita', name: 'NITA', bg: 'bg-[#E8EFF7]', headerBg: 'bg-green-100' },
+  { id: 'shif', name: 'SHIF', bg: 'bg-[#F5F5F5]', headerBg: 'bg-orange-100' },
+  { id: 'nssf', name: 'NSSF', bg: 'bg-[#E8EFF7]', headerBg: 'bg-red-100' }
 ] as const
+
+const baseHeaderStyle = (bg: string) => `font-semibold border-[1.5px] border-slate-200 text-slate-900 text-center p-3 ${bg}`
+const baseCellStyle = (bg: string) => `border-[1.5px] border-slate-200 p-3 text-slate-900 font-medium ${bg}`
 
 export function DataTable({ data, title, taxType, yearlyData, isHorizontalView, selectedColumns = ['month', 'paye', 'housingLevy', 'nita', 'shif', 'nssf'] }: DataTableProps) {
   const getTaxData = (entry: TaxEntry) => {
@@ -155,143 +157,97 @@ export function DataTable({ data, title, taxType, yearlyData, isHorizontalView, 
   return (
     <div className="space-y-2">
       {title && <h3 className="text-lg font-semibold">{title}</h3>}
-      <div className="rounded-lg border shadow-sm overflow-x-auto">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              {selectedColumns.includes('month') && (
-                <TableHead className="w-[80px] bg-[#F5F5F5] font-bold border-r whitespace-nowrap">Month</TableHead>
-              )}
-              {!taxType ? (
-                <>
-                  {taxColumns.map((tax) => (
-                    selectedColumns.includes(tax.id) && (
-                      <>
-                        <TableHead 
-                          className={`${tax.bg} font-bold border-r text-center whitespace-nowrap px-2`} 
-                          key={`${tax.id}-amount`}
-                        >
-                          {tax.name} (KSH)
-                        </TableHead>
-                        <TableHead 
-                          className={`${tax.bg} font-bold border-r text-center whitespace-nowrap px-2`} 
-                          key={`${tax.id}-date`}
-                        >
-                          {tax.name} Date
-                        </TableHead>
-                      </>
-                    )
-                  ))}
-                </>
-              ) : (
-                <>
-                  {selectedColumns.includes('amount') && (
-                    <TableHead>Amount (KSH)</TableHead>
-                  )}
-                  {selectedColumns.includes('date') && (
-                    <TableHead>Payment Date</TableHead>
-                  )}
-                  {selectedColumns.includes('status') && (
-                    <TableHead>Status</TableHead>
-                  )}
-                </>
-              )}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {data.map((entry) => (
-              <TableRow 
-                key={entry.month}
-                className="border-b"
-              >
+      <div className="rounded-lg border-2 border-slate-300 overflow-hidden shadow-sm">
+        <div className="overflow-x-auto">
+          <Table className="w-full">
+            <TableHeader>
+              <TableRow className="border-b-2 border-slate-300">
                 {selectedColumns.includes('month') && (
-                  <TableCell className="font-medium bg-[#F5F5F5] border-r whitespace-nowrap">{entry.month}</TableCell>
+                  <TableHead 
+                    rowSpan={2} 
+                    className="w-[80px] bg-gray-100 font-bold border-2 border-slate-300 text-slate-700 whitespace-nowrap p-3"
+                  >
+                    Month
+                  </TableHead>
                 )}
-                {!taxType ? (
-                  <>
-                    {taxColumns.map((tax) => (
-                      selectedColumns.includes(tax.id) && (
-                        <>
-                          <TableCell 
-                            key={`${tax.id}-amount`}
-                            className={`${tax.bg} border-r text-right px-4`}
-                          >
-                            {formatAmount(entry[tax.id].amount)}
-                          </TableCell>
-                          <TableCell 
-                            key={`${tax.id}-date`}
-                            className={`${tax.bg} border-r text-center ${getDateColor(entry[tax.id].date)}`}
-                          >
-                            {formatDate(entry[tax.id].date)}
-                          </TableCell>
-                        </>
-                      )
-                    ))}
-                  </>
-                ) : (
-                  <>
-                    {selectedColumns.includes('amount') && (
-                      <TableCell className="text-right px-4">
-                        {formatAmount(getTaxData(entry)?.amount || 0)}
-                      </TableCell>
-                    )}
-                    {selectedColumns.includes('date') && (
-                      <TableCell className={`text-center ${getDateColor(getTaxData(entry)?.date)}`}>
-                        {getTaxData(entry)?.date 
-                          ? format(new Date(getTaxData(entry)?.date!), 'dd/MM/yyyy') 
-                          : '-'}
-                      </TableCell>
-                    )}
-                    {selectedColumns.includes('status') && (
-                      <TableCell 
-                        className={`text-center ${getStatusColor(getTaxData(entry)?.date)}`}
-                      >
-                        {getTaxData(entry)?.date ? 'Paid' : 'Pending'}
-                      </TableCell>
-                    )}
-                  </>
-                )}
+                {taxColumns.map((tax) => (
+                  <TableHead 
+                    key={tax.id}
+                    colSpan={2}
+                    className={`font-bold border-2 border-slate-300 text-slate-700 text-center whitespace-nowrap p-3 ${tax.headerBg}`}
+                  >
+                    {tax.name}
+                  </TableHead>
+                ))}
               </TableRow>
-            ))}
-            <TableRow>
-              <TableCell className="font-bold bg-[#F5F5F5] border-r">TOTAL</TableCell>
-              {!taxType ? (
-                <>
-                  {taxColumns.map((tax) => (
-                    selectedColumns.includes(tax.id) && (
-                      <>
-                        <TableCell 
-                          key={`${tax.id}-amount-total`}
-                          className={`${tax.bg} border-r font-bold text-right px-4`}
-                        >
-                          {formatAmount(data.reduce((sum, e) => sum + e[tax.id].amount, 0))}
-                        </TableCell>
-                        <TableCell 
-                          key={`${tax.id}-date-total`}
-                          className={`${tax.bg} border-r`}
-                        />
-                      </>
-                    )
-                  ))}
-                </>
-              ) : (
-                <>
-                  {selectedColumns.includes('amount') && (
-                    <TableCell className="font-bold text-right px-4">
-                      {formatAmount(total)}
+              <TableRow className="border-b-2 border-slate-300">
+                {taxColumns.map((tax) => (
+                  <>
+                    <TableHead className={`font-bold border-2 border-slate-300 text-slate-700 text-center p-3 ${tax.headerBg}`}>
+                      Amount
+                    </TableHead>
+                    <TableHead className={`font-bold border-2 border-slate-300 text-slate-700 text-center p-3 ${tax.headerBg}`}>
+                      date
+                    </TableHead>
+                  </>
+                ))}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {data.map((entry, idx) => (
+                <TableRow 
+                  key={entry.month}
+                  className={idx % 2 === 0 ? "bg-[#F5F5F5]" : "bg-[#E8EFF7]"}
+                >
+                  {selectedColumns.includes('month') && (
+                    <TableCell className={`font-medium ${baseCellStyle('')}`}>
+                      {entry.month}
                     </TableCell>
                   )}
-                  {selectedColumns.includes('date') && (
-                    <TableCell />
-                  )}
-                  {selectedColumns.includes('status') && (
-                    <TableCell />
-                  )}
-                </>
-              )}
-            </TableRow>
-          </TableBody>
-        </Table>
+                  {taxColumns.map((tax) => (
+                    selectedColumns.includes(tax.id) && (
+                      <>
+                        <TableCell 
+                          key={`${tax.id}-amount`}
+                          className={`${tax.bg} border-2 border-slate-300 text-right p-3 text-slate-700 font-medium`}
+                        >
+                          {formatAmount(entry[tax.id].amount)}
+                        </TableCell>
+                        <TableCell 
+                          key={`${tax.id}-date`}
+                          className={`${tax.bg} border-2 border-slate-300 text-center p-3 ${getDateColor(entry[tax.id].date)}`}
+                        >
+                          {formatDate(entry[tax.id].date)}
+                        </TableCell>
+                      </>
+                    )
+                  ))}
+                </TableRow>
+              ))}
+              <TableRow className="bg-gradient-to-r from-slate-100 to-slate-200">
+                <TableCell className="font-bold border-2 border-slate-300 text-slate-700 p-3">
+                  TOTAL
+                </TableCell>
+                {taxColumns.map((tax) => (
+                  selectedColumns.includes(tax.id) && (
+                    <>
+                      <TableCell 
+                        key={`${tax.id}-amount-total`}
+                        className={`border-2 border-slate-300 font-bold text-right p-3 text-slate-700`}
+                      >
+                        {formatAmount(data.reduce((sum, e) => sum + e[tax.id].amount, 0))}
+                      </TableCell>
+                      <TableCell 
+                        key={`${tax.id}-date-total`}
+                        className="border-2 border-slate-300 p-3"
+                      />
+                    </>
+                  )
+                ))}
+              </TableRow>
+            </TableBody>
+          </Table>
+        </div>
       </div>
     </div>
   )
