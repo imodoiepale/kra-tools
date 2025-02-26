@@ -189,3 +189,32 @@
 - No changes to dependencies
 - Maintains compatibility with existing components
 - Uses existing ShadCN UI components
+
+## [1.0.5] - 2025-02-26
+### Changed
+- Enhanced TypeScript type safety in Tax Reports
+  - Added PaymentReceiptExtraction interface for payment receipt data
+  - Added PaymentReceiptExtractions interface for tax type mapping
+  - Fixed TypeScript error with payment_date property
+  - Added proper null checks for optional properties
+  - Improved type assertions for payment receipt extractions
+
+### Technical Details
+- Files: 
+  - `app/reports/hooks/useCompanyTaxReports.ts`
+- Changes:
+  - Added PaymentReceiptExtraction and PaymentReceiptExtractions interfaces
+  - Updated Object.entries type assertion
+  - Added null check for payment_date
+  - Made properties optional with TypeScript optional chaining
+
+### Reasoning
+- Improved type safety and error handling
+- Better TypeScript support for payment receipt data
+- More reliable data processing with proper null checks
+- Maintained existing functionality while adding type safety
+
+### Dependencies
+- No new dependencies added
+- Compatible with existing data structure
+- Maintains backward compatibility with existing components

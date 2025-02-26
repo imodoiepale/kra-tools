@@ -144,60 +144,30 @@ export function WhatsAppModal({
       const uploadedDocuments = documents.filter(
         (doc) => doc.status === "uploaded"
       );
+
       if (uploadedDocuments.length === 0) {
         throw new Error("No documents available to send");
       }
 
-      const whatsappService = new WhatsAppService({
-        accountSid: process.env.NEXT_PUBLIC_TWILIO_ACCOUNT_SID!,
-        authToken: process.env.NEXT_PUBLIC_TWILIO_AUTH_TOKEN!,
-        fromNumber: process.env.NEXT_PUBLIC_TWILIO_WHATSAPP_NUMBER!,
+      // Use the Meta WhatsApp API endpoint
+      const response = await fetch("/api/send-whatsapp-meta", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          recipients: selectedPhones,
+          message: messageText,
+          documentPaths: uploadedDocuments,
+          companyName,
+        }),
       });
 
-      const attachments = await Promise.all(
-        uploadedDocuments.map(async (doc) => {
-          if (!doc.path) return null;
+      const result = await response.json();
 
-          const { data, error } = await supabase.storage
-            .from("Payroll-Cycle")
-            .download(doc.path);
-
-          if (error) throw error;
-
-          const file = new File([data], doc.label, { type: data.type });
-          return {
-            file,
-            type: data.type,
-            name: doc.label,
-          };
-        })
-      );
-
-      const validAttachments = attachments.filter(
-        Boolean
-      ) as WhatsAppAttachment[];
-
-      const message = `
-*${companyName} - Documents*
-
-${messageText}
-
-*Attached Documents:*
-${uploadedDocuments.map((doc) => `• ${doc.label}`).join("\n")}
-
-_Sent by Booksmart Consultancy_
-📱 +254 700 298 298
-`;
-
-      await Promise.all(
-        selectedPhones.map((phone) =>
-          whatsappService.sendMessage({
-            to: phone,
-            text: message,
-            attachments: validAttachments,
-          })
-        )
-      );
+      if (!response.ok) {
+        throw new Error(result.error || "Failed to send WhatsApp message");
+      }
 
       if (onMessageSent) {
         onMessageSent({
@@ -208,7 +178,7 @@ _Sent by Booksmart Consultancy_
 
       toast({
         title: "Success",
-        description: "Documents sent via WhatsApp",
+        description: `Documents sent via WhatsApp to ${selectedPhones.length} recipients`,
       });
 
       setIsOpen(false);
@@ -335,8 +305,6 @@ _Sent by Booksmart Consultancy_
 
             {/* Right Column - Message & Documents */}
             <div className="overflow-y-auto pr-4 space-y-4">
-              
-
               {/* Documents Section */}
               <div className="bg-white rounded-lg p-4 border">
                 <div className="flex items-center justify-between mb-4">
