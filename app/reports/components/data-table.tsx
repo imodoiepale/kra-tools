@@ -41,6 +41,7 @@ interface DataTableProps {
   taxType?: 'paye' | 'housingLevy' | 'nita' | 'shif' | 'nssf'
   yearlyData?: Record<string, TaxEntry[]>
   isHorizontalView?: boolean
+  selectedColumns?: string[]
 }
 
 const getStatusColor = (date: string | null) => {
@@ -53,7 +54,15 @@ const formatDate = (date: string | null) => {
   return format(new Date(date), 'dd/MM/yyyy')
 }
 
-export function DataTable({ data, title, taxType, yearlyData, isHorizontalView }: DataTableProps) {
+const taxColumns = [
+  { id: 'paye', name: 'PAYE' },
+  { id: 'housingLevy', name: 'Housing Levy' },
+  { id: 'nita', name: 'NITA' },
+  { id: 'shif', name: 'SHIF' },
+  { id: 'nssf', name: 'NSSF' }
+] as const
+
+export function DataTable({ data, title, taxType, yearlyData, isHorizontalView, selectedColumns = ['month', 'paye', 'housingLevy', 'nita', 'shif', 'nssf'] }: DataTableProps) {
   const getTaxData = (entry: TaxEntry) => {
     if (taxType) {
       return {
@@ -75,7 +84,9 @@ export function DataTable({ data, title, taxType, yearlyData, isHorizontalView }
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/50">
-                <TableHead className="w-[100px] font-bold">FIELDS</TableHead>
+                {selectedColumns.includes('month') && (
+                  <TableHead className="w-[100px] font-bold">FIELDS</TableHead>
+                )}
                 {years.map(year => (
                   <TableHead key={year} className="text-center font-bold">{year}</TableHead>
                 ))}
@@ -84,7 +95,9 @@ export function DataTable({ data, title, taxType, yearlyData, isHorizontalView }
             <TableBody>
               {months.map((month, idx) => (
                 <TableRow key={month} className={idx % 2 === 0 ? "bg-muted/5" : ""}>
-                  <TableCell className="font-medium">{month}</TableCell>
+                  {selectedColumns.includes('month') && (
+                    <TableCell className="font-medium">{month}</TableCell>
+                  )}
                   {years.map(year => {
                     const entry = yearlyData[year].find(e => e.month === month)
                     const amount = entry ? entry[taxType!].amount : 0
@@ -128,25 +141,35 @@ export function DataTable({ data, title, taxType, yearlyData, isHorizontalView }
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/50">
-              <TableHead className="w-[80px]">Month</TableHead>
+              {selectedColumns.includes('month') && (
+                <TableHead className="w-[80px]">Month</TableHead>
+              )}
               {!taxType ? (
                 <>
-                  <TableHead>PAYE (KSH)</TableHead>
-                  <TableHead>PAYE Date</TableHead>
-                  <TableHead>Housing Levy (KSH)</TableHead>
-                  <TableHead>Housing Levy Date</TableHead>
-                  <TableHead>NITA (KSH)</TableHead>
-                  <TableHead>NITA Date</TableHead>
-                  <TableHead>SHIF (KSH)</TableHead>
-                  <TableHead>SHIF Date</TableHead>
-                  <TableHead>NSSF (KSH)</TableHead>
-                  <TableHead>NSSF Date</TableHead>
+                  {taxColumns.map((tax, index) => (
+                    selectedColumns.includes(tax.id) && (
+                      <>
+                        <TableHead className={`bg-muted/[${index % 2 ? '0.1' : '0.05'}]`} key={`${tax.id}-amount`}>
+                          {tax.name} (KSH)
+                        </TableHead>
+                        <TableHead className={`bg-muted/[${index % 2 ? '0.1' : '0.05'}]`} key={`${tax.id}-date`}>
+                          {tax.name} Date
+                        </TableHead>
+                      </>
+                    )
+                  ))}
                 </>
               ) : (
                 <>
-                  <TableHead>Amount (KSH)</TableHead>
-                  <TableHead>Payment Date</TableHead>
-                  <TableHead>Status</TableHead>
+                  {selectedColumns.includes('amount') && (
+                    <TableHead>Amount (KSH)</TableHead>
+                  )}
+                  {selectedColumns.includes('date') && (
+                    <TableHead>Payment Date</TableHead>
+                  )}
+                  {selectedColumns.includes('status') && (
+                    <TableHead>Status</TableHead>
+                  )}
                 </>
               )}
             </TableRow>
@@ -157,53 +180,49 @@ export function DataTable({ data, title, taxType, yearlyData, isHorizontalView }
                 key={entry.month} 
                 className={idx % 2 === 0 ? "bg-muted/5" : ""}
               >
-                <TableCell className="font-medium">{entry.month}</TableCell>
+                {selectedColumns.includes('month') && (
+                  <TableCell className="font-medium">{entry.month}</TableCell>
+                )}
                 {!taxType ? (
                   <>
-                    <TableCell className={getStatusColor(entry.paye.date)}>
-                      {entry.paye.amount.toLocaleString()}
-                    </TableCell>
-                    <TableCell className={getStatusColor(entry.paye.date)}>
-                      {formatDate(entry.paye.date)}
-                    </TableCell>
-                    <TableCell className={getStatusColor(entry.housingLevy.date)}>
-                      {entry.housingLevy.amount.toLocaleString()}
-                    </TableCell>
-                    <TableCell className={getStatusColor(entry.housingLevy.date)}>
-                      {formatDate(entry.housingLevy.date)}
-                    </TableCell>
-                    <TableCell className={getStatusColor(entry.nita.date)}>
-                      {entry.nita.amount.toLocaleString()}
-                    </TableCell>
-                    <TableCell className={getStatusColor(entry.nita.date)}>
-                      {formatDate(entry.nita.date)}
-                    </TableCell>
-                    <TableCell className={getStatusColor(entry.shif.date)}>
-                      {entry.shif.amount.toLocaleString()}
-                    </TableCell>
-                    <TableCell className={getStatusColor(entry.shif.date)}>
-                      {formatDate(entry.shif.date)}
-                    </TableCell>
-                    <TableCell className={getStatusColor(entry.nssf.date)}>
-                      {entry.nssf.amount.toLocaleString()}
-                    </TableCell>
-                    <TableCell className={getStatusColor(entry.nssf.date)}>
-                      {formatDate(entry.nssf.date)}
-                    </TableCell>
+                    {taxColumns.map((tax, index) => (
+                      selectedColumns.includes(tax.id) && (
+                        <>
+                          <TableCell 
+                            key={`${tax.id}-amount`}
+                            className={`bg-muted/[${index % 2 ? '0.1' : '0.05'}] ${getStatusColor(entry[tax.id].date)}`}
+                          >
+                            {entry[tax.id].amount.toLocaleString()}
+                          </TableCell>
+                          <TableCell 
+                            key={`${tax.id}-date`}
+                            className={`bg-muted/[${index % 2 ? '0.1' : '0.05'}] ${getStatusColor(entry[tax.id].date)}`}
+                          >
+                            {formatDate(entry[tax.id].date)}
+                          </TableCell>
+                        </>
+                      )
+                    ))}
                   </>
                 ) : (
                   <>
-                    <TableCell>{getTaxData(entry)?.amount.toLocaleString()}</TableCell>
-                    <TableCell>
-                      {getTaxData(entry)?.date 
-                        ? format(new Date(getTaxData(entry)?.date!), 'dd/MM/yyyy') 
-                        : '-'}
-                    </TableCell>
-                    <TableCell 
-                      className={getStatusColor(getTaxData(entry)?.date)}
-                    >
-                      {getTaxData(entry)?.date ? 'Paid' : 'Pending'}
-                    </TableCell>
+                    {selectedColumns.includes('amount') && (
+                      <TableCell>{getTaxData(entry)?.amount.toLocaleString()}</TableCell>
+                    )}
+                    {selectedColumns.includes('date') && (
+                      <TableCell>
+                        {getTaxData(entry)?.date 
+                          ? format(new Date(getTaxData(entry)?.date!), 'dd/MM/yyyy') 
+                          : '-'}
+                      </TableCell>
+                    )}
+                    {selectedColumns.includes('status') && (
+                      <TableCell 
+                        className={getStatusColor(getTaxData(entry)?.date)}
+                      >
+                        {getTaxData(entry)?.date ? 'Paid' : 'Pending'}
+                      </TableCell>
+                    )}
                   </>
                 )}
               </TableRow>
@@ -212,22 +231,34 @@ export function DataTable({ data, title, taxType, yearlyData, isHorizontalView }
               <TableCell>TOTAL</TableCell>
               {!taxType ? (
                 <>
-                  <TableCell>{data.reduce((sum, e) => sum + e.paye.amount, 0).toLocaleString()}</TableCell>
-                  <TableCell />
-                  <TableCell>{data.reduce((sum, e) => sum + e.housingLevy.amount, 0).toLocaleString()}</TableCell>
-                  <TableCell />
-                  <TableCell>{data.reduce((sum, e) => sum + e.nita.amount, 0).toLocaleString()}</TableCell>
-                  <TableCell />
-                  <TableCell>{data.reduce((sum, e) => sum + e.shif.amount, 0).toLocaleString()}</TableCell>
-                  <TableCell />
-                  <TableCell>{data.reduce((sum, e) => sum + e.nssf.amount, 0).toLocaleString()}</TableCell>
-                  <TableCell />
+                  {taxColumns.map((tax, index) => (
+                    selectedColumns.includes(tax.id) && (
+                      <>
+                        <TableCell 
+                          key={`${tax.id}-amount-total`}
+                          className={`bg-muted/[${index % 2 ? '0.1' : '0.05'}]`}
+                        >
+                          {data.reduce((sum, e) => sum + e[tax.id].amount, 0).toLocaleString()}
+                        </TableCell>
+                        <TableCell 
+                          key={`${tax.id}-date-total`}
+                          className={`bg-muted/[${index % 2 ? '0.1' : '0.05'}]`}
+                        />
+                      </>
+                    )
+                  ))}
                 </>
               ) : (
                 <>
-                  <TableCell>{total.toLocaleString()}</TableCell>
-                  <TableCell />
-                  <TableCell />
+                  {selectedColumns.includes('amount') && (
+                    <TableCell>{total.toLocaleString()}</TableCell>
+                  )}
+                  {selectedColumns.includes('date') && (
+                    <TableCell />
+                  )}
+                  {selectedColumns.includes('status') && (
+                    <TableCell />
+                  )}
                 </>
               )}
             </TableRow>
