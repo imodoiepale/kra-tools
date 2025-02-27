@@ -110,11 +110,11 @@ const navItems = [
     available: false,
   },
   {
-    href: "/banks",
+    href: "/payroll/bank-statements",
     icon: FileSpreadsheet,
     label: "Bank Statements",
     category: "Accounting Cycles",
-    available: false,
+    available: true,
   },
   {
     href: "/suppliers",
