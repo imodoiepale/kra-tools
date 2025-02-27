@@ -135,9 +135,9 @@ function CompanyReports() {
                 return (
                   <div
                     key={company.id}
-                    className={`p-1.5 cursor-pointer text-xs transition-all hover:bg-muted/50 group relative rounded-md ${
+                    className={`p-1.5 cursor-pointer text-xs transition-all  group relative rounded-md ${
                       selectedCompany === company.id 
-                        ? "bg-primary/10 text-primary border border-primary/20" 
+                        ? "bg-blue-500 text-white border border-blue-600" 
                         : "hover:border hover:border-muted-foreground/20"
                     }`}
                     onClick={() => setSelectedCompany(company.id)}
