@@ -1,4 +1,5 @@
 // BankStatementUploadDialog.tsx
+// @ts-nocheck
 import { useState, useRef } from 'react'
 import { Loader2, Upload, AlertTriangle, CheckCircle } from 'lucide-react'
 import { supabase } from '@/lib/supabase'

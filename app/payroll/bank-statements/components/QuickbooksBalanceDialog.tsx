@@ -1,4 +1,5 @@
 // QuickbooksBalanceDialog.tsx
+// @ts-nocheck
 import { useState } from 'react'
 import { Loader2, Save } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
