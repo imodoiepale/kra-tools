@@ -215,6 +215,20 @@ export function DataTable({
                 {taxColumns.map(
                   (tax) =>
                     selectedColumns.includes(tax.id) && (
+                      <TableHead
+                        key={`${tax.id}-name`}
+                        colSpan={2}
+                        className={`font-bold text-slate-700 text-center py-4 px-3 border-2 border-slate-300 ${tax.headerBg}`}
+                      >
+                        {tax.name}
+                      </TableHead>
+                    )
+                )}
+              </TableRow>
+              <TableRow>
+                {taxColumns.map(
+                  (tax) =>
+                    selectedColumns.includes(tax.id) && (
                       <React.Fragment key={`${tax.id}-header-fragment`}>
                         <TableHead
                           key={`${tax.id}-amount-header`}
@@ -228,31 +242,6 @@ export function DataTable({
                         >
                           Pay Date
                         </TableHead>
-                      </React.Fragment>
-                    )
-                )}
-              </TableRow>
-              <TableRow>
-                {taxColumns.map(
-                  (tax) =>
-                    selectedColumns.includes(tax.id) && (
-                      <React.Fragment key={`${tax.id}-fragment`}>
-                        <TableCell
-                          key={`${tax.id}-amount-${tax.id}`}
-                          className="text-right py-3 px-4 font-medium border-2 border-slate-300 bg-white"
-                        >
-                          <span className="text-slate-700">
-                            {formatAmount(0)}
-                          </span>
-                        </TableCell>
-                        <TableCell
-                          key={`${tax.id}-date-${tax.id}`}
-                          className="text-center py-3 px-3 border-2 border-slate-300 bg-white"
-                        >
-                          <span className={getDateColor(null)}>
-                            {formatDate(null)}
-                          </span>
-                        </TableCell>
                       </React.Fragment>
                     )
                 )}
