@@ -43,6 +43,7 @@ interface DataTableProps {
   yearlyData?: Record<string, TaxEntry[]>;
   isHorizontalView?: boolean;
   selectedColumns?: string[];
+  selectedSubColumns?: ("amount" | "date" | "all")[];
 }
 
 const formatAmount = (amount: number | string): string => {
@@ -100,6 +101,7 @@ export function DataTable({
   yearlyData,
   isHorizontalView,
   selectedColumns = ["month", "paye", "housingLevy", "nita", "shif", "nssf"],
+  selectedSubColumns = ["all"],
 }: DataTableProps) {
   if (isHorizontalView && yearlyData) {
     const years = Object.keys(yearlyData).sort().reverse();
@@ -217,7 +219,11 @@ export function DataTable({
                     selectedColumns.includes(tax.id) && (
                       <TableHead
                         key={`${tax.id}-name`}
-                        colSpan={2}
+                        colSpan={
+                          selectedSubColumns.includes("all")
+                            ? 2
+                            : selectedSubColumns.length
+                        }
                         className={`font-bold text-slate-700 text-center py-4 px-3 border-2 border-slate-300 ${tax.headerBg}`}
                       >
                         {tax.name}
@@ -225,27 +231,33 @@ export function DataTable({
                     )
                 )}
               </TableRow>
-              <TableRow>
-                {taxColumns.map(
-                  (tax) =>
-                    selectedColumns.includes(tax.id) && (
-                      <React.Fragment key={`${tax.id}-header-fragment`}>
-                        <TableHead
-                          key={`${tax.id}-amount-header`}
-                          className={`font-semibold text-slate-700 text-center py-3 px-3 border-2 border-slate-300 ${tax.headerBg}`}
-                        >
-                          Amount
-                        </TableHead>
-                        <TableHead
-                          key={`${tax.id}-date-header`}
-                          className={`font-semibold text-slate-700 text-center py-3 px-3 border-2 border-slate-300 ${tax.headerBg}`}
-                        >
-                          Pay Date
-                        </TableHead>
-                      </React.Fragment>
-                    )
-                )}
-              </TableRow>
+              {(selectedSubColumns.includes("all") || selectedSubColumns.length > 0) && (
+                <TableRow>
+                  {taxColumns.map(
+                    (tax) =>
+                      selectedColumns.includes(tax.id) && (
+                        <React.Fragment key={`${tax.id}-header-fragment`}>
+                          {(selectedSubColumns.includes("all") || selectedSubColumns.includes("amount")) && (
+                            <TableHead
+                              key={`${tax.id}-amount-header`}
+                              className={`font-semibold text-slate-700 text-center py-3 px-3 border-2 border-slate-300 ${tax.headerBg}`}
+                            >
+                              Amount
+                            </TableHead>
+                          )}
+                          {(selectedSubColumns.includes("all") || selectedSubColumns.includes("date")) && (
+                            <TableHead
+                              key={`${tax.id}-date-header`}
+                              className={`font-semibold text-slate-700 text-center py-3 px-3 border-2 border-slate-300 ${tax.headerBg}`}
+                            >
+                              Pay Date
+                            </TableHead>
+                          )}
+                        </React.Fragment>
+                      )
+                  )}
+                </TableRow>
+              )}
             </TableHeader>
             <TableBody>
               {data.map((entry, idx) => (
@@ -262,22 +274,26 @@ export function DataTable({
                     (tax) =>
                       selectedColumns.includes(tax.id) && (
                         <React.Fragment key={`${tax.id}-fragment`}>
-                          <TableCell
-                            key={`${tax.id}-amount-${entry.month}`}
-                            className="text-right py-3 px-4 font-medium border-2 border-slate-300 bg-white"
-                          >
-                            <span className="text-slate-700">
-                              {formatAmount(entry[tax.id].amount)}
-                            </span>
-                          </TableCell>
-                          <TableCell
-                            key={`${tax.id}-date-${entry.month}`}
-                            className="text-center py-3 px-3 border-2 border-slate-300 bg-white"
-                          >
-                            <span className={getDateColor(entry[tax.id].date)}>
-                              {formatDate(entry[tax.id].date)}
-                            </span>
-                          </TableCell>
+                          {(selectedSubColumns.includes("all") || selectedSubColumns.includes("amount")) && (
+                            <TableCell
+                              key={`${tax.id}-amount-${entry.month}`}
+                              className="text-right py-3 px-4 font-medium border-2 border-slate-300 bg-white"
+                            >
+                              <span className="text-slate-700">
+                                {formatAmount(entry[tax.id].amount)}
+                              </span>
+                            </TableCell>
+                          )}
+                          {(selectedSubColumns.includes("all") || selectedSubColumns.includes("date")) && (
+                            <TableCell
+                              key={`${tax.id}-date-${entry.month}`}
+                              className="text-center py-3 px-3 border-2 border-slate-300 bg-white"
+                            >
+                              <span className={getDateColor(entry[tax.id].date)}>
+                                {formatDate(entry[tax.id].date)}
+                              </span>
+                            </TableCell>
+                          )}
                         </React.Fragment>
                       )
                   )}
@@ -291,18 +307,22 @@ export function DataTable({
                   (tax) =>
                     selectedColumns.includes(tax.id) && (
                       <React.Fragment key={`${tax.id}-total-fragment`}>
-                        <TableCell
-                          key={`${tax.id}-amount-total`}
-                          className="text-right py-4 px-4 text-slate-700 font-bold border-2 border-slate-300"
-                        >
-                          {formatAmount(
-                            data.reduce((sum, e) => sum + e[tax.id].amount, 0)
-                          )}
-                        </TableCell>
-                        <TableCell
-                          key={`${tax.id}-date-total`}
-                          className="border-2 border-slate-300"
-                        />
+                        {(selectedSubColumns.includes("all") || selectedSubColumns.includes("amount")) && (
+                          <TableCell
+                            key={`${tax.id}-amount-total`}
+                            className="text-right py-4 px-4 text-slate-700 font-bold border-2 border-slate-300"
+                          >
+                            {formatAmount(
+                              data.reduce((sum, e) => sum + e[tax.id].amount, 0)
+                            )}
+                          </TableCell>
+                        )}
+                        {(selectedSubColumns.includes("all") || selectedSubColumns.includes("date")) && (
+                          <TableCell
+                            key={`${tax.id}-date-total`}
+                            className="border-2 border-slate-300"
+                          />
+                        )}
                       </React.Fragment>
                     )
                 )}
