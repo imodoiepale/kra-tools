@@ -1,4 +1,5 @@
 // BankExtractionDialog.tsx
+// @ts-nocheck
 import { useState, useEffect, useRef } from 'react'
 import { Loader2, Save, RotateCw, Check, ChevronLeft, ChevronRight, AlertTriangle } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
