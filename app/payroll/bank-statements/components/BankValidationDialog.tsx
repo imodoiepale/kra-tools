@@ -1,8 +1,10 @@
 // BankValidationDialog.tsx
 // @ts-nocheck
+// BankValidationDialog.tsx
+// @ts-nocheck
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { AlertTriangle } from "lucide-react"
+import { AlertTriangle, CheckCircle } from "lucide-react"
 
 interface Bank {
     id: number
@@ -32,6 +34,98 @@ interface BankValidationDialogProps {
     onCancel: () => void
 }
 
+// Helper function to normalize currency codes
+const normalizeCurrencyCode = (code: string | null): string => {
+    if (!code) return 'USD'; // Default fallback
+
+    // Convert to uppercase
+    const upperCode = code.toUpperCase().trim();
+
+    // Map of common incorrect currency codes to valid ISO codes
+    const currencyMap: Record<string, string> = {
+        'EURO': 'EUR',
+        'EUROS': 'EUR',
+        'US DOLLAR': 'USD',
+        'US DOLLARS': 'USD',
+        'USDOLLAR': 'USD',
+        'POUND': 'GBP',
+        'POUNDS': 'GBP',
+        'STERLING': 'GBP',
+        'KSH': 'KES',
+        'KENYA SHILLING': 'KES',
+        'KENYA SHILLINGS': 'KES',
+        'KENYAN SHILLING': 'KES',
+        'KENYAN SHILLINGS': 'KES',
+        'KSH': 'KES',
+        'K.SH': 'KES',
+        'KSHS': 'KES',
+        'K.SHS': 'KES',
+        'SH': 'KES'
+    };
+
+    // Return mapped value or the original if not in the map
+    return currencyMap[upperCode] || upperCode;
+};
+
+// Function to check if a currency extracted equals the expected one
+const isMatchingCurrency = (extracted: string | null, expected: string): boolean => {
+    if (!extracted) return false;
+    return normalizeCurrencyCode(extracted) === normalizeCurrencyCode(expected);
+};
+
+// Function to verify if expected period falls within the extracted period
+const isPeriodContained = (extractedPeriod: string | null, expectedMonth: number, expectedYear: number): boolean => {
+    if (!extractedPeriod) return false;
+
+    // Check if the period contains the expected month/year
+    const monthName = new Date(expectedYear, expectedMonth - 1, 1).toLocaleString('en-US', { month: 'long' });
+    const monthNameShort = new Date(expectedYear, expectedMonth - 1, 1).toLocaleString('en-US', { month: 'short' });
+    const yearStr = expectedYear.toString();
+
+    // Check if month and year appear in the period string
+    if (extractedPeriod.includes(monthName) && extractedPeriod.includes(yearStr)) {
+        return true;
+    }
+
+    if (extractedPeriod.includes(monthNameShort) && extractedPeriod.includes(yearStr)) {
+        return true;
+    }
+
+    // Try to parse date ranges
+    const dateMatches = extractedPeriod.match(/(\d{1,2}[\/\.\-]\d{1,2}[\/\.\-]\d{2,4})/g);
+    if (dateMatches && dateMatches.length >= 2) {
+        try {
+            // Parse dates, trying multiple formats
+            const formats = ['DD/MM/YYYY', 'MM/DD/YYYY', 'DD-MM-YYYY', 'MM-DD-YYYY', 'DD.MM.YYYY', 'MM.DD.YYYY'];
+            let startDate = null;
+            let endDate = null;
+
+            for (const format of formats) {
+                const parsedStart = dayjs(dateMatches[0], format);
+                const parsedEnd = dayjs(dateMatches[1], format);
+
+                if (parsedStart.isValid() && parsedEnd.isValid()) {
+                    startDate = parsedStart;
+                    endDate = parsedEnd;
+                    break;
+                }
+            }
+
+            if (startDate && endDate) {
+                // Create date for expected month
+                const expectedDate = dayjs(new Date(expectedYear, expectedMonth - 1, 15)); // Middle of month
+
+                // Check if expected date is within the range
+                return expectedDate.isAfter(startDate) && expectedDate.isBefore(endDate);
+            }
+        } catch (e) {
+            console.error("Error parsing statement period dates:", e);
+        }
+    }
+
+    return false;
+};
+
 export function BankValidationDialog({
     isOpen,
     onClose,
@@ -41,6 +135,36 @@ export function BankValidationDialog({
     onProceed,
     onCancel
 }: BankValidationDialogProps) {
+    // Extract expected month/year from the period if available
+    let expectedMonth = null;
+    let expectedYear = null;
+
+    if (bank.statement_period) {
+        // Try to parse month/year from period
+        const matches = bank.statement_period.match(/(\w+)\s+(\d{4})/i);
+        if (matches && matches.length >= 3) {
+            const monthName = matches[1];
+            const year = parseInt(matches[2]);
+
+            // Convert month name to number
+            const monthIndex = new Date(`${monthName} 1, 2000`).getMonth();
+            if (!isNaN(monthIndex) && !isNaN(year)) {
+                expectedMonth = monthIndex + 1;
+                expectedYear = year;
+            }
+        }
+    }
+
+    // Check if currencies match using the normalization function
+    const currencyMatches = isMatchingCurrency(extractedData.currency, bank.bank_currency);
+
+    // Check if period contains the expected month/year
+    const periodMatches = isPeriodContained(
+        extractedData.statement_period,
+        expectedMonth,
+        expectedYear
+    );
+
     return (
         <AlertDialog open={isOpen} onOpenChange={onClose}>
             <AlertDialogContent className="max-w-4xl">
@@ -71,17 +195,18 @@ export function BankValidationDialog({
                                 <TableCell>{bank.company_name}</TableCell>
                                 <TableCell>{extractedData.company_name || 'Not detected'}</TableCell>
                                 <TableCell>
-                                    <span className={
-                                        extractedData.company_name &&
-                                            extractedData.company_name.includes(bank.company_name)
-                                            ? "text-green-500 font-medium"
-                                            : "text-red-500 font-medium"
-                                    }>
-                                        {extractedData.company_name &&
-                                            extractedData.company_name.includes(bank.company_name)
-                                            ? "Match"
-                                            : "Mismatch"}
-                                    </span>
+                                    {extractedData.company_name &&
+                                        extractedData.company_name.toLowerCase().includes(bank.company_name.toLowerCase()) ? (
+                                        <div className="flex items-center text-green-500 font-medium">
+                                            <CheckCircle className="h-4 w-4 mr-1" />
+                                            Match
+                                        </div>
+                                    ) : (
+                                        <div className="flex items-center text-red-500 font-medium">
+                                            <AlertTriangle className="h-4 w-4 mr-1" />
+                                            Mismatch
+                                        </div>
+                                    )}
                                 </TableCell>
                             </TableRow>
                             <TableRow>
@@ -89,17 +214,18 @@ export function BankValidationDialog({
                                 <TableCell>{bank.bank_name}</TableCell>
                                 <TableCell>{extractedData.bank_name || 'Not detected'}</TableCell>
                                 <TableCell>
-                                    <span className={
-                                        extractedData.bank_name &&
-                                            extractedData.bank_name.toLowerCase().includes(bank.bank_name.toLowerCase())
-                                            ? "text-green-500 font-medium"
-                                            : "text-red-500 font-medium"
-                                    }>
-                                        {extractedData.bank_name &&
-                                            extractedData.bank_name.toLowerCase().includes(bank.bank_name.toLowerCase())
-                                            ? "Match"
-                                            : "Mismatch"}
-                                    </span>
+                                    {extractedData.bank_name &&
+                                        extractedData.bank_name.toLowerCase().includes(bank.bank_name.toLowerCase()) ? (
+                                        <div className="flex items-center text-green-500 font-medium">
+                                            <CheckCircle className="h-4 w-4 mr-1" />
+                                            Match
+                                        </div>
+                                    ) : (
+                                        <div className="flex items-center text-red-500 font-medium">
+                                            <AlertTriangle className="h-4 w-4 mr-1" />
+                                            Mismatch
+                                        </div>
+                                    )}
                                 </TableCell>
                             </TableRow>
                             <TableRow>
@@ -107,17 +233,18 @@ export function BankValidationDialog({
                                 <TableCell>{bank.account_number}</TableCell>
                                 <TableCell>{extractedData.account_number || 'Not detected'}</TableCell>
                                 <TableCell>
-                                    <span className={
-                                        extractedData.account_number &&
-                                            extractedData.account_number.includes(bank.account_number)
-                                            ? "text-green-500 font-medium"
-                                            : "text-red-500 font-medium"
-                                    }>
-                                        {extractedData.account_number &&
-                                            extractedData.account_number.includes(bank.account_number)
-                                            ? "Match"
-                                            : "Mismatch"}
-                                    </span>
+                                    {extractedData.account_number &&
+                                        extractedData.account_number.includes(bank.account_number) ? (
+                                        <div className="flex items-center text-green-500 font-medium">
+                                            <CheckCircle className="h-4 w-4 mr-1" />
+                                            Match
+                                        </div>
+                                    ) : (
+                                        <div className="flex items-center text-red-500 font-medium">
+                                            <AlertTriangle className="h-4 w-4 mr-1" />
+                                            Mismatch
+                                        </div>
+                                    )}
                                 </TableCell>
                             </TableRow>
                             <TableRow>
@@ -125,35 +252,35 @@ export function BankValidationDialog({
                                 <TableCell>{bank.bank_currency}</TableCell>
                                 <TableCell>{extractedData.currency || 'Not detected'}</TableCell>
                                 <TableCell>
-                                    <span className={
-                                        extractedData.currency &&
-                                            extractedData.currency === bank.bank_currency
-                                            ? "text-green-500 font-medium"
-                                            : "text-red-500 font-medium"
-                                    }>
-                                        {extractedData.currency &&
-                                            extractedData.currency === bank.bank_currency
-                                            ? "Match"
-                                            : "Mismatch"}
-                                    </span>
+                                    {currencyMatches ? (
+                                        <div className="flex items-center text-green-500 font-medium">
+                                            <CheckCircle className="h-4 w-4 mr-1" />
+                                            Match
+                                        </div>
+                                    ) : (
+                                        <div className="flex items-center text-red-500 font-medium">
+                                            <AlertTriangle className="h-4 w-4 mr-1" />
+                                            Mismatch
+                                        </div>
+                                    )}
                                 </TableCell>
                             </TableRow>
                             <TableRow>
                                 <TableCell className="font-medium">Period</TableCell>
-                                <TableCell>{extractedData.statement_period}</TableCell>
+                                <TableCell>{bank.statement_period || `${expectedMonth}/${expectedYear}`}</TableCell>
                                 <TableCell>{extractedData.statement_period || 'Not detected'}</TableCell>
                                 <TableCell>
-                                    <span className={
-                                        extractedData.statement_period &&
-                                            extractedData.statement_period === extractedData.statement_period
-                                            ? "text-green-500 font-medium"
-                                            : "text-red-500 font-medium"
-                                    }>
-                                        {extractedData.statement_period &&
-                                            extractedData.statement_period === extractedData.statement_period
-                                            ? "Match"
-                                            : "Mismatch"}
-                                    </span>
+                                    {periodMatches ? (
+                                        <div className="flex items-center text-green-500 font-medium">
+                                            <CheckCircle className="h-4 w-4 mr-1" />
+                                            Match
+                                        </div>
+                                    ) : (
+                                        <div className="flex items-center text-red-500 font-medium">
+                                            <AlertTriangle className="h-4 w-4 mr-1" />
+                                            Mismatch
+                                        </div>
+                                    )}
                                 </TableCell>
                             </TableRow>
                         </TableBody>
@@ -164,6 +291,21 @@ export function BankValidationDialog({
                         <p>Statement Period: {extractedData.statement_period || 'Not detected'}</p>
                         <p>Opening Balance: {extractedData.opening_balance !== null ? extractedData.opening_balance.toLocaleString() : 'Not detected'}</p>
                         <p>Closing Balance: {extractedData.closing_balance !== null ? extractedData.closing_balance.toLocaleString() : 'Not detected'}</p>
+
+                        {extractedData.monthly_balances && extractedData.monthly_balances.length > 0 && (
+                            <div className="mt-2">
+                                <h4 className="font-medium">Monthly Balances Found:</h4>
+                                <ul className="pl-5 list-disc">
+                                    {extractedData.monthly_balances.map((balance, index) => (
+                                        <li key={index}>
+                                            {new Date(balance.year, balance.month - 1).toLocaleString('default', { month: 'long', year: 'numeric' })}:
+                                            {' Opening: '}{balance.opening_balance?.toLocaleString() || 'N/A'},
+                                            {' Closing: '}{balance.closing_balance?.toLocaleString() || 'N/A'}
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        )}
                     </div>
                 </div>
 
@@ -180,5 +322,5 @@ export function BankValidationDialog({
                 </AlertDialogFooter>
             </AlertDialogContent>
         </AlertDialog>
-    )
+    );
 }

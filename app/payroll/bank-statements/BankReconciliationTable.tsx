@@ -174,49 +174,95 @@ export default function BankReconciliationTable({
     // Fetch banks and statements
     useEffect(() => {
         const fetchBanksAndStatements = async () => {
-            setLoading(true)
+            setLoading(true);
             try {
                 // Fetch banks
                 const { data: banksData, error: banksError } = await supabase
                     .from('acc_portal_banks')
                     .select('id, bank_name, account_number, bank_currency, company_id, company_name')
                     .ilike('company_name', `%${searchTerm}%`)
-                    .order('company_name', { ascending: true })
+                    .order('company_name', { ascending: true });
 
-                if (banksError) throw banksError
-                console.log('Fetched banks:', banksData) // Debugging line
+                if (banksError) throw banksError;
+                console.log('Fetched banks:', banksData); // Debugging line
 
-                // Only fetch statements if we have a payroll cycle ID
-                let statementsData: BankStatement[] = []
+                // First check if we already have a payroll cycle ID or need to fetch it
+                let cycleId = payrollCycleId;
 
-                if (payrollCycleId) {
-                    // Fetch bank statements for the selected month/year
+                if (!cycleId) {
+                    // Format month for query (1-indexed for storage)
+                    const monthStr = selectedMonth.toString().padStart(2, '0');
+                    const cycleMonthYear = `${selectedYear}-${monthStr}`;
+
+                    // Try to get the payroll cycle
+                    const { data: cycleData, error: cycleError } = await supabase
+                        .from('payroll_cycles')
+                        .select('id')
+                        .eq('month_year', cycleMonthYear)
+                        .single();
+
+                    if (cycleError) {
+                        if (cycleError.code !== 'PGRST116') { // PGRST116 = no rows returned
+                            console.error('Error fetching payroll cycle:', cycleError);
+                        }
+
+                        // If no cycle exists, create one
+                        const { data: newCycle, error: createError } = await supabase
+                            .from('payroll_cycles')
+                            .insert({
+                                month_year: cycleMonthYear,
+                                status: 'active',
+                                created_at: new Date().toISOString()
+                            })
+                            .select('id')
+                            .single();
+
+                        if (createError) throw createError;
+                        cycleId = newCycle?.id;
+                        setPayrollCycleId(cycleId);
+                        console.log('Created new payroll cycle:', cycleId);
+                    } else {
+                        cycleId = cycleData?.id;
+                        setPayrollCycleId(cycleId);
+                        console.log('Using existing payroll cycle:', cycleId);
+                    }
+                }
+
+                // Now fetch bank statements with the payroll cycle ID
+                let statementsData: BankStatement[] = [];
+
+                if (cycleId) {
                     const { data: fetchedStatementsData, error: statementsError } = await supabase
                         .from('acc_cycle_bank_statements')
                         .select('*')
-                        .eq('payroll_cycle_id', payrollCycleId)
+                        .eq('payroll_cycle_id', cycleId);
 
-                    if (statementsError) throw statementsError
-                    statementsData = fetchedStatementsData || []
-                    console.log('Fetched bank statements:', fetchedStatementsData) // Debugging line
+                    if (statementsError) throw statementsError;
+                    statementsData = fetchedStatementsData || [];
+                    console.log('Fetched bank statements:', statementsData);
+                } else {
+                    console.warn('No payroll cycle ID available - cannot fetch statements');
                 }
 
-                setBanks(banksData || [])
-                setBankStatements(statementsData)
+                setBanks(banksData || []);
+                setBankStatements(statementsData);
             } catch (error) {
-                console.error('Error fetching data:', error)
+                console.error('Error fetching data:', error);
                 toast({
                     title: 'Error',
                     description: 'Failed to fetch banks and statements',
                     variant: 'destructive'
-                })
+                });
             } finally {
-                setLoading(false)
+                setLoading(false);
             }
-        }
+        };
 
-        fetchBanksAndStatements()
-    }, [payrollCycleId, searchTerm, toast])
+        // Only run the fetch if we have month/year values
+        if (selectedMonth !== undefined && selectedYear !== undefined) {
+            fetchBanksAndStatements();
+        }
+    }, [selectedMonth, selectedYear, searchTerm, payrollCycleId, toast]);
 
     // Group banks by company for row spanning
     const banksByCompany = useMemo(() => {
