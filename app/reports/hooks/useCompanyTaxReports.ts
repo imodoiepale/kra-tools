@@ -16,6 +16,23 @@ interface PaymentReceiptExtractions {
 // Cache for storing company tax data
 const taxDataCache = new Map<number, Record<string, TaxEntry[]>>()
 
+// Helper function to batch request IDs
+const batchRequests = async (ids, batchSize, fetchFn) => {
+  const batches = []
+  for (let i = 0; i < ids.length; i += batchSize) {
+    const batch = ids.slice(i, i + batchSize)
+    batches.push(batch)
+  }
+  
+  const results = []
+  for (const batch of batches) {
+    const result = await fetchFn(batch)
+    results.push(...result)
+  }
+  
+  return results
+}
+
 export const useCompanyTaxReports = () => {
   const [companies, setCompanies] = useState<{ id: number; name: string }[]>([])
   const [selectedCompany, setSelectedCompany] = useState<number | null>(null)
@@ -96,7 +113,15 @@ export const useCompanyTaxReports = () => {
     nssf: { amount: 0, date: null }
   })
 
-  // Optimized fetch tax data with caching
+  // Parse amount from string to number
+  const parseAmount = (amountStr: string): number => {
+    if (!amountStr) return 0;
+    // Remove all commas and other non-numeric characters except decimal point
+    const cleanedStr = amountStr.replace(/[^0-9.-]/g, '');
+    return parseFloat(cleanedStr) || 0;
+  }
+
+  // Optimized fetch tax data with caching and batching
   const fetchCompanyTaxData = useCallback(async (companyId: number) => {
     // Check cache first
     if (taxDataCache.has(companyId)) {
@@ -135,28 +160,45 @@ export const useCompanyTaxReports = () => {
         result[year] = Array.from({ length: 12 }, (_, i) => 
           createEmptyTaxEntry(getMonthName(i + 1))
         )
-      
-        const [records, cycleDetails] = await Promise.all([
-          supabase
+        
+        // Batch the cycle IDs for this year to avoid URL length limits
+        const batchSize = 30 // Adjust based on your ID lengths
+        
+        // Get all cycles for this year in batches
+        const fetchCycleBatch = async (batchIds) => {
+          const { data, error } = await supabase
+            .from('payroll_cycles')
+            .select('id, month_year')
+            .in('id', batchIds)
+          
+          if (error) throw error
+          return data || []
+        }
+        
+        const cycleDetailsData = await batchRequests(yearGroups[year], batchSize, fetchCycleBatch)
+        
+        // Get all records for this year in batches
+        const fetchRecordsBatch = async (batchIds) => {
+          const { data, error } = await supabase
             .from('company_payroll_records')
             .select('id, payroll_cycle_id, payment_receipts_extractions')
             .eq('company_id', companyId)
-            .in('payroll_cycle_id', yearGroups[year]),
-          supabase
-            .from('payroll_cycles')
-            .select('id, month_year')
-            .in('id', yearGroups[year])
-        ])
+            .in('payroll_cycle_id', batchIds)
+          
+          if (error) throw error
+          return data || []
+        }
+        
+        const recordsData = await batchRequests(yearGroups[year], batchSize, fetchRecordsBatch)
       
-        if (records.error) throw records.error
-        if (cycleDetails.error) throw cycleDetails.error
-      
+        // Create a map of cycle IDs to month-year
         const cycleMap: Record<string, string> = {}
-        cycleDetails.data?.forEach(cycle => {
+        cycleDetailsData.forEach(cycle => {
           cycleMap[cycle.id] = cycle.month_year
         })
       
-        records.data?.forEach(record => {
+        // Process the records
+        recordsData.forEach(record => {
           if (!record.payment_receipts_extractions) return
           
           // Get month from cycle
@@ -179,9 +221,6 @@ export const useCompanyTaxReports = () => {
                 amount: parseAmount(data.amount || '0'),
                 date: parseDate(data.payment_date || null)
               }
-              
-
-              
             }
           })
         })
@@ -196,15 +235,6 @@ export const useCompanyTaxReports = () => {
       setLoading(false)
     }
   }, [])
-
-
-  const parseAmount = (amountStr: string): number => {
-    if (!amountStr) return 0;
-    // Remove all commas and other non-numeric characters except decimal point
-    const cleanedStr = amountStr.replace(/[^0-9.-]/g, '');
-    return parseFloat(cleanedStr) || 0;
-  }
-
   
   // Generate sample data for development/fallback
   const generateSampleData = (year: string): TaxEntry[] => {

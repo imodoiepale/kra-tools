@@ -10,6 +10,7 @@ import {
   TableCell,
   TableRow,
 } from "@/components/ui/table";
+import React from "react";
 
 export type TaxEntry = {
   month: string;
@@ -214,21 +215,7 @@ export function DataTable({
                 {taxColumns.map(
                   (tax) =>
                     selectedColumns.includes(tax.id) && (
-                      <TableHead
-                        key={tax.id}
-                        colSpan={2}
-                        className={`font-bold text-slate-700 text-center py-4 px-3 border-2 border-slate-300 ${tax.headerBg}`}
-                      >
-                        {tax.name}
-                      </TableHead>
-                    )
-                )}
-              </TableRow>
-              <TableRow>
-                {taxColumns.map(
-                  (tax) =>
-                    selectedColumns.includes(tax.id) && (
-                      <>
+                      <React.Fragment key={`${tax.id}-header-fragment`}>
                         <TableHead
                           key={`${tax.id}-amount-header`}
                           className={`font-semibold text-slate-700 text-center py-3 px-3 border-2 border-slate-300 ${tax.headerBg}`}
@@ -241,7 +228,32 @@ export function DataTable({
                         >
                           Pay Date
                         </TableHead>
-                      </>
+                      </React.Fragment>
+                    )
+                )}
+              </TableRow>
+              <TableRow>
+                {taxColumns.map(
+                  (tax) =>
+                    selectedColumns.includes(tax.id) && (
+                      <React.Fragment key={`${tax.id}-fragment`}>
+                        <TableCell
+                          key={`${tax.id}-amount-${tax.id}`}
+                          className="text-right py-3 px-4 font-medium border-2 border-slate-300 bg-white"
+                        >
+                          <span className="text-slate-700">
+                            {formatAmount(0)}
+                          </span>
+                        </TableCell>
+                        <TableCell
+                          key={`${tax.id}-date-${tax.id}`}
+                          className="text-center py-3 px-3 border-2 border-slate-300 bg-white"
+                        >
+                          <span className={getDateColor(null)}>
+                            {formatDate(null)}
+                          </span>
+                        </TableCell>
+                      </React.Fragment>
                     )
                 )}
               </TableRow>
@@ -260,7 +272,7 @@ export function DataTable({
                   {taxColumns.map(
                     (tax) =>
                       selectedColumns.includes(tax.id) && (
-                        <>
+                        <React.Fragment key={`${tax.id}-fragment`}>
                           <TableCell
                             key={`${tax.id}-amount-${entry.month}`}
                             className="text-right py-3 px-4 font-medium border-2 border-slate-300 bg-white"
@@ -277,7 +289,7 @@ export function DataTable({
                               {formatDate(entry[tax.id].date)}
                             </span>
                           </TableCell>
-                        </>
+                        </React.Fragment>
                       )
                   )}
                 </TableRow>
@@ -289,7 +301,7 @@ export function DataTable({
                 {taxColumns.map(
                   (tax) =>
                     selectedColumns.includes(tax.id) && (
-                      <>
+                      <React.Fragment key={`${tax.id}-total-fragment`}>
                         <TableCell
                           key={`${tax.id}-amount-total`}
                           className="text-right py-4 px-4 text-slate-700 font-bold border-2 border-slate-300"
@@ -302,7 +314,7 @@ export function DataTable({
                           key={`${tax.id}-date-total`}
                           className="border-2 border-slate-300"
                         />
-                      </>
+                      </React.Fragment>
                     )
                 )}
               </TableRow>
