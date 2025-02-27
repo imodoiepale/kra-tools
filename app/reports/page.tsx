@@ -19,6 +19,16 @@ import {
 } from "@/components/ui/select"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger, DropdownMenuCheckboxItem } from "@/components/ui/dropdown-menu"
 import { Checkbox } from "@/components/ui/checkbox"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { ReactQueryDevtools } from "@tanstack/react-query-devtools"
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      refetchOnWindowFocus: false,
+    },
+  },
+})
 
 const taxTypes = [
   { id: 'all', name: 'All Taxes' },
@@ -29,7 +39,16 @@ const taxTypes = [
   { id: 'nssf', name: 'NSSF' }
 ] as const
 
-export default function CompanyReports() {
+export default function CompanyReportsWrapper() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <CompanyReports />
+      <ReactQueryDevtools initialIsOpen={false} />
+    </QueryClientProvider>
+  )
+}
+
+function CompanyReports() {
   const {
     companies,
     reportData,
@@ -39,7 +58,8 @@ export default function CompanyReports() {
     setSearchQuery,
     loading,
     selectedColumns,
-    setSelectedColumns
+    setSelectedColumns,
+    prefetchCompanyData
   } = useCompanyTaxReports()
   
   const years = Object.keys(reportData).sort().reverse()
@@ -97,36 +117,41 @@ export default function CompanyReports() {
     <div className="flex h-screen max-h-screen">
       <div className="w-48 border-r p-2">
         <div className="space-y-2 mb-4">
-          <h2 className="font-semibold text-sm">Companies</h2>
+          <h2 className="font-semibold text-xs">Companies</h2>
           <Input
             placeholder="Search companies..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full text-sm"
+            className="w-full text-xs"
           />
         </div>
         <ScrollArea className="h-[calc(100vh-8rem)]">
           {loading && companies.length === 0 ? (
-            <div className="p-2 text-sm text-muted-foreground">Loading companies...</div>
+            <div className="p-2 text-xs text-muted-foreground">Loading companies...</div>
           ) : (
-            <div className="space-y-1">
+            <div className="space-y-0.5">
               {companies.map((company, index) => {
                 const { short, full } = getTruncatedCompanyName(company.name)
                 return (
                   <div
                     key={company.id}
-                    className={`p-2 cursor-pointer hover:bg-muted/50 text-sm group relative rounded-md transition-colors ${
-                      selectedCompany === company.id ? "bg-muted" : ""
+                    className={`p-1.5 cursor-pointer text-xs transition-all  group relative rounded-md ${
+                      selectedCompany === company.id 
+                        ? "bg-blue-500 text-white border border-blue-600" 
+                        : "hover:border hover:border-muted-foreground/20"
                     }`}
                     onClick={() => setSelectedCompany(company.id)}
+                    onMouseEnter={() => prefetchCompanyData(company.id)}
                   >
-                    <div className="flex items-center gap-2">
-                      <span className="text-muted-foreground w-5">{index + 1}.</span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-muted-foreground text-[10px] w-4">{index + 1}.</span>
                       <span className="truncate">{short}</span>
                     </div>
-                    <div className="absolute z-50 left-7 invisible group-hover:visible bg-white border rounded-md p-2 mt-1 shadow-lg">
-                      {full}
-                    </div>
+                    {full !== short && (
+                      <div className="absolute z-50 left-full ml-2 invisible group-hover:visible bg-popover border rounded-md p-2 mt-1 shadow-lg text-xs">
+                        {full}
+                      </div>
+                    )}
                   </div>
                 )
               })}

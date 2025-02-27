@@ -1,7 +1,8 @@
 // @ts-nocheck
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { TaxEntry } from '../components/data-table'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 
 interface PaymentReceiptExtraction {
   amount?: string;
@@ -33,213 +34,199 @@ const batchRequests = async (ids, batchSize, fetchFn) => {
   return results
 }
 
+// Fetch companies function
+const fetchCompanies = async (searchQuery: string) => {
+  let query = supabase
+    .from('acc_portal_company_duplicate')
+    .select('id, company_name')
+    .order('company_name')
+  
+  if (searchQuery) {
+    query = query.ilike('company_name', `%${searchQuery}%`)
+  }
+  
+  const { data, error } = await query.limit(100) // Increased limit
+
+  if (error) throw error
+
+  return data?.map(company => ({
+    id: Number(company.id),
+    name: company.company_name
+  })) || []
+}
+
+// Fetch company tax data function
+const fetchCompanyTaxData = async (companyId: number) => {
+  // Check cache first
+  if (taxDataCache.has(companyId)) {
+    return taxDataCache.get(companyId)!
+  }
+
+  const twoYearsAgo = new Date()
+  twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2)
+  const twoYearsAgoStr = twoYearsAgo.toISOString().split('T')[0]
+
+  const { data: cyclesData, error: cyclesError } = await supabase
+    .from('payroll_cycles')
+    .select('id, month_year')
+    .gte('month_year', twoYearsAgoStr)
+    .order('month_year', { ascending: false })
+
+  if (cyclesError) throw cyclesError
+
+  const yearGroups: Record<string, string[]> = {}
+  cyclesData?.forEach(cycle => {
+    const [year] = cycle.month_year.split('-')
+    if (!yearGroups[year]) yearGroups[year] = []
+    yearGroups[year].push(cycle.id)
+  })
+
+  const years = Object.keys(yearGroups).sort().reverse()
+  const result: Record<string, TaxEntry[]> = {}
+
+  await Promise.all(years.map(async (year) => {
+    result[year] = Array.from({ length: 12 }, (_, i) => 
+      createEmptyTaxEntry(getMonthName(i + 1))
+    )
+
+    const batchSize = 30
+    const cycleDetailsData = await batchRequests(yearGroups[year], batchSize, fetchCycleBatch)
+    const recordsData = await batchRequests(yearGroups[year], batchSize, (batchIds) => 
+      fetchRecordsBatch(batchIds, companyId)
+    )
+
+    const cycleMap: Record<string, string> = {}
+    cycleDetailsData.forEach(cycle => {
+      cycleMap[cycle.id] = cycle.month_year
+    })
+
+    recordsData.forEach(record => {
+      if (!record.payment_receipts_extractions) return
+      
+      const monthYear = cycleMap[record.payroll_cycle_id]
+      if (!monthYear) return
+      
+      const [_, monthStr] = monthYear.split('-')
+      const monthIdx = parseInt(monthStr, 10) - 1
+      
+      Object.entries(record.payment_receipts_extractions as PaymentReceiptExtractions).forEach(([taxType, data]) => {
+        if (!data) return
+        
+        const mappedTaxType = mapTaxType(taxType)
+        if (!mappedTaxType) return
+        
+        if (result[year][monthIdx] && result[year][monthIdx][mappedTaxType]) {
+          result[year][monthIdx][mappedTaxType] = {
+            amount: parseAmount(data.amount || '0'),
+            date: parseDate(data.payment_date || null)
+          }
+        }
+      })
+    })
+  }))
+
+  // Cache the result
+  taxDataCache.set(companyId, result)
+  return result
+}
+
+// Map tax type from database format to UI format
+const mapTaxType = (dbTaxType: string): string => {
+  const taxTypeMap: Record<string, string> = {
+    'paye_receipt': 'paye',
+    'housing_levy_receipt': 'housingLevy',
+    'nita_receipt': 'nita',
+    'shif_receipt': 'shif',
+    'nssf_receipt': 'nssf'
+  }
+  return taxTypeMap[dbTaxType] || dbTaxType
+}
+
+// Parse date string from database format
+const parseDate = (dateStr: string | null): string | null => {
+  if (!dateStr) return null
+  try {
+    // Convert date format if needed
+    return dateStr
+  } catch (e) {
+    console.error('Error parsing date:', e)
+    return null
+  }
+}
+
+// Convert month number to month name
+const getMonthName = (monthNum: number): string => {
+  return ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"][monthNum - 1]
+}
+
+// Initialize empty tax entry
+const createEmptyTaxEntry = (month: string): TaxEntry => ({
+  month,
+  paye: { amount: 0, date: null },
+  housingLevy: { amount: 0, date: null },
+  nita: { amount: 0, date: null },
+  shif: { amount: 0, date: null },
+  nssf: { amount: 0, date: null }
+})
+
+// Parse amount from string to number
+const parseAmount = (amountStr: string): number => {
+  if (!amountStr) return 0;
+  // Remove all commas and other non-numeric characters except decimal point
+  const cleanedStr = amountStr.replace(/[^0-9.-]/g, '');
+  return parseFloat(cleanedStr) || 0;
+}
+
+// Fetch cycle batch function
+const fetchCycleBatch = async (batchIds: string[]) => {
+  const { data, error } = await supabase
+    .from('payroll_cycles')
+    .select('id, month_year')
+    .in('id', batchIds)
+  
+  if (error) throw error
+  return data || []
+}
+
+// Fetch records batch function
+const fetchRecordsBatch = async (batchIds: string[], companyId: number) => {
+  const { data, error } = await supabase
+    .from('company_payroll_records')
+    .select('id, payroll_cycle_id, payment_receipts_extractions')
+    .eq('company_id', companyId)
+    .in('payroll_cycle_id', batchIds)
+  
+  if (error) throw error
+  return data || []
+}
+
 export const useCompanyTaxReports = () => {
-  const [companies, setCompanies] = useState<{ id: number; name: string }[]>([])
   const [selectedCompany, setSelectedCompany] = useState<number | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
-  const [reportData, setReportData] = useState<Record<string, TaxEntry[]>>({})
-  const [loading, setLoading] = useState(false)
   const [selectedColumns, setSelectedColumns] = useState<string[]>([
     'month', 'paye', 'housingLevy', 'nita', 'shif', 'nssf'
   ])
 
-  // Fetch companies with debounced search
-  const fetchCompanies = useCallback(async () => {
-    setLoading(true)
-    try {
-      let query = supabase
-        .from('acc_portal_company_duplicate')
-        .select('id, company_name')
-        .order('company_name')
-      
-      if (searchQuery) {
-        query = query.ilike('company_name', `%${searchQuery}%`)
-      }
-      
-      const { data, error } = await query.limit(50)
+  const queryClient = useQueryClient()
 
-      if (error) throw error
-
-      if (data) {
-        const formattedCompanies = data.map(company => ({
-          id: Number(company.id),
-          name: company.company_name
-        }))
-        setCompanies(formattedCompanies)
-      }
-    } catch (error) {
-      console.error('Error fetching companies:', error)
-    } finally {
-      setLoading(false)
-    }
-  }, [searchQuery])
-
-  // Map tax type from database format to UI format
-  const mapTaxType = (dbTaxType: string): string => {
-    const taxTypeMap: Record<string, string> = {
-      'paye_receipt': 'paye',
-      'housing_levy_receipt': 'housingLevy',
-      'nita_receipt': 'nita',
-      'shif_receipt': 'shif',
-      'nssf_receipt': 'nssf'
-    }
-    return taxTypeMap[dbTaxType] || dbTaxType
-  }
-
-  // Parse date string from database format
-  const parseDate = (dateStr: string | null): string | null => {
-    if (!dateStr) return null
-    try {
-      // Convert date format if needed
-      return dateStr
-    } catch (e) {
-      console.error('Error parsing date:', e)
-      return null
-    }
-  }
-
-  // Convert month number to month name
-  const getMonthName = (monthNum: number): string => {
-    return ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"][monthNum - 1]
-  }
-
-  // Initialize empty tax entry
-  const createEmptyTaxEntry = (month: string): TaxEntry => ({
-    month,
-    paye: { amount: 0, date: null },
-    housingLevy: { amount: 0, date: null },
-    nita: { amount: 0, date: null },
-    shif: { amount: 0, date: null },
-    nssf: { amount: 0, date: null }
+  // Companies query
+  const { data: companies = [], isLoading: isLoadingCompanies } = useQuery({
+    queryKey: ['companies', searchQuery],
+    queryFn: () => fetchCompanies(searchQuery),
+    staleTime: 5 * 60 * 1000, // Consider data fresh for 5 minutes
   })
 
-  // Parse amount from string to number
-  const parseAmount = (amountStr: string): number => {
-    if (!amountStr) return 0;
-    // Remove all commas and other non-numeric characters except decimal point
-    const cleanedStr = amountStr.replace(/[^0-9.-]/g, '');
-    return parseFloat(cleanedStr) || 0;
-  }
-
-  // Optimized fetch tax data with caching and batching
-  const fetchCompanyTaxData = useCallback(async (companyId: number) => {
-    // Check cache first
-    if (taxDataCache.has(companyId)) {
-      setReportData(taxDataCache.get(companyId)!)
-      return
-    }
-
-    setLoading(true)
-    try {
-      // Get only last 2 years of cycles for performance
-      const twoYearsAgo = new Date()
-      twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2)
-      const twoYearsAgoStr = twoYearsAgo.toISOString().split('T')[0]
-
-      const { data: cyclesData, error: cyclesError } = await supabase
-        .from('payroll_cycles')
-        .select('id, month_year')
-        .gte('month_year', twoYearsAgoStr)
-        .order('month_year', { ascending: false })
-    
-      if (cyclesError) throw cyclesError
-    
-      // Group cycles by year
-      const yearGroups: Record<string, string[]> = {}
-      cyclesData?.forEach(cycle => {
-        const [year] = cycle.month_year.split('-')
-        if (!yearGroups[year]) yearGroups[year] = []
-        yearGroups[year].push(cycle.id)
-      })
-    
-      const years = Object.keys(yearGroups).sort().reverse()
-      const result: Record<string, TaxEntry[]> = {}
-    
-      // Process each year in parallel
-      await Promise.all(years.map(async (year) => {
-        result[year] = Array.from({ length: 12 }, (_, i) => 
-          createEmptyTaxEntry(getMonthName(i + 1))
-        )
-        
-        // Batch the cycle IDs for this year to avoid URL length limits
-        const batchSize = 30 // Adjust based on your ID lengths
-        
-        // Get all cycles for this year in batches
-        const fetchCycleBatch = async (batchIds) => {
-          const { data, error } = await supabase
-            .from('payroll_cycles')
-            .select('id, month_year')
-            .in('id', batchIds)
-          
-          if (error) throw error
-          return data || []
-        }
-        
-        const cycleDetailsData = await batchRequests(yearGroups[year], batchSize, fetchCycleBatch)
-        
-        // Get all records for this year in batches
-        const fetchRecordsBatch = async (batchIds) => {
-          const { data, error } = await supabase
-            .from('company_payroll_records')
-            .select('id, payroll_cycle_id, payment_receipts_extractions')
-            .eq('company_id', companyId)
-            .in('payroll_cycle_id', batchIds)
-          
-          if (error) throw error
-          return data || []
-        }
-        
-        const recordsData = await batchRequests(yearGroups[year], batchSize, fetchRecordsBatch)
-      
-        // Create a map of cycle IDs to month-year
-        const cycleMap: Record<string, string> = {}
-        cycleDetailsData.forEach(cycle => {
-          cycleMap[cycle.id] = cycle.month_year
-        })
-      
-        // Process the records
-        recordsData.forEach(record => {
-          if (!record.payment_receipts_extractions) return
-          
-          // Get month from cycle
-          const monthYear = cycleMap[record.payroll_cycle_id]
-          if (!monthYear) return
-          
-          const [_, monthStr] = monthYear.split('-')
-          const monthIdx = parseInt(monthStr, 10) - 1
-          
-          // Process each tax type
-          Object.entries(record.payment_receipts_extractions as PaymentReceiptExtractions).forEach(([taxType, data]) => {
-            if (!data) return
-            
-            const mappedTaxType = mapTaxType(taxType)
-            if (!mappedTaxType) return
-            
-            // Update the tax entry with extracted data
-            if (result[year][monthIdx] && result[year][monthIdx][mappedTaxType]) {
-              result[year][monthIdx][mappedTaxType] = {
-                amount: parseAmount(data.amount || '0'),
-                date: parseDate(data.payment_date || null)
-              }
-            }
-          })
-        })
-      }))
-    
-      // Cache the result
-      taxDataCache.set(companyId, result)
-      setReportData(result)
-    } catch (error) {
-      console.error('Error fetching tax data:', error)
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+  // Company tax data query
+  const { data: reportData = {}, isLoading: isLoadingTaxData } = useQuery({
+    queryKey: ['companyTaxData', selectedCompany],
+    queryFn: () => selectedCompany ? fetchCompanyTaxData(selectedCompany) : Promise.resolve({}),
+    enabled: !!selectedCompany,
+    staleTime: 5 * 60 * 1000,
+  })
 
   // Function to toggle tax type selection
   const toggleTaxType = (taxId: string) => {
     setSelectedColumns(prev => {
-      // Always keep 'month' column
       if (taxId === 'month') return prev
       
       if (prev.includes(taxId)) {
@@ -250,63 +237,25 @@ export const useCompanyTaxReports = () => {
     })
   }
 
-  // Generate sample data for development/fallback
-  const generateSampleData = (year: string): TaxEntry[] => {
-    const months = ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"]
-    return months.map((monthNum, index) => ({
-      month: ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"][index],
-      paye: {
-        amount: Math.floor(Math.random() * 10000) + 2000,
-        date: Math.random() > 0.3 ? `${year}-${monthNum}-${String(Math.floor(Math.random() * 28) + 1).padStart(2, '0')}` : null
-      },
-      housingLevy: {
-        amount: Math.floor(Math.random() * 2000) + 500,
-        date: Math.random() > 0.3 ? `${year}-${monthNum}-${String(Math.floor(Math.random() * 28) + 1).padStart(2, '0')}` : null
-      },
-      nita: {
-        amount: Math.floor(Math.random() * 500) + 200,
-        date: Math.random() > 0.3 ? `${year}-${monthNum}-${String(Math.floor(Math.random() * 28) + 1).padStart(2, '0')}` : null
-      },
-      shif: {
-        amount: Math.floor(Math.random() * 3000) + 800,
-        date: Math.random() > 0.3 ? `${year}-${monthNum}-${String(Math.floor(Math.random() * 28) + 1).padStart(2, '0')}` : null
-      },
-      nssf: {
-        amount: Math.floor(Math.random() * 1500) + 400,
-        date: Math.random() > 0.3 ? `${year}-${monthNum}-${String(Math.floor(Math.random() * 28) + 1).padStart(2, '0')}` : null
-      }
-    }))
-  }
-
-  // Filter companies based on search query
-  const filteredCompanies = useCallback(() => {
-    return companies.filter(company =>
-      company.name.toLowerCase().includes(searchQuery.toLowerCase())
-    )
-  }, [companies, searchQuery])
-
-  // Initialize: fetch companies on component mount
-  useEffect(() => {
-    fetchCompanies()
-  }, [fetchCompanies])
-
-  // Fetch data when selected company changes
-  useEffect(() => {
-    if (selectedCompany) {
-      fetchCompanyTaxData(selectedCompany)
-    }
-  }, [selectedCompany, fetchCompanyTaxData])
+  // Prefetch company tax data
+  const prefetchCompanyData = useCallback((companyId: number) => {
+    queryClient.prefetchQuery({
+      queryKey: ['companyTaxData', companyId],
+      queryFn: () => fetchCompanyTaxData(companyId),
+    })
+  }, [queryClient])
 
   return {
-    companies: filteredCompanies(),
+    companies,
     reportData,
     selectedCompany,
     setSelectedCompany,
     searchQuery,
     setSearchQuery,
-    loading,
+    loading: isLoadingCompanies || isLoadingTaxData,
     selectedColumns,
     setSelectedColumns,
-    toggleTaxType
+    toggleTaxType,
+    prefetchCompanyData
   }
 }
