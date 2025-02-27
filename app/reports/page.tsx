@@ -17,6 +17,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger, DropdownMenuCheckboxItem } from "@/components/ui/dropdown-menu"
+import { Checkbox } from "@/components/ui/checkbox"
 
 const taxTypes = [
   { id: 'all', name: 'All Taxes' },
@@ -42,7 +44,6 @@ export default function CompanyReports() {
   
   const years = Object.keys(reportData).sort().reverse()
   const [selectedYear, setSelectedYear] = useState(years[0] || '')
-  const [selectedTaxType, setSelectedTaxType] = useState<typeof taxTypes[number]['id']>('all')
   const selectedCompanyName = companies.find(c => c.id === selectedCompany)?.name || ""
 
   const getTruncatedCompanyName = (name: string) => {
@@ -54,8 +55,8 @@ export default function CompanyReports() {
   }
 
   const getFilteredColumns = () => {
-    if (selectedTaxType === 'all') return selectedColumns
-    return ['month', selectedTaxType]
+    if (selectedColumns.includes('all')) return selectedColumns
+    return ['month', ...selectedColumns]
   }
 
   const exportToExcel = () => {
@@ -63,23 +64,23 @@ export default function CompanyReports() {
 
     const data = reportData[selectedYear].map(entry => {
       const row: any = { Month: entry.month }
-      if (selectedTaxType === 'all' || selectedTaxType === 'paye') {
+      if (selectedColumns.includes('all') || selectedColumns.includes('paye')) {
         row['PAYE Amount'] = entry.paye.amount
         row['PAYE Pay Date'] = entry.paye.date || '-'
       }
-      if (selectedTaxType === 'all' || selectedTaxType === 'housingLevy') {
+      if (selectedColumns.includes('all') || selectedColumns.includes('housingLevy')) {
         row['Housing Levy Amount'] = entry.housingLevy.amount
         row['Housing Levy Pay Date'] = entry.housingLevy.date || '-'
       }
-      if (selectedTaxType === 'all' || selectedTaxType === 'nita') {
+      if (selectedColumns.includes('all') || selectedColumns.includes('nita')) {
         row['NITA Amount'] = entry.nita.amount
         row['NITA Pay Date'] = entry.nita.date || '-'
       }
-      if (selectedTaxType === 'all' || selectedTaxType === 'shif') {
+      if (selectedColumns.includes('all') || selectedColumns.includes('shif')) {
         row['SHIF Amount'] = entry.shif.amount
         row['SHIF Pay Date'] = entry.shif.date || '-'
       }
-      if (selectedTaxType === 'all' || selectedTaxType === 'nssf') {
+      if (selectedColumns.includes('all') || selectedColumns.includes('nssf')) {
         row['NSSF Amount'] = entry.nssf.amount
         row['NSSF Pay Date'] = entry.nssf.date || '-'
       }
@@ -162,18 +163,35 @@ export default function CompanyReports() {
                 </SelectContent>
               </Select>
 
-              <Select value={selectedTaxType} onValueChange={setSelectedTaxType}>
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="Select tax type" />
-                </SelectTrigger>
-                <SelectContent>
-                  {taxTypes.map(tax => (
-                    <SelectItem key={tax.id} value={tax.id}>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" className="w-[180px] justify-between">
+                    Select Taxes
+                    <span className="text-xs text-muted-foreground">
+                      ({selectedColumns.length - 1} selected)
+                    </span>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent className="w-[180px]">
+                  <DropdownMenuLabel>Tax Types</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  {taxTypes.slice(1).map(tax => (
+                    <DropdownMenuCheckboxItem
+                      key={tax.id}
+                      checked={selectedColumns.includes(tax.id)}
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          setSelectedColumns([...selectedColumns, tax.id])
+                        } else {
+                          setSelectedColumns(selectedColumns.filter(col => col !== tax.id))
+                        }
+                      }}
+                    >
                       {tax.name}
-                    </SelectItem>
+                    </DropdownMenuCheckboxItem>
                   ))}
-                </SelectContent>
-              </Select>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
 
             <div className="relative">

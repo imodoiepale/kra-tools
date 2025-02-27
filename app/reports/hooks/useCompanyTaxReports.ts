@@ -235,7 +235,21 @@ export const useCompanyTaxReports = () => {
       setLoading(false)
     }
   }, [])
-  
+
+  // Function to toggle tax type selection
+  const toggleTaxType = (taxId: string) => {
+    setSelectedColumns(prev => {
+      // Always keep 'month' column
+      if (taxId === 'month') return prev
+      
+      if (prev.includes(taxId)) {
+        return prev.filter(col => col !== taxId)
+      } else {
+        return [...prev, taxId]
+      }
+    })
+  }
+
   // Generate sample data for development/fallback
   const generateSampleData = (year: string): TaxEntry[] => {
     const months = ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"]
@@ -292,6 +306,7 @@ export const useCompanyTaxReports = () => {
     setSearchQuery,
     loading,
     selectedColumns,
-    setSelectedColumns
+    setSelectedColumns,
+    toggleTaxType
   }
 }
