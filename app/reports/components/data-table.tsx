@@ -110,29 +110,31 @@ const DataCell = memo(({
   tax, 
   entry, 
   showAmount, 
-  showDate 
+  showDate,
+  isLoading 
 }: { 
   tax: typeof taxColumns[number], 
   entry: TaxEntry, 
   showAmount: boolean, 
-  showDate: boolean 
+  showDate: boolean,
+  isLoading: boolean 
 }) => (
   <React.Fragment>
     {showAmount && (
       <TableCell
-        className="text-right py-3 px-4 font-medium border-2 border-slate-300 bg-white"
+        className={`text-right py-3 px-4 font-medium border-2 border-slate-300 bg-white ${isLoading ? 'animate-pulse' : ''}`}
       >
         <span className="text-slate-700">
-          {formatAmount(entry[tax.id].amount)}
+          {isLoading ? '—' : formatAmount(entry[tax.id].amount)}
         </span>
       </TableCell>
     )}
     {showDate && (
       <TableCell
-        className="text-center py-3 px-3 border-2 border-slate-300 bg-white"
+        className={`text-center py-3 px-3 border-2 border-slate-300 bg-white ${isLoading ? 'animate-pulse' : ''}`}
       >
-        <span className={getDateColor(entry[tax.id].date)}>
-          {formatDate(entry[tax.id].date)}
+        <span className={isLoading ? 'text-slate-400' : getDateColor(entry[tax.id].date)}>
+          {isLoading ? '—' : formatDate(entry[tax.id].date)}
         </span>
       </TableCell>
     )}
@@ -146,23 +148,25 @@ const TableRowMemo = memo(({
   entry, 
   idx, 
   selectedColumns, 
-  selectedSubColumns 
+  selectedSubColumns,
+  isLoading
 }: { 
   entry: TaxEntry, 
   idx: number, 
   selectedColumns: string[], 
-  selectedSubColumns: ("amount" | "date" | "all")[] 
+  selectedSubColumns: ("amount" | "date" | "all")[],
+  isLoading: boolean
 }) => {
   const showAmount = selectedSubColumns.includes("all") || selectedSubColumns.includes("amount");
   const showDate = selectedSubColumns.includes("all") || selectedSubColumns.includes("date");
   
   return (
     <TableRow
-      className={idx % 2 === 0 ? "bg-white" : "bg-gray-50"}
+      className={isLoading ? 'bg-slate-100 animate-pulse' : idx % 2 === 0 ? "bg-white" : "bg-gray-50"}
     >
       {selectedColumns.includes("month") && (
-        <TableCell className="font-medium text-slate-700 py-3 px-5 border-2 border-slate-300">
-          {entry.month}
+        <TableCell className={`font-medium text-slate-700 py-3 px-5 border-2 border-slate-300 ${isLoading ? 'animate-pulse' : ''}`}>
+          {isLoading ? '—' : entry.month}
         </TableCell>
       )}
       {taxColumns.map(
@@ -174,6 +178,7 @@ const TableRowMemo = memo(({
               entry={entry}
               showAmount={showAmount}
               showDate={showDate}
+              isLoading={isLoading}
             />
           )
       )}
@@ -313,7 +318,7 @@ export const DataTable = memo(({
                 {selectedColumns.includes("month") && (
                   <TableHead
                     rowSpan={2}
-                    className="w-[100px] bg-slate-100 font-bold text-slate-700 py-4 px-5 border-2 border-slate-300"
+                    className={`w-[100px] bg-slate-100 font-bold text-slate-700 py-4 px-5 border-2 border-slate-300 ${isLoading ? 'animate-pulse' : ''}`}
                   >
                     Month
                   </TableHead>
@@ -328,7 +333,7 @@ export const DataTable = memo(({
                             ? 2
                             : selectedSubColumns.length
                         }
-                        className={`font-bold text-slate-700 text-center py-4 px-3 border-2 border-slate-300 ${tax.headerBg}`}
+                        className={`font-bold text-slate-700 text-center py-4 px-3 border-2 border-slate-300 ${tax.headerBg} ${isLoading ? 'animate-pulse' : ''}`}
                       >
                         {tax.name}
                       </TableHead>
@@ -344,7 +349,7 @@ export const DataTable = memo(({
                           {showAmount && (
                             <TableHead
                               key={`${tax.id}-amount-header`}
-                              className={`font-semibold text-slate-700 text-center py-3 px-3 border-2 border-slate-300 ${tax.headerBg}`}
+                              className={`font-semibold text-slate-700 text-center py-3 px-3 border-2 border-slate-300 ${tax.headerBg} ${isLoading ? 'animate-pulse' : ''}`}
                             >
                               Amount
                             </TableHead>
@@ -352,7 +357,7 @@ export const DataTable = memo(({
                           {showDate && (
                             <TableHead
                               key={`${tax.id}-date-header`}
-                              className={`font-semibold text-slate-700 text-center py-3 px-3 border-2 border-slate-300 ${tax.headerBg}`}
+                              className={`font-semibold text-slate-700 text-center py-3 px-3 border-2 border-slate-300 ${tax.headerBg} ${isLoading ? 'animate-pulse' : ''}`}
                             >
                               Pay Date
                             </TableHead>
@@ -371,6 +376,7 @@ export const DataTable = memo(({
                   idx={idx}
                   selectedColumns={selectedColumns}
                   selectedSubColumns={selectedSubColumns}
+                  isLoading={isLoading}
                 />
               ))}
               <TableRow className="bg-slate-100 font-semibold">
@@ -404,9 +410,15 @@ export const DataTable = memo(({
         </div>
         {isLoading && (
           <div className="absolute inset-0 bg-white/80 backdrop-blur-sm flex items-center justify-center z-10">
-            <div className="flex flex-col items-center gap-3">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-              <span className="text-sm text-slate-600">Loading tax data...</span>
+            <div className="flex flex-col items-center gap-4">
+              <div className="relative">
+                <div className="animate-spin rounded-full h-12 w-12 border-4 border-muted"></div>
+                <div className="absolute top-0 left-0 animate-spin rounded-full h-12 w-12 border-t-4 border-blue-600"></div>
+              </div>
+              <div className="flex flex-col items-center">
+                <span className="text-sm font-medium text-slate-800">Loading tax data...</span>
+                <span className="text-xs text-slate-500">This may take a few moments</span>
+              </div>
             </div>
           </div>
         )}

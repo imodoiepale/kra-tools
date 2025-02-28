@@ -229,7 +229,10 @@ function CompanyReports() {
         </div>
         <ScrollArea className="h-[calc(100vh-8rem)]">
           {loading && companies.length === 0 ? (
-            <div className="p-2 text-xs text-muted-foreground">Loading companies...</div>
+            <div className="flex flex-col items-center justify-center p-8 space-y-4">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+              <p className="text-xs text-muted-foreground">Loading companies...</p>
+            </div>
           ) : (
             <div className="space-y-0.5">
               {filteredCompanies.map((company, index) => {
@@ -274,7 +277,8 @@ function CompanyReports() {
 
       <div className="flex-1 p-4 space-y-4 overflow-auto">
         {loading && Object.keys(stableReportData).length === 0 ? (
-          <div className="flex items-center justify-center h-full">
+          <div className="flex flex-col items-center justify-center h-full space-y-4">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
             <p className="text-muted-foreground">Loading tax data...</p>
           </div>
         ) : selectedCompany ? (
@@ -454,11 +458,20 @@ function CompanyReports() {
                  data={displayData}
                  selectedColumns={getFilteredColumns()}
                  selectedSubColumns={selectedSubColumns}
-                 isLoading={loading && Object.keys(stableReportData).length === 0} // Pass loading state
+                 isLoading={loading && selectedCompany !== null} // Pass loading state when company is selected
                />
              ) : (
-               <div className="flex items-center justify-center h-32 border rounded-md bg-muted/10">
-                 <p className="text-muted-foreground">No data available for {selectedYear}</p>
+               <div className="flex flex-col items-center justify-center h-32 border rounded-md bg-muted/10 space-y-4">
+                 {loading ? (
+                   <>
+                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                     <p className="text-xs">Loading data...</p>
+                   </>
+                 ) : (
+                   <><p className="text-muted-foreground">Loading data  {selectedYear}</p><div className="flex justify-center items-center h-screen">
+                            <div className="rounded-full h-20 w-20 bg-blue-600 animate-ping"></div>
+                          </div></>
+                 )}
                </div>
              )}
            </div>
