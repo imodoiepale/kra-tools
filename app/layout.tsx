@@ -3,7 +3,8 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import { RootLayoutWrapper } from "./RootLayoutWrapper";
 import 'react-toastify/dist/ReactToastify.css';
-import { Toaster } from "@/components/ui/toaster"
+import { Toaster } from "@/components/ui/toaster";
+import { ConvexClientProvider } from "./convex-client";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -53,10 +54,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" >
+    <html lang="en">
       <body className={inter.className}>
-        <RootLayoutWrapper>{children}</RootLayoutWrapper>
-        <Toaster />
+        <ConvexClientProvider>
+          <RootLayoutWrapper>
+            {children}
+            <Toaster />
+          </RootLayoutWrapper>
+        </ConvexClientProvider>
       </body>
     </html>
   );
