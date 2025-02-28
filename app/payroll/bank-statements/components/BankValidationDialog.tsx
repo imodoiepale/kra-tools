@@ -423,7 +423,7 @@ export function BankValidationDialog({
                         </Card>
                     )}
 
-                    {mismatches.length > 0 && (
+                    {/* {mismatches.length > 0 && (
                         <div className="p-4 bg-red-50 border border-red-200 rounded-md">
                             <h4 className="font-medium text-red-700 flex items-center mb-2">
                                 <AlertTriangle className="h-4 w-4 mr-2" />
@@ -435,7 +435,7 @@ export function BankValidationDialog({
                                 ))}
                             </ul>
                         </div>
-                    )}
+                    )} */}
                 </div>
 
                 <AlertDialogFooter>

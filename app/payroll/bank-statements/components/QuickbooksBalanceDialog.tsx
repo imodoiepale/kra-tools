@@ -1,7 +1,7 @@
 // QuickbooksBalanceDialog.tsx
 // @ts-nocheck
 import { useState } from 'react'
-import { Loader2, Save } from 'lucide-react'
+import { Loader2, Save, Upload, AlertTriangle, Coins, UploadCloud, FileText, Sheet, Building, Landmark, CreditCard, DollarSign, Calendar, Calculator, CheckCircle } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/hooks/use-toast'
 import { format } from 'date-fns'
@@ -115,6 +115,9 @@ export function QuickbooksBalanceDialog({
         return null;
     }
 
+    // Get current QuickBooks balance from statement or from the input
+    const currentQbBalance = parseFloat(balance) || statement?.quickbooks_balance || null;
+
     const handleSave = async () => {
         try {
             setIsLoading(true)
@@ -188,59 +191,130 @@ export function QuickbooksBalanceDialog({
         <Dialog open={isOpen} onOpenChange={() => {
             if (!isLoading) onClose()
         }}>
-            <DialogContent className="sm:max-w-md">
+            <DialogContent className="sm:max-w-3xl">
                 <DialogHeader>
-                    <DialogTitle className="text-xl">Update QuickBooks Balance</DialogTitle>
+                    <div className="bg-gradient-to-r from-emerald-50 via-emerald-100 to-emerald-50 -mx-6 -mt-6 p-6 rounded-t-lg border-b border-emerald-200">
+                        <div className="mb-2 flex justify-center">
+                            <div className="h-14 w-14 rounded-full bg-emerald-100 border border-emerald-200 flex items-center justify-center shadow-sm">
+                                <DollarSign className="h-7 w-7 text-emerald-600" />
+                            </div>
+                        </div>
+                        <DialogTitle className="text-center text-xl text-emerald-800">Update QuickBooks Balance</DialogTitle>
+                        <p className="text-center text-emerald-600 text-sm mt-1">
+                            {bank.company_name}
+                        </p>
+                    </div>
                 </DialogHeader>
 
-                <div className="space-y-4 py-4">
-                    <div className="space-y-1">
-                        <div className="flex items-center justify-between">
-                            <Label htmlFor="bank-name" className="text-right">Bank</Label>
-                            <span className="font-medium text-primary">{bank.bank_name}</span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                            <Label htmlFor="account-number" className="text-right">Account Number</Label>
-                            <span className="font-medium">{bank.account_number}</span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                            <Label htmlFor="currency" className="text-right">Currency</Label>
-                            <span className="font-medium">{currencyCode}</span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                            <Label htmlFor="period" className="text-right">Statement Period</Label>
-                            <span className="font-medium">{statementPeriod}</span>
+                <div className="space-y-4 py-4 mt-2">
+                    <div className="bg-gradient-to-r from-emerald-50/80 to-emerald-50/40 rounded-md p-4 border border-emerald-100 shadow-sm">
+                        <div className="grid grid-cols-2 gap-x-6 gap-y-3">
+                            <div className="col-span-2">
+                                <h3 className="text-sm font-medium text-emerald-800 border-b border-emerald-100 pb-1 mb-2">Account Information</h3>
+                                <div className="flex items-center gap-2">
+                                    <Building className="h-4 w-4 text-emerald-600" />
+                                    <span className="font-medium">{bank.company_name}</span>
+                                </div>
+                            </div>
+
+                            <div>
+                                <h3 className="text-sm font-medium text-emerald-800 border-b border-emerald-100 pb-1 mb-2">Bank Details</h3>
+                                <div className="space-y-1.5">
+                                    <div className="flex items-center gap-2">
+                                        <Landmark className="h-4 w-4 text-emerald-600" />
+                                        <span className="font-medium">{bank.bank_name}</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <CreditCard className="h-4 w-4 text-emerald-600" />
+                                        <span className="font-mono text-xs">{bank.account_number}</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div>
+                                <h3 className="text-sm font-medium text-emerald-800 border-b border-emerald-100 pb-1 mb-2">Statement Period</h3>
+                                <div className="flex gap-2">
+                                    <div className="flex items-center gap-2">
+                                        <Calendar className="h-4 w-4 text-emerald-600" />
+                                        <span className="font-medium">
+                                            {statementPeriod || format(new Date(cycleYear, cycleMonth - 1), 'MMMM yyyy')}
+                                        </span>
+                                    </div>
+                                    <div className="flex items-center gap-1 bg-emerald-100/50 px-2 py-0.5 rounded text-xs text-emerald-700 border border-emerald-200">
+                                        <Coins className="h-3 w-3" />
+                                        {currencyCode}
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
                     <div className="space-y-2">
-                        <Label htmlFor="qb-balance">QuickBooks Balance ({currencyCode})</Label>
-                        <Input
-                            id="qb-balance"
-                            type="text"
-                            value={balance}
-                            onChange={(e) => setBalance(e.target.value)}
-                            placeholder="Enter QuickBooks balance"
-                            disabled={isLoading}
-                        />
+                        <Label htmlFor="qb-balance" className="flex items-center gap-1.5 text-emerald-900">
+                            <Calculator className="h-4 w-4 text-emerald-600" />
+                            QuickBooks Balance ({currencyCode})
+                        </Label>
+                        <div className="relative">
+                            <Input
+                                id="qb-balance"
+                                type="text"
+                                value={balance}
+                                onChange={(e) => setBalance(e.target.value)}
+                                placeholder="Enter QuickBooks balance"
+                                disabled={isLoading}
+                                className="pl-8 py-5 text-lg focus:border-emerald-400 focus:ring-emerald-300"
+                            />
+                            <div className="absolute left-3 top-1/2 transform -translate-y-1/2 text-emerald-600">
+                                <DollarSign className="h-4 w-4" />
+                            </div>
+                        </div>
                     </div>
 
                     {statement?.statement_extractions?.closing_balance !== null && (
                         <div className="space-y-2">
-                            <Label>Bank Statement Closing Balance</Label>
-                            <div className="p-2 bg-muted rounded-md font-medium">
-                                {formatCurrency(statement.statement_extractions.closing_balance)}
+                            <Label className="flex items-center gap-1.5 text-blue-800">
+                                <FileText className="h-4 w-4 text-blue-600" />
+                                Bank Statement Closing Balance
+                            </Label>
+                            <div className="bg-blue-50/70 p-3 rounded-md border border-blue-200 font-medium flex justify-between items-center">
+                                <span className="text-blue-700">Current Statement Balance:</span>
+                                <span className="text-lg">{formatCurrency(statement.statement_extractions.closing_balance)}</span>
                             </div>
+
+                            {currentQbBalance !== null && statement.statement_extractions.closing_balance !== null && (
+                                <div className={`mt-3 p-3 rounded-md border flex justify-between items-center
+                ${Math.abs(statement.statement_extractions.closing_balance - currentQbBalance) > 0.01 ?
+                                        'bg-red-50/70 border-red-200 text-red-700' :
+                                        'bg-green-50/70 border-green-200 text-green-700'}`}>
+                                    <span className="flex items-center gap-1 font-medium">
+                                        {Math.abs(statement.statement_extractions.closing_balance - currentQbBalance) > 0.01 ? (
+                                            <>
+                                                <AlertTriangle className="h-4 w-4" />
+                                                Difference:
+                                            </>
+                                        ) : (
+                                            <>
+                                                <CheckCircle className="h-4 w-4" />
+                                                Reconciled:
+                                            </>
+                                        )}
+                                    </span>
+                                    <span className="text-lg font-medium">
+                                        {formatCurrency(statement.statement_extractions.closing_balance - currentQbBalance)}
+                                    </span>
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>
 
-                <DialogFooter className="sm:justify-end">
+                <DialogFooter className="bg-gradient-to-r from-slate-50 to-emerald-50 -mx-6 -mb-6 p-4 border-t flex items-center justify-between">
                     <Button
                         type="button"
                         variant="outline"
                         onClick={onClose}
                         disabled={isLoading}
+                        className="border-gray-300 hover:bg-slate-100"
                     >
                         Cancel
                     </Button>
@@ -248,11 +322,12 @@ export function QuickbooksBalanceDialog({
                         type="button"
                         onClick={handleSave}
                         disabled={isLoading}
+                        className="bg-emerald-600 hover:bg-emerald-700 px-6"
                     >
                         {isLoading ? (
                             <>
                                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                Saving
+                                Saving...
                             </>
                         ) : (
                             <>
