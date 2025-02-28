@@ -1,13 +1,13 @@
 // @ts-nocheck
 "use client"
-
+import { useCompanyFilters } from "./hooks/useCompanyFilters"
 import { Card } from "@/components/ui/card"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { DataTable } from "./components/data-table"
 import { Input } from "@/components/ui/input"
 import { useCompanyTaxReports } from "./hooks/useCompanyTaxReports"
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, useCallback } from "react"
 import * as XLSX from 'xlsx'
 import { Button } from "@/components/ui/button"
 import {
@@ -21,6 +21,8 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuLabel, DropdownMenuSepar
 import { Checkbox } from "@/components/ui/checkbox"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools"
+import { Filter } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
 
 // Configure the query client with optimized settings
 const queryClient = new QueryClient({
@@ -60,15 +62,24 @@ function CompanyReports() {
     reportData,
     selectedCompany,
     setSelectedCompany,
-    searchQuery,
-    setSearchQuery,
     loading,
     selectedColumns,
     setSelectedColumns,
     prefetchCompanyData,
-    clearCache // For testing/debugging
+    clearCache
   } = useCompanyTaxReports()
   
+  const {
+    searchQuery,
+    setSearchQuery,
+    selectedFilters,
+    setSelectedFilters,
+    filteredCompanies,
+    getFilters,
+    handleFilterChange,
+    isDateInRange
+  } = useCompanyFilters(companies)
+
   const [selectedSubColumns, setSelectedSubColumns] = useState<("amount" | "date" | "all")[]>(["all"])
   const [taxDropdownOpen, setTaxDropdownOpen] = useState(false)
   const [columnDropdownOpen, setColumnDropdownOpen] = useState(false)
@@ -96,6 +107,8 @@ function CompanyReports() {
       setSelectedYear(years[0]);
     }
   }, [years, selectedYear]);
+  
+  const currentDate = new Date();
   
   const selectedCompanyName = companies.find(c => c.id === selectedCompany)?.name || ""
 
@@ -167,19 +180,59 @@ function CompanyReports() {
       <div className="w-48 border-r p-2">
         <div className="space-y-2 mb-4">
           <h2 className="font-semibold text-xs">Companies</h2>
-          <Input
-            placeholder="Search companies..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full text-xs"
-          />
+          <div className="space-y-2">
+            <Input
+              placeholder="Search companies..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full text-xs"
+            />
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="w-full h-8 flex items-center justify-between text-xs">
+                  <div className="flex items-center">
+                    <Filter className="mr-2 h-3 w-3" />
+                    Service Categories
+                  </div>
+                  {selectedFilters.length > 0 && (
+                    <Badge variant="secondary" className="ml-2">
+                      {selectedFilters.length}
+                    </Badge>
+                  )}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-48">
+                <DropdownMenuLabel className="text-xs font-medium">Service Categories</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <div className="p-2">
+                  {getFilters().map((filter) => (
+                    <label
+                      key={filter.key}
+                      className="flex items-center space-x-2 mb-2 last:mb-0 cursor-pointer"
+                    >
+                      <Checkbox
+                        checked={filter.key === 'all' ? selectedFilters.length === 0 : filter.selected}
+                        onCheckedChange={() => handleFilterChange(filter.key)}
+                        className="h-4 w-4"
+                      />
+                      <div className="flex flex-col">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm">{filter.label}</span>
+                        </div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
         <ScrollArea className="h-[calc(100vh-8rem)]">
           {loading && companies.length === 0 ? (
             <div className="p-2 text-xs text-muted-foreground">Loading companies...</div>
           ) : (
             <div className="space-y-0.5">
-              {companies.map((company, index) => {
+              {filteredCompanies.map((company, index) => {
                 const { short, full } = getTruncatedCompanyName(company.name)
                 return (
                   <div
@@ -355,7 +408,6 @@ function CompanyReports() {
                  </DropdownMenuCheckboxItem>
                  <DropdownMenuCheckboxItem
                    checked={selectedSubColumns.includes("amount") || selectedSubColumns.includes("all")}
-                   disabled={selectedSubColumns.includes("all")}
                    onSelect={(e) => e.preventDefault()}
                    onCheckedChange={(checked) => {
                      if (checked) {
@@ -375,7 +427,6 @@ function CompanyReports() {
                  </DropdownMenuCheckboxItem>
                  <DropdownMenuCheckboxItem
                    checked={selectedSubColumns.includes("date") || selectedSubColumns.includes("all")}
-                   disabled={selectedSubColumns.includes("all")}
                    onSelect={(e) => e.preventDefault()}
                    onCheckedChange={(checked) => {
                      if (checked) {
