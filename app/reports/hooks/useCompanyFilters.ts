@@ -2,7 +2,7 @@
 import { useState, useMemo, useCallback } from 'react';
 
 interface Company {
-  id: string;
+  id: number;
   name: string;
   acc_client_effective_from: string | null;
   acc_client_effective_to: string | null;
@@ -93,12 +93,9 @@ export function useCompanyFilters(companies: Company[]) {
       
       // Check if any selected filter matches
       const matchesFilters = selectedFilters.some(filterKey => {
-        // Check if the service is active for this company
-        return isDateInRange(
-          currentDate,
-          company[`${filterKey}_client_effective_from`],
-          company[`${filterKey}_client_effective_to`]
-        );
+        const fromDate = company[`${filterKey}_client_effective_from`];
+        const toDate = company[`${filterKey}_client_effective_to`];
+        return isDateInRange(currentDate, fromDate, toDate);
       });
 
       return matchesSearch && matchesFilters;
@@ -107,17 +104,14 @@ export function useCompanyFilters(companies: Company[]) {
 
   const handleFilterChange = useCallback((filterKey: string) => {
     if (filterKey === 'all') {
-      // If All is selected, clear all filters
       setSelectedFilters([]);
       return;
     }
 
     setSelectedFilters(prev => {
       if (prev.includes(filterKey)) {
-        // Remove the category
         return prev.filter(k => k !== filterKey);
       } else {
-        // Add the category
         return [...prev, filterKey];
       }
     });
@@ -130,7 +124,6 @@ export function useCompanyFilters(companies: Company[]) {
     setSelectedFilters,
     filteredCompanies,
     getFilters,
-    handleFilterChange,
-    isDateInRange
+    handleFilterChange
   };
 }

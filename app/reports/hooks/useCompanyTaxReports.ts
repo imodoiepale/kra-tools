@@ -96,7 +96,18 @@ const fetchCompanies = async (searchQuery: string) => {
   console.time('fetchCompanies');
   let query = supabase
     .from('acc_portal_company_duplicate')
-    .select('id, company_name')
+    .select(`
+      id, 
+      company_name,
+      acc_client_effective_from,
+      acc_client_effective_to,
+      audit_tax_client_effective_from,
+      audit_tax_client_effective_to,
+      cps_sheria_client_effective_from,
+      cps_sheria_client_effective_to,
+      imm_client_effective_from,
+      imm_client_effective_to
+    `)
     .order('company_name')
   
   if (searchQuery) {
@@ -109,7 +120,15 @@ const fetchCompanies = async (searchQuery: string) => {
 
   const companies = data?.map(company => ({
     id: Number(company.id),
-    name: company.company_name
+    name: company.company_name,
+    acc_client_effective_from: company.acc_client_effective_from,
+    acc_client_effective_to: company.acc_client_effective_to,
+    audit_tax_client_effective_from: company.audit_tax_client_effective_from,
+    audit_tax_client_effective_to: company.audit_tax_client_effective_to,
+    cps_sheria_client_effective_from: company.cps_sheria_client_effective_from,
+    cps_sheria_client_effective_to: company.cps_sheria_client_effective_to,
+    imm_client_effective_from: company.imm_client_effective_from,
+    imm_client_effective_to: company.imm_client_effective_to
   })) || [];
   
   console.timeEnd('fetchCompanies');
