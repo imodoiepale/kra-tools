@@ -289,14 +289,24 @@ export default function BankReconciliationTable({
     }
 
     const handleViewStatement = (bankId: number) => {
-        const bank = banks.find(b => b.id === bankId)
-        const statement = bankStatements.find(s => s.bank_id === bankId)
+        // Reset all states first
+        setSelectedBank(null)
+        setSelectedStatement(null)
+        setUploadDialogOpen(false)
+        setQuickbooksDialogOpen(false)
+        setExtractionDialogOpen(false)
+        
+        // After a brief delay, set the new states
+        setTimeout(() => {
+            const bank = banks.find(b => b.id === bankId)
+            const statement = bankStatements.find(s => s.bank_id === bankId)
 
-        if (bank && statement) {
-            setSelectedBank(bank)
-            setSelectedStatement(statement)
-            setExtractionDialogOpen(true)
-        }
+            if (bank && statement) {
+                setSelectedBank(bank)
+                setSelectedStatement(statement)
+                setExtractionDialogOpen(true)
+            }
+        }, 100) // Small delay to ensure state reset
     }
 
     const handleQuickbooksBalance = (bankId: number) => {

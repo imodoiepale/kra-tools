@@ -1,4 +1,4 @@
-// BankExtractionDialog.tsx - Modified version
+// BankExtractionDialog.tsx - Improved version
 import { useState, useEffect, useRef } from 'react'
 import {
     Loader2, Save, ChevronLeft, ChevronRight,
@@ -8,7 +8,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/hooks/use-toast'
-import { format } from 'date-fns'
+import { format, parseISO, isValid } from 'date-fns'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -95,6 +95,7 @@ interface BankStatement {
     statement_document: {
         statement_pdf: string | null
         statement_excel: string | null
+        document_size?: number
     }
     statement_extractions: {
         bank_name: string | null
@@ -131,7 +132,7 @@ interface BankExtractionDialogProps {
 const normalizeCurrencyCode = (code) => {
     if (!code) return 'USD'; // Default fallback
 
-    // Convert to uppercase
+    // Convert to uppercase and trim
     const upperCode = code.toUpperCase().trim();
 
     // Map of common incorrect currency codes to valid ISO codes
@@ -152,11 +153,77 @@ const normalizeCurrencyCode = (code) => {
         'K.SH': 'KES',
         'KSHS': 'KES',
         'K.SHS': 'KES',
-        'SH': 'KES'
+        'SH': 'KES',
+        'KES': 'KES'
     };
 
     // Return mapped value or the original if not in the map
     return currencyMap[upperCode] || upperCode;
+};
+
+// Parse statement period to get expected months
+const parseStatementPeriod = (periodString: string | null): { startMonth: number, startYear: number, endMonth: number, endYear: number } | null => {
+    if (!periodString) return null;
+
+    // Try to match DD/MM/YYYY - DD/MM/YYYY format
+    const dateRangePattern = /(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{4})\s*-\s*(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{4})/;
+    const matches = periodString.match(dateRangePattern);
+
+    if (matches && matches.length >= 7) {
+        // Assumes DD/MM/YYYY format
+        const startMonth = parseInt(matches[2], 10);
+        const startYear = parseInt(matches[3], 10);
+        const endMonth = parseInt(matches[5], 10);
+        const endYear = parseInt(matches[6], 10);
+
+        if (!isNaN(startMonth) && !isNaN(startYear) && !isNaN(endMonth) && !isNaN(endYear)) {
+            return { startMonth, startYear, endMonth, endYear };
+        }
+    }
+
+    // Try to match Month YYYY - Month YYYY format
+    const monthNamePattern = /(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(\d{4})\s*-\s*(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(\d{4})/i;
+    const monthMatches = periodString.match(monthNamePattern);
+
+    if (monthMatches && monthMatches.length >= 5) {
+        const monthNames = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+
+        const startMonthName = monthMatches[1].toLowerCase().substring(0, 3);
+        const startYear = parseInt(monthMatches[2], 10);
+        const endMonthName = monthMatches[3].toLowerCase().substring(0, 3);
+        const endYear = parseInt(monthMatches[4], 10);
+
+        const startMonth = monthNames.indexOf(startMonthName) + 1;
+        const endMonth = monthNames.indexOf(endMonthName) + 1;
+
+        if (startMonth > 0 && endMonth > 0 && !isNaN(startYear) && !isNaN(endYear)) {
+            return { startMonth, startYear, endMonth, endYear };
+        }
+    }
+
+    return null;
+};
+
+// Generate all months between two dates
+const generateMonthRange = (startMonth: number, startYear: number, endMonth: number, endYear: number): { month: number, year: number }[] => {
+    const months = [];
+    let currentYear = startYear;
+    let currentMonth = startMonth;
+
+    while (currentYear < endYear || (currentYear === endYear && currentMonth <= endMonth)) {
+        months.push({
+            month: currentMonth,
+            year: currentYear
+        });
+
+        currentMonth++;
+        if (currentMonth > 12) {
+            currentMonth = 1;
+            currentYear++;
+        }
+    }
+
+    return months;
 };
 
 export function BankExtractionDialog({
@@ -178,6 +245,8 @@ export function BankExtractionDialog({
     const [pdfUrl, setPdfUrl] = useState<string>('')
     const [currentPage, setCurrentPage] = useState<number>(1)
     const [totalPages, setTotalPages] = useState<number>(1)
+    const [pdfScale, setPdfScale] = useState<number>(1.0) // Scale for PDF view
+    const [documentSize, setDocumentSize] = useState<number>(statement.statement_document.document_size || 0)
     const [loading, setLoading] = useState<boolean>(true)
     const [saving, setSaving] = useState<boolean>(false)
     const [deleting, setDeleting] = useState<boolean>(false)
@@ -186,10 +255,13 @@ export function BankExtractionDialog({
     const [pdfDocument, setPdfDocument] = useState<PDFDocumentProxy | null>(null)
     const [pdfText, setPdfText] = useState<string>('')
     const [selectedText, setSelectedText] = useState<string>('')
+    const [allPagesRendered, setAllPagesRendered] = useState<boolean[]>([])
+    const [renderedPageCanvases, setRenderedPageCanvases] = useState<HTMLCanvasElement[]>([])
 
     // Detected periods in PDF
     const [detectedPeriods, setDetectedPeriods] = useState<{ month: number, year: number, page: number, lastDate?: string }[]>([])
     const [currentPeriodIndex, setCurrentPeriodIndex] = useState<number>(0)
+    const [expectedMonths, setExpectedMonths] = useState<{ month: number, year: number }[]>([])
 
     // Selection state
     const [selection, setSelection] = useState<{
@@ -204,6 +276,7 @@ export function BankExtractionDialog({
     const [bankName, setBankName] = useState<string>(statement.statement_extractions.bank_name || '')
     const [accountNumber, setAccountNumber] = useState<string>(statement.statement_extractions.account_number || '')
     const [currency, setCurrency] = useState<string>(statement.statement_extractions.currency || '')
+    const [statementPeriod, setStatementPeriod] = useState<string>(statement.statement_extractions.statement_period || '')
     const [monthlyBalances, setMonthlyBalances] = useState<MonthlyBalance[]>(
         statement.statement_extractions.monthly_balances || []
     )
@@ -211,6 +284,68 @@ export function BankExtractionDialog({
     const canvasRef = useRef<HTMLCanvasElement>(null)
     const pdfContainerRef = useRef<HTMLDivElement>(null)
     const selectionRef = useRef<HTMLDivElement>(null)
+    const pagesContainerRef = useRef<HTMLDivElement>(null)
+
+    // Effect to parse statement period and generate expected months
+    useEffect(() => {
+        const periodDates = parseStatementPeriod(statementPeriod);
+        if (periodDates) {
+            const { startMonth, startYear, endMonth, endYear } = periodDates;
+            const months = generateMonthRange(startMonth, startYear, endMonth, endYear);
+            setExpectedMonths(months);
+
+            // Add missing months to the monthly balances
+            const updatedBalances = [...monthlyBalances];
+
+            months.forEach(({ month, year }) => {
+                const exists = monthlyBalances.some(
+                    balance => balance.month === month && balance.year === year
+                );
+
+                if (!exists) {
+                    updatedBalances.push({
+                        month,
+                        year,
+                        closing_balance: 0,
+                        opening_balance: 0,
+                        statement_page: 1,
+                        closing_date: null,
+                        highlight_coordinates: null,
+                        is_verified: false,
+                        verified_by: null,
+                        verified_at: null
+                    });
+                }
+            });
+
+            if (updatedBalances.length !== monthlyBalances.length) {
+                setMonthlyBalances(updatedBalances);
+            }
+        } else {
+            // If we can't parse the period, at least ensure current month/year exists
+            const exists = monthlyBalances.some(
+                balance => balance.month === statement.statement_month && balance.year === statement.statement_year
+            );
+
+            if (!exists) {
+                setMonthlyBalances([
+                    ...monthlyBalances,
+                    {
+                        month: statement.statement_month,
+                        year: statement.statement_year,
+                        closing_balance: 0,
+                        opening_balance: 0,
+                        statement_page: 1,
+                        closing_date: null,
+                        highlight_coordinates: null,
+                        is_verified: false,
+                        verified_by: null,
+                        verified_at: null
+                    }
+                ]);
+            }
+        }
+    }, [statementPeriod]);
 
     const handleClose = () => {
         if (!isLoading && !saving && !deleting) {
@@ -244,8 +379,23 @@ export function BankExtractionDialog({
                 setPdfDocument(pdf);
                 setTotalPages(pdf.numPages);
 
-                // Load the first page by default
-                renderPage(1, pdf);
+                // Initialize empty rendered pages array
+                setAllPagesRendered(new Array(pdf.numPages).fill(false));
+                setRenderedPageCanvases(new Array(pdf.numPages).fill(null));
+
+                // Get document size
+                const stats = await supabase.storage
+                    .from('Payroll-Cycle')
+                    .getPublicUrl(statement.statement_document.statement_pdf);
+
+                if (stats) {
+                    const response = await fetch(data.signedUrl, { method: 'HEAD' });
+                    const size = parseInt(response.headers.get('content-length') || '0');
+                    setDocumentSize(size);
+                }
+
+                // Load all pages
+                await renderAllPages(pdf);
 
             } catch (error) {
                 console.error('Error loading PDF:', error)
@@ -277,78 +427,123 @@ export function BankExtractionDialog({
         return `${lastDay}/${selectedMonth}/${selectedYear}`;
     };
 
-    // Render a specific page
-    const renderPage = async (pageNumber, pdfDoc = pdfDocument) => {
-        if (!pdfDoc) return;
+    // Render all pages function
+    const renderAllPages = async (pdfDoc = pdfDocument) => {
+        if (!pdfDoc || !pagesContainerRef.current) return;
 
         try {
-            setCurrentPage(pageNumber);
-            const page = await pdfDoc.getPage(pageNumber);
+            // Clear existing content
+            while (pagesContainerRef.current.firstChild) {
+                pagesContainerRef.current.removeChild(pagesContainerRef.current.firstChild);
+            }
 
-            // Get the canvas to render the PDF page
-            const canvas = canvasRef.current;
-            if (!canvas) return;
+            // Create new canvas elements for each page
+            const newRenderedCanvases = [];
+            const containerWidth = pagesContainerRef.current.clientWidth || 800;
 
-            const context = canvas.getContext('2d');
+            for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+                const page = await pdfDoc.getPage(pageNum);
 
-            // Calculate scale to fit the container
-            const containerWidth = pdfContainerRef.current?.clientWidth || 800;
-            const viewport = page.getViewport({ scale: 1 });
-            const scale = containerWidth / viewport.width;
-            const scaledViewport = page.getViewport({ scale });
+                const viewport = page.getViewport({ scale: 1 });
+                const scale = Math.min(1.0, (containerWidth - 40) / viewport.width);
+                const scaledViewport = page.getViewport({ scale });
 
-            // Set canvas dimensions
-            canvas.height = scaledViewport.height;
-            canvas.width = scaledViewport.width;
+                const canvas = document.createElement('canvas');
+                canvas.height = scaledViewport.height;
+                canvas.width = scaledViewport.width;
+                canvas.className = 'mb-4 shadow-md'; // Add spacing and shadow
+                canvas.dataset.pageNumber = pageNum.toString();
 
-            // Render PDF page
-            const renderContext = {
-                canvasContext: context,
-                viewport: scaledViewport
-            };
+                // Add click event to each canvas for text selection
+                canvas.addEventListener('click', (e) => handleCanvasClick(e, pageNum, canvas));
 
-            await page.render(renderContext).promise;
+                pagesContainerRef.current.appendChild(canvas);
+                newRenderedCanvases[pageNum - 1] = canvas;
 
-            // Draw highlights for the current page
-            monthlyBalances.forEach(balance => {
-                if (balance.highlight_coordinates && balance.highlight_coordinates.page === pageNumber) {
-                    const { x1, y1, x2, y2 } = balance.highlight_coordinates;
+                const context = canvas.getContext('2d');
 
-                    // Draw highlight
-                    context.fillStyle = balance.is_verified ? 'rgba(34, 197, 94, 0.2)' : 'rgba(251, 191, 36, 0.2)';
-                    context.fillRect(x1, y1, x2 - x1, y2 - y1);
+                // Render PDF page
+                const renderContext = {
+                    canvasContext: context,
+                    viewport: scaledViewport
+                };
 
-                    // Draw border
-                    context.strokeStyle = balance.is_verified ? 'rgba(34, 197, 94, 0.8)' : 'rgba(251, 191, 36, 0.8)';
-                    context.lineWidth = 2;
-                    context.strokeRect(x1, y1, x2 - x1, y2 - y1);
+                await page.render(renderContext).promise;
 
-                    // Add month label
-                    context.fillStyle = 'white';
-                    context.fillRect(x1, y1 - 20, 80, 20);
-                    context.strokeRect(x1, y1 - 20, 80, 20);
+                // Extract text content for this page
+                const textContent = await page.getTextContent();
+                const textItems = textContent.items.map(item => item.str).join(' ');
 
-                    context.fillStyle = 'black';
-                    context.font = '12px Arial';
-                    context.fillText(
-                        `${format(new Date(balance.year, balance.month - 1, 1), 'MMM yyyy')}`,
-                        x1 + 5,
-                        y1 - 5
-                    );
-                }
-            });
+                // Detect dates in this page to associate with periods
+                detectDatesInPage(textItems, pageNum);
 
-            // Extract text content
-            const textContent = await page.getTextContent();
-            const textItems = textContent.items.map(item => item.str).join(' ');
-            setPdfText(textItems);
+                // Draw highlights for this page
+                drawHighlightsForPage(context, scaledViewport, pageNum);
 
-            // Detect dates in this page to associate with periods
-            detectDatesInPage(textItems, pageNumber);
+                // Mark page as rendered
+                setAllPagesRendered(prev => {
+                    const updated = [...prev];
+                    updated[pageNum - 1] = true;
+                    return updated;
+                });
+            }
+
+            setRenderedPageCanvases(newRenderedCanvases);
 
         } catch (error) {
-            console.error('Error rendering page:', error);
+            console.error('Error rendering all pages:', error);
+            toast({
+                title: 'Error',
+                description: 'Failed to render all PDF pages',
+                variant: 'destructive'
+            });
         }
+    };
+
+    // Draw highlights for a specific page
+    const drawHighlightsForPage = (context, viewport, pageNumber) => {
+        monthlyBalances.forEach(balance => {
+            if (balance.highlight_coordinates && balance.highlight_coordinates.page === pageNumber) {
+                const { x1, y1, x2, y2 } = balance.highlight_coordinates;
+
+                // Draw highlight
+                context.fillStyle = balance.is_verified ? 'rgba(34, 197, 94, 0.2)' : 'rgba(251, 191, 36, 0.2)';
+                context.fillRect(x1, y1, x2 - x1, y2 - y1);
+
+                // Draw border
+                context.strokeStyle = balance.is_verified ? 'rgba(34, 197, 94, 0.8)' : 'rgba(251, 191, 36, 0.8)';
+                context.lineWidth = 2;
+                context.strokeRect(x1, y1, x2 - x1, y2 - y1);
+
+                // Add month label
+                context.fillStyle = 'white';
+                context.fillRect(x1, y1 - 20, 80, 20);
+                context.strokeRect(x1, y1 - 20, 80, 20);
+
+                context.fillStyle = 'black';
+                context.font = '12px Arial';
+                context.fillText(
+                    `${format(new Date(balance.year, balance.month - 1, 1), 'MMM yyyy')}`,
+                    x1 + 5,
+                    y1 - 5
+                );
+            }
+        });
+    };
+
+    // Handle click on a specific canvas
+    const handleCanvasClick = async (e, pageNum, canvas) => {
+        if (!canvas) return;
+
+        setCurrentPage(pageNum);
+
+        // Get the position relative to the canvas
+        const rect = canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+
+        // Extract text at this position
+        await extractTextAtPosition(x, y, pageNum);
     };
 
     // Detect dates in the page text
@@ -400,19 +595,6 @@ export function BankExtractionDialog({
         }
     };
 
-    // Enhanced function to handle text selection
-    const handleSelectText = (e) => {
-        if (!canvasRef.current) return;
-
-        // Get the position relative to the canvas
-        const rect = canvasRef.current.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
-
-        // Extract text at this position (simplified for this example)
-        extractTextAtPosition(x, y, currentPage);
-    };
-
     // Function to extract text at a position
     const extractTextAtPosition = async (x, y, pageNum) => {
         if (!pdfDocument) return;
@@ -421,14 +603,14 @@ export function BankExtractionDialog({
             // Get the page
             const page = await pdfDocument.getPage(pageNum);
 
+            // Get the canvas for this page
+            const canvas = renderedPageCanvases[pageNum - 1];
+            if (!canvas) return;
+
             // Convert canvas position to PDF position
             const viewport = page.getViewport({ scale: 1 });
-            const containerWidth = pdfContainerRef.current?.clientWidth || 800;
+            const containerWidth = canvas.width;
             const scale = containerWidth / viewport.width;
-
-            // Convert coordinates
-            const pdfX = x / scale;
-            const pdfY = y / scale;
 
             // This would be more complex in a real implementation
             // Here we simulate finding text at the clicked position
@@ -484,80 +666,6 @@ export function BankExtractionDialog({
         }
     };
 
-    // Handle mouse events for text selection
-    useEffect(() => {
-        if (!canvasRef.current) return;
-
-        let isSelecting = false;
-        let startX, startY;
-
-        const handleMouseDown = (e) => {
-            isSelecting = true;
-
-            // Get the position relative to the canvas
-            const rect = canvasRef.current.getBoundingClientRect();
-            startX = e.clientX - rect.left;
-            startY = e.clientY - rect.top;
-        };
-
-        const handleMouseMove = (e) => {
-            if (!isSelecting) return;
-
-            // In a real implementation, we would update a selection rectangle here
-        };
-
-        const handleMouseUp = (e) => {
-            if (!isSelecting) return;
-            isSelecting = false;
-
-            // Get the position relative to the canvas
-            const rect = canvasRef.current.getBoundingClientRect();
-            const endX = e.clientX - rect.left;
-            const endY = e.clientY - rect.top;
-
-            // In a real implementation, we would:
-            // 1. Use PDF.js to get the text content under the selection
-            // 2. Extract numeric values from the selection
-
-            // For now, simulate by extracting the first number we can find in the page text
-            const numericPattern = /\$?\s*[\d,]+\.?\d*/g;
-            const matches = [...pdfText.matchAll(numericPattern)];
-
-            if (matches.length > 0) {
-                // Take the first numeric match for demo purposes
-                const match = matches[0];
-                const selectedText = match[0];
-
-                // Parse the value - remove commas and currency symbols
-                const cleanedText = selectedText.replace(/[$,]/g, '');
-                const value = parseFloat(cleanedText);
-
-                if (!isNaN(value)) {
-                    // Set the selection with the position of mouse up
-                    setSelection({
-                        value,
-                        text: selectedText,
-                        position: { x: endX, y: endY },
-                        page: currentPage,
-                        // Try to find a nearby date
-                        date: findNearbyDate(pdfText, match.index)
-                    });
-                }
-            }
-        };
-
-        const canvas = canvasRef.current;
-        canvas.addEventListener('mousedown', handleMouseDown);
-        canvas.addEventListener('mousemove', handleMouseMove);
-        canvas.addEventListener('mouseup', handleMouseUp);
-
-        return () => {
-            canvas.removeEventListener('mousedown', handleMouseDown);
-            canvas.removeEventListener('mousemove', handleMouseMove);
-            canvas.removeEventListener('mouseup', handleMouseUp);
-        };
-    }, [pdfText, currentPage]);
-
     // Find a date near the selected text
     const findNearbyDate = (text, position, windowSize = 100) => {
         // Extract a window of text around the position
@@ -581,7 +689,7 @@ export function BankExtractionDialog({
                 bank_name: bankName || null,
                 account_number: accountNumber || null,
                 currency: currency || null,
-                statement_period: statement.statement_extractions.statement_period,
+                statement_period: statementPeriod || statement.statement_extractions.statement_period,
                 // Set opening/closing balance based on monthly balances for the selected month/year
                 opening_balance: getMonthlyOpeningBalance(),
                 closing_balance: getMonthlyClosingBalance(),
@@ -615,13 +723,20 @@ export function BankExtractionDialog({
                 assigned_to: statement.status.assigned_to
             }
 
+            // Update document size
+            const updatedDocumentDetails = {
+                ...statement.statement_document,
+                document_size: documentSize
+            }
+
             // Update database
             const { data, error } = await supabase
                 .from('acc_cycle_bank_statements')
                 .update({
                     statement_extractions: updatedExtractions,
                     validation_status: validationStatus,
-                    status: statusUpdate
+                    status: statusUpdate,
+                    statement_document: updatedDocumentDetails
                 })
                 .eq('id', statement.id)
                 .select('*')
@@ -631,6 +746,9 @@ export function BankExtractionDialog({
 
             // Notify parent component
             onStatementUpdated(data)
+
+            // Handle statement range data
+            await handleStatementRangeData();
 
             toast({
                 title: 'Success',
@@ -741,7 +859,7 @@ export function BankExtractionDialog({
             year: selectedYear,
             closing_balance: 0,
             opening_balance: 0,
-            statement_page: currentPage,
+            statement_page: 1,
             closing_date: null,
             highlight_coordinates: null,
             is_verified: false,
@@ -805,8 +923,11 @@ export function BankExtractionDialog({
         setSelectedYear(period.year);
         setCurrentPeriodIndex(periodIndex);
 
-        // Navigate to the page
-        handlePageChange(period.page);
+        // Scroll to the page
+        const pageElement = document.querySelector(`[data-page-number="${period.page}"]`);
+        if (pageElement) {
+            pageElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
 
         toast({
             description: `Navigated to ${format(new Date(period.year, period.month - 1, 1), 'MMMM yyyy')}${period.lastDate ? ` (Last date: ${period.lastDate})` : ''}`,
@@ -843,7 +964,7 @@ export function BankExtractionDialog({
             y1: selection.position.y - 10,
             x2: selection.position.x + 150,
             y2: selection.position.y + 10,
-            page: currentPage
+            page: selection.page
         };
 
         if (balanceIndex >= 0) {
@@ -852,7 +973,7 @@ export function BankExtractionDialog({
             updatedBalances[balanceIndex] = {
                 ...updatedBalances[balanceIndex],
                 closing_balance: selection.value,
-                statement_page: currentPage,
+                statement_page: selection.page,
                 highlight_coordinates: highlightCoords,
                 is_verified: false // Reset verification when edited
             };
@@ -872,7 +993,7 @@ export function BankExtractionDialog({
                     year: selectedYear,
                     closing_balance: selection.value,
                     opening_balance: 0, // Default to 0
-                    statement_page: currentPage,
+                    statement_page: selection.page,
                     closing_date: selection.date || null,
                     highlight_coordinates: highlightCoords,
                     is_verified: false,
@@ -880,6 +1001,29 @@ export function BankExtractionDialog({
                     verified_at: null
                 }
             ]);
+        }
+
+        // Re-render the page with the highlight
+        const canvas = renderedPageCanvases[selection.page - 1];
+        if (canvas && pdfDocument) {
+            pdfDocument.getPage(selection.page).then(page => {
+                const viewport = page.getViewport({ scale: 1 });
+                const containerWidth = canvas.width;
+                const scale = containerWidth / viewport.width;
+
+                const context = canvas.getContext('2d');
+
+                // Render PDF page
+                const renderContext = {
+                    canvasContext: context,
+                    viewport: viewport
+                };
+
+                page.render(renderContext).promise.then(() => {
+                    // Draw highlights
+                    drawHighlightsForPage(context, viewport, selection.page);
+                });
+            });
         }
 
         // Clear selection and show toast
@@ -919,28 +1063,140 @@ export function BankExtractionDialog({
         return balance?.is_verified ?? false;
     };
 
-    // Function to handle PDF navigation
-    const handlePageChange = (newPage: number) => {
-        if (newPage < 1 || newPage > totalPages) return;
-        renderPage(newPage);
-    }
+    // Function to scroll to a specific page
+    const scrollToPage = (pageNumber: number) => {
+        if (pageNumber < 1 || pageNumber > totalPages) return;
+
+        const pageElement = document.querySelector(`[data-page-number="${pageNumber}"]`);
+        if (pageElement) {
+            pageElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            setCurrentPage(pageNumber);
+        }
+    };
+
+    // Format file size
+    const formatFileSize = (bytes: number) => {
+        if (bytes === 0) return '0 Bytes';
+        const k = 1024;
+        const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    };
+
+    // Function to handle data from statement ranges
+    const handleStatementRangeData = async () => {
+        try {
+            // Parse the statement period to get all months in range
+            const periodDates = parseStatementPeriod(statementPeriod);
+            if (!periodDates) return;
+
+            const { startMonth, startYear, endMonth, endYear } = periodDates;
+            const monthsInRange = generateMonthRange(startMonth, startYear, endMonth, endYear);
+
+            // For each month in range (except current statement's month)
+            for (const { month, year } of monthsInRange) {
+                // Skip if this is the current statement's month/year
+                if (month === statement.statement_month && year === statement.statement_year) {
+                    continue;
+                }
+
+                // Find matching balance for this month
+                const monthBalance = monthlyBalances.find(
+                    b => b.month === month && b.year === year
+                );
+
+                if (monthBalance) {
+                    // Check if a statement already exists for this month
+                    const { data: existingStatement } = await supabase
+                        .from('acc_cycle_bank_statements')
+                        .select('id')
+                        .eq('bank_id', bank.id)
+                        .eq('statement_month', month)
+                        .eq('statement_year', year)
+                        .single();
+
+                    if (!existingStatement) {
+                        // Create new statement record for this month
+                        const newStatement = {
+                            bank_id: bank.id,
+                            statement_month: month,
+                            statement_year: year,
+                            statement_document: {
+                                statement_pdf: statement.statement_document.statement_pdf,
+                                document_size: statement.statement_document.document_size
+                            },
+                            statement_extractions: {
+                                bank_name: bankName,
+                                account_number: accountNumber,
+                                currency: currency,
+                                statement_period: statementPeriod,
+                                opening_balance: monthBalance.opening_balance,
+                                closing_balance: monthBalance.closing_balance,
+                                monthly_balances: [monthBalance]
+                            },
+                            validation_status: {
+                                is_validated: false,
+                                validation_date: null,
+                                validated_by: null,
+                                mismatches: []
+                            },
+                            has_soft_copy: true,
+                            has_hard_copy: false,
+                            status: {
+                                status: 'pending_validation',
+                                assigned_to: null,
+                                verification_date: null
+                            }
+                        };
+
+                        // Insert the new statement
+                        await supabase
+                            .from('acc_cycle_bank_statements')
+                            .insert([newStatement]);
+
+                        toast({
+                            description: `Created statement for ${format(new Date(year, month - 1), 'MMMM yyyy')}`,
+                            variant: 'default'
+                        });
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('Error handling statement range:', error);
+            toast({
+                title: 'Error',
+                description: 'Failed to process statement range data',
+                variant: 'destructive'
+            });
+        }
+    };
 
     return (
         <Dialog open={isOpen} onOpenChange={handleClose}>
             <DialogContent className="w-[95vw] max-w-[1600px] max-h-[95vh] h-[95vh] p-6 flex flex-col overflow-hidden">
                 <DialogHeader>
-                    <DialogTitle className="text-xl flex justify-between items-center">
-                        <span>Bank Statement - {bank.bank_name} {bank.account_number}</span>
-                        <Button
-                            variant="destructive"
-                            size="sm"
-                            onClick={handleDeleteStatement}
-                            disabled={deleting}
-                            className="gap-1"
-                        >
-                            {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash className="h-4 w-4" />}
-                            Delete Statement
-                        </Button>
+                    <DialogTitle className="text-xl flex flex-col gap-2">
+                        <div className="flex justify-between items-center">
+                            <span className="font-semibold">{bank.company_name}</span>
+                            <div className="flex items-center gap-3 pr-16">
+                                <div className="text-sm text-muted-foreground">
+                                    Document Size : {documentSize > 0 ? formatFileSize(documentSize) : ''}
+                                </div>
+                                <Button
+                                    variant="destructive"
+                                    size="sm"
+                                    onClick={handleDeleteStatement}
+                                    disabled={deleting}
+                                    className="gap-1"
+                                >
+                                    {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash className="h-4 w-4" />}
+                                    Delete Statement
+                                </Button>
+                            </div>
+                        </div>
+                        <div className="text-base">
+                            Bank Statement - {bank.bank_name} {bank.account_number} | {format(new Date(statement.statement_year, statement.statement_month - 1), 'MMMM yyyy')}
+                        </div>
                     </DialogTitle>
                 </DialogHeader>
 
@@ -953,7 +1209,7 @@ export function BankExtractionDialog({
                     <TabsContent value="overview" className="flex-1 flex flex-col overflow-hidden">
                         <div className="flex flex-col h-full space-y-2 overflow-hidden">
                             {/* Period navigation */}
-                            <div className="flex items-center justify-between bg-muted p-2 rounded-md shrink-0">
+                            {/* <div className="flex items-center justify-between bg-muted p-2 rounded-md shrink-0">
                                 <Button
                                     variant="outline"
                                     size="sm"
@@ -980,7 +1236,7 @@ export function BankExtractionDialog({
                                             }}
                                         >
                                             <SelectTrigger className="w-[300px]">
-                                                <SelectValue placeholder={statement.statement_extractions.statement_period || "Select period"} />
+                                                <SelectValue placeholder={statementPeriod || "Select period"} />
                                             </SelectTrigger>
                                             <SelectContent>
                                                 {detectedPeriods.map((period, index) => (
@@ -1008,88 +1264,29 @@ export function BankExtractionDialog({
                                     Next Period
                                     <ChevronRight className="h-4 w-4 ml-1" />
                                 </Button>
-                            </div>
+                            </div> */}
 
                             {/* Main content area */}
-                            <div className="grid grid-cols-5 gap-4 h-full overflow-hidden">
-                                {/* PDF Viewer - 3 columns */}
+                            <div className="grid grid-cols-5 gap-4 h-full overflow-hidden pt-2">
+                                {/* PDF Viewer - 3 columns with scrollable container for all pages*/}
                                 <div className="col-span-3 flex flex-col h-full overflow-hidden">
                                     <div
                                         ref={pdfContainerRef}
-                                        className="border rounded bg-muted relative flex-1 overflow-auto"
+                                        className="border rounded bg-muted relative flex-1 overflow-hidden"
                                     >
                                         {loading ? (
                                             <div className="flex items-center justify-center h-full">
                                                 <Loader2 className="h-8 w-8 animate-spin text-primary" />
                                             </div>
                                         ) : (
-                                            <>
-                                                <canvas
-                                                    ref={canvasRef}
-                                                    className="w-full h-auto cursor-pointer"
-                                                    onClick={handleSelectText}
+                                            <div className="h-full">
+                                                <iframe
+                                                    src={pdfUrl}
+                                                    className="w-full h-full"
+                                                    title="Bank Statement PDF"
                                                 />
-
-                                                {/* Highlight guide - show when no highlights exist */}
-                                                {monthlyBalances.length === 0 && (
-                                                    <div className="absolute top-2 right-2 bg-white p-3 rounded-md shadow-md border max-w-xs">
-                                                        <h4 className="font-medium text-sm mb-1">Extract Balance Values</h4>
-                                                        <p className="text-xs text-muted-foreground">
-                                                            Click on closing balance values in the document to extract them.
-                                                            Each selected value can be saved to a specific month.
-                                                        </p>
-                                                    </div>
-                                                )}
-
-                                                {/* Selection tooltip */}
-                                                {selection && (
-                                                    <div
-                                                        ref={selectionRef}
-                                                        className="absolute bg-white border rounded-md shadow-md p-2 z-50"
-                                                        style={{
-                                                            left: `${selection.position.x + 10}px`,
-                                                            top: `${selection.position.y - 60}px`,
-                                                            maxWidth: '300px'
-                                                        }}
-                                                    >
-                                                        <div className="flex flex-col">
-                                                            <p className="text-sm mb-1 font-medium">Selected: {selection.text}</p>
-                                                            {selection.date && (
-                                                                <p className="text-xs text-muted-foreground mb-1">Date: {selection.date}</p>
-                                                            )}
-                                                            <p className="text-sm mb-2">
-                                                                Use {formatCurrency(selection.value, currency || bank.bank_currency)} as closing balance?
-                                                            </p>
-                                                            <div className="grid grid-cols-1 gap-2">
-                                                                <Button
-                                                                    size="sm"
-                                                                    variant="default"
-                                                                    onClick={applySelectionAsClosingBalance}
-                                                                    className="w-full"
-                                                                >
-                                                                    Set as Closing Balance
-                                                                </Button>
-                                                                <Button
-                                                                    size="sm"
-                                                                    variant="outline"
-                                                                    onClick={() => setSelection(null)}
-                                                                    className="w-full"
-                                                                >
-                                                                    Cancel
-                                                                </Button>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                )}
-                                            </>
+                                            </div>
                                         )}
-                                    </div>
-
-                                    {/* Page indicator - keeping it simple without pagination controls */}
-                                    <div className="flex items-center justify-center mt-2 shrink-0">
-                                        <span className="text-sm">
-                                            Page {currentPage} of {totalPages}
-                                        </span>
                                     </div>
                                 </div>
 
@@ -1190,6 +1387,16 @@ export function BankExtractionDialog({
                                                     )}
                                                 </div>
                                             </div>
+
+                                            <div className="space-y-1">
+                                                <Label htmlFor="statement-period">Statement Period</Label>
+                                                <Input
+                                                    id="statement-period"
+                                                    value={statementPeriod}
+                                                    onChange={(e) => setStatementPeriod(e.target.value)}
+                                                    placeholder="E.g., 01/01/2024 - 31/01/2024"
+                                                />
+                                            </div>
                                         </CardContent>
                                     </Card>
 
@@ -1261,7 +1468,9 @@ export function BankExtractionDialog({
                                                                                     className="h-8 w-8"
                                                                                     onClick={() => {
                                                                                         // Navigate to the page
-                                                                                        handlePageChange(balance.statement_page || 1);
+                                                                                        if (balance.statement_page) {
+                                                                                            scrollToPage(balance.statement_page);
+                                                                                        }
                                                                                         // Also set the selected month/year
                                                                                         setSelectedMonth(balance.month);
                                                                                         setSelectedYear(balance.year);
@@ -1309,13 +1518,13 @@ export function BankExtractionDialog({
                                                 <div className="p-3 bg-muted rounded-md mt-2">
                                                     <div className="grid grid-cols-2 gap-4">
                                                         <div>
-                                                            <p className="text-sm text-muted-foreground">Bank Statement</p>
+                                                            <p className="text-sm text-muted-foreground mb-1">Bank Statement</p>
                                                             <p className="font-medium">
                                                                 {formatCurrency(getMonthlyClosingBalance(), bank.bank_currency)}
                                                             </p>
                                                         </div>
                                                         <div>
-                                                            <p className="text-sm text-muted-foreground">QuickBooks</p>
+                                                            <p className="text-sm text-muted-foreground mb-1">QuickBooks</p>
                                                             <p className="font-medium">
                                                                 {formatCurrency(statement.quickbooks_balance, bank.bank_currency)}
                                                             </p>
@@ -1323,7 +1532,7 @@ export function BankExtractionDialog({
                                                     </div>
 
                                                     <div className="mt-2 pt-2 border-t">
-                                                        <p className="text-sm text-muted-foreground">Difference</p>
+                                                        <p className="text-sm text-muted-foreground mb-1">Difference</p>
                                                         <p className={`font-bold ${Math.abs(getMonthlyClosingBalance() - statement.quickbooks_balance) > 0.01
                                                             ? "text-red-500"
                                                             : "text-green-500"
@@ -1340,9 +1549,9 @@ export function BankExtractionDialog({
                         </div>
                     </TabsContent>
 
-                    <TabsContent value="validation" className="flex-1 overflow-auto">
+                    <TabsContent value="validation" className="">
                         <div className="grid grid-cols-2 gap-4">
-                            <div className="space-y-4">
+                            <div className="flex flex-col h-full space-y-2 overflow-hidden">
                                 <div className="p-4 rounded-md border bg-card">
                                     <h3 className="text-lg font-semibold flex items-center mb-4">
                                         <FileCheck className="h-5 w-5 text-primary mr-2" />

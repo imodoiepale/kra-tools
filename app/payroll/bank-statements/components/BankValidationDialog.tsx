@@ -351,7 +351,7 @@ export function BankValidationDialog({
                                         </div>
                                         <div className="mt-2 pt-2 border-t border-blue-200 flex justify-between items-center">
                                             <p className="text-sm font-medium">Period Validation</p>
-                                            <Badge className={isPeriodValid ? "bg-green-100 text-green-700 hover:bg-green-100" : "bg-amber-100 text-amber-700 hover:bg-amber-100"}>
+                                            <Badge className={isPeriodValid ? "bg-green-100 text-green-700 hover:bg-green-100" : "bg-red-100 text-red-700 hover:bg-amber-100"}>
                                                 {isPeriodValid ? "Period Valid" : "Period Mismatch"}
                                             </Badge>
                                         </div>
@@ -418,7 +418,7 @@ export function BankValidationDialog({
                         </Card>
                     )}
 
-                    {mismatches.length > 0 && (
+                    {/* {mismatches.length > 0 && (
                         <div className="p-4 bg-red-50 border border-red-200 rounded-md">
                             <h4 className="font-medium text-red-700 flex items-center mb-2">
                                 <AlertTriangle className="h-4 w-4 mr-2" />
@@ -430,7 +430,7 @@ export function BankValidationDialog({
                                 ))}
                             </ul>
                         </div>
-                    )}
+                    )} */}
                 </div>
 
                 <AlertDialogFooter>
