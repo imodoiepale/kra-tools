@@ -16,7 +16,7 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table'
-import { Loader2, Download, UploadCloud, Edit, ChevronDown, Eye, CheckCircle, XCircle, AlertTriangle, MoreHorizontal } from 'lucide-react'
+import { Loader2, Download, UploadCloud, Edit, ChevronDown, Eye, CheckCircle, XCircle, AlertTriangle, MoreHorizontal, Trash } from 'lucide-react'
 import { BankStatementUploadDialog } from './components/BankStatementUploadDialog'
 import { BankExtractionDialog } from './components/BankExtractionDialog'
 import { QuickbooksBalanceDialog } from './components/QuickbooksBalanceDialog'
@@ -136,7 +136,7 @@ export default function BankReconciliationTable({
     onStatsChange
 }: BankReconciliationTableProps) {
     const [loading, setLoading] = useState<boolean>(true)
-    const [banks, setBanks] = useState<Bank[]>([])
+    const [allBanks, setAllBanks] = useState<Bank[]>([]) // Store all unfiltered banks
     const [bankStatements, setBankStatements] = useState<BankStatement[]>([])
     const [uploadDialogOpen, setUploadDialogOpen] = useState<boolean>(false)
     const [selectedBank, setSelectedBank] = useState<Bank | null>(null)
@@ -147,82 +147,118 @@ export default function BankReconciliationTable({
 
     const { toast } = useToast()
 
-    // Fetch payroll cycle ID for current month/year
+    // Filter banks client-side based on search term
+    const banks = useMemo(() => {
+        if (!searchTerm.trim()) return allBanks;
+
+        return allBanks.filter(bank =>
+            (bank.company_name?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+            (bank.bank_name?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+            (bank.account_number || '').includes(searchTerm)
+        );
+    }, [allBanks, searchTerm]);
+
+    // Single useEffect to handle payroll cycle and data fetching - without searchTerm dependency
     useEffect(() => {
-        const fetchPayrollCycle = async () => {
-            const monthStr = selectedMonth.toString().padStart(2, '0')
-            const cycleMonthYear = `${selectedYear}-${monthStr}`
-
-            const { data, error } = await supabase
-                .from('payroll_cycles')
-                .select('id')
-                .eq('month_year', cycleMonthYear)
-                .single()
-
-            if (error && error.code !== 'PGRST116') {
-                // PGRST116 is "No rows returned" error, which is expected if no cycle exists
-                console.error('Error fetching payroll cycle:', error)
-            }
-
-            setPayrollCycleId(data?.id || null)
-            console.log('Fetched payrollCycleId:', data?.id) // Debugging line
-        }
-
-        fetchPayrollCycle()
-    }, [selectedMonth, selectedYear])
-
-    // Fetch banks and statements
-    useEffect(() => {
-        const fetchBanksAndStatements = async () => {
-            setLoading(true)
+        const initializeData = async () => {
+            setLoading(true);
             try {
-                // Fetch banks
+                // Format month with leading zero for consistency
+                const monthStr = selectedMonth.toString().padStart(2, '0');
+                const cycleMonthYear = `${selectedYear}-${monthStr}`;
+                console.log(`Initializing data for period: ${cycleMonthYear}`);
+
+                // STEP 1: Get or create payroll cycle
+                let cycle;
+                const { data: existingCycle, error: cycleError } = await supabase
+                    .from('payroll_cycles')
+                    .select('id')
+                    .eq('month_year', cycleMonthYear)
+                    .single();
+
+                if (cycleError) {
+                    if (cycleError.code === 'PGRST116') { // No rows found
+                        console.log('No existing payroll cycle found. Creating new cycle...');
+
+                        // Create new cycle
+                        const { data: newCycle, error: createError } = await supabase
+                            .from('payroll_cycles')
+                            .insert({
+                                month_year: cycleMonthYear,
+                                status: 'active',
+                                created_at: new Date().toISOString()
+                            })
+                            .select('id')
+                            .single();
+
+                        if (createError) {
+                            throw new Error(`Failed to create payroll cycle: ${createError.message}`);
+                        }
+
+                        cycle = newCycle;
+                        console.log('Created new payroll cycle:', cycle);
+                    } else {
+                        throw new Error(`Failed to fetch payroll cycle: ${cycleError.message}`);
+                    }
+                } else {
+                    cycle = existingCycle;
+                    console.log('Found existing payroll cycle:', cycle);
+                }
+
+                // Update state with cycle ID
+                setPayrollCycleId(cycle?.id || null);
+
+                // STEP 2: Fetch ALL banks (without filtering by searchTerm)
                 const { data: banksData, error: banksError } = await supabase
                     .from('acc_portal_banks')
                     .select('id, bank_name, account_number, bank_currency, company_id, company_name')
-                    .ilike('company_name', `%${searchTerm}%`)
-                    .order('company_name', { ascending: true })
+                    .order('company_name', { ascending: true });
 
-                if (banksError) throw banksError
-                console.log('Fetched banks:', banksData) // Debugging line
-
-                // Only fetch statements if we have a payroll cycle ID
-                let statementsData: BankStatement[] = []
-
-                if (payrollCycleId) {
-                    // Fetch bank statements for the selected month/year
-                    const { data: fetchedStatementsData, error: statementsError } = await supabase
-                        .from('acc_cycle_bank_statements')
-                        .select('*')
-                        .eq('payroll_cycle_id', payrollCycleId)
-
-                    if (statementsError) throw statementsError
-                    statementsData = fetchedStatementsData || []
-                    console.log('Fetched bank statements:', fetchedStatementsData) // Debugging line
+                if (banksError) {
+                    throw new Error(`Failed to fetch banks: ${banksError.message}`);
                 }
 
-                setBanks(banksData || [])
-                setBankStatements(statementsData)
+                console.log(`Fetched ${banksData?.length || 0} banks`);
+                setAllBanks(banksData || []); // Store all banks, unfiltered
+
+                // STEP 3: Fetch bank statements if we have a cycle ID
+                if (cycle?.id) {
+                    const { data: statementsData, error: statementsError } = await supabase
+                        .from('acc_cycle_bank_statements')
+                        .select('*')
+                        .eq('payroll_cycle_id', cycle.id);
+
+                    if (statementsError) {
+                        throw new Error(`Failed to fetch statements: ${statementsError.message}`);
+                    }
+
+                    console.log(`Fetched ${statementsData?.length || 0} bank statements`);
+                    setBankStatements(statementsData || []);
+                } else {
+                    console.warn('No payroll cycle ID - skipping statement fetch');
+                    setBankStatements([]);
+                }
+
             } catch (error) {
-                console.error('Error fetching data:', error)
+                console.error('Error initializing data:', error);
                 toast({
                     title: 'Error',
-                    description: 'Failed to fetch banks and statements',
+                    description: error.message || 'Failed to initialize data',
                     variant: 'destructive'
-                })
+                });
             } finally {
-                setLoading(false)
+                setLoading(false);
             }
-        }
+        };
 
-        fetchBanksAndStatements()
-    }, [payrollCycleId, searchTerm, toast])
+        initializeData();
+    }, [selectedMonth, selectedYear, toast]);
 
     // Group banks by company for row spanning
     const banksByCompany = useMemo(() => {
         const groupedBanks = new Map<string, Bank[]>()
 
-        banks.forEach(bank => {
+        banks.forEach(bank => { // Use the filtered banks
             const existingBanks = groupedBanks.get(bank.company_name) || []
             groupedBanks.set(bank.company_name, [...existingBanks, bank])
         })
@@ -343,6 +379,55 @@ export default function BankReconciliationTable({
                 minimumFractionDigits: 2,
                 maximumFractionDigits: 2
             }).format(amount);
+        }
+    };
+
+    const handleDeleteStatement = async (bankId: number) => {
+        const statement = bankStatements.find(s => s.bank_id === bankId);
+        if (!statement) return;
+
+        // Confirm deletion
+        if (!window.confirm("Are you sure you want to delete this statement? This action cannot be undone.")) {
+            return;
+        }
+
+        try {
+            // Delete files from storage if they exist
+            if (statement.statement_document.statement_pdf) {
+                await supabase.storage
+                    .from('Payroll-Cycle')
+                    .remove([statement.statement_document.statement_pdf]);
+            }
+
+            if (statement.statement_document.statement_excel) {
+                await supabase.storage
+                    .from('Payroll-Cycle')
+                    .remove([statement.statement_document.statement_excel]);
+            }
+
+            // Delete the statement record
+            const { error } = await supabase
+                .from('acc_cycle_bank_statements')
+                .delete()
+                .eq('id', statement.id);
+
+            if (error) throw error;
+
+            // Update the UI
+            setBankStatements(prev => prev.filter(s => s.id !== statement.id));
+            onStatsChange();
+
+            toast({
+                title: 'Success',
+                description: 'Bank statement deleted successfully'
+            });
+        } catch (error) {
+            console.error('Error deleting statement:', error);
+            toast({
+                title: 'Error',
+                description: 'Failed to delete bank statement',
+                variant: 'destructive'
+            });
         }
     };
 
@@ -539,6 +624,13 @@ export default function BankReconciliationTable({
                                                             <Edit className="h-4 w-4" />
                                                             Update QB Balance
                                                         </DropdownMenuItem>
+                                                        <DropdownMenuItem
+                                                            onClick={() => handleDeleteStatement(bank.id)}
+                                                            className="flex items-center gap-2 text-red-600"
+                                                        >
+                                                            <Trash className="h-4 w-4" />
+                                                            Delete Statement
+                                                        </DropdownMenuItem>
                                                     </DropdownMenuContent>
                                                 </DropdownMenu>
                                             </TableCell>
@@ -578,7 +670,7 @@ export default function BankReconciliationTable({
                 />
             )}
 
-            {selectedBank && (
+            {selectedBank && selectedStatement && (
                 <QuickbooksBalanceDialog
                     isOpen={quickbooksDialogOpen}
                     onClose={() => {
@@ -586,8 +678,8 @@ export default function BankReconciliationTable({
                         setSelectedBank(null)
                         setSelectedStatement(null)
                     }}
-                    bank={selectedBank!}
-                    statement={selectedStatement!}
+                    bank={selectedBank}
+                    statement={selectedStatement}
                     cycleMonth={selectedMonth}
                     cycleYear={selectedYear}
                     onBalanceUpdated={handleQuickbooksBalanceUpdated}

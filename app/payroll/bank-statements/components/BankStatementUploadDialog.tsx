@@ -87,6 +87,7 @@ interface ValidationResult {
     }
 }
 
+// BankStatementUploadDialog.tsx
 interface BankStatementUploadDialogProps {
     isOpen: boolean
     onClose: () => void
@@ -95,6 +96,7 @@ interface BankStatementUploadDialogProps {
     cycleYear: number
     onStatementUploaded: (statement: BankStatement) => void
     existingStatement: BankStatement | null
+    payrollCycleId: string | null // Add this line
 }
 
 export function BankStatementUploadDialog({
@@ -104,7 +106,8 @@ export function BankStatementUploadDialog({
     cycleMonth,
     cycleYear,
     onStatementUploaded,
-    existingStatement
+    existingStatement,
+    payrollCycleId
 }: BankStatementUploadDialogProps) {
     const [pdfFile, setPdfFile] = useState<File | null>(null)
     const [excelFile, setExcelFile] = useState<File | null>(null)
@@ -156,6 +159,16 @@ export function BankStatementUploadDialog({
         }
     }
 
+    if (!payrollCycleId) {
+        toast({
+            title: 'Error',
+            description: 'No active payroll cycle found. Please ensure the cycle exists.',
+            variant: 'destructive'
+        });
+        return;
+    }
+
+
     const handleUpload = async (proceed: boolean = true) => {
         if (!pdfFile && !hasSoftCopy) {
             toast({
@@ -163,8 +176,19 @@ export function BankStatementUploadDialog({
                 description: 'Please upload a PDF file or check "Has Soft Copy"',
                 variant: 'destructive'
             })
-            return
+            return;
         }
+
+        // Add safe check for payrollCycleId
+        if (!payrollCycleId) {
+            toast({
+                title: 'Error',
+                description: 'No active payroll cycle found. Please try again later.',
+                variant: 'destructive'
+            });
+            return;
+        }
+
 
         try {
             setUploading(true)
@@ -190,8 +214,13 @@ export function BankStatementUploadDialog({
                     const validation = validateExtractedData(extractionResult.extractedData)
                     setValidationResult(validation)
 
-                    // If there are mismatches, show validation dialog
-                    if (!validation.isValid) {
+                    // Only show validation for critical mismatches (bank name, account number)
+                    // Filter out period mismatches which aren't critical
+                    const criticalMismatches = validation.mismatches.filter(mismatch =>
+                        !mismatch.toLowerCase().includes('period')
+                    );
+
+                    if (criticalMismatches.length > 0) {
                         setShowValidation(true)
                         setExtracting(false)
                         setUploading(false)
@@ -209,7 +238,6 @@ export function BankStatementUploadDialog({
                     setExtracting(false)
                 }
             }
-
             // Upload files to storage
             let pdfPath = existingStatement?.statement_document.statement_pdf || null
             let excelPath = existingStatement?.statement_document.statement_excel || null
@@ -252,6 +280,7 @@ export function BankStatementUploadDialog({
             const statementData = {
                 bank_id: bank.id,
                 company_id: bank.company_id,
+                payroll_cycle_id: payrollCycleId, // Ensure this is included
                 statement_month: cycleMonth,
                 statement_year: cycleYear,
                 statement_document: {
@@ -260,7 +289,7 @@ export function BankStatementUploadDialog({
                 },
                 has_soft_copy: hasSoftCopy,
                 has_hard_copy: hasHardCopy
-            }
+            };
 
             // If we have extracted data from validation, include it
             if (validationResult) {
@@ -484,6 +513,8 @@ export function BankStatementUploadDialog({
                         setShowValidation(false)
                         setValidationResult(null)
                     }}
+                    cycleMonth={cycleMonth}  // Add these props
+                    cycleYear={cycleYear}    // Add these props
                 />
             )}
         </>
