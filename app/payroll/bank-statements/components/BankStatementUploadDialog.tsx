@@ -1,7 +1,7 @@
 // BankStatementUploadDialog.tsx
 // @ts-nocheck
 import { useState, useRef } from 'react'
-import { Loader2, Upload, AlertTriangle, CheckCircle } from 'lucide-react'
+import { Loader2, Upload, AlertTriangle, CheckCircle, UploadCloud, FileText, Sheet, Building, Landmark, CreditCard, DollarSign, Calendar } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/hooks/use-toast'
 import { format } from 'date-fns'
@@ -111,7 +111,7 @@ export function BankStatementUploadDialog({
 }: BankStatementUploadDialogProps) {
     const [pdfFile, setPdfFile] = useState<File | null>(null)
     const [excelFile, setExcelFile] = useState<File | null>(null)
-    const [hasSoftCopy, setHasSoftCopy] = useState<boolean>(existingStatement?.has_soft_copy || false)
+    const [hasSoftCopy, setHasSoftCopy] = useState<boolean>(existingStatement?.has_soft_copy || true)
     const [hasHardCopy, setHasHardCopy] = useState<boolean>(existingStatement?.has_hard_copy || false)
     const [uploading, setUploading] = useState<boolean>(false)
     const [extracting, setExtracting] = useState<boolean>(false)
@@ -356,119 +356,185 @@ export function BankStatementUploadDialog({
                 if (!open) resetForm()
                 onClose()
             }}>
-                <DialogContent className="sm:max-w-md">
+                <DialogContent className="sm:max-w-3xl">
                     <DialogHeader>
-                        <DialogTitle className="text-xl">Upload Bank Statement</DialogTitle>
+                        <div className="bg-gradient-to-r from-blue-50 via-blue-100 to-blue-50 -mx-6 -mt-6 p-6 rounded-t-lg border-b border-blue-200">
+                            <div className="mb-2 flex justify-center">
+                                <div className="h-14 w-14 rounded-full bg-blue-100 border border-blue-200 flex items-center justify-center shadow-sm">
+                                    <UploadCloud className="h-7 w-7 text-blue-600" />
+                                </div>
+                            </div>
+                            <DialogTitle className="text-center text-xl text-blue-800">Upload Bank Statement</DialogTitle>
+                            <p className="text-center text-blue-600 text-sm mt-1">
+                                {bank.company_name}
+                            </p>
+                        </div>
                     </DialogHeader>
 
-                    <div className="space-y-4 py-4">
-                        <div className="space-y-1">
-                            <div className="flex items-center justify-between">
-                                <Label htmlFor="bank-name" className="text-right">Bank</Label>
-                                <span className="font-medium text-primary">{bank.bank_name}</span>
-                            </div>
-                            <div className="flex items-center justify-between">
-                                <Label htmlFor="account-number" className="text-right">Account Number</Label>
-                                <span className="font-medium">{bank.account_number}</span>
-                            </div>
-                            <div className="flex items-center justify-between">
-                                <Label htmlFor="currency" className="text-right">Currency</Label>
-                                <span className="font-medium">{bank.bank_currency}</span>
-                            </div>
-                            <div className="flex items-center justify-between">
-                                <Label htmlFor="period" className="text-right">Statement Period</Label>
-                                <span className="font-medium">
-                                    {format(new Date(cycleYear, cycleMonth - 1, 1), 'MMMM yyyy')}
-                                </span>
-                            </div>
-                        </div>
-
-                        <div className="space-y-2">
-                            <Label htmlFor="pdf-file">Bank Statement PDF</Label>
-                            <Input
-                                id="pdf-file"
-                                ref={pdfInputRef}
-                                type="file"
-                                accept=".pdf"
-                                onChange={(e) => {
-                                    const file = e.target.files?.[0]
-                                    if (file) {
-                                        setPdfFile(file)
-                                        setValidationResult(null)
-                                    }
-                                }}
-                                disabled={uploading || extracting}
-                                className="cursor-pointer"
-                            />
-                            {existingStatement?.statement_document.statement_pdf && (
-                                <div className="flex items-center text-sm text-muted-foreground">
-                                    <CheckCircle className="h-4 w-4 mr-1 text-green-500" />
-                                    Existing PDF will be replaced if you upload a new one
+                    <div className="space-y-4 py-4 mt-2">
+                        <div className="bg-gradient-to-r from-blue-50/80 to-blue-50/40 rounded-md p-4 border border-blue-100 shadow-sm">
+                            <div className="grid grid-cols-3 gap-x-6 gap-y-3">
+                                <div className="col-span-3">
+                                    <h3 className="text-sm font-medium text-blue-800 border-b border-blue-100 pb-1 mb-2">Company Information</h3>
+                                    <div className="flex items-center gap-2">
+                                        <Building className="h-4 w-4 text-blue-600" />
+                                        <span className="font-medium">{bank.company_name}</span>
+                                    </div>
                                 </div>
-                            )}
-                        </div>
 
-                        <div className="space-y-2">
-                            <Label htmlFor="excel-file">Bank Statement Excel (Optional)</Label>
-                            <Input
-                                id="excel-file"
-                                ref={excelInputRef}
-                                type="file"
-                                accept=".xlsx,.xls,.csv"
-                                onChange={(e) => {
-                                    const file = e.target.files?.[0]
-                                    if (file) setExcelFile(file)
-                                }}
-                                disabled={uploading}
-                                className="cursor-pointer"
-                            />
-                            {existingStatement?.statement_document.statement_excel && (
-                                <div className="flex items-center text-sm text-muted-foreground">
-                                    <CheckCircle className="h-4 w-4 mr-1 text-green-500" />
-                                    Existing Excel will be replaced if you upload a new one
+                                <div>
+                                    <h3 className="text-sm font-medium text-blue-800 border-b border-blue-100 pb-1 mb-2">Bank Details</h3>
+                                    <div className="space-y-1.5">
+                                        <div className="flex items-center gap-2">
+                                            <Landmark className="h-4 w-4 text-blue-600" />
+                                            <span className="font-medium">{bank.bank_name}</span>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <CreditCard className="h-4 w-4 text-blue-600" />
+                                            <span className="font-mono text-xs">{bank.account_number}</span>
+                                        </div>
+                                    </div>
                                 </div>
-                            )}
+
+                                <div>
+                                    <h3 className="text-sm font-medium text-blue-800 border-b border-blue-100 pb-1 mb-2">Currency</h3>
+                                    <div className="flex items-center gap-2">
+                                        <DollarSign className="h-4 w-4 text-blue-600" />
+                                        <span className="font-medium">{bank.bank_currency}</span>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <h3 className="text-sm font-medium text-blue-800 border-b border-blue-100 pb-1 mb-2">Statement Period</h3>
+                                    <div className="flex items-center gap-2">
+                                        <Calendar className="h-4 w-4 text-blue-600" />
+                                        <span className="font-medium">
+                                            {format(new Date(cycleYear, cycleMonth - 1, 1), 'MMMM yyyy')}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
-                        <div className="flex items-center space-x-2 mt-4">
-                            <Checkbox
-                                id="has-soft-copy"
-                                checked={hasSoftCopy}
-                                onCheckedChange={(checked) => setHasSoftCopy(!!checked)}
-                                disabled={uploading}
-                            />
-                            <Label htmlFor="has-soft-copy">Has Soft Copy</Label>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                <Label htmlFor="pdf-file" className="flex items-center gap-1.5">
+                                    <FileText className="h-4 w-4 text-blue-600" />
+                                    Bank Statement PDF
+                                </Label>
+                                <div className="group relative">
+                                    <Input
+                                        id="pdf-file"
+                                        ref={pdfInputRef}
+                                        type="file"
+                                        accept=".pdf"
+                                        onChange={(e) => {
+                                            const file = e.target.files?.[0]
+                                            if (file) {
+                                                setPdfFile(file)
+                                                setValidationResult(null)
+                                            }
+                                        }}
+                                        disabled={uploading || extracting}
+                                        className="cursor-pointer file:bg-blue-50 file:text-blue-700 file:border-blue-200 
+                                   hover:file:bg-blue-100 file:mr-4 file:px-3 file:py-2 file:rounded-md
+                                   file:transition-colors group-hover:border-blue-300"
+                                    />
+                                    {pdfFile && (
+                                        <div className="absolute right-3 top-1/2 transform -translate-y-1/2 text-blue-700 bg-blue-50/80 
+                                      py-0.5 px-2 rounded-full text-xs font-medium border border-blue-200 truncate max-w-[200px]">
+                                            {pdfFile.name}
+                                        </div>
+                                    )}
+                                </div>
+                                {existingStatement?.statement_document.statement_pdf && (
+                                    <div className="flex items-center text-xs text-green-600 pl-1">
+                                        <CheckCircle className="h-3.5 w-3.5 mr-1" />
+                                        Existing PDF will be replaced
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="space-y-2">
+                                <Label htmlFor="excel-file" className="flex items-center gap-1.5">
+                                    <Sheet className="h-4 w-4 text-emerald-600" />
+                                    Bank Statement Excel (Optional)
+                                </Label>
+                                <div className="group relative">
+                                    <Input
+                                        id="excel-file"
+                                        ref={excelInputRef}
+                                        type="file"
+                                        accept=".xlsx,.xls,.csv"
+                                        onChange={(e) => {
+                                            const file = e.target.files?.[0]
+                                            if (file) setExcelFile(file)
+                                        }}
+                                        disabled={uploading}
+                                        className="cursor-pointer file:bg-emerald-50 file:text-emerald-700 file:border-emerald-200 
+                                   hover:file:bg-emerald-100 file:mr-4 file:px-3 file:py-2 file:rounded-md
+                                   file:transition-colors group-hover:border-emerald-300"
+                                    />
+                                    {excelFile && (
+                                        <div className="absolute right-3 top-1/2 transform -translate-y-1/2 text-emerald-700 bg-emerald-50/80 
+                                      py-0.5 px-2 rounded-full text-xs font-medium border border-emerald-200 truncate max-w-[200px]">
+                                            {excelFile.name}
+                                        </div>
+                                    )}
+                                </div>
+                                {existingStatement?.statement_document.statement_excel && (
+                                    <div className="flex items-center text-xs text-green-600 pl-1">
+                                        <CheckCircle className="h-3.5 w-3.5 mr-1" />
+                                        Existing Excel will be replaced
+                                    </div>
+                                )}
+                            </div>
                         </div>
 
-                        <div className="flex items-center space-x-2">
-                            <Checkbox
-                                id="has-hard-copy"
-                                checked={hasHardCopy}
-                                onCheckedChange={(checked) => setHasHardCopy(!!checked)}
-                                disabled={uploading}
-                            />
-                            <Label htmlFor="has-hard-copy">Has Hard Copy</Label>
+                        <div className="flex flex-row gap-6 mt-2 p-4 bg-slate-50/80 rounded-md border border-slate-200">
+                            <div className="flex items-center space-x-2">
+                                <Checkbox
+                                    id="has-soft-copy"
+                                    checked={hasSoftCopy}
+                                    onCheckedChange={(checked) => setHasSoftCopy(!!checked)}
+                                    disabled={uploading}
+                                    className="text-blue-600 rounded-sm"
+                                />
+                                <Label htmlFor="has-soft-copy" className="text-sm font-medium">Has Soft Copy</Label>
+                            </div>
+
+                            <div className="flex items-center space-x-2">
+                                <Checkbox
+                                    id="has-hard-copy"
+                                    checked={hasHardCopy}
+                                    onCheckedChange={(checked) => setHasHardCopy(!!checked)}
+                                    disabled={uploading}
+                                    className="text-blue-600 rounded-sm"
+                                />
+                                <Label htmlFor="has-hard-copy" className="text-sm font-medium">Has Hard Copy</Label>
+                            </div>
                         </div>
 
                         {existingStatement && (
-                            <Alert>
-                                <AlertTitle className="flex items-center">
-                                    <AlertTriangle className="h-4 w-4 mr-2" />
-                                    Note
-                                </AlertTitle>
-                                <AlertDescription>
-                                    You are updating an existing bank statement. New uploads will replace existing files.
-                                </AlertDescription>
+                            <Alert className="bg-amber-50 border-amber-200 text-amber-800">
+                                <AlertTriangle className="h-4 w-4 text-amber-600" />
+                                <div className="ml-2">
+                                    <AlertTitle className="text-sm font-medium text-amber-800">Updating Existing Statement</AlertTitle>
+                                    <AlertDescription className="text-xs text-amber-700">
+                                        You are updating an existing bank statement. New uploads will replace the current files.
+                                    </AlertDescription>
+                                </div>
                             </Alert>
                         )}
                     </div>
 
-                    <DialogFooter className="sm:justify-end">
+                    <DialogFooter className="bg-gradient-to-r from-slate-50 to-blue-50 -mx-6 -mb-6 p-4 border-t flex items-center justify-between">
                         <Button
                             type="button"
                             variant="outline"
                             onClick={onClose}
                             disabled={uploading || extracting}
+                            className="border-gray-300 hover:bg-slate-100"
                         >
                             Cancel
                         </Button>
@@ -476,16 +542,17 @@ export function BankStatementUploadDialog({
                             type="button"
                             onClick={() => handleUpload()}
                             disabled={uploading || extracting}
+                            className="bg-blue-600 hover:bg-blue-700 px-6"
                         >
                             {uploading ? (
                                 <>
                                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                    Uploading
+                                    Uploading...
                                 </>
                             ) : extracting ? (
                                 <>
                                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                    Extracting Data
+                                    Extracting Data...
                                 </>
                             ) : (
                                 <>

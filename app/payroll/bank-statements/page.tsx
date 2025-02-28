@@ -32,8 +32,9 @@ import {
     PieChart,
     XCircle
 } from 'lucide-react'
-import BankReconciliationTable from './BankReconciliationTable'
+import { BankReconciliationTable } from './BankReconciliationTable'
 import { usePayrollCycle } from '../hooks/usePayrollCycle'
+import { BankStatementFilters } from './components/BankStatementFilters'
 
 export default function BankReconciliationPage() {
     const [activeTab, setActiveTab] = useState<string>('statements')
@@ -43,6 +44,8 @@ export default function BankReconciliationPage() {
         reconciled: 0,
         mismatches: 0
     })
+    const [selectedClientTypes, setSelectedClientTypes] = useState<string[]>(["acc"])
+    const [selectedFilters, setSelectedFilters] = useState<string[]>([])
 
     const {
         selectedYear,
@@ -87,7 +90,7 @@ export default function BankReconciliationPage() {
             if (banksError) throw banksError
 
             // Format month for query
-            const monthStr = (selectedMonth + 1).toString().padStart(2, '0')
+            const monthStr = (selectedMonth).toString().padStart(2, '0')
             const cycleMonthYear = `${selectedYear}-${monthStr}`
 
             // Get cycle ID first
@@ -110,7 +113,7 @@ export default function BankReconciliationPage() {
             if (cycleData?.id) {
                 // Statements query
                 const { data: statementsData, error: statementsError } = await supabase
-                    .from('acc_cycle_bank_statements ')
+                    .from('acc_cycle_bank_statements')
                     .select(`
                         id, 
                         statement_document, 
@@ -159,7 +162,7 @@ export default function BankReconciliationPage() {
     // Get the proper payroll cycle ID
     const getCurrentCycleId = async (): Promise<string | null> => {
         try {
-            const monthStr = (selectedMonth + 1).toString().padStart(2, '0')
+            const monthStr = (selectedMonth).toString().padStart(2, '0')
             const cycleMonthYear = `${selectedYear}-${monthStr}`
 
             const { data, error } = await supabase
@@ -188,6 +191,14 @@ export default function BankReconciliationPage() {
         await fetchStats()
     }
 
+    const handleFilterChange = (newFilters: string[]) => {
+        setSelectedFilters(newFilters)
+    }
+
+    const handleClientTypeChange = (newTypes: string[]) => {
+        setSelectedClientTypes(newTypes)
+    }
+
     return (
         <div className="py-6 space-y-6 p-4">
             <div className="flex justify-between items-center">
@@ -197,19 +208,6 @@ export default function BankReconciliationPage() {
                         Manage and reconcile bank statements with QuickBooks data
                     </p>
                 </div>
-
-                <div className="flex items-center gap-4">
-                    <MonthYearSelector
-                        selectedMonth={selectedMonth} // Adjust for 0-indexed month in the hook
-                        selectedYear={selectedYear}
-                        onMonthChange={(month) => setSelectedMonth(month - 1)} // Adjust back to 0-indexed
-                        onYearChange={setSelectedYear}
-                    />
-
-                    <div className="px-3 py-1 bg-primary/10 text-primary rounded-md font-medium">
-                        {loading ? 'Loading...' : 'Active Cycle'}
-                    </div>
-                </div>
             </div>
 
             {loading ? (
@@ -218,139 +216,115 @@ export default function BankReconciliationPage() {
                 </div>
             ) : (
                 <>
-                    <div className="grid grid-cols-4 gap-4">
-                        <Card>
-                            <CardHeader className="pb-2">
-                                <CardTitle className="text-sm font-medium">Total Banks</CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                                <div className="flex items-center justify-between">
-                                    <div className="text-3xl font-bold">{stats.totalBanks}</div>
-                                    <div className="p-2 bg-blue-100 text-blue-700 rounded-md">
-                                        <FileText className="h-5 w-5" />
+                        <div className="grid grid-cols-4 gap-2">
+                            <Card className="shadow-sm border-blue-100">
+                                <div className="p-2 flex items-center gap-2.5">
+                                    <div className="p-1.5 bg-blue-100/70 text-blue-700 rounded-md shrink-0">
+                                        <FileText className="h-3.5 w-3.5" />
+                                    </div>
+                                    <div className="flex-1">
+                                        <div className="text-xl font-bold leading-none">{stats.totalBanks}</div>
+                                        <p className="text-xs text-muted-foreground mt-0.5">Total Banks</p>
+                                    </div>
+                                    <div className="text-2xs text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">
+                                        {stats.totalBanks} registered
                                     </div>
                                 </div>
-                            </CardContent>
-                            <CardFooter className="pt-0">
-                                <p className="text-xs text-muted-foreground">
-                                    Total banks registered in the system
-                                </p>
-                            </CardFooter>
-                        </Card>
+                            </Card>
 
-                        <Card>
-                            <CardHeader className="pb-2">
-                                <CardTitle className="text-sm font-medium">Statements Uploaded</CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                                <div className="flex items-center justify-between">
-                                    <div className="text-3xl font-bold">{stats.statementsUploaded}</div>
-                                    <div className="p-2 bg-green-100 text-green-700 rounded-md">
-                                        <CheckCircle2 className="h-5 w-5" />
+                            <Card className="shadow-sm border-green-100">
+                                <div className="p-2 flex items-center gap-2.5">
+                                    <div className="p-1.5 bg-green-100/70 text-green-700 rounded-md shrink-0">
+                                        <CheckCircle2 className="h-3.5 w-3.5" />
+                                    </div>
+                                    <div className="flex-1">
+                                        <div className="text-xl font-bold leading-none">{stats.statementsUploaded}</div>
+                                        <p className="text-xs text-muted-foreground mt-0.5">Statements</p>
+                                    </div>
+                                    <div className="text-2xs text-green-600 bg-green-50 px-1.5 py-0.5 rounded">
+                                        {stats.totalBanks > 0
+                                            ? ((stats.statementsUploaded / stats.totalBanks) * 100).toFixed(0)
+                                            : 0}% of banks
                                     </div>
                                 </div>
-                            </CardContent>
-                            <CardFooter className="pt-0">
-                                <p className="text-xs text-muted-foreground">
-                                    {stats.totalBanks > 0
-                                        ? ((stats.statementsUploaded / stats.totalBanks) * 100).toFixed(0)
-                                        : 0}% of total banks
-                                </p>
-                            </CardFooter>
-                        </Card>
+                            </Card>
 
-                        <Card>
-                            <CardHeader className="pb-2">
-                                <CardTitle className="text-sm font-medium">Reconciled</CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                                <div className="flex items-center justify-between">
-                                    <div className="text-3xl font-bold">{stats.reconciled}</div>
-                                    <div className="p-2 bg-blue-100 text-blue-700 rounded-md">
-                                        <PieChart className="h-5 w-5" />
+                            <Card className="shadow-sm border-blue-100">
+                                <div className="p-2 flex items-center gap-2.5">
+                                    <div className="p-1.5 bg-blue-100/70 text-blue-700 rounded-md shrink-0">
+                                        <PieChart className="h-3.5 w-3.5" />
+                                    </div>
+                                    <div className="flex-1">
+                                        <div className="text-xl font-bold leading-none">{stats.reconciled}</div>
+                                        <p className="text-xs text-muted-foreground mt-0.5">Reconciled</p>
+                                    </div>
+                                    <div className="text-2xs text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">
+                                        {stats.statementsUploaded > 0
+                                            ? ((stats.reconciled / stats.statementsUploaded) * 100).toFixed(0)
+                                            : 0}% matched
                                     </div>
                                 </div>
-                            </CardContent>
-                            <CardFooter className="pt-0">
-                                <p className="text-xs text-muted-foreground">
-                                    {stats.statementsUploaded > 0
-                                        ? ((stats.reconciled / stats.statementsUploaded) * 100).toFixed(0)
-                                        : 0}% of statements match QuickBooks
-                                </p>
-                            </CardFooter>
-                        </Card>
+                            </Card>
 
-                        <Card>
-                            <CardHeader className="pb-2">
-                                <CardTitle className="text-sm font-medium">Mismatches</CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                                <div className="flex items-center justify-between">
-                                    <div className="text-3xl font-bold">{stats.mismatches}</div>
-                                    <div className="p-2 bg-red-100 text-red-700 rounded-md">
-                                        <XCircle className="h-5 w-5" />
+                            <Card className="shadow-sm border-red-100">
+                                <div className="p-2 flex items-center gap-2.5">
+                                    <div className="p-1.5 bg-red-100/70 text-red-700 rounded-md shrink-0">
+                                        <XCircle className="h-3.5 w-3.5" />
+                                    </div>
+                                    <div className="flex-1">
+                                        <div className="text-xl font-bold leading-none">{stats.mismatches}</div>
+                                        <p className="text-xs text-muted-foreground mt-0.5">Mismatches</p>
+                                    </div>
+                                    <div className="text-2xs text-red-600 bg-red-50 px-1.5 py-0.5 rounded">
+                                        {stats.statementsUploaded > 0
+                                            ? ((stats.mismatches / stats.statementsUploaded) * 100).toFixed(0)
+                                            : 0}% to reconcile
                                     </div>
                                 </div>
-                            </CardContent>
-                            <CardFooter className="pt-0">
-                                <p className="text-xs text-muted-foreground">
-                                    {stats.statementsUploaded > 0
-                                        ? ((stats.mismatches / stats.statementsUploaded) * 100).toFixed(0)
-                                        : 0}% of statements need reconciliation
-                                </p>
-                            </CardFooter>
-                        </Card>
-                    </div>
+                            </Card>
+                        </div>
 
-                    <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-                        <TabsList className="grid w-full grid-cols-3">
-                            <TabsTrigger value="statements">Bank Statements</TabsTrigger>
-                            <TabsTrigger value="reconciliation">Reconciliation</TabsTrigger>
-                            <TabsTrigger value="reports">Reports</TabsTrigger>
-                        </TabsList>
+                    <div className="space-y-4">
+                        <div className="flex flex-col space-y-4">
+                            {/* <h2 className="text-2xl font-semibold tracking-tight">Bank Statements</h2> */}
 
-                        <TabsContent value="statements" className="space-y-4 py-4">
+                            {/* Table Controls - New organized layout with Input, Filters, and MonthYearSelector */}
+                            <div className="flex items-center justify-between bg-muted/30 p-2 rounded-md">
+                                {/* <div className="text-sm font-medium">Table Controls</div> */}
+                                <div className="flex items-center gap-3">
+                                    <Input
+                                        placeholder="Search companies..."
+                                        value={searchTerm}
+                                        onChange={(e) => setSearchTerm(e.target.value)}
+                                        className="w-60"
+                                    />
+                                    <MonthYearSelector
+                                        selectedMonth={selectedMonth}
+                                        selectedYear={selectedYear}
+                                        onMonthChange={(month) => setSelectedMonth(month - 1)}
+                                        onYearChange={setSelectedYear}
+                                    />
+                                    <BankStatementFilters
+                                        selectedCategories={selectedFilters}
+                                        onFilterChange={handleFilterChange}
+                                        selectedClientTypes={selectedClientTypes}
+                                        onClientTypeChange={handleClientTypeChange}
+                                    />
+                                </div>
+                            </div>
+
                             <BankReconciliationTable
+                                activeFilters={selectedFilters}
                                 selectedYear={selectedYear}
-                                selectedMonth={selectedMonth + 1} // Adjust for 0-indexed month
+                                selectedMonth={selectedMonth}
                                 searchTerm={searchTerm}
                                 setSearchTerm={setSearchTerm}
                                 onStatsChange={handleStatsChange}
+                                selectedCategories={selectedClientTypes}
                             />
-                        </TabsContent>
+                        </div>
+                    </div>
 
-                        <TabsContent value="reconciliation" className="space-y-4 py-4">
-                            <div className="rounded-lg border bg-card p-6">
-                                <div className="flex items-center gap-2 mb-4">
-                                    <BarChart3 className="h-5 w-5 text-primary" />
-                                    <h3 className="text-lg font-semibold">Reconciliation Dashboard</h3>
-                                </div>
-
-                                <div className="flex items-center justify-center h-40">
-                                    <CircleDashed className="h-8 w-8 text-muted-foreground" />
-                                    <span className="ml-2 text-muted-foreground">
-                                        Reconciliation dashboard coming soon
-                                    </span>
-                                </div>
-                            </div>
-                        </TabsContent>
-
-                        <TabsContent value="reports" className="space-y-4 py-4">
-                            <div className="rounded-lg border bg-card p-6">
-                                <div className="flex items-center gap-2 mb-4">
-                                    <FileText className="h-5 w-5 text-primary" />
-                                    <h3 className="text-lg font-semibold">Reports</h3>
-                                </div>
-
-                                <div className="flex items-center justify-center h-40">
-                                    <CircleDashed className="h-8 w-8 text-muted-foreground" />
-                                    <span className="ml-2 text-muted-foreground">
-                                        Reports dashboard coming soon
-                                    </span>
-                                </div>
-                            </div>
-                        </TabsContent>
-                    </Tabs>
                 </>
             )}
         </div>

@@ -1,4 +1,3 @@
-// BankReconciliationTable.tsx
 // @ts-nocheck
 'use client'
 
@@ -88,12 +87,27 @@ interface BankStatement {
     }
 }
 
+interface Company {
+    id: number;
+    company_name: string;
+    acc_client_effective_from: string | null;
+    acc_client_effective_to: string | null;
+    audit_tax_client_effective_from: string | null;
+    audit_tax_client_effective_to: string | null;
+    cps_sheria_client_effective_from: string | null;
+    cps_sheria_client_effective_to: string | null;
+    imm_client_effective_from: string | null;
+    imm_client_effective_to: string | null;
+}
+
 interface BankReconciliationTableProps {
     selectedYear: number
     selectedMonth: number
     searchTerm: string
     setSearchTerm: (term: string) => void
     onStatsChange: () => void
+    activeFilters?: string[];
+    selectedCategories: string[];
 }
 
 // Helper function to normalize currency codes
@@ -128,15 +142,18 @@ const normalizeCurrencyCode = (code: string | null): string => {
     return currencyMap[upperCode] || upperCode;
 };
 
-export default function BankReconciliationTable({
+export function BankReconciliationTable({
     selectedYear,
     selectedMonth,
     searchTerm,
     setSearchTerm,
-    onStatsChange
+    onStatsChange,
+    activeFilters = [],
+    selectedCategories = []
 }: BankReconciliationTableProps) {
     const [loading, setLoading] = useState<boolean>(true)
-    const [allBanks, setAllBanks] = useState<Bank[]>([]) // Store all unfiltered banks
+    const [companies, setCompanies] = useState<Company[]>([])
+    const [allBanks, setAllBanks] = useState<Bank[]>([])
     const [bankStatements, setBankStatements] = useState<BankStatement[]>([])
     const [uploadDialogOpen, setUploadDialogOpen] = useState<boolean>(false)
     const [selectedBank, setSelectedBank] = useState<Bank | null>(null)
@@ -147,16 +164,133 @@ export default function BankReconciliationTable({
 
     const { toast } = useToast()
 
-    // Filter banks client-side based on search term
-    const banks = useMemo(() => {
-        if (!searchTerm.trim()) return allBanks;
+    // Fetch all companies and banks
+    const fetchCompaniesAndBanks = async () => {
+        try {
+            // Fetch all companies from acc_portal_company_duplicate
+            const { data: companiesData, error: companiesError } = await supabase
+                .from('acc_portal_company_duplicate')
+                .select('*');
 
-        return allBanks.filter(bank =>
-            (bank.company_name?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
-            (bank.bank_name?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
-            (bank.account_number || '').includes(searchTerm)
-        );
-    }, [allBanks, searchTerm]);
+            if (companiesError) throw companiesError;
+
+            // Fetch all banks
+            const { data: banksData, error: banksError } = await supabase
+                .from('acc_portal_banks')
+                .select('*');
+
+            if (banksError) throw banksError;
+
+            setCompanies(companiesData || []);
+            setAllBanks(banksData || []);
+        } catch (error) {
+            console.error('Error fetching companies and banks:', error);
+            toast({
+                title: 'Error',
+                description: 'Failed to fetch companies and banks',
+                variant: 'destructive',
+            });
+        }
+    };
+
+    // Filter companies based on selected categories
+    const filteredCompanies = useMemo(() => {
+        if (selectedCategories.length === 0) return companies;
+
+        return companies.filter(company => {
+            return selectedCategories.some(category => {
+                const currentDate = new Date();
+                switch (category) {
+                    case 'acc':
+                        return company.acc_client_effective_from && company.acc_client_effective_to &&
+                            new Date(company.acc_client_effective_from) <= currentDate &&
+                            new Date(company.acc_client_effective_to) >= currentDate;
+                    case 'audit_tax':
+                        return company.audit_tax_client_effective_from && company.audit_tax_client_effective_to &&
+                            new Date(company.audit_tax_client_effective_from) <= currentDate &&
+                            new Date(company.audit_tax_client_effective_to) >= currentDate;
+                    case 'cps_sheria':
+                        return company.cps_sheria_client_effective_from && company.cps_sheria_client_effective_to &&
+                            new Date(company.cps_sheria_client_effective_from) <= currentDate &&
+                            new Date(company.cps_sheria_client_effective_to) >= currentDate;
+                    case 'imm':
+                        return company.imm_client_effective_from && company.imm_client_effective_to &&
+                            new Date(company.imm_client_effective_from) <= currentDate &&
+                            new Date(company.imm_client_effective_to) >= currentDate;
+                    default:
+                        return false;
+                }
+            });
+        });
+    }, [companies, selectedCategories]);
+
+    // Organize companies and banks
+    const organizedData = useMemo(() => {
+        const companiesWithBanks = filteredCompanies.map(company => ({
+            ...company,
+            banks: allBanks.filter(bank => bank.company_name === company.company_name)
+        }));
+
+        // Sort companies: those with banks first, then those without
+        return companiesWithBanks.sort((a, b) => {
+            if (a.banks.length === 0 && b.banks.length > 0) return 1;
+            if (a.banks.length > 0 && b.banks.length === 0) return -1;
+            return a.company_name.localeCompare(b.company_name);
+        });
+    }, [filteredCompanies, allBanks]);
+
+    // Filter by search term
+    // Filter by search term
+    const searchFilteredData = useMemo(() => {
+        if (!searchTerm) return organizedData;
+
+        const lowerSearchTerm = searchTerm.toLowerCase();
+        return organizedData.filter(company => {
+            // Add null check for company_name
+            const companyNameMatch = company.company_name
+                ? company.company_name.toLowerCase().includes(lowerSearchTerm)
+                : false;
+
+            // Add null checks for banks and their properties
+            const bankMatch = company.banks && company.banks.length > 0 && company.banks.some(bank => {
+                const bankNameMatch = bank.bank_name
+                    ? bank.bank_name.toLowerCase().includes(lowerSearchTerm)
+                    : false;
+
+                const accountNumberMatch = bank.account_number
+                    ? bank.account_number.includes(searchTerm)
+                    : false;
+
+                return bankNameMatch || accountNumberMatch;
+            });
+
+            return companyNameMatch || bankMatch;
+        });
+    }, [organizedData, searchTerm]);
+
+    // Filter statements based on active filters
+    const filteredStatements = useMemo(() => {
+        if (activeFilters.length === 0) return bankStatements;
+
+        return bankStatements.filter(statement => {
+            return activeFilters.some(filter => {
+                switch (filter) {
+                    case 'validated':
+                        return statement.validation_status?.is_validated;
+                    case 'pending_validation':
+                        return !statement.validation_status?.is_validated;
+                    case 'has_issues':
+                        return statement.validation_status?.mismatches?.length > 0;
+                    case 'reconciled':
+                        return Math.abs((statement.quickbooks_balance || 0) - (statement.statement_extractions?.closing_balance || 0)) <= 0.01;
+                    case 'pending_reconciliation':
+                        return Math.abs((statement.quickbooks_balance || 0) - (statement.statement_extractions?.closing_balance || 0)) > 0.01;
+                    default:
+                        return true;
+                }
+            });
+        });
+    }, [bankStatements, activeFilters]);
 
     // Single useEffect to handle payroll cycle and data fetching - without searchTerm dependency
     useEffect(() => {
@@ -209,17 +343,7 @@ export default function BankReconciliationTable({
                 setPayrollCycleId(cycle?.id || null);
 
                 // STEP 2: Fetch ALL banks (without filtering by searchTerm)
-                const { data: banksData, error: banksError } = await supabase
-                    .from('acc_portal_banks')
-                    .select('id, bank_name, account_number, bank_currency, company_id, company_name')
-                    .order('company_name', { ascending: true });
-
-                if (banksError) {
-                    throw new Error(`Failed to fetch banks: ${banksError.message}`);
-                }
-
-                console.log(`Fetched ${banksData?.length || 0} banks`);
-                setAllBanks(banksData || []); // Store all banks, unfiltered
+                fetchCompaniesAndBanks();
 
                 // STEP 3: Fetch bank statements if we have a cycle ID
                 if (cycle?.id) {
@@ -254,34 +378,8 @@ export default function BankReconciliationTable({
         initializeData();
     }, [selectedMonth, selectedYear, toast]);
 
-    // Group banks by company for row spanning
-    const banksByCompany = useMemo(() => {
-        const groupedBanks = new Map<string, Bank[]>()
-
-        banks.forEach(bank => { // Use the filtered banks
-            const existingBanks = groupedBanks.get(bank.company_name) || []
-            groupedBanks.set(bank.company_name, [...existingBanks, bank])
-        })
-
-        return Array.from(groupedBanks.entries()).map(([companyName, banksList]) => ({
-            companyName,
-            banks: banksList
-        }))
-    }, [banks])
-
-    // Filter and merge banks with statements
-    const banksWithStatements = useMemo(() => {
-        return banks.map(bank => {
-            const bankStatement = bankStatements.find(statement => statement.bank_id === bank.id)
-            return {
-                ...bank,
-                statement: bankStatement || null
-            }
-        })
-    }, [banks, bankStatements])
-
     const handleUploadStatement = async (bankId: number) => {
-        const bank = banks.find(b => b.id === bankId)
+        const bank = allBanks.find(b => b.id === bankId)
         if (bank) {
             setSelectedBank(bank)
             setUploadDialogOpen(true)
@@ -295,11 +393,11 @@ export default function BankReconciliationTable({
         setUploadDialogOpen(false)
         setQuickbooksDialogOpen(false)
         setExtractionDialogOpen(false)
-        
+
         // After a brief delay, set the new states
         setTimeout(() => {
-            const bank = banks.find(b => b.id === bankId)
-            const statement = bankStatements.find(s => s.bank_id === bankId)
+            const bank = allBanks.find(b => b.id === bankId)
+            const statement = filteredStatements.find(s => s.bank_id === bankId)
 
             if (bank && statement) {
                 setSelectedBank(bank)
@@ -310,8 +408,8 @@ export default function BankReconciliationTable({
     }
 
     const handleQuickbooksBalance = (bankId: number) => {
-        const bank = banks.find(b => b.id === bankId)
-        const statement = bankStatements.find(s => s.bank_id === bankId)
+        const bank = allBanks.find(b => b.id === bankId)
+        const statement = filteredStatements.find(s => s.bank_id === bankId)
 
         if (bank && statement) {
             setSelectedBank(bank)
@@ -393,7 +491,7 @@ export default function BankReconciliationTable({
     };
 
     const handleDeleteStatement = async (bankId: number) => {
-        const statement = bankStatements.find(s => s.bank_id === bankId);
+        const statement = filteredStatements.find(s => s.bank_id === bankId);
         if (!statement) return;
 
         // Confirm deletion
@@ -403,13 +501,13 @@ export default function BankReconciliationTable({
 
         try {
             // Delete files from storage if they exist
-            if (statement.statement_document.statement_pdf) {
+            if (statement.statement_document?.statement_pdf) {
                 await supabase.storage
                     .from('Payroll-Cycle')
                     .remove([statement.statement_document.statement_pdf]);
             }
 
-            if (statement.statement_document.statement_excel) {
+            if (statement.statement_document?.statement_excel) {
                 await supabase.storage
                     .from('Payroll-Cycle')
                     .remove([statement.statement_document.statement_excel]);
@@ -425,6 +523,16 @@ export default function BankReconciliationTable({
 
             // Update the UI
             setBankStatements(prev => prev.filter(s => s.id !== statement.id));
+
+            // Reset selected statement and bank to prevent null reference errors
+            setSelectedStatement(null);
+            setSelectedBank(null);
+
+            // Close any open dialogs
+            setExtractionDialogOpen(false);
+            setUploadDialogOpen(false);
+            setQuickbooksDialogOpen(false);
+
             onStatsChange();
 
             toast({
@@ -441,54 +549,69 @@ export default function BankReconciliationTable({
         }
     };
 
+
     return (
         <div className="space-y-4">
-            <div className="flex justify-end items-center">
-                <div className="flex items-center gap-4">
-                    <Input
-                        placeholder="Search companies..."
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        className="max-w-sm"
-                    />
-                </div>
-            </div>
-
-            <div className="rounded-md border h-[calc(100vh-220px)] overflow-auto">
-                <Table aria-label="Bank Reconciliation" className="border border-gray-200">
+            <div className="rounded-md border h-[calc(100vh-240px)] overflow-auto">
+                <Table aria-label="Bank Reconciliation" className="border border-gray-200 text-sm">
                     <TableHeader className="sticky top-0 z-10">
                         <TableRow className="bg-blue-600 hover:bg-blue-600 [&>th]:border-r [&>th]:border-blue-500 last:[&>th]:border-r-0">
-                            <TableHead className="text-white font-semibold w-[40px] text-center">No.</TableHead>
-                            <TableHead className="text-white font-semibold w-[200px]">Company</TableHead>
-                            <TableHead className="text-white font-semibold w-[180px]">Bank</TableHead>
-                            <TableHead className="text-white font-semibold w-[150px]">Account Number</TableHead>
-                            <TableHead className="text-white font-semibold w-[100px]">Currency</TableHead>
-                            <TableHead className="text-white font-semibold w-[150px]">Bank Statement</TableHead>
-                            <TableHead className="text-white font-semibold w-[150px]">Closing Balance</TableHead>
-                            <TableHead className="text-white font-semibold w-[150px]">QuickBooks Balance</TableHead>
-                            <TableHead className="text-white font-semibold w-[150px]">Difference</TableHead>
-                            <TableHead className="text-white font-semibold w-[100px]">Status</TableHead>
-                            <TableHead className="text-white font-semibold w-[120px]">Actions</TableHead>
+                            <TableHead className="text-white font-semibold w-[30px] text-center p-1">No.</TableHead>
+                            <TableHead className="text-white font-semibold w-[150px] p-1">Company</TableHead>
+                            <TableHead className="text-white font-semibold w-[130px] p-1">Bank</TableHead>
+                            <TableHead className="text-white font-semibold w-[100px] p-1">Acc Number</TableHead>
+                            <TableHead className="text-white font-semibold w-[60px] p-1">Curr</TableHead>
+                            <TableHead className="text-white font-semibold w-[100px] p-1">Statement</TableHead>
+                            <TableHead className="text-white font-semibold w-[100px] p-1">Closing Bal</TableHead>
+                            <TableHead className="text-white font-semibold w-[100px] p-1">QB Balance</TableHead>
+                            <TableHead className="text-white font-semibold w-[100px] p-1">Diff</TableHead>
+                            <TableHead className="text-white font-semibold w-[80px] p-1">Status</TableHead>
+                            <TableHead className="text-white font-semibold w-[60px] p-1">Actions</TableHead>
                         </TableRow>
                     </TableHeader>
 
                     <TableBody>
                         {loading ? (
                             <TableRow>
-                                <TableCell colSpan={11} className="text-center py-8">
-                                    <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
+                                <TableCell colSpan={11} className="text-center py-4">
+                                    <Loader2 className="h-6 w-6 animate-spin mx-auto text-primary" />
                                 </TableCell>
                             </TableRow>
-                        ) : banksByCompany.length === 0 ? (
+                        ) : searchFilteredData.length === 0 ? (
                             <TableRow>
-                                <TableCell colSpan={11} className="text-center py-8">
+                                <TableCell colSpan={11} className="text-center py-4">
                                     No banks found
                                 </TableCell>
                             </TableRow>
                         ) : (
-                            banksByCompany.map((company, companyIndex) => (
-                                company.banks.map((bank, bankIndex) => {
-                                    const statement = bankStatements.find(s => s.bank_id === bank.id);
+                            searchFilteredData.map((company, companyIndex) => {
+                                // For companies with no banks
+                                if (company.banks.length === 0) {
+                                    return (
+                                        <TableRow key={`company-${company.id}`} className="bg-gray-50 hover:bg-gray-100">
+                                            <TableCell className="font-medium text-center border-r border-gray-200 p-1">
+                                                {companyIndex + 1}
+                                            </TableCell>
+                                            <TableCell className="font-medium border-r border-gray-200 p-1">
+                                                <TooltipProvider>
+                                                    <Tooltip>
+                                                        <TooltipTrigger>
+                                                            {(company.company_name || 'Unknown Company').split(" ").slice(0, 2).join(" ")}
+                                                        </TooltipTrigger>
+                                                        <TooltipContent>{company.company_name || 'Unknown Company'}</TooltipContent>
+                                                    </Tooltip>
+                                                </TooltipProvider>
+                                            </TableCell>
+                                            <TableCell colSpan={9} className="text-center text-muted-foreground p-1">
+                                                No banks configured
+                                            </TableCell>
+                                        </TableRow>
+                                    );
+                                }
+
+                                // For companies with banks
+                                return company.banks.map((bank, bankIndex) => {
+                                    const statement = filteredStatements.find(s => s.bank_id === bank.id);
                                     const closingBalance = statement?.statement_extractions?.closing_balance;
                                     const qbBalance = statement?.quickbooks_balance;
                                     const difference = closingBalance !== null && qbBalance !== null
@@ -503,77 +626,77 @@ export default function BankReconciliationTable({
                                             {bankIndex === 0 && (
                                                 <>
                                                     <TableCell
-                                                        className="font-medium text-center border-r border-gray-200"
+                                                        className="font-medium text-center border-r border-gray-200 p-1"
                                                         rowSpan={company.banks.length}
                                                     >
                                                         {companyIndex + 1}
                                                     </TableCell>
                                                     <TableCell
-                                                        className="font-medium border-r border-gray-200"
+                                                        className="font-medium border-r border-gray-200 p-1"
                                                         rowSpan={company.banks.length}
                                                     >
                                                         <TooltipProvider>
                                                             <Tooltip>
-                                                                <TooltipTrigger className=" ">
-                                                                    {(company.companyName || 'Unknown Company').split(" ").slice(0, 3).join(" ")}
+                                                                <TooltipTrigger>
+                                                                    {(company.company_name || 'Unknown Company').split(" ").slice(0, 2).join(" ")}
                                                                 </TooltipTrigger>
-                                                                <TooltipContent>{company.companyName || 'Unknown Company'}</TooltipContent>
+                                                                <TooltipContent>{company.company_name || 'Unknown Company'}</TooltipContent>
                                                             </Tooltip>
                                                         </TooltipProvider>
                                                     </TableCell>
                                                 </>
                                             )}
-                                            <TableCell className="border-r border-gray-200">{bank.bank_name}</TableCell>
-                                            <TableCell className="border-r border-gray-200 font-mono text-sm">
+                                            <TableCell className="border-r border-gray-200 p-1 truncate">
+                                                <TooltipProvider>
+                                                    <Tooltip>
+                                                        <TooltipTrigger className="truncate">{bank.bank_name}</TooltipTrigger>
+                                                        <TooltipContent>{bank.bank_name}</TooltipContent>
+                                                    </Tooltip>
+                                                </TooltipProvider>
+                                            </TableCell>
+                                            <TableCell className="border-r border-gray-200 font-mono text-xs p-1 truncate">
                                                 {bank.account_number}
                                             </TableCell>
-                                            <TableCell className="border-r border-gray-200">
+                                            <TableCell className="border-r border-gray-200 p-1">
                                                 {normalizeCurrencyCode(bank.bank_currency)}
                                             </TableCell>
-                                            <TableCell className="border-r border-gray-200">
+                                            <TableCell className="border-r border-gray-200 p-1">
                                                 {statement?.statement_document.statement_pdf ? (
-                                                    <TooltipProvider>
-                                                        <Tooltip>
-                                                            <TooltipTrigger asChild>
-                                                                <Button
-                                                                    variant="outline"
-                                                                    size="sm"
-                                                                    className="flex gap-1 items-center"
-                                                                    onClick={() => handleViewStatement(bank.id)}
-                                                                >
-                                                                    <Eye className="h-4 w-4" />
-                                                                    View
-                                                                    {getValidationStatusIcon(statement)}
-                                                                </Button>
-                                                            </TooltipTrigger>
-                                                            <TooltipContent>
-                                                                {statement.validation_status.is_validated
-                                                                    ? 'Validated'
-                                                                    : statement.validation_status.mismatches.length > 0
-                                                                        ? 'Validation issues found'
-                                                                        : 'Not validated'}
-                                                            </TooltipContent>
-                                                        </Tooltip>
-                                                    </TooltipProvider>
-                                                ) : (
                                                     <Button
                                                         variant="outline"
                                                         size="sm"
-                                                        className="flex gap-1 items-center"
-                                                        onClick={() => handleUploadStatement(bank.id)}
+                                                        className="relative flex gap-1.5 items-center px-3 py-1.5 border-blue-300 bg-blue-50/50 hover:bg-blue-100/60 hover:border-blue-400 text-blue-700 transition-all duration-200 group overflow-hidden"
+                                                        onClick={() => handleViewStatement(bank.id)}
                                                     >
-                                                        <UploadCloud className="h-4 w-4" />
-                                                        Upload
+                                                        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-blue-100/30 to-transparent group-hover:via-blue-200/50 -translate-x-full group-hover:translate-x-full transition-transform duration-700 ease-in-out"></div>
+                                                        <Eye className="h-3.5 w-3.5" />
+                                                        <span className="text-xs font-medium">View</span>
+                                                        {getValidationStatusIcon(statement) && (
+                                                            <span className="ml-0.5">
+                                                                {getValidationStatusIcon(statement)}
+                                                            </span>
+                                                        )}
                                                     </Button>
+                                                ) : (
+                                                        <Button
+                                                            variant="outline"
+                                                            size="sm"
+                                                            className="relative flex gap-1.5 items-center px-3 py-1.5 border-dashed border-blue-300 bg-blue-50/50 hover:bg-blue-100/60 hover:border-blue-400 text-blue-700 transition-all duration-200 group overflow-hidden"
+                                                            onClick={() => handleUploadStatement(bank.id)}
+                                                        >
+                                                            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-blue-100/30 to-transparent group-hover:via-blue-200/50 -translate-x-full group-hover:translate-x-full transition-transform duration-700 ease-in-out"></div>
+                                                            <UploadCloud className="h-3.5 w-3.5" />
+                                                            <span className="text-xs font-medium">Upload</span>
+                                                        </Button>
                                                 )}
                                             </TableCell>
-                                            <TableCell className="border-r border-gray-200 text-right">
+                                            <TableCell className="border-r border-gray-200 text-right p-1">
                                                 {closingBalance !== null
                                                     ? formatCurrency(closingBalance, bank.bank_currency)
                                                     : '-'}
                                             </TableCell>
-                                            <TableCell className="border-r border-gray-200">
-                                                <div className="flex items-center gap-2">
+                                            <TableCell className="border-r border-gray-200 p-1">
+                                                <div className="flex items-center gap-1">
                                                     <span className="flex-1 text-right">
                                                         {qbBalance !== null
                                                             ? formatCurrency(qbBalance, bank.bank_currency)
@@ -582,7 +705,7 @@ export default function BankReconciliationTable({
                                                     <Button
                                                         variant="ghost"
                                                         size="icon"
-                                                        className="h-6 w-6 p-0"
+                                                        className="h-5 w-5 p-0"
                                                         onClick={() => handleQuickbooksBalance(bank.id)}
                                                     >
                                                         <Edit className="h-3 w-3" />
@@ -590,7 +713,7 @@ export default function BankReconciliationTable({
                                                 </div>
                                             </TableCell>
                                             <TableCell
-                                                className={`border-r border-gray-200 text-right ${difference !== null
+                                                className={`border-r border-gray-200 text-right p-1 ${difference !== null
                                                     ? Math.abs(difference) > 0.01
                                                         ? 'text-red-500 font-bold'
                                                         : 'text-green-500 font-bold'
@@ -601,45 +724,50 @@ export default function BankReconciliationTable({
                                                     ? formatCurrency(difference, bank.bank_currency)
                                                     : '-'}
                                             </TableCell>
-                                            <TableCell className="border-r border-gray-200">
-                                                {statement?.status.status || 'Pending'}
+                                            <TableCell className="border-r border-gray-200 p-1 truncate">
+                                                <TooltipProvider>
+                                                    <Tooltip>
+                                                        <TooltipTrigger className="truncate">{statement?.status.status || 'Pending'}</TooltipTrigger>
+                                                        <TooltipContent>{statement?.status.status || 'Pending'}</TooltipContent>
+                                                    </Tooltip>
+                                                </TooltipProvider>
                                             </TableCell>
-                                            <TableCell>
+                                            <TableCell className="p-1">
                                                 <DropdownMenu>
                                                     <DropdownMenuTrigger asChild>
-                                                        <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
-                                                            <MoreHorizontal className="h-4 w-4" />
+                                                        <Button variant="ghost" size="sm" className="h-5 w-5 p-0">
+                                                            <MoreHorizontal className="h-3 w-3" />
                                                         </Button>
                                                     </DropdownMenuTrigger>
-                                                    <DropdownMenuContent align="end" className="w-48">
+                                                    <DropdownMenuContent align="end" className="w-44">
                                                         <DropdownMenuItem
                                                             onClick={() => handleViewStatement(bank.id)}
-                                                            className="flex items-center gap-2"
+                                                            className="flex items-center gap-2 text-xs py-1.5"
                                                         >
-                                                            <Eye className="h-4 w-4" />
+                                                            <Eye className="h-3.5 w-3.5" />
                                                             View Statement
                                                         </DropdownMenuItem>
                                                         <DropdownMenuSeparator />
                                                         <DropdownMenuItem
                                                             onClick={() => handleUploadStatement(bank.id)}
-                                                            className="flex items-center gap-2"
+                                                            className="flex items-center gap-2 text-xs py-1.5"
                                                         >
-                                                            <UploadCloud className="h-4 w-4" />
-                                                            {statement?.statement_document.statement_pdf ? 'Replace' : 'Upload'} Statement
+                                                            <UploadCloud className="h-3.5 w-3.5" />
+                                                            {statement?.statement_document.statement_pdf ? 'Replace' : 'Upload'}
                                                         </DropdownMenuItem>
                                                         <DropdownMenuItem
                                                             onClick={() => handleQuickbooksBalance(bank.id)}
-                                                            className="flex items-center gap-2"
+                                                            className="flex items-center gap-2 text-xs py-1.5"
                                                         >
-                                                            <Edit className="h-4 w-4" />
-                                                            Update QB Balance
+                                                            <Edit className="h-3.5 w-3.5" />
+                                                            Update QB
                                                         </DropdownMenuItem>
                                                         <DropdownMenuItem
                                                             onClick={() => handleDeleteStatement(bank.id)}
-                                                            className="flex items-center gap-2 text-red-600"
+                                                            className="flex items-center gap-2 text-xs py-1.5 text-red-600"
                                                         >
-                                                            <Trash className="h-4 w-4" />
-                                                            Delete Statement
+                                                            <Trash className="h-3.5 w-3.5" />
+                                                            Delete
                                                         </DropdownMenuItem>
                                                     </DropdownMenuContent>
                                                 </DropdownMenu>
@@ -647,7 +775,7 @@ export default function BankReconciliationTable({
                                         </TableRow>
                                     );
                                 })
-                            ))
+                            })
                         )}
                     </TableBody>
                 </Table>
@@ -673,9 +801,14 @@ export default function BankReconciliationTable({
                     bank={selectedBank}
                     statement={selectedStatement}
                     onStatementUpdated={(updatedStatement) => {
-                        setBankStatements(prev =>
-                            prev.map(s => s.id === updatedStatement.id ? updatedStatement : s)
-                        )
+                        if (updatedStatement) {
+                            setBankStatements(prev =>
+                                prev.map(s => s.id === updatedStatement.id ? updatedStatement : s)
+                            );
+                        } else {
+                            // If statement was deleted or is null
+                            setExtractionDialogOpen(false);
+                        }
                     }}
                 />
             )}

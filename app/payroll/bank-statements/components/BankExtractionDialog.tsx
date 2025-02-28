@@ -766,6 +766,7 @@ export function BankExtractionDialog({
         }
     }
 
+    // In BankExtractionDialog.tsx
     const handleDeleteStatement = async () => {
         // Confirm deletion
         if (!window.confirm("Are you sure you want to delete this statement? This action cannot be undone.")) {
@@ -801,7 +802,7 @@ export function BankExtractionDialog({
                 description: 'Bank statement deleted successfully'
             });
 
-            // Close dialog and update parent
+            // Close dialog and pass null to update parent
             onClose();
             onStatementUpdated(null);
 
