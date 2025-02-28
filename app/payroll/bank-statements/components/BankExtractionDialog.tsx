@@ -1,5 +1,4 @@
-// BankExtractionDialog.tsx
-// @ts-nocheck
+// BankExtractionDialog.tsx - Modified version
 import { useState, useEffect, useRef } from 'react'
 import {
     Loader2, Save, ChevronLeft, ChevronRight,
@@ -150,7 +149,6 @@ const normalizeCurrencyCode = (code) => {
         'KENYAN SHILLING': 'KES',
         'KENYAN SHILLINGS': 'KES',
         'KSH': 'KES',
-        'KES': 'KES',
         'K.SH': 'KES',
         'KSHS': 'KES',
         'K.SHS': 'KES',
@@ -574,11 +572,6 @@ export function BankExtractionDialog({
         return matches.length > 0 ? matches[0][0] : null;
     };
 
-    const handlePageChange = (newPage: number) => {
-        if (newPage < 1 || newPage > totalPages) return;
-        renderPage(newPage);
-    }
-
     const handleSave = async () => {
         try {
             setSaving(true)
@@ -926,6 +919,12 @@ export function BankExtractionDialog({
         return balance?.is_verified ?? false;
     };
 
+    // Function to handle PDF navigation
+    const handlePageChange = (newPage: number) => {
+        if (newPage < 1 || newPage > totalPages) return;
+        renderPage(newPage);
+    }
+
     return (
         <Dialog open={isOpen} onOpenChange={handleClose}>
             <DialogContent className="w-[95vw] max-w-[1600px] max-h-[95vh] h-[95vh] p-6 flex flex-col overflow-hidden">
@@ -966,7 +965,7 @@ export function BankExtractionDialog({
                                 </Button>
 
                                 <div className="flex flex-col items-center">
-                                    <span className="text-sm font-medium">Current Period</span>
+                                    <span className="text-sm font-medium">Statement Period</span>
                                     <div className="flex gap-1 items-center">
                                         <Select
                                             value={detectedPeriods.length > 0 ? `${detectedPeriods[currentPeriodIndex]?.month}-${detectedPeriods[currentPeriodIndex]?.year}` : ''}
@@ -980,13 +979,14 @@ export function BankExtractionDialog({
                                                 }
                                             }}
                                         >
-                                            <SelectTrigger className="w-[200px]">
-                                                <SelectValue placeholder="Select period" />
+                                            <SelectTrigger className="w-[300px]">
+                                                <SelectValue placeholder={statement.statement_extractions.statement_period || "Select period"} />
                                             </SelectTrigger>
                                             <SelectContent>
                                                 {detectedPeriods.map((period, index) => (
                                                     <SelectItem key={index} value={`${period.month}-${period.year}`}>
                                                         {format(new Date(period.year, period.month - 1, 1), 'MMMM yyyy')}
+                                                        {period.lastDate && ` (${period.lastDate})`}
                                                         {isPeriodVerified(period.month, period.year) && ' ✓'}
                                                     </SelectItem>
                                                 ))}
@@ -997,11 +997,6 @@ export function BankExtractionDialog({
                                             {isPeriodVerified(selectedMonth, selectedYear) ? "Verified" : "Unverified"}
                                         </Badge>
                                     </div>
-                                    {detectedPeriods[currentPeriodIndex]?.lastDate && (
-                                        <span className="text-xs text-muted-foreground mt-1">
-                                            Last date: {detectedPeriods[currentPeriodIndex].lastDate}
-                                        </span>
-                                    )}
                                 </div>
 
                                 <Button
@@ -1065,63 +1060,20 @@ export function BankExtractionDialog({
                                                             <p className="text-sm mb-2">
                                                                 Use {formatCurrency(selection.value, currency || bank.bank_currency)} as closing balance?
                                                             </p>
-                                                            <div className="grid grid-cols-2 gap-2">
+                                                            <div className="grid grid-cols-1 gap-2">
                                                                 <Button
                                                                     size="sm"
                                                                     variant="default"
                                                                     onClick={applySelectionAsClosingBalance}
                                                                     className="w-full"
                                                                 >
-                                                                    Set as Closing
-                                                                </Button>
-                                                                <Button
-                                                                    size="sm"
-                                                                    variant="secondary"
-                                                                    onClick={() => {
-                                                                        // Find the index of the balance for the current month/year
-                                                                        const balanceIndex = monthlyBalances.findIndex(
-                                                                            b => b.month === selectedMonth && b.year === selectedYear
-                                                                        );
-
-                                                                        if (balanceIndex >= 0) {
-                                                                            // Update existing balance - set as opening balance
-                                                                            const updatedBalances = [...monthlyBalances];
-                                                                            updatedBalances[balanceIndex] = {
-                                                                                ...updatedBalances[balanceIndex],
-                                                                                opening_balance: selection.value
-                                                                            };
-                                                                            setMonthlyBalances(updatedBalances);
-                                                                        } else {
-                                                                            // Add new balance with opening balance
-                                                                            setMonthlyBalances(prev => [
-                                                                                ...prev,
-                                                                                {
-                                                                                    month: selectedMonth,
-                                                                                    year: selectedYear,
-                                                                                    opening_balance: selection.value,
-                                                                                    closing_balance: 0,
-                                                                                    statement_page: currentPage,
-                                                                                    highlight_coordinates: null,
-                                                                                    is_verified: false,
-                                                                                    verified_by: null,
-                                                                                    verified_at: null
-                                                                                }
-                                                                            ]);
-                                                                        }
-                                                                        setSelection(null);
-                                                                        toast({
-                                                                            description: `Set opening balance for ${format(new Date(selectedYear, selectedMonth - 1, 1), 'MMMM yyyy')}`,
-                                                                            variant: 'default'
-                                                                        });
-                                                                    }}
-                                                                >
-                                                                    Set as Opening
+                                                                    Set as Closing Balance
                                                                 </Button>
                                                                 <Button
                                                                     size="sm"
                                                                     variant="outline"
                                                                     onClick={() => setSelection(null)}
-                                                                    className="col-span-2"
+                                                                    className="w-full"
                                                                 >
                                                                     Cancel
                                                                 </Button>
@@ -1133,31 +1085,11 @@ export function BankExtractionDialog({
                                         )}
                                     </div>
 
-                                    {/* PDF navigation */}
-                                    <div className="flex items-center justify-between mt-2 shrink-0">
-                                        <Button
-                                            variant="outline"
-                                            size="sm"
-                                            onClick={() => handlePageChange(currentPage - 1)}
-                                            disabled={currentPage <= 1 || loading}
-                                        >
-                                            <ChevronLeft className="h-4 w-4 mr-1" />
-                                            Previous
-                                        </Button>
-
+                                    {/* Page indicator - keeping it simple without pagination controls */}
+                                    <div className="flex items-center justify-center mt-2 shrink-0">
                                         <span className="text-sm">
                                             Page {currentPage} of {totalPages}
                                         </span>
-
-                                        <Button
-                                            variant="outline"
-                                            size="sm"
-                                            onClick={() => handlePageChange(currentPage + 1)}
-                                            disabled={currentPage >= totalPages || loading}
-                                        >
-                                            Next
-                                            <ChevronRight className="h-4 w-4 ml-1" />
-                                        </Button>
                                     </div>
                                 </div>
 
@@ -1261,128 +1193,10 @@ export function BankExtractionDialog({
                                         </CardContent>
                                     </Card>
 
-                                    {/* Current period balance card */}
-                                    <Card className="shrink-0">
-                                        <CardHeader className="py-2 flex flex-row items-center justify-between">
-                                            <CardTitle className="text-base">
-                                                {format(new Date(selectedYear, selectedMonth - 1, 1), 'MMMM yyyy')} Balance
-                                            </CardTitle>
-                                            <TooltipProvider>
-                                                <Tooltip>
-                                                    <TooltipTrigger asChild>
-                                                        <Button
-                                                            variant="ghost"
-                                                            size="sm"
-                                                            className="h-8 w-8 p-0"
-                                                            onClick={() => {
-                                                                const index = monthlyBalances.findIndex(
-                                                                    b => b.month === selectedMonth && b.year === selectedYear
-                                                                );
-                                                                if (index >= 0) {
-                                                                    handleVerifyMonthlyBalance(index);
-                                                                }
-                                                            }}
-                                                            disabled={!monthlyBalances.some(b => b.month === selectedMonth && b.year === selectedYear)}
-                                                        >
-                                                            <CheckCircle className="h-4 w-4" />
-                                                        </Button>
-                                                    </TooltipTrigger>
-                                                    <TooltipContent>
-                                                        <p>Mark as verified</p>
-                                                    </TooltipContent>
-                                                </Tooltip>
-                                            </TooltipProvider>
-                                        </CardHeader>
-                                        <CardContent className="space-y-3">
-                                            {monthlyBalances.some(b => b.month === selectedMonth && b.year === selectedYear) ? (
-                                                <div className="grid grid-cols-2 gap-4">
-                                                    <div className="space-y-1">
-                                                        <Label htmlFor="opening-balance">Opening Balance</Label>
-                                                        <Input
-                                                            id="opening-balance"
-                                                            type="number"
-                                                            step="0.01"
-                                                            value={getMonthlyOpeningBalance() || ''}
-                                                            onChange={(e) => {
-                                                                const index = monthlyBalances.findIndex(
-                                                                    b => b.month === selectedMonth && b.year === selectedYear
-                                                                );
-                                                                if (index >= 0) {
-                                                                    handleUpdateBalance(index, 'opening_balance', parseFloat(e.target.value) || 0);
-                                                                }
-                                                            }}
-                                                            placeholder="Enter opening balance"
-                                                        />
-                                                    </div>
-                                                    <div className="space-y-1">
-                                                        <Label htmlFor="closing-balance">Closing Balance</Label>
-                                                        <Input
-                                                            id="closing-balance"
-                                                            type="number"
-                                                            step="0.01"
-                                                            value={getMonthlyClosingBalance() || ''}
-                                                            onChange={(e) => {
-                                                                const index = monthlyBalances.findIndex(
-                                                                    b => b.month === selectedMonth && b.year === selectedYear
-                                                                );
-                                                                if (index >= 0) {
-                                                                    handleUpdateBalance(index, 'closing_balance', parseFloat(e.target.value) || 0);
-                                                                }
-                                                            }}
-                                                            placeholder="Enter closing balance"
-                                                        />
-                                                    </div>
-                                                </div>
-                                            ) : (
-                                                <div className="flex flex-col items-center justify-center py-4 text-center">
-                                                    <p className="text-muted-foreground mb-2">No balance data for this period</p>
-                                                    <Button
-                                                        variant="outline"
-                                                        size="sm"
-                                                        onClick={handleAddMonthlyBalance}
-                                                    >
-                                                        <Plus className="h-4 w-4 mr-1" />
-                                                        Add Balance Data
-                                                    </Button>
-                                                </div>
-                                            )}
-
-                                            {statement.quickbooks_balance !== null && getMonthlyClosingBalance() !== null && (
-                                                <div className="p-3 bg-muted rounded-md mt-2">
-                                                    <h4 className="font-medium mb-2">Balance Reconciliation</h4>
-                                                    <div className="grid grid-cols-2 gap-4">
-                                                        <div>
-                                                            <p className="text-sm text-muted-foreground">Bank Statement</p>
-                                                            <p className="font-medium">
-                                                                {formatCurrency(getMonthlyClosingBalance(), bank.bank_currency)}
-                                                            </p>
-                                                        </div>
-                                                        <div>
-                                                            <p className="text-sm text-muted-foreground">QuickBooks</p>
-                                                            <p className="font-medium">
-                                                                {formatCurrency(statement.quickbooks_balance, bank.bank_currency)}
-                                                            </p>
-                                                        </div>
-                                                    </div>
-
-                                                    <div className="mt-2 pt-2 border-t">
-                                                        <p className="text-sm text-muted-foreground">Difference</p>
-                                                        <p className={`font-bold ${Math.abs(getMonthlyClosingBalance() - statement.quickbooks_balance) > 0.01
-                                                            ? "text-red-500"
-                                                            : "text-green-500"
-                                                            }`}>
-                                                            {formatCurrency(getMonthlyClosingBalance() - statement.quickbooks_balance, bank.bank_currency)}
-                                                        </p>
-                                                    </div>
-                                                </div>
-                                            )}
-                                        </CardContent>
-                                    </Card>
-
-                                    {/* Monthly balances section */}
+                                    {/* Monthly balances section - Expanded to take the full space */}
                                     <Card className="flex-1 overflow-hidden">
                                         <CardHeader className="py-2 flex flex-row items-center justify-between">
-                                            <CardTitle className="text-base">All Monthly Balances</CardTitle>
+                                            <CardTitle className="text-base">Monthly Balances</CardTitle>
                                             <Button
                                                 variant="outline"
                                                 size="sm"
@@ -1406,10 +1220,7 @@ export function BankExtractionDialog({
                                                         <TableHeader className="sticky top-0 bg-white z-10">
                                                             <TableRow>
                                                                 <TableHead>Period</TableHead>
-                                                                <TableHead>Opening Balance</TableHead>
                                                                 <TableHead>Closing Balance</TableHead>
-                                                                <TableHead>Date</TableHead>
-                                                                <TableHead>Page</TableHead>
                                                                 <TableHead>Actions</TableHead>
                                                             </TableRow>
                                                         </TableHeader>
@@ -1432,16 +1243,15 @@ export function BankExtractionDialog({
                                                                             )}
                                                                         </TableCell>
                                                                         <TableCell>
-                                                                            {formatCurrency(balance.opening_balance, currency || bank.bank_currency)}
-                                                                        </TableCell>
-                                                                        <TableCell>
-                                                                            {formatCurrency(balance.closing_balance, currency || bank.bank_currency)}
-                                                                        </TableCell>
-                                                                        <TableCell className="text-xs">
-                                                                            {balance.closing_date || '-'}
-                                                                        </TableCell>
-                                                                        <TableCell className="text-xs">
-                                                                            {balance.statement_page || '-'}
+                                                                            <Input
+                                                                                type="number"
+                                                                                step="0.01"
+                                                                                value={balance.closing_balance || ''}
+                                                                                onChange={(e) =>
+                                                                                    handleUpdateBalance(index, 'closing_balance', parseFloat(e.target.value) || 0)
+                                                                                }
+                                                                                className="w-full"
+                                                                            />
                                                                         </TableCell>
                                                                         <TableCell>
                                                                             <div className="flex gap-1">
@@ -1488,6 +1298,43 @@ export function BankExtractionDialog({
                                             )}
                                         </CardContent>
                                     </Card>
+
+                                    {/* Display QuickBooks reconciliation info when available */}
+                                    {statement.quickbooks_balance !== null && getMonthlyClosingBalance() !== null && (
+                                        <Card className="shrink-0">
+                                            <CardHeader className="py-2">
+                                                <CardTitle className="text-base">QuickBooks Reconciliation</CardTitle>
+                                            </CardHeader>
+                                            <CardContent className="space-y-3">
+                                                <div className="p-3 bg-muted rounded-md mt-2">
+                                                    <div className="grid grid-cols-2 gap-4">
+                                                        <div>
+                                                            <p className="text-sm text-muted-foreground">Bank Statement</p>
+                                                            <p className="font-medium">
+                                                                {formatCurrency(getMonthlyClosingBalance(), bank.bank_currency)}
+                                                            </p>
+                                                        </div>
+                                                        <div>
+                                                            <p className="text-sm text-muted-foreground">QuickBooks</p>
+                                                            <p className="font-medium">
+                                                                {formatCurrency(statement.quickbooks_balance, bank.bank_currency)}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="mt-2 pt-2 border-t">
+                                                        <p className="text-sm text-muted-foreground">Difference</p>
+                                                        <p className={`font-bold ${Math.abs(getMonthlyClosingBalance() - statement.quickbooks_balance) > 0.01
+                                                            ? "text-red-500"
+                                                            : "text-green-500"
+                                                            }`}>
+                                                            {formatCurrency(getMonthlyClosingBalance() - statement.quickbooks_balance, bank.bank_currency)}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            </CardContent>
+                                        </Card>
+                                    )}
                                 </div>
                             </div>
                         </div>
@@ -1652,7 +1499,6 @@ export function BankExtractionDialog({
                                                 <TableRow>
                                                     <TableHead>Period</TableHead>
                                                     <TableHead>Closing Balance</TableHead>
-                                                    <TableHead>Closing Date</TableHead>
                                                     <TableHead>Status</TableHead>
                                                 </TableRow>
                                             </TableHeader>
@@ -1675,9 +1521,6 @@ export function BankExtractionDialog({
                                                                 {formatCurrency(balance.closing_balance, currency || bank.bank_currency)}
                                                             </TableCell>
                                                             <TableCell>
-                                                                {balance.closing_date || '-'}
-                                                            </TableCell>
-                                                            <TableCell>
                                                                 {balance.is_verified ? (
                                                                     <Badge variant="outline" className="bg-green-50 text-green-700 border-green-300">
                                                                         <Check className="h-3 w-3 mr-1" />
@@ -1693,7 +1536,7 @@ export function BankExtractionDialog({
                                                     ))
                                                 ) : (
                                                     <TableRow>
-                                                        <TableCell colSpan={4} className="text-center py-4 text-muted-foreground">
+                                                        <TableCell colSpan={3} className="text-center py-4 text-muted-foreground">
                                                             No monthly balances added yet
                                                         </TableCell>
                                                     </TableRow>
