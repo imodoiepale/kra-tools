@@ -38,14 +38,14 @@ interface BankValidationDialogProps {
 }
 
 // Helper function to normalize currency codes
-const normalizeCurrencyCode = (code: string | null): string => {
+const normalizeCurrencyCode = (code) => {
     if (!code) return 'USD'; // Default fallback
 
-    // Convert to uppercase
+    // Convert to uppercase and trim
     const upperCode = code.toUpperCase().trim();
 
     // Map of common incorrect currency codes to valid ISO codes
-    const currencyMap: Record<string, string> = {
+    const currencyMap = {
         'EURO': 'EUR',
         'EUROS': 'EUR',
         'US DOLLAR': 'USD',
@@ -59,11 +59,16 @@ const normalizeCurrencyCode = (code: string | null): string => {
         'KENYAN SHILLING': 'KES',
         'KENYAN SHILLINGS': 'KES',
         'KSH': 'KES',
-        'KES': 'KES',
         'K.SH': 'KES',
         'KSHS': 'KES',
         'K.SHS': 'KES',
-        'SH': 'KES'
+        'SH': 'KES',
+        'KES': 'KES',
+        'KESH': 'KES', 
+        'KSH.': 'KES',
+        'KSHS.': 'KES',
+        'KS': 'KES',
+        'KS.': 'KES'
     };
 
     // Return mapped value or the original if not in the map
@@ -418,7 +423,7 @@ export function BankValidationDialog({
                         </Card>
                     )}
 
-                    {/* {mismatches.length > 0 && (
+                    {mismatches.length > 0 && (
                         <div className="p-4 bg-red-50 border border-red-200 rounded-md">
                             <h4 className="font-medium text-red-700 flex items-center mb-2">
                                 <AlertTriangle className="h-4 w-4 mr-2" />
@@ -430,7 +435,7 @@ export function BankValidationDialog({
                                 ))}
                             </ul>
                         </div>
-                    )} */}
+                    )}
                 </div>
 
                 <AlertDialogFooter>

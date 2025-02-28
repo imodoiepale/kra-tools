@@ -704,9 +704,9 @@ export function BankExtractionDialog({
             if (accountNumber && !accountNumber.includes(bank.account_number)) {
                 hasMismatches.push(`Account number mismatch: Expected "${bank.account_number}", found "${accountNumber}"`)
             }
-            if (currency && normalizeCurrencyCode(currency) !== normalizeCurrencyCode(bank.bank_currency)) {
-                hasMismatches.push(`Currency mismatch: Expected "${bank.bank_currency}", found "${currency}"`)
-            }
+            // if (currency && normalizeCurrencyCode(currency) !== normalizeCurrencyCode(bank.bank_currency)) {
+            //     hasMismatches.push(`Currency mismatch: Expected "${bank.bank_currency}", found "${currency}"`)
+            // }
 
             // Update validation status
             const validationStatus = {
@@ -1549,10 +1549,10 @@ export function BankExtractionDialog({
                         </div>
                     </TabsContent>
 
-                    <TabsContent value="validation" className="">
+                    <TabsContent value="validation" className="pt-0">
                         <div className="grid grid-cols-2 gap-4">
                             <div className="flex flex-col h-full space-y-2 overflow-hidden">
-                                <div className="p-4 rounded-md border bg-card">
+                                <div className="px-4 rounded-md border bg-card">
                                     <h3 className="text-lg font-semibold flex items-center mb-4">
                                         <FileCheck className="h-5 w-5 text-primary mr-2" />
                                         Validation Status
