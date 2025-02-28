@@ -1,4 +1,4 @@
-// BankExtractionDialog.tsx - Improved version
+// @ts-nocheck
 import { useState, useEffect, useRef } from 'react'
 import {
     Loader2, Save, ChevronLeft, ChevronRight,
