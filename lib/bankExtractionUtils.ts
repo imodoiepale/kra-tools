@@ -1,4 +1,4 @@
-// bankExtractionUtils.ts - revised without pdfjs dependency
+// @ts-nocheck
 
 import { supabase } from '@/lib/supabase'
 import { GoogleGenerativeAI } from "@google/generative-ai";

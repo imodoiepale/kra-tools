@@ -4,8 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import {
     Loader2, Save, ChevronLeft, ChevronRight,
     AlertTriangle, CheckCircle, Check, Trash,
-    Plus, X, ChevronsUpDown, CalendarIcon, Eye,
-    FileCheck, DollarSign, Building, Calendar
+    Plus, X, ChevronsUpDown, CalendarIcon, Eye
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/hooks/use-toast'
@@ -38,6 +37,11 @@ import {
     SelectValue,
 } from "@/components/ui/select"
 import {
+    Popover,
+    PopoverContent,
+    PopoverTrigger,
+} from "@/components/ui/popover"
+import {
     Tooltip,
     TooltipContent,
     TooltipProvider,
@@ -50,14 +54,6 @@ import {
     CardHeader,
     CardTitle
 } from '@/components/ui/card'
-import { Separator } from '@/components/ui/separator'
-
-// Importing PDF.js functionality
-import * as pdfjsLib from 'pdfjs-dist';
-import { PDFDocumentProxy } from 'pdfjs-dist';
-
-// Initialize PDF.js worker
-pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 
 interface Bank {
     id: number
@@ -74,7 +70,6 @@ interface MonthlyBalance {
     closing_balance: number
     opening_balance: number
     statement_page: number
-    closing_date: string | null
     highlight_coordinates: {
         x1: number
         y1: number
@@ -185,21 +180,16 @@ export function BankExtractionDialog({
     const [deleting, setDeleting] = useState<boolean>(false)
     const [selectedMonth, setSelectedMonth] = useState<number>(statement.statement_month)
     const [selectedYear, setSelectedYear] = useState<number>(statement.statement_year)
-    const [pdfDocument, setPdfDocument] = useState<PDFDocumentProxy | null>(null)
-    const [pdfText, setPdfText] = useState<string>('')
-    const [selectedText, setSelectedText] = useState<string>('')
 
     // Detected periods in PDF
-    const [detectedPeriods, setDetectedPeriods] = useState<{ month: number, year: number, page: number, lastDate?: string }[]>([])
+    const [detectedPeriods, setDetectedPeriods] = useState<{ month: number, year: number, page: number }[]>([])
     const [currentPeriodIndex, setCurrentPeriodIndex] = useState<number>(0)
 
     // Selection state
     const [selection, setSelection] = useState<{
         value: number,
-        text: string,
         position: { x: number, y: number },
-        page: number,
-        date?: string
+        page: number
     } | null>(null)
 
     // Editable extraction fields
@@ -210,8 +200,7 @@ export function BankExtractionDialog({
         statement.statement_extractions.monthly_balances || []
     )
 
-    const canvasRef = useRef<HTMLCanvasElement>(null)
-    const pdfContainerRef = useRef<HTMLDivElement>(null)
+    const iframeRef = useRef<HTMLIFrameElement>(null)
     const selectionRef = useRef<HTMLDivElement>(null)
 
     const handleClose = () => {
@@ -239,16 +228,6 @@ export function BankExtractionDialog({
                 if (error) throw error
 
                 setPdfUrl(data.signedUrl)
-
-                // Load the PDF document using PDF.js
-                const loadingTask = pdfjsLib.getDocument(data.signedUrl);
-                const pdf = await loadingTask.promise;
-                setPdfDocument(pdf);
-                setTotalPages(pdf.numPages);
-
-                // Load the first page by default
-                renderPage(1, pdf);
-
             } catch (error) {
                 console.error('Error loading PDF:', error)
                 toast({
@@ -264,319 +243,91 @@ export function BankExtractionDialog({
         if (isOpen) {
             loadPdf()
         }
-
-        return () => {
-            // Cleanup
-            if (pdfDocument) {
-                pdfDocument.destroy();
-            }
-        };
     }, [isOpen, statement.statement_document.statement_pdf, toast])
 
-    // Function to format date for the current month
-    const formatDateForCurrentMonth = () => {
-        const lastDay = new Date(selectedYear, selectedMonth, 0).getDate();
-        return `${lastDay}/${selectedMonth}/${selectedYear}`;
-    };
-
-    // Render a specific page
-    const renderPage = async (pageNumber, pdfDoc = pdfDocument) => {
-        if (!pdfDoc) return;
-
-        try {
-            setCurrentPage(pageNumber);
-            const page = await pdfDoc.getPage(pageNumber);
-
-            // Get the canvas to render the PDF page
-            const canvas = canvasRef.current;
-            if (!canvas) return;
-
-            const context = canvas.getContext('2d');
-
-            // Calculate scale to fit the container
-            const containerWidth = pdfContainerRef.current?.clientWidth || 800;
-            const viewport = page.getViewport({ scale: 1 });
-            const scale = containerWidth / viewport.width;
-            const scaledViewport = page.getViewport({ scale });
-
-            // Set canvas dimensions
-            canvas.height = scaledViewport.height;
-            canvas.width = scaledViewport.width;
-
-            // Render PDF page
-            const renderContext = {
-                canvasContext: context,
-                viewport: scaledViewport
-            };
-
-            await page.render(renderContext).promise;
-
-            // Draw highlights for the current page
-            monthlyBalances.forEach(balance => {
-                if (balance.highlight_coordinates && balance.highlight_coordinates.page === pageNumber) {
-                    const { x1, y1, x2, y2 } = balance.highlight_coordinates;
-
-                    // Draw highlight
-                    context.fillStyle = balance.is_verified ? 'rgba(34, 197, 94, 0.2)' : 'rgba(251, 191, 36, 0.2)';
-                    context.fillRect(x1, y1, x2 - x1, y2 - y1);
-
-                    // Draw border
-                    context.strokeStyle = balance.is_verified ? 'rgba(34, 197, 94, 0.8)' : 'rgba(251, 191, 36, 0.8)';
-                    context.lineWidth = 2;
-                    context.strokeRect(x1, y1, x2 - x1, y2 - y1);
-
-                    // Add month label
-                    context.fillStyle = 'white';
-                    context.fillRect(x1, y1 - 20, 80, 20);
-                    context.strokeRect(x1, y1 - 20, 80, 20);
-
-                    context.fillStyle = 'black';
-                    context.font = '12px Arial';
-                    context.fillText(
-                        `${format(new Date(balance.year, balance.month - 1, 1), 'MMM yyyy')}`,
-                        x1 + 5,
-                        y1 - 5
-                    );
-                }
-            });
-
-            // Extract text content
-            const textContent = await page.getTextContent();
-            const textItems = textContent.items.map(item => item.str).join(' ');
-            setPdfText(textItems);
-
-            // Detect dates in this page to associate with periods
-            detectDatesInPage(textItems, pageNumber);
-
-        } catch (error) {
-            console.error('Error rendering page:', error);
-        }
-    };
-
-    // Detect dates in the page text
-    const detectDatesInPage = (text, pageNumber) => {
-        // Date pattern: DD/MM/YYYY or DD-MM-YYYY
-        const datePattern = /(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})/g;
-        const matches = [...text.matchAll(datePattern)];
-
-        if (matches.length > 0) {
-            // Sort matches by date (assuming DD/MM/YYYY format)
-            const dates = matches.map(match => {
-                const day = parseInt(match[1]);
-                const month = parseInt(match[2]);
-                const year = parseInt(match[3]);
-                return { text: match[0], date: new Date(year, month - 1, day) };
-            }).sort((a, b) => b.date - a.date); // Latest date first
-
-            // Get the latest date
-            const latestDate = dates[0];
-
-            // Update detected periods if this page has a latest date
-            if (latestDate) {
-                const month = latestDate.date.getMonth() + 1;
-                const year = latestDate.date.getFullYear();
-
-                setDetectedPeriods(prev => {
-                    // Check if we already have this period
-                    const existingPeriodIndex = prev.findIndex(p => p.month === month && p.year === year);
-
-                    if (existingPeriodIndex >= 0) {
-                        // Update existing period
-                        const updated = [...prev];
-                        updated[existingPeriodIndex] = {
-                            ...updated[existingPeriodIndex],
-                            lastDate: latestDate.text
-                        };
-                        return updated;
-                    } else {
-                        // Add new period
-                        return [...prev, {
-                            month,
-                            year,
-                            page: pageNumber,
-                            lastDate: latestDate.text
-                        }];
-                    }
-                });
-            }
-        }
-    };
-
-    // Enhanced function to handle text selection
-    const handleSelectText = (e) => {
-        if (!canvasRef.current) return;
-
-        // Get the position relative to the canvas
-        const rect = canvasRef.current.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
-
-        // Extract text at this position (simplified for this example)
-        extractTextAtPosition(x, y, currentPage);
-    };
-
-    // Function to extract text at a position
-    const extractTextAtPosition = async (x, y, pageNum) => {
-        if (!pdfDocument) return;
-
-        try {
-            // Get the page
-            const page = await pdfDocument.getPage(pageNum);
-
-            // Convert canvas position to PDF position
-            const viewport = page.getViewport({ scale: 1 });
-            const containerWidth = pdfContainerRef.current?.clientWidth || 800;
-            const scale = containerWidth / viewport.width;
-
-            // Convert coordinates
-            const pdfX = x / scale;
-            const pdfY = y / scale;
-
-            // This would be more complex in a real implementation
-            // Here we simulate finding text at the clicked position
-            const textContent = await page.getTextContent();
-
-            // Find text items near the clicked position
-            const nearbyItems = textContent.items.filter(item => {
-                const itemRect = viewport.convertToViewportRectangle([item.transform[4], item.transform[5], item.transform[4] + item.width, item.transform[5] + item.height]);
-                const scaledRect = {
-                    left: itemRect[0] * scale,
-                    top: viewport.height - itemRect[1] * scale, // Flip Y coordinate
-                    right: itemRect[2] * scale,
-                    bottom: viewport.height - itemRect[3] * scale
-                };
-
-                // Check if click is near this text item
-                return (
-                    Math.abs(x - ((scaledRect.left + scaledRect.right) / 2)) < 50 &&
-                    Math.abs(y - ((scaledRect.top + scaledRect.bottom) / 2)) < 50
-                );
-            });
-
-            // Extract numeric values from nearby text
-            const numericPattern = /\$?\s*[\d,]+\.?\d*/g;
-            let selectedText = '';
-            let value = null;
-
-            if (nearbyItems.length > 0) {
-                selectedText = nearbyItems.map(item => item.str).join(' ');
-                const matches = selectedText.match(numericPattern);
-
-                if (matches && matches.length > 0) {
-                    // Clean and parse the first numeric match
-                    const cleanedText = matches[0].replace(/[$,]/g, '');
-                    value = parseFloat(cleanedText);
-                }
-            }
-
-            if (!isNaN(value) && value !== null) {
-                // Set the selection with the extracted value
-                setSelection({
-                    value,
-                    text: selectedText,
-                    position: { x, y },
-                    page: pageNum,
-                    // Try to find a nearby date
-                    date: findNearbyDate(selectedText, 0) || formatDateForCurrentMonth()
-                });
-            }
-
-        } catch (error) {
-            console.error('Error extracting text:', error);
-        }
-    };
-
-    // Handle mouse events for text selection
+    // Handle PDF loading in iframe
     useEffect(() => {
-        if (!canvasRef.current) return;
+        const handlePdfLoaded = () => {
+            if (iframeRef.current) {
+                try {
+                    // For now we use a fixed number; in a real impl you would get this from the PDF
+                    setTotalPages(10)
 
-        let isSelecting = false;
-        let startX, startY;
-
-        const handleMouseDown = (e) => {
-            isSelecting = true;
-
-            // Get the position relative to the canvas
-            const rect = canvasRef.current.getBoundingClientRect();
-            startX = e.clientX - rect.left;
-            startY = e.clientY - rect.top;
-        };
-
-        const handleMouseMove = (e) => {
-            if (!isSelecting) return;
-
-            // In a real implementation, we would update a selection rectangle here
-        };
-
-        const handleMouseUp = (e) => {
-            if (!isSelecting) return;
-            isSelecting = false;
-
-            // Get the position relative to the canvas
-            const rect = canvasRef.current.getBoundingClientRect();
-            const endX = e.clientX - rect.left;
-            const endY = e.clientY - rect.top;
-
-            // In a real implementation, we would:
-            // 1. Use PDF.js to get the text content under the selection
-            // 2. Extract numeric values from the selection
-
-            // For now, simulate by extracting the first number we can find in the page text
-            const numericPattern = /\$?\s*[\d,]+\.?\d*/g;
-            const matches = [...pdfText.matchAll(numericPattern)];
-
-            if (matches.length > 0) {
-                // Take the first numeric match for demo purposes
-                const match = matches[0];
-                const selectedText = match[0];
-
-                // Parse the value - remove commas and currency symbols
-                const cleanedText = selectedText.replace(/[$,]/g, '');
-                const value = parseFloat(cleanedText);
-
-                if (!isNaN(value)) {
-                    // Set the selection with the position of mouse up
-                    setSelection({
-                        value,
-                        text: selectedText,
-                        position: { x: endX, y: endY },
-                        page: currentPage,
-                        // Try to find a nearby date
-                        date: findNearbyDate(pdfText, match.index)
-                    });
+                    // Simulate period detection - in a real impl you'd scan the PDF
+                    detectPeriodsInDocument();
+                } catch (error) {
+                    console.error('Cannot access PDF document info in iframe:', error)
                 }
             }
-        };
+        }
 
-        const canvas = canvasRef.current;
-        canvas.addEventListener('mousedown', handleMouseDown);
-        canvas.addEventListener('mousemove', handleMouseMove);
-        canvas.addEventListener('mouseup', handleMouseUp);
+        const iframe = iframeRef.current
+        if (iframe) {
+            iframe.addEventListener('load', handlePdfLoaded)
+            return () => {
+                iframe.removeEventListener('load', handlePdfLoaded)
+            }
+        }
+    }, [pdfUrl])
 
-        return () => {
-            canvas.removeEventListener('mousedown', handleMouseDown);
-            canvas.removeEventListener('mousemove', handleMouseMove);
-            canvas.removeEventListener('mouseup', handleMouseUp);
-        };
-    }, [pdfText, currentPage]);
+    // Detect periods in document (placeholder implementation)
+    const detectPeriodsInDocument = () => {
+        // This is where you'd implement actual period detection
+        // For now we'll just create a sample list based on existing data
 
-    // Find a date near the selected text
-    const findNearbyDate = (text, position, windowSize = 100) => {
-        // Extract a window of text around the position
-        const start = Math.max(0, position - windowSize);
-        const end = Math.min(text.length, position + windowSize);
-        const textWindow = text.substring(start, end);
+        const periods = [];
 
-        // Look for dates in this window
-        const datePattern = /(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})/g;
-        const matches = [...textWindow.matchAll(datePattern)];
+        // Add periods from existing monthly balances
+        if (monthlyBalances.length > 0) {
+            // Convert existing balances to detected periods
+            const existingPeriods = monthlyBalances.map(balance => ({
+                month: balance.month,
+                year: balance.year,
+                page: balance.statement_page || 1
+            }));
 
-        return matches.length > 0 ? matches[0][0] : null;
+            // Add to periods, avoiding duplicates
+            existingPeriods.forEach(period => {
+                if (!periods.some(p => p.month === period.month && p.year === period.year)) {
+                    periods.push(period);
+                }
+            });
+        }
+
+        // If no periods were found, add the current statement month/year
+        if (periods.length === 0) {
+            periods.push({
+                month: selectedMonth,
+                year: selectedYear,
+                page: 1
+            });
+        }
+
+        // Sort by year and month
+        periods.sort((a, b) => {
+            if (a.year !== b.year) return a.year - b.year;
+            return a.month - b.month;
+        });
+
+        setDetectedPeriods(periods);
+
+        // Set current period index to the one matching statement month/year
+        const statementPeriodIndex = periods.findIndex(
+            p => p.month === selectedMonth && p.year === selectedYear
+        );
+
+        setCurrentPeriodIndex(statementPeriodIndex >= 0 ? statementPeriodIndex : 0);
     };
 
     const handlePageChange = (newPage: number) => {
-        if (newPage < 1 || newPage > totalPages) return;
-        renderPage(newPage);
+        if (newPage < 1 || newPage > totalPages) return
+        setCurrentPage(newPage)
+
+        // Update iframe src with page parameter
+        if (iframeRef.current && pdfUrl) {
+            // Add page parameter to URL or use PDF viewer API
+            iframeRef.current.src = `${pdfUrl}#page=${newPage}`
+        }
     }
 
     const handleSave = async () => {
@@ -603,7 +354,7 @@ export function BankExtractionDialog({
             if (accountNumber && !accountNumber.includes(bank.account_number)) {
                 hasMismatches.push(`Account number mismatch: Expected "${bank.account_number}", found "${accountNumber}"`)
             }
-            if (currency && normalizeCurrencyCode(currency) !== normalizeCurrencyCode(bank.bank_currency)) {
+            if (currency && currency !== bank.bank_currency) {
                 hasMismatches.push(`Currency mismatch: Expected "${bank.bank_currency}", found "${currency}"`)
             }
 
@@ -749,7 +500,6 @@ export function BankExtractionDialog({
             closing_balance: 0,
             opening_balance: 0,
             statement_page: currentPage,
-            closing_date: null,
             highlight_coordinates: null,
             is_verified: false,
             verified_by: null,
@@ -816,7 +566,7 @@ export function BankExtractionDialog({
         handlePageChange(period.page);
 
         toast({
-            description: `Navigated to ${format(new Date(period.year, period.month - 1, 1), 'MMMM yyyy')}${period.lastDate ? ` (Last date: ${period.lastDate})` : ''}`,
+            description: `Navigated to ${format(new Date(period.year, period.month - 1, 1), 'MMMM yyyy')}`,
             variant: 'default'
         });
     };
@@ -835,6 +585,17 @@ export function BankExtractionDialog({
         }
     };
 
+    // Handle text selection in PDF (simulated)
+    const handleSelection = (value: number) => {
+        // In a real implementation, this would be triggered by selecting text in the PDF
+        // For now, we'll just create a manual selection
+        setSelection({
+            value,
+            position: { x: 300, y: 300 }, // Arbitrary position
+            page: currentPage
+        });
+    };
+
     // Apply selected value as closing balance for current period
     const applySelectionAsClosingBalance = () => {
         if (!selection) return;
@@ -844,32 +605,10 @@ export function BankExtractionDialog({
             b => b.month === selectedMonth && b.year === selectedYear
         );
 
-        // Create highlight coordinates for the selection
-        const highlightCoords = {
-            x1: selection.position.x - 20,
-            y1: selection.position.y - 10,
-            x2: selection.position.x + 150,
-            y2: selection.position.y + 10,
-            page: currentPage
-        };
-
         if (balanceIndex >= 0) {
             // Update existing balance
-            const updatedBalances = [...monthlyBalances];
-            updatedBalances[balanceIndex] = {
-                ...updatedBalances[balanceIndex],
-                closing_balance: selection.value,
-                statement_page: currentPage,
-                highlight_coordinates: highlightCoords,
-                is_verified: false // Reset verification when edited
-            };
-
-            // Update closing date if available
-            if (selection.date) {
-                updatedBalances[balanceIndex].closing_date = selection.date;
-            }
-
-            setMonthlyBalances(updatedBalances);
+            handleUpdateBalance(balanceIndex, 'closing_balance', selection.value);
+            handleUpdateBalance(balanceIndex, 'statement_page', currentPage);
         } else {
             // Add new balance
             setMonthlyBalances(prev => [
@@ -880,8 +619,7 @@ export function BankExtractionDialog({
                     closing_balance: selection.value,
                     opening_balance: 0, // Default to 0
                     statement_page: currentPage,
-                    closing_date: selection.date || null,
-                    highlight_coordinates: highlightCoords,
+                    highlight_coordinates: null,
                     is_verified: false,
                     verified_by: null,
                     verified_at: null
@@ -892,7 +630,7 @@ export function BankExtractionDialog({
         // Clear selection and show toast
         setSelection(null);
         toast({
-            description: `Set closing balance for ${format(new Date(selectedYear, selectedMonth - 1, 1), 'MMMM yyyy')}${selection.date ? ` (Date: ${selection.date})` : ''}`,
+            description: `Set closing balance for ${format(new Date(selectedYear, selectedMonth - 1, 1), 'MMMM yyyy')}`,
             variant: 'default'
         });
 
@@ -927,8 +665,8 @@ export function BankExtractionDialog({
     };
 
     return (
-        <Dialog open={isOpen} onOpenChange={handleClose}>
-            <DialogContent className="w-[95vw] max-w-[1600px] max-h-[95vh] h-[95vh] p-6 flex flex-col overflow-hidden">
+        <Dialog open={isOpen} onOpenChange={handleClose} className="max-w-7xl">
+            <DialogContent className="max-w-7xl max-h-[90vh] flex flex-col">
                 <DialogHeader>
                     <DialogTitle className="text-xl flex justify-between items-center">
                         <span>Bank Statement - {bank.bank_name} {bank.account_number}</span>
@@ -945,16 +683,16 @@ export function BankExtractionDialog({
                     </DialogTitle>
                 </DialogHeader>
 
-                <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
+                <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
                     <TabsList className="grid w-full grid-cols-2">
                         <TabsTrigger value="overview">Statement Overview</TabsTrigger>
                         <TabsTrigger value="validation">Validation</TabsTrigger>
                     </TabsList>
 
                     <TabsContent value="overview" className="flex-1 flex flex-col overflow-hidden">
-                        <div className="flex flex-col h-full space-y-2 overflow-hidden">
+                        <div className="flex flex-col h-full space-y-2">
                             {/* Period navigation */}
-                            <div className="flex items-center justify-between bg-muted p-2 rounded-md shrink-0">
+                            <div className="flex items-center justify-between bg-muted p-2 rounded-md">
                                 <Button
                                     variant="outline"
                                     size="sm"
@@ -969,7 +707,7 @@ export function BankExtractionDialog({
                                     <span className="text-sm font-medium">Current Period</span>
                                     <div className="flex gap-1 items-center">
                                         <Select
-                                            value={detectedPeriods.length > 0 ? `${detectedPeriods[currentPeriodIndex]?.month}-${detectedPeriods[currentPeriodIndex]?.year}` : ''}
+                                            value={`${selectedMonth}-${selectedYear}`}
                                             onValueChange={(value) => {
                                                 const [month, year] = value.split('-').map(Number);
                                                 const periodIndex = detectedPeriods.findIndex(
@@ -997,11 +735,6 @@ export function BankExtractionDialog({
                                             {isPeriodVerified(selectedMonth, selectedYear) ? "Verified" : "Unverified"}
                                         </Badge>
                                     </div>
-                                    {detectedPeriods[currentPeriodIndex]?.lastDate && (
-                                        <span className="text-xs text-muted-foreground mt-1">
-                                            Last date: {detectedPeriods[currentPeriodIndex].lastDate}
-                                        </span>
-                                    )}
                                 </div>
 
                                 <Button
@@ -1016,125 +749,61 @@ export function BankExtractionDialog({
                             </div>
 
                             {/* Main content area */}
-                            <div className="grid grid-cols-5 gap-4 h-full overflow-hidden">
+                            <div className="grid grid-cols-5 gap-4 flex-1">
                                 {/* PDF Viewer - 3 columns */}
-                                <div className="col-span-3 flex flex-col h-full overflow-hidden">
-                                    <div
-                                        ref={pdfContainerRef}
-                                        className="border rounded bg-muted relative flex-1 overflow-auto"
-                                    >
+                                <div className="col-span-3 flex flex-col h-full">
+                                    <div className="border rounded bg-muted relative flex-1 overflow-hidden">
                                         {loading ? (
                                             <div className="flex items-center justify-center h-full">
                                                 <Loader2 className="h-8 w-8 animate-spin text-primary" />
                                             </div>
-                                        ) : (
+                                        ) : pdfUrl ? (
                                             <>
-                                                <canvas
-                                                    ref={canvasRef}
-                                                    className="w-full h-auto cursor-pointer"
-                                                    onClick={handleSelectText}
+                                                <iframe
+                                                    ref={iframeRef}
+                                                    src={pdfUrl}
+                                                    className="w-full h-full border-0"
+                                                    title="Bank Statement PDF"
                                                 />
-
-                                                {/* Highlight guide - show when no highlights exist */}
-                                                {monthlyBalances.length === 0 && (
-                                                    <div className="absolute top-2 right-2 bg-white p-3 rounded-md shadow-md border max-w-xs">
-                                                        <h4 className="font-medium text-sm mb-1">Extract Balance Values</h4>
-                                                        <p className="text-xs text-muted-foreground">
-                                                            Click on closing balance values in the document to extract them.
-                                                            Each selected value can be saved to a specific month.
-                                                        </p>
-                                                    </div>
-                                                )}
-
-                                                {/* Selection tooltip */}
+                                                {/* Selection tooltip would appear here in a real implementation */}
                                                 {selection && (
                                                     <div
                                                         ref={selectionRef}
                                                         className="absolute bg-white border rounded-md shadow-md p-2 z-50"
                                                         style={{
-                                                            left: `${selection.position.x + 10}px`,
-                                                            top: `${selection.position.y - 60}px`,
-                                                            maxWidth: '300px'
+                                                            left: `${selection.position.x}px`,
+                                                            top: `${selection.position.y - 40}px`
                                                         }}
                                                     >
-                                                        <div className="flex flex-col">
-                                                            <p className="text-sm mb-1 font-medium">Selected: {selection.text}</p>
-                                                            {selection.date && (
-                                                                <p className="text-xs text-muted-foreground mb-1">Date: {selection.date}</p>
-                                                            )}
-                                                            <p className="text-sm mb-2">
-                                                                Use {formatCurrency(selection.value, currency || bank.bank_currency)} as closing balance?
-                                                            </p>
-                                                            <div className="grid grid-cols-2 gap-2">
-                                                                <Button
-                                                                    size="sm"
-                                                                    variant="default"
-                                                                    onClick={applySelectionAsClosingBalance}
-                                                                    className="w-full"
-                                                                >
-                                                                    Set as Closing
-                                                                </Button>
-                                                                <Button
-                                                                    size="sm"
-                                                                    variant="secondary"
-                                                                    onClick={() => {
-                                                                        // Find the index of the balance for the current month/year
-                                                                        const balanceIndex = monthlyBalances.findIndex(
-                                                                            b => b.month === selectedMonth && b.year === selectedYear
-                                                                        );
-
-                                                                        if (balanceIndex >= 0) {
-                                                                            // Update existing balance - set as opening balance
-                                                                            const updatedBalances = [...monthlyBalances];
-                                                                            updatedBalances[balanceIndex] = {
-                                                                                ...updatedBalances[balanceIndex],
-                                                                                opening_balance: selection.value
-                                                                            };
-                                                                            setMonthlyBalances(updatedBalances);
-                                                                        } else {
-                                                                            // Add new balance with opening balance
-                                                                            setMonthlyBalances(prev => [
-                                                                                ...prev,
-                                                                                {
-                                                                                    month: selectedMonth,
-                                                                                    year: selectedYear,
-                                                                                    opening_balance: selection.value,
-                                                                                    closing_balance: 0,
-                                                                                    statement_page: currentPage,
-                                                                                    highlight_coordinates: null,
-                                                                                    is_verified: false,
-                                                                                    verified_by: null,
-                                                                                    verified_at: null
-                                                                                }
-                                                                            ]);
-                                                                        }
-                                                                        setSelection(null);
-                                                                        toast({
-                                                                            description: `Set opening balance for ${format(new Date(selectedYear, selectedMonth - 1, 1), 'MMMM yyyy')}`,
-                                                                            variant: 'default'
-                                                                        });
-                                                                    }}
-                                                                >
-                                                                    Set as Opening
-                                                                </Button>
-                                                                <Button
-                                                                    size="sm"
-                                                                    variant="outline"
-                                                                    onClick={() => setSelection(null)}
-                                                                    className="col-span-2"
-                                                                >
-                                                                    Cancel
-                                                                </Button>
-                                                            </div>
+                                                        <p className="text-sm mb-1">Use {formatCurrency(selection.value, currency || bank.bank_currency)} as closing balance?</p>
+                                                        <div className="flex gap-2">
+                                                            <Button
+                                                                size="sm"
+                                                                variant="default"
+                                                                onClick={applySelectionAsClosingBalance}
+                                                            >
+                                                                Apply
+                                                            </Button>
+                                                            <Button
+                                                                size="sm"
+                                                                variant="ghost"
+                                                                onClick={() => setSelection(null)}
+                                                            >
+                                                                Cancel
+                                                            </Button>
                                                         </div>
                                                     </div>
                                                 )}
                                             </>
+                                        ) : (
+                                            <div className="flex items-center justify-center h-full">
+                                                <p className="text-muted-foreground">No PDF document available</p>
+                                            </div>
                                         )}
                                     </div>
 
                                     {/* PDF navigation */}
-                                    <div className="flex items-center justify-between mt-2 shrink-0">
+                                    <div className="flex items-center justify-between mt-2">
                                         <Button
                                             variant="outline"
                                             size="sm"
@@ -1159,13 +828,31 @@ export function BankExtractionDialog({
                                             <ChevronRight className="h-4 w-4 ml-1" />
                                         </Button>
                                     </div>
+
+                                    {/* Mock text selection buttons (in a real implementation this would use PDF text selection) */}
+                                    <div className="mt-2 p-2 border rounded-md bg-muted/30">
+                                        <p className="text-sm text-muted-foreground mb-2">
+                                            Demo: Select amount from document (in a real implementation, you would select text directly in the PDF)
+                                        </p>
+                                        <div className="flex gap-2 flex-wrap">
+                                            <Button size="sm" variant="outline" onClick={() => handleSelection(15000)}>
+                                                Select $15,000.00
+                                            </Button>
+                                            <Button size="sm" variant="outline" onClick={() => handleSelection(25842.75)}>
+                                                Select $25,842.75
+                                            </Button>
+                                            <Button size="sm" variant="outline" onClick={() => handleSelection(32150.50)}>
+                                                Select $32,150.50
+                                            </Button>
+                                        </div>
+                                    </div>
                                 </div>
 
                                 {/* Right panel - Account details and monthly balances */}
-                                <div className="col-span-2 flex flex-col h-full gap-4 overflow-hidden">
+                                <div className="col-span-2 flex flex-col h-full gap-4">
                                     {/* Account details card */}
-                                    <Card className="shrink-0">
-                                        <CardHeader className="py-2">
+                                    <Card className="overflow-hidden">
+                                        <CardHeader className="pb-2">
                                             <CardTitle className="text-base">Account Details</CardTitle>
                                         </CardHeader>
                                         <CardContent className="space-y-3">
@@ -1238,13 +925,13 @@ export function BankExtractionDialog({
                                                         onChange={(e) => setCurrency(e.target.value)}
                                                         placeholder="Enter currency"
                                                         className={
-                                                            currency && normalizeCurrencyCode(currency) !== normalizeCurrencyCode(bank.bank_currency)
+                                                            currency && currency !== bank.bank_currency
                                                                 ? "border-yellow-500 focus-visible:ring-yellow-500"
                                                                 : ""
                                                         }
                                                     />
                                                     {currency && (
-                                                        normalizeCurrencyCode(currency) === normalizeCurrencyCode(bank.bank_currency) ? (
+                                                        currency === bank.bank_currency ? (
                                                             <Badge variant="outline" className="bg-green-50 text-green-700 border-green-300">
                                                                 <Check className="h-3 w-3 mr-1" />
                                                                 Match
@@ -1262,8 +949,8 @@ export function BankExtractionDialog({
                                     </Card>
 
                                     {/* Current period balance card */}
-                                    <Card className="shrink-0">
-                                        <CardHeader className="py-2 flex flex-row items-center justify-between">
+                                    <Card className="overflow-hidden">
+                                        <CardHeader className="pb-2 flex flex-row items-center justify-between">
                                             <CardTitle className="text-base">
                                                 {format(new Date(selectedYear, selectedMonth - 1, 1), 'MMMM yyyy')} Balance
                                             </CardTitle>
@@ -1381,7 +1068,7 @@ export function BankExtractionDialog({
 
                                     {/* Monthly balances section */}
                                     <Card className="flex-1 overflow-hidden">
-                                        <CardHeader className="py-2 flex flex-row items-center justify-between">
+                                        <CardHeader className="pb-2 flex flex-row items-center justify-between">
                                             <CardTitle className="text-base">All Monthly Balances</CardTitle>
                                             <Button
                                                 variant="outline"
@@ -1392,25 +1079,23 @@ export function BankExtractionDialog({
                                                 Add Month
                                             </Button>
                                         </CardHeader>
-                                        <CardContent className="p-0 h-[calc(100%-52px)] overflow-hidden">
+                                        <CardContent className="p-0">
                                             {monthlyBalances.length === 0 ? (
-                                                <div className="flex items-center justify-center h-full text-center px-4">
+                                                <div className="flex items-center justify-center h-32 text-center px-4">
                                                     <p className="text-muted-foreground">
                                                         No monthly balances added yet. Select text in the document to add balances
                                                         or click "Add Month" to add manually.
                                                     </p>
                                                 </div>
                                             ) : (
-                                                <div className="h-full overflow-auto">
+                                                <div className="max-h-[250px] overflow-auto">
                                                     <Table>
                                                         <TableHeader className="sticky top-0 bg-white z-10">
                                                             <TableRow>
                                                                 <TableHead>Period</TableHead>
-                                                                <TableHead>Opening Balance</TableHead>
                                                                 <TableHead>Closing Balance</TableHead>
-                                                                <TableHead>Date</TableHead>
-                                                                <TableHead>Page</TableHead>
-                                                                <TableHead>Actions</TableHead>
+                                                                <TableHead>Status</TableHead>
+                                                                <TableHead className="w-[100px]">Actions</TableHead>
                                                             </TableRow>
                                                         </TableHeader>
                                                         <TableBody>
@@ -1425,23 +1110,23 @@ export function BankExtractionDialog({
                                                                         key={`${balance.month}-${balance.year}`}
                                                                         className={isCurrentPeriod ? "bg-blue-50" : ""}
                                                                     >
-                                                                        <TableCell className="font-medium whitespace-nowrap">
+                                                                        <TableCell className="font-medium">
                                                                             {format(new Date(balance.year, balance.month - 1, 1), 'MMM yyyy')}
-                                                                            {balance.is_verified && (
-                                                                                <CheckCircle className="h-3 w-3 inline ml-1 text-green-500" />
-                                                                            )}
-                                                                        </TableCell>
-                                                                        <TableCell>
-                                                                            {formatCurrency(balance.opening_balance, currency || bank.bank_currency)}
                                                                         </TableCell>
                                                                         <TableCell>
                                                                             {formatCurrency(balance.closing_balance, currency || bank.bank_currency)}
                                                                         </TableCell>
-                                                                        <TableCell className="text-xs">
-                                                                            {balance.closing_date || '-'}
-                                                                        </TableCell>
-                                                                        <TableCell className="text-xs">
-                                                                            {balance.statement_page || '-'}
+                                                                        <TableCell>
+                                                                            {balance.is_verified ? (
+                                                                                <Badge variant="outline" className="bg-green-50 text-green-700 border-green-300">
+                                                                                    <Check className="h-3 w-3 mr-1" />
+                                                                                    Verified
+                                                                                </Badge>
+                                                                            ) : (
+                                                                                <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-300">
+                                                                                    Pending
+                                                                                </Badge>
+                                                                            )}
                                                                         </TableCell>
                                                                         <TableCell>
                                                                             <div className="flex gap-1">
@@ -1450,24 +1135,16 @@ export function BankExtractionDialog({
                                                                                     size="icon"
                                                                                     className="h-8 w-8"
                                                                                     onClick={() => {
-                                                                                        // Navigate to the page
-                                                                                        handlePageChange(balance.statement_page || 1);
-                                                                                        // Also set the selected month/year
-                                                                                        setSelectedMonth(balance.month);
-                                                                                        setSelectedYear(balance.year);
+                                                                                        // Find period index and navigate to it
+                                                                                        const periodIndex = detectedPeriods.findIndex(
+                                                                                            p => p.month === balance.month && p.year === balance.year
+                                                                                        );
+                                                                                        if (periodIndex >= 0) {
+                                                                                            navigateToPeriod(periodIndex);
+                                                                                        }
                                                                                     }}
                                                                                 >
                                                                                     <Eye className="h-4 w-4" />
-                                                                                </Button>
-                                                                                <Button
-                                                                                    variant="ghost"
-                                                                                    size="icon"
-                                                                                    className="h-8 w-8"
-                                                                                    onClick={() => {
-                                                                                        handleVerifyMonthlyBalance(index);
-                                                                                    }}
-                                                                                >
-                                                                                    <CheckCircle className="h-4 w-4" />
                                                                                 </Button>
                                                                                 <Button
                                                                                     variant="ghost"
@@ -1494,264 +1171,167 @@ export function BankExtractionDialog({
                     </TabsContent>
 
                     <TabsContent value="validation" className="flex-1 overflow-auto">
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="space-y-4">
-                                <div className="p-4 rounded-md border bg-card">
-                                    <h3 className="text-lg font-semibold flex items-center mb-4">
-                                        <FileCheck className="h-5 w-5 text-primary mr-2" />
-                                        Validation Status
-                                    </h3>
+                        <div className="space-y-4">
+                            <div className="p-4 bg-muted rounded-md">
+                                <h3 className="text-lg font-semibold mb-2">Validation Status</h3>
+                                <div className="flex items-center gap-2">
+                                    {statement.validation_status.is_validated ? (
+                                        <Badge variant="outline" className="bg-green-50 text-green-700 border-green-300">
+                                            <Check className="h-3 w-3 mr-1" />
+                                            Validated
+                                        </Badge>
+                                    ) : statement.validation_status.mismatches.length > 0 ? (
+                                        <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-300">
+                                            <AlertTriangle className="h-3 w-3 mr-1" />
+                                            Validation Issues
+                                        </Badge>
+                                    ) : (
+                                        <Badge variant="outline" className="bg-gray-100 text-gray-700 border-gray-300">
+                                            Not Validated
+                                        </Badge>
+                                    )}
 
-                                    <div className="flex items-center mb-2">
-                                        {statement.validation_status.is_validated ? (
-                                            <Badge variant="outline" className="bg-green-50 text-green-700 border-green-300 text-sm px-3 py-1">
-                                                <Check className="h-3 w-3 mr-1" />
-                                                Validated
-                                            </Badge>
-                                        ) : statement.validation_status.mismatches.length > 0 ? (
-                                            <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-300 text-sm px-3 py-1">
-                                                <AlertTriangle className="h-3 w-3 mr-1" />
-                                                Validation Issues
-                                            </Badge>
-                                        ) : (
-                                            <Badge variant="outline" className="bg-gray-100 text-gray-700 border-gray-300 text-sm px-3 py-1">
-                                                Not Validated
-                                            </Badge>
-                                        )}
-
-                                        {statement.validation_status.validation_date && (
-                                            <span className="text-sm text-muted-foreground ml-3">
-                                                Last checked: {format(new Date(statement.validation_status.validation_date), 'PP')}
-                                            </span>
-                                        )}
-                                    </div>
-
-                                    <div className="grid grid-cols-2 gap-4 mt-4">
-                                        <div className="p-3 bg-gray-50 rounded-md">
-                                            <div className="flex justify-between items-center mb-1">
-                                                <span className="text-sm font-medium">Statement</span>
-                                                <span className="text-xs text-muted-foreground">
-                                                    {statement.statement_month}/{statement.statement_year}
-                                                </span>
-                                            </div>
-                                            <div className="flex justify-between">
-                                                <span className="text-sm">Period</span>
-                                                <span className="text-sm font-medium">
-                                                    {statement.statement_extractions.statement_period ||
-                                                        format(new Date(statement.statement_year, statement.statement_month - 1, 1), 'MMMM yyyy')}
-                                                </span>
-                                            </div>
-                                        </div>
-                                        <div className="p-3 bg-gray-50 rounded-md">
-                                            <div className="flex justify-between items-center mb-1">
-                                                <span className="text-sm font-medium">Document</span>
-                                                <span className="text-xs text-muted-foreground">
-                                                    {statement.has_soft_copy ? 'Has Soft Copy' : 'No Soft Copy'}
-                                                </span>
-                                            </div>
-                                            <div className="flex justify-between">
-                                                <span className="text-sm">PDF Pages</span>
-                                                <span className="text-sm font-medium">{totalPages || 'N/A'}</span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {statement.validation_status.mismatches.length > 0 && (
-                                    <Alert variant="destructive" className="border-red-200 bg-red-50">
-                                        <AlertTriangle className="h-4 w-4" />
-                                        <AlertTitle>Validation Issues Found</AlertTitle>
-                                        <AlertDescription>
-                                            <ul className="list-disc pl-5 mt-2 space-y-1">
-                                                {statement.validation_status.mismatches.map((mismatch, index) => (
-                                                    <li key={index}>{mismatch}</li>
-                                                ))}
-                                            </ul>
-                                        </AlertDescription>
-                                    </Alert>
-                                )}
-
-                                <div className="border rounded-md overflow-hidden">
-                                    <Table>
-                                        <TableHeader>
-                                            <TableRow className="bg-blue-50">
-                                                <TableHead className="w-[200px]">Field</TableHead>
-                                                <TableHead>Expected Value</TableHead>
-                                                <TableHead>Extracted Value</TableHead>
-                                                <TableHead className="w-[100px]">Status</TableHead>
-                                            </TableRow>
-                                        </TableHeader>
-                                        <TableBody>
-                                            <TableRow>
-                                                <TableCell className="font-medium">Bank Name</TableCell>
-                                                <TableCell>{bank.bank_name}</TableCell>
-                                                <TableCell>{bankName || 'Not detected'}</TableCell>
-                                                <TableCell>
-                                                    <span className={
-                                                        bankName &&
-                                                            bankName.toLowerCase().includes(bank.bank_name.toLowerCase())
-                                                            ? "text-green-500 font-medium"
-                                                            : "text-red-500 font-medium"
-                                                    }>
-                                                        {bankName &&
-                                                            bankName.toLowerCase().includes(bank.bank_name.toLowerCase())
-                                                            ? "Match"
-                                                            : "Mismatch"}
-                                                    </span>
-                                                </TableCell>
-                                            </TableRow>
-                                            <TableRow>
-                                                <TableCell className="font-medium">Account Number</TableCell>
-                                                <TableCell>{bank.account_number}</TableCell>
-                                                <TableCell>{accountNumber || 'Not detected'}</TableCell>
-                                                <TableCell>
-                                                    <span className={
-                                                        accountNumber &&
-                                                            accountNumber.includes(bank.account_number)
-                                                            ? "text-green-500 font-medium"
-                                                            : "text-red-500 font-medium"
-                                                    }>
-                                                        {accountNumber &&
-                                                            accountNumber.includes(bank.account_number)
-                                                            ? "Match"
-                                                            : "Mismatch"}
-                                                    </span>
-                                                </TableCell>
-                                            </TableRow>
-                                            <TableRow>
-                                                <TableCell className="font-medium">Currency</TableCell>
-                                                <TableCell>{bank.bank_currency}</TableCell>
-                                                <TableCell>{currency || 'Not detected'}</TableCell>
-                                                <TableCell>
-                                                    <span className={
-                                                        currency &&
-                                                            normalizeCurrencyCode(currency) === normalizeCurrencyCode(bank.bank_currency)
-                                                            ? "text-green-500 font-medium"
-                                                            : "text-red-500 font-medium"
-                                                    }>
-                                                        {currency &&
-                                                            normalizeCurrencyCode(currency) === normalizeCurrencyCode(bank.bank_currency)
-                                                            ? "Match"
-                                                            : "Mismatch"}
-                                                    </span>
-                                                </TableCell>
-                                            </TableRow>
-                                        </TableBody>
-                                    </Table>
+                                    {statement.validation_status.validation_date && (
+                                        <span className="text-sm text-muted-foreground">
+                                            Last checked: {format(new Date(statement.validation_status.validation_date), 'PPpp')}
+                                        </span>
+                                    )}
                                 </div>
                             </div>
 
-                            <div className="space-y-4">
-                                <Card>
-                                    <CardHeader className="py-3 bg-blue-50">
-                                        <CardTitle className="text-base">Monthly Balances Summary</CardTitle>
-                                    </CardHeader>
-                                    <CardContent className="p-0">
-                                        <Table>
-                                            <TableHeader className="bg-gray-50">
-                                                <TableRow>
-                                                    <TableHead>Period</TableHead>
-                                                    <TableHead>Closing Balance</TableHead>
-                                                    <TableHead>Closing Date</TableHead>
-                                                    <TableHead>Status</TableHead>
+                            {statement.validation_status.mismatches.length > 0 && (
+                                <Alert variant="destructive">
+                                    <AlertTriangle className="h-4 w-4" />
+                                    <AlertTitle>Validation Issues Found</AlertTitle>
+                                    <AlertDescription>
+                                        <ul className="list-disc pl-5 mt-2 space-y-1">
+                                            {statement.validation_status.mismatches.map((mismatch, index) => (
+                                                <li key={index}>{mismatch}</li>
+                                            ))}
+                                        </ul>
+                                    </AlertDescription>
+                                </Alert>
+                            )}
+
+                            <div className="border rounded-md overflow-hidden">
+                                <Table>
+                                    <TableHeader>
+                                        <TableRow>
+                                            <TableHead className="w-[200px]">Field</TableHead>
+                                            <TableHead>Expected Value</TableHead>
+                                            <TableHead>Extracted Value</TableHead>
+                                            <TableHead className="w-[100px]">Status</TableHead>
+                                        </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                        <TableRow>
+                                            <TableCell className="font-medium">Bank Name</TableCell>
+                                            <TableCell>{bank.bank_name}</TableCell>
+                                            <TableCell>{bankName || 'Not detected'}</TableCell>
+                                            <TableCell>
+                                                <span className={
+                                                    bankName &&
+                                                        bankName.toLowerCase().includes(bank.bank_name.toLowerCase())
+                                                        ? "text-green-500 font-medium"
+                                                        : "text-red-500 font-medium"
+                                                }>
+                                                    {bankName &&
+                                                        bankName.toLowerCase().includes(bank.bank_name.toLowerCase())
+                                                        ? "Match"
+                                                        : "Mismatch"}
+                                                </span>
+                                            </TableCell>
+                                        </TableRow>
+                                        <TableRow>
+                                            <TableCell className="font-medium">Account Number</TableCell>
+                                            <TableCell>{bank.account_number}</TableCell>
+                                            <TableCell>{accountNumber || 'Not detected'}</TableCell>
+                                            <TableCell>
+                                                <span className={
+                                                    accountNumber &&
+                                                        accountNumber.includes(bank.account_number)
+                                                        ? "text-green-500 font-medium"
+                                                        : "text-red-500 font-medium"
+                                                }>
+                                                    {accountNumber &&
+                                                        accountNumber.includes(bank.account_number)
+                                                        ? "Match"
+                                                        : "Mismatch"}
+                                                </span>
+                                            </TableCell>
+                                        </TableRow>
+                                        <TableRow>
+                                            <TableCell className="font-medium">Currency</TableCell>
+                                            <TableCell>{bank.bank_currency}</TableCell>
+                                            <TableCell>{currency || 'Not detected'}</TableCell>
+                                            <TableCell>
+                                                <span className={
+                                                    currency &&
+                                                        currency === bank.bank_currency
+                                                        ? "text-green-500 font-medium"
+                                                        : "text-red-500 font-medium"
+                                                }>
+                                                    {currency &&
+                                                        currency === bank.bank_currency
+                                                        ? "Match"
+                                                        : "Mismatch"}
+                                                </span>
+                                            </TableCell>
+                                        </TableRow>
+                                    </TableBody>
+                                </Table>
+                            </div>
+
+                            <div className="p-4 border rounded-md">
+                                <h3 className="text-lg font-semibold mb-2">Monthly Balances Summary</h3>
+                                <Table>
+                                    <TableHeader>
+                                        <TableRow>
+                                            <TableHead>Period</TableHead>
+                                            <TableHead>Opening Balance</TableHead>
+                                            <TableHead>Closing Balance</TableHead>
+                                            <TableHead>Verification</TableHead>
+                                        </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {monthlyBalances.length > 0 ? (
+                                            monthlyBalances.sort((a, b) => {
+                                                if (a.year !== b.year) return a.year - b.year;
+                                                return a.month - b.month;
+                                            }).map((balance, index) => (
+                                                <TableRow key={index}>
+                                                    <TableCell>
+                                                        {format(new Date(balance.year, balance.month - 1, 1), 'MMMM yyyy')}
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        {formatCurrency(balance.opening_balance, currency || bank.bank_currency)}
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        {formatCurrency(balance.closing_balance, currency || bank.bank_currency)}
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        {balance.is_verified ? (
+                                                            <Badge variant="outline" className="bg-green-50 text-green-700 border-green-300">
+                                                                <Check className="h-3 w-3 mr-1" />
+                                                                Verified {balance.verified_at && `on ${format(new Date(balance.verified_at), 'dd/MM/yyyy')}`}
+                                                            </Badge>
+                                                        ) : (
+                                                            <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-300">
+                                                                Not Verified
+                                                            </Badge>
+                                                        )}
+                                                    </TableCell>
                                                 </TableRow>
-                                            </TableHeader>
-                                            <TableBody>
-                                                {monthlyBalances.length > 0 ? (
-                                                    monthlyBalances.sort((a, b) => {
-                                                        if (a.year !== b.year) return a.year - b.year;
-                                                        return a.month - b.month;
-                                                    }).map((balance, index) => (
-                                                        <TableRow key={index} className={balance.month === statement.statement_month && balance.year === statement.statement_year ? "bg-blue-50" : ""}>
-                                                            <TableCell>
-                                                                {format(new Date(balance.year, balance.month - 1, 1), 'MMMM yyyy')}
-                                                                {balance.month === statement.statement_month && balance.year === statement.statement_year && (
-                                                                    <Badge variant="outline" className="ml-2 bg-blue-50 text-blue-500 border-blue-200">
-                                                                        Current
-                                                                    </Badge>
-                                                                )}
-                                                            </TableCell>
-                                                            <TableCell>
-                                                                {formatCurrency(balance.closing_balance, currency || bank.bank_currency)}
-                                                            </TableCell>
-                                                            <TableCell>
-                                                                {balance.closing_date || '-'}
-                                                            </TableCell>
-                                                            <TableCell>
-                                                                {balance.is_verified ? (
-                                                                    <Badge variant="outline" className="bg-green-50 text-green-700 border-green-300">
-                                                                        <Check className="h-3 w-3 mr-1" />
-                                                                        Verified
-                                                                    </Badge>
-                                                                ) : (
-                                                                    <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-300">
-                                                                        Not Verified
-                                                                    </Badge>
-                                                                )}
-                                                            </TableCell>
-                                                        </TableRow>
-                                                    ))
-                                                ) : (
-                                                    <TableRow>
-                                                        <TableCell colSpan={4} className="text-center py-4 text-muted-foreground">
-                                                            No monthly balances added yet
-                                                        </TableCell>
-                                                    </TableRow>
-                                                )}
-                                            </TableBody>
-                                        </Table>
-                                    </CardContent>
-                                </Card>
-
-                                {/* QuickBooks reconciliation card */}
-                                <Card>
-                                    <CardHeader className="py-3 bg-blue-50">
-                                        <CardTitle className="text-base">QuickBooks Reconciliation</CardTitle>
-                                    </CardHeader>
-                                    <CardContent className="py-4">
-                                        <div className="space-y-4">
-                                            <div className="grid grid-cols-2 gap-4">
-                                                <div className="p-3 bg-gray-50 rounded-md">
-                                                    <p className="text-sm text-muted-foreground mb-1">Bank Statement</p>
-                                                    <p className="font-medium">
-                                                        {getMonthlyClosingBalance() !== null
-                                                            ? formatCurrency(getMonthlyClosingBalance(), bank.bank_currency)
-                                                            : '-'}
-                                                    </p>
-                                                </div>
-                                                <div className="p-3 bg-gray-50 rounded-md">
-                                                    <p className="text-sm text-muted-foreground mb-1">QuickBooks</p>
-                                                    <p className="font-medium">
-                                                        {statement.quickbooks_balance !== null
-                                                            ? formatCurrency(statement.quickbooks_balance, bank.bank_currency)
-                                                            : '-'}
-                                                    </p>
-                                                </div>
-                                            </div>
-
-                                            {statement.quickbooks_balance !== null && getMonthlyClosingBalance() !== null && (
-                                                <div className="p-4 rounded-md border bg-white">
-                                                    <p className="text-sm text-muted-foreground mb-1">Difference</p>
-                                                    <p className={`font-bold ${Math.abs(getMonthlyClosingBalance() - statement.quickbooks_balance) > 0.01
-                                                        ? "text-red-500"
-                                                        : "text-green-500"
-                                                        }`}>
-                                                        {formatCurrency(getMonthlyClosingBalance() - statement.quickbooks_balance, bank.bank_currency)}
-                                                    </p>
-                                                    {Math.abs(getMonthlyClosingBalance() - statement.quickbooks_balance) > 0.01 ? (
-                                                        <p className="text-sm text-red-500 mt-2">
-                                                            Bank statement balance does not match QuickBooks. Reconciliation needed.
-                                                        </p>
-                                                    ) : (
-                                                        <p className="text-sm text-green-500 mt-2">
-                                                            Bank statement reconciled with QuickBooks successfully.
-                                                        </p>
-                                                    )}
-                                                </div>
-                                            )}
-                                        </div>
-                                    </CardContent>
-                                </Card>
+                                            ))
+                                        ) : (
+                                            <TableRow>
+                                                <TableCell colSpan={4} className="text-center py-4 text-muted-foreground">
+                                                    No monthly balances added yet
+                                                </TableCell>
+                                            </TableRow>
+                                        )}
+                                    </TableBody>
+                                </Table>
                             </div>
                         </div>
                     </TabsContent>
