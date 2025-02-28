@@ -203,8 +203,8 @@ export default function BankReconciliationPage() {
         <div className="py-6 space-y-6 p-4">
             <div className="flex justify-between items-center">
                 <div>
-                    <h1 className="text-3xl font-bold tracking-tight">Bank Reconciliation</h1>
-                    <p className="text-muted-foreground">
+                    <p className="text-xl font-bold tracking-tight">Bank Statements and Reconciliation</p>
+                    <p className="text-muted-foreground text-md">
                         Manage and reconcile bank statements with QuickBooks data
                     </p>
                 </div>

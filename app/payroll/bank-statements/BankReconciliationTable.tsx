@@ -552,7 +552,7 @@ export function BankReconciliationTable({
 
     return (
         <div className="space-y-4">
-            <div className="rounded-md border h-[calc(100vh-240px)] overflow-auto">
+            <div className="rounded-md border h-[calc(100vh-280px)] overflow-auto mb-4">
                 <Table aria-label="Bank Reconciliation" className="border border-gray-200 text-sm">
                     <TableHeader className="sticky top-0 z-10">
                         <TableRow className="bg-blue-600 hover:bg-blue-600 [&>th]:border-r [&>th]:border-blue-500 last:[&>th]:border-r-0">
@@ -602,7 +602,13 @@ export function BankReconciliationTable({
                                                     </Tooltip>
                                                 </TooltipProvider>
                                             </TableCell>
-                                            <TableCell colSpan={9} className="text-center text-muted-foreground p-1">
+                                            <TableCell colSpan={3} className="text-center text-red-500 font-bold p-1">
+                                                No banks configured
+                                            </TableCell>
+                                            <TableCell colSpan={3} className="text-center text-red-500 font-bold p-1">
+                                                No banks configured
+                                            </TableCell>
+                                            <TableCell colSpan={3} className="text-center text-red-500 font-bold p-1">
                                                 No banks configured
                                             </TableCell>
                                         </TableRow>
