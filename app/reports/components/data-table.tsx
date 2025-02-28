@@ -10,7 +10,7 @@ import {
   TableCell,
   TableRow,
 } from "@/components/ui/table";
-import React from "react";
+import React, { memo, useMemo } from "react";
 
 export type TaxEntry = {
   month: string;
@@ -44,8 +44,10 @@ interface DataTableProps {
   isHorizontalView?: boolean;
   selectedColumns?: string[];
   selectedSubColumns?: ("amount" | "date" | "all")[];
+  isLoading?: boolean;
 }
 
+// Memoized formatter for better performance
 const formatAmount = (amount: number | string): string => {
   // If it's a string and might already have formatting
   if (typeof amount === "string") {
@@ -59,11 +61,15 @@ const formatAmount = (amount: number | string): string => {
     amount = 0;
   }
 
+  // Use a more efficient approach for zero values
+  if (amount === 0) return "0.00";
+
   return new Intl.NumberFormat("en-KE", { minimumFractionDigits: 2 }).format(
     amount as number
   );
 };
 
+// Memoize date color calculation
 const getDateColor = (dateStr: string | null): string => {
   if (!dateStr) return "text-red-600 font-medium";
   try {
@@ -77,12 +83,17 @@ const getDateColor = (dateStr: string | null): string => {
   }
 };
 
+// Date formatting with placeholder for null dates
 const formatDate = (date: string | null) => {
   if (!date) return "—";
   try {
+    // Check if date is already in dd/mm/yyyy format
+    if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(date)) {
+      return date;
+    }
     return format(new Date(date), "dd/MM/yyyy");
   } catch (e) {
-    return date;
+    return date || "—";
   }
 };
 
@@ -94,7 +105,91 @@ const taxColumns = [
   { id: "nssf", name: "NSSF", headerBg: "bg-red-100" },
 ] as const;
 
-export function DataTable({
+// Memoized data cell to prevent unnecessary re-renders
+const DataCell = memo(({ 
+  tax, 
+  entry, 
+  showAmount, 
+  showDate,
+  isLoading 
+}: { 
+  tax: typeof taxColumns[number], 
+  entry: TaxEntry, 
+  showAmount: boolean, 
+  showDate: boolean,
+  isLoading: boolean 
+}) => (
+  <React.Fragment>
+    {showAmount && (
+      <TableCell
+        className={`text-right py-3 px-4 font-medium border-2 border-slate-300 bg-white ${isLoading ? 'animate-pulse' : ''}`}
+      >
+        <span className="text-slate-700">
+          {isLoading ? '—' : formatAmount(entry[tax.id].amount)}
+        </span>
+      </TableCell>
+    )}
+    {showDate && (
+      <TableCell
+        className={`text-center py-3 px-3 border-2 border-slate-300 bg-white ${isLoading ? 'animate-pulse' : ''}`}
+      >
+        <span className={isLoading ? 'text-slate-400' : getDateColor(entry[tax.id].date)}>
+          {isLoading ? '—' : formatDate(entry[tax.id].date)}
+        </span>
+      </TableCell>
+    )}
+  </React.Fragment>
+));
+
+DataCell.displayName = 'DataCell';
+
+// Memoized table row component
+const TableRowMemo = memo(({ 
+  entry, 
+  idx, 
+  selectedColumns, 
+  selectedSubColumns,
+  isLoading
+}: { 
+  entry: TaxEntry, 
+  idx: number, 
+  selectedColumns: string[], 
+  selectedSubColumns: ("amount" | "date" | "all")[],
+  isLoading: boolean
+}) => {
+  const showAmount = selectedSubColumns.includes("all") || selectedSubColumns.includes("amount");
+  const showDate = selectedSubColumns.includes("all") || selectedSubColumns.includes("date");
+  
+  return (
+    <TableRow
+      className={isLoading ? 'bg-slate-100 animate-pulse' : idx % 2 === 0 ? "bg-white" : "bg-gray-50"}
+    >
+      {selectedColumns.includes("month") && (
+        <TableCell className={`font-medium text-slate-700 py-3 px-5 border-2 border-slate-300 ${isLoading ? 'animate-pulse' : ''}`}>
+          {isLoading ? '—' : entry.month}
+        </TableCell>
+      )}
+      {taxColumns.map(
+        (tax) =>
+          selectedColumns.includes(tax.id) && (
+            <DataCell 
+              key={`${tax.id}-cell-${entry.month}`}
+              tax={tax}
+              entry={entry}
+              showAmount={showAmount}
+              showDate={showDate}
+              isLoading={isLoading}
+            />
+          )
+      )}
+    </TableRow>
+  );
+});
+
+TableRowMemo.displayName = 'TableRowMemo';
+
+// Main DataTable component with memoization
+export const DataTable = memo(({
   data,
   title,
   taxType,
@@ -102,22 +197,24 @@ export function DataTable({
   isHorizontalView,
   selectedColumns = ["month", "paye", "housingLevy", "nita", "shif", "nssf"],
   selectedSubColumns = ["all"],
-}: DataTableProps) {
+  isLoading = false,
+}: DataTableProps) => {
+  // Calculate totals only once for better performance
+  const totals = useMemo(() => {
+    if (!data || data.length === 0) return {};
+    
+    return taxColumns.reduce((acc, tax) => {
+      acc[tax.id] = data.reduce((sum, entry) => sum + (entry[tax.id]?.amount || 0), 0);
+      return acc;
+    }, {} as Record<string, number>);
+  }, [data]);
+
   if (isHorizontalView && yearlyData) {
+    // Horizontal view implementation
     const years = Object.keys(yearlyData).sort().reverse();
     const months = [
-      "JAN",
-      "FEB",
-      "MAR",
-      "APR",
-      "MAY",
-      "JUN",
-      "JUL",
-      "AUG",
-      "SEP",
-      "OCT",
-      "NOV",
-      "DEC",
+      "JAN", "FEB", "MAR", "APR", "MAY", "JUN", 
+      "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"
     ];
 
     return (
@@ -156,10 +253,10 @@ export function DataTable({
                     </TableCell>
                   )}
                   {years.map((year) => {
-                    const entry = yearlyData[year].find(
+                    const entry = yearlyData[year]?.find(
                       (e) => e.month === month
                     );
-                    const amount = entry ? entry[taxType!].amount : 0;
+                    const amount = entry ? entry[taxType!]?.amount : 0;
                     return (
                       <TableCell
                         key={year}
@@ -181,8 +278,8 @@ export function DataTable({
                     className="text-center py-4 px-5 text-slate-800 border-2 border-slate-300"
                   >
                     {formatAmount(
-                      yearlyData[year].reduce(
-                        (sum, entry) => sum + entry[taxType!].amount,
+                      (yearlyData[year] || []).reduce(
+                        (sum, entry) => sum + (entry[taxType!]?.amount || 0),
                         0
                       )
                     )}
@@ -196,12 +293,24 @@ export function DataTable({
     );
   }
 
+  // Default vertical view
+  const showAmount = selectedSubColumns.includes("all") || selectedSubColumns.includes("amount");
+  const showDate = selectedSubColumns.includes("all") || selectedSubColumns.includes("date");
+
+  if (!data || data.length === 0) {
+    return (
+      <div className="p-8 text-center text-slate-500 border rounded-xl">
+        No data available to display
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
       {title && (
         <h3 className="text-xl font-semibold text-slate-800 px-1">{title}</h3>
       )}
-      <div className="rounded-xl border-2 border-slate-300 shadow-md overflow-hidden">
+      <div className="rounded-xl border-2 border-slate-300 shadow-md overflow-hidden relative">
         <div className="overflow-x-auto">
           <Table className="w-full">
             <TableHeader>
@@ -209,7 +318,7 @@ export function DataTable({
                 {selectedColumns.includes("month") && (
                   <TableHead
                     rowSpan={2}
-                    className="w-[100px] bg-slate-100 font-bold text-slate-700 py-4 px-5 border-2 border-slate-300"
+                    className={`w-[100px] bg-slate-100 font-bold text-slate-700 py-4 px-5 border-2 border-slate-300 ${isLoading ? 'animate-pulse' : ''}`}
                   >
                     Month
                   </TableHead>
@@ -224,7 +333,7 @@ export function DataTable({
                             ? 2
                             : selectedSubColumns.length
                         }
-                        className={`font-bold text-slate-700 text-center py-4 px-3 border-2 border-slate-300 ${tax.headerBg}`}
+                        className={`font-bold text-slate-700 text-center py-4 px-3 border-2 border-slate-300 ${tax.headerBg} ${isLoading ? 'animate-pulse' : ''}`}
                       >
                         {tax.name}
                       </TableHead>
@@ -237,18 +346,18 @@ export function DataTable({
                     (tax) =>
                       selectedColumns.includes(tax.id) && (
                         <React.Fragment key={`${tax.id}-header-fragment`}>
-                          {(selectedSubColumns.includes("all") || selectedSubColumns.includes("amount")) && (
+                          {showAmount && (
                             <TableHead
                               key={`${tax.id}-amount-header`}
-                              className={`font-semibold text-slate-700 text-center py-3 px-3 border-2 border-slate-300 ${tax.headerBg}`}
+                              className={`font-semibold text-slate-700 text-center py-3 px-3 border-2 border-slate-300 ${tax.headerBg} ${isLoading ? 'animate-pulse' : ''}`}
                             >
                               Amount
                             </TableHead>
                           )}
-                          {(selectedSubColumns.includes("all") || selectedSubColumns.includes("date")) && (
+                          {showDate && (
                             <TableHead
                               key={`${tax.id}-date-header`}
-                              className={`font-semibold text-slate-700 text-center py-3 px-3 border-2 border-slate-300 ${tax.headerBg}`}
+                              className={`font-semibold text-slate-700 text-center py-3 px-3 border-2 border-slate-300 ${tax.headerBg} ${isLoading ? 'animate-pulse' : ''}`}
                             >
                               Pay Date
                             </TableHead>
@@ -261,43 +370,14 @@ export function DataTable({
             </TableHeader>
             <TableBody>
               {data.map((entry, idx) => (
-                <TableRow
-                  key={entry.month}
-                  className={idx % 2 === 0 ? "bg-white" : "bg-gray-50"}
-                >
-                  {selectedColumns.includes("month") && (
-                    <TableCell className="font-medium text-slate-700 py-3 px-5 border-2 border-slate-300">
-                      {entry.month}
-                    </TableCell>
-                  )}
-                  {taxColumns.map(
-                    (tax) =>
-                      selectedColumns.includes(tax.id) && (
-                        <React.Fragment key={`${tax.id}-fragment`}>
-                          {(selectedSubColumns.includes("all") || selectedSubColumns.includes("amount")) && (
-                            <TableCell
-                              key={`${tax.id}-amount-${entry.month}`}
-                              className="text-right py-3 px-4 font-medium border-2 border-slate-300 bg-white"
-                            >
-                              <span className="text-slate-700">
-                                {formatAmount(entry[tax.id].amount)}
-                              </span>
-                            </TableCell>
-                          )}
-                          {(selectedSubColumns.includes("all") || selectedSubColumns.includes("date")) && (
-                            <TableCell
-                              key={`${tax.id}-date-${entry.month}`}
-                              className="text-center py-3 px-3 border-2 border-slate-300 bg-white"
-                            >
-                              <span className={getDateColor(entry[tax.id].date)}>
-                                {formatDate(entry[tax.id].date)}
-                              </span>
-                            </TableCell>
-                          )}
-                        </React.Fragment>
-                      )
-                  )}
-                </TableRow>
+                <TableRowMemo
+                  key={`row-${entry.month}`}
+                  entry={entry}
+                  idx={idx}
+                  selectedColumns={selectedColumns}
+                  selectedSubColumns={selectedSubColumns}
+                  isLoading={isLoading}
+                />
               ))}
               <TableRow className="bg-slate-100 font-semibold">
                 <TableCell className="py-4 px-5 text-slate-800 border-2 border-slate-300">
@@ -307,17 +387,15 @@ export function DataTable({
                   (tax) =>
                     selectedColumns.includes(tax.id) && (
                       <React.Fragment key={`${tax.id}-total-fragment`}>
-                        {(selectedSubColumns.includes("all") || selectedSubColumns.includes("amount")) && (
+                        {showAmount && (
                           <TableCell
                             key={`${tax.id}-amount-total`}
                             className="text-right py-4 px-4 text-slate-700 font-bold border-2 border-slate-300"
                           >
-                            {formatAmount(
-                              data.reduce((sum, e) => sum + e[tax.id].amount, 0)
-                            )}
+                            {formatAmount(totals[tax.id] || 0)}
                           </TableCell>
                         )}
-                        {(selectedSubColumns.includes("all") || selectedSubColumns.includes("date")) && (
+                        {showDate && (
                           <TableCell
                             key={`${tax.id}-date-total`}
                             className="border-2 border-slate-300"
@@ -330,7 +408,23 @@ export function DataTable({
             </TableBody>
           </Table>
         </div>
+        {isLoading && (
+          <div className="absolute inset-0 bg-white/80 backdrop-blur-sm flex items-center justify-center z-10">
+            <div className="flex flex-col items-center gap-4">
+              <div className="relative">
+                <div className="animate-spin rounded-full h-12 w-12 border-4 border-muted"></div>
+                <div className="absolute top-0 left-0 animate-spin rounded-full h-12 w-12 border-t-4 border-blue-600"></div>
+              </div>
+              <div className="flex flex-col items-center">
+                <span className="text-sm font-medium text-slate-800">Loading tax data...</span>
+                <span className="text-xs text-slate-500">This may take a few moments</span>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
-}
+});
+
+DataTable.displayName = 'DataTable';
