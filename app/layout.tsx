@@ -4,7 +4,7 @@ import "./globals.css";
 import { RootLayoutWrapper } from "./RootLayoutWrapper";
 import 'react-toastify/dist/ReactToastify.css';
 import { Toaster } from "@/components/ui/toaster";
-import { ConvexClientProvider } from "./convex-client";
+// import { ConvexClientProvider } from "./convex-client";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -56,12 +56,12 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={inter.className}>
-        <ConvexClientProvider>
+        {/* <ConvexClientProvider> */}
           <RootLayoutWrapper>
             {children}
             <Toaster />
           </RootLayoutWrapper>
-        </ConvexClientProvider>
+        {/* </ConvexClientProvider> */}
       </body>
     </html>
   );
