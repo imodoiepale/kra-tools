@@ -1,4 +1,4 @@
-// bankExtractionUtils.ts - revised without pdfjs dependency
+// @ts-nocheck
 
 import { supabase } from '@/lib/supabase'
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -6,8 +6,8 @@ import dayjs from 'dayjs';
 import { API_KEYS } from './apiKeys';
 
 // Constants
-const CHUNK_SIZE = 3; // Process 3 pages at a time
-const MAX_CONCURRENT_REQUESTS = 4; // Process 4 chunks in parallel
+const CHUNK_SIZE = 5; // Process 3 pages at a time
+const MAX_CONCURRENT_REQUESTS = 3; // Process 4 chunks in parallel
 const RATE_LIMIT_COOLDOWN = 60000; // 1 minute cooldown
 const MAX_FAILURES = 3; // Max consecutive failures before cooling down
 

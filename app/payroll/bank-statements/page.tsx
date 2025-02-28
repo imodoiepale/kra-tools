@@ -200,7 +200,7 @@ export default function BankReconciliationPage() {
 
                 <div className="flex items-center gap-4">
                     <MonthYearSelector
-                        selectedMonth={selectedMonth + 1} // Adjust for 0-indexed month in the hook
+                        selectedMonth={selectedMonth} // Adjust for 0-indexed month in the hook
                         selectedYear={selectedYear}
                         onMonthChange={(month) => setSelectedMonth(month - 1)} // Adjust back to 0-indexed
                         onYearChange={setSelectedYear}
