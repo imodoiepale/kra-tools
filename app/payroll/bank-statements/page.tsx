@@ -95,7 +95,7 @@ export default function BankReconciliationPage() {
 
             // Get cycle ID first
             const { data: cycleData, error: cycleError } = await supabase
-                .from('payroll_cycles')
+                .from('statement_cycles')
                 .select('id')
                 .eq('month_year', cycleMonthYear)
                 .single()
@@ -166,7 +166,7 @@ export default function BankReconciliationPage() {
             const cycleMonthYear = `${selectedYear}-${monthStr}`
 
             const { data, error } = await supabase
-                .from('payroll_cycles')
+                .from('statement_cycles')
                 .select('id')
                 .eq('month_year', cycleMonthYear)
                 .single()

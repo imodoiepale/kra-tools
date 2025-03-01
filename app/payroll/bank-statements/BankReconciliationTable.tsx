@@ -305,7 +305,7 @@ export function BankReconciliationTable({
                 // STEP 1: Get or create payroll cycle
                 let cycle;
                 const { data: existingCycle, error: cycleError } = await supabase
-                    .from('payroll_cycles')
+                    .from('statement_cycles')
                     .select('id')
                     .eq('month_year', cycleMonthYear)
                     .single();
@@ -316,7 +316,7 @@ export function BankReconciliationTable({
 
                         // Create new cycle
                         const { data: newCycle, error: createError } = await supabase
-                            .from('payroll_cycles')
+                            .from('statement_cycles')
                             .insert({
                                 month_year: cycleMonthYear,
                                 status: 'active',
