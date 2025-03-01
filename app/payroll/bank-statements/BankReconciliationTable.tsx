@@ -503,13 +503,13 @@ export function BankReconciliationTable({
             // Delete files from storage if they exist
             if (statement.statement_document?.statement_pdf) {
                 await supabase.storage
-                    .from('Payroll-Cycle')
+                    .from('Statement-Cycle')
                     .remove([statement.statement_document.statement_pdf]);
             }
 
             if (statement.statement_document?.statement_excel) {
                 await supabase.storage
-                    .from('Payroll-Cycle')
+                    .from('Statement-Cycle')
                     .remove([statement.statement_document.statement_excel]);
             }
 

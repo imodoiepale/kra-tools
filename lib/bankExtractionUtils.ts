@@ -111,20 +111,6 @@ const resetApiKeyStatus = (key) => {
 // Delay helper function
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-// Create virtual chunks without actually parsing the PDF
-function createVirtualChunks(estimatedPages = 20) {
-    const chunks = [];
-    // Create chunk ranges based on estimated page count
-    for (let i = 1; i <= estimatedPages; i += CHUNK_SIZE) {
-        const endPage = Math.min(i + CHUNK_SIZE - 1, estimatedPages);
-        chunks.push({
-            startPage: i,
-            endPage,
-            pageCount: endPage - i + 1
-        });
-    }
-    return chunks;
-}
 
 // Utility function to convert file to a format usable by the AI model
 async function fileToGenerativePart(fileInput, originalFileName) {
@@ -381,276 +367,274 @@ export async function performBankStatementExtraction(
     fileUrl,
     params,
     onProgress = (message) => console.log(message)
-) {
+  ) {
     try {
-        onProgress('Starting bank statement extraction...');
-
-        // Create virtual chunks - assume 20 pages but the AI will handle actual page count
-        const estimatedPageCount = 20; // Reasonable default for most bank statements
-        const chunks = createVirtualChunks(estimatedPageCount);
-        onProgress(`Breaking extraction into ${chunks.length} chunks to increase accuracy...`);
-
-        // Process chunks in parallel with limiting concurrency
-        const processChunksInBatches = async () => {
-            let allResults = [];
-
-            // Process chunks in batches to limit concurrency
-            for (let i = 0; i < chunks.length; i += MAX_CONCURRENT_REQUESTS) {
-                const currentBatch = chunks.slice(i, i + MAX_CONCURRENT_REQUESTS);
-                onProgress(`Processing batch ${Math.floor(i / MAX_CONCURRENT_REQUESTS) + 1} of ${Math.ceil(chunks.length / MAX_CONCURRENT_REQUESTS)}...`);
-
-                // Process current batch in parallel
-                const batchPromises = currentBatch.map(chunk =>
-                    processChunk(fileUrl, chunk, params, onProgress)
-                );
-
-                const batchResults = await Promise.all(batchPromises);
-                allResults = [...allResults, ...batchResults];
-
-                // Add a small delay between batches to avoid rate limiting
-                if (i + MAX_CONCURRENT_REQUESTS < chunks.length) {
-                    onProgress('Pausing briefly before processing next batch...');
-                    await delay(2000);
-                }
-            }
-
-            return allResults;
-        };
-
-        // Process all chunks
-        const chunkResults = await processChunksInBatches();
-        onProgress(`Completed extraction of ${chunkResults.length} chunks. Merging results...`);
-
-        // Merge results from all chunks
-        const mergedData = mergeChunkResults(chunkResults, params, onProgress);
-        onProgress('Results merged successfully.');
-
-        return {
-            success: true,
-            extractedData: mergedData
-        };
-
+      onProgress('Starting bank statement extraction (first and last pages only)...');
+      
+      // Instead of creating chunks for all pages, define just two "chunks"
+      const chunks = [
+        { startPage: 1, endPage: 1, pageCount: 1 },  // First page
+        { startPage: -1, endPage: -1, pageCount: 1 } // Last page (special marker for last page)
+      ];
+      
+      onProgress('Processing first and last pages for basic details...');
+      
+      // Process first and last pages
+      const firstPageResult = await processChunk(fileUrl, chunks[0], params, onProgress);
+      const lastPageResult = await processSpecialChunk(fileUrl, chunks[1], params, onProgress);
+      
+      // Merge results from first and last pages
+      const mergedData = mergeFirstAndLastPageResults(
+        firstPageResult, 
+        lastPageResult, 
+        params, 
+        onProgress
+      );
+      
+      onProgress('Basic extraction completed successfully.');
+      
+      return {
+        success: true,
+        extractedData: mergedData
+      };
     } catch (error) {
-        console.error('Error in extraction process:', error);
-        onProgress(`Error encountered: ${error.message}. Returning partial results if available.`);
-
-        // Return empty data as a fallback
-        return {
-            success: false,
-            extractedData: {
-                bank_name: null,
-                company_name: null,
-                account_number: null,
-                currency: null,
-                statement_period: null,
-                opening_balance: null,
-                closing_balance: null,
-                monthly_balances: []
-            },
-            message: `Extraction failed: ${error.message}`
-        };
+      console.error('Error in extraction process:', error);
+      // Return empty data fallback
+      return {
+        success: false,
+        extractedData: {
+          bank_name: null,
+          company_name: null,
+          account_number: null,
+          currency: null,
+          statement_period: null,
+          opening_balance: null,
+          closing_balance: null,
+          monthly_balances: []
+        },
+        message: `Extraction failed: ${error.message}`
+      };
     }
-}
+  }
+  async function processSpecialChunk(fileUrl, chunk, params, onProgress) {
+    try {
+      onProgress('Processing last page of the document...');
+      
+      // First determine the total number of pages in the PDF
+      const totalPages = await getPdfPageCount(fileUrl);
+      
+      // Update chunk to use actual last page number
+      chunk.startPage = totalPages;
+      chunk.endPage = totalPages;
+      
+      // Now process the last page using regular processing
+      return await processChunk(fileUrl, chunk, params, onProgress);
+    } catch (error) {
+      console.error('Error processing last page:', error);
+      return {
+        success: false,
+        extractedData: {
+          bank_name: null,
+          company_name: null,
+          account_number: null,
+          currency: null,
+          statement_period: null,
+          opening_balance: null,
+          closing_balance: null,
+          monthly_balances: []
+        },
+        chunk: chunk,
+        message: 'Failed to process last page'
+      };
+    }
+  }
 
-// Merge results from multiple chunks
-function mergeChunkResults(chunkResults, params, onProgress) {
-    onProgress?.('Merging extracted data from all chunks...');
 
-    // Count the number of successful chunks
-    const successfulChunks = chunkResults.filter(result => result.success && result.extractedData);
-    onProgress?.(`Processing ${successfulChunks.length} successful chunks out of ${chunkResults.length} total chunks.`);
-
-    // Initialize merged data structure
+  // Helper to get PDF page count
+async function getPdfPageCount(fileUrl) {
+    // Implementation will depend on your PDF library
+    // Example implementation with PDF.js:
+    const pdf = await pdfjsLib.getDocument(fileUrl).promise;
+    return pdf.numPages;
+  }
+  
+  // Specialized merge function for first and last page results
+  function mergeFirstAndLastPageResults(firstPageResult, lastPageResult, params, onProgress) {
+    onProgress('Merging data from first and last pages...');
+    
+    // Initialize with empty data
     const merged = {
-        bank_name: null,
-        company_name: null,
-        account_number: null,
-        currency: null,
-        statement_period: null,
-        opening_balance: null,
-        closing_balance: null,
-        monthly_balances: []
+      bank_name: null,
+      company_name: null,
+      account_number: null,
+      currency: null,
+      statement_period: null,
+      opening_balance: null,
+      closing_balance: null,
+      monthly_balances: []
     };
-
-    // Track confidence in each field
-    const confidence = {
-        bank_name: 0,
-        company_name: 0,
-        account_number: 0,
-        currency: 0,
-        statement_period: 0,
-        opening_balance: 0,
-        closing_balance: 0
-    };
-
-    // Collect all monthly balances
-    const allMonthlyBalances = [];
-
-    // Log initial count for debugging
-    let totalInitialMonthlyBalances = 0;
-
-    // Process each chunk result
-    chunkResults.forEach((result, index) => {
-        if (!result.success || !result.extractedData) return;
-
-        const data = result.extractedData;
-
-        // Log monthly balances per chunk for debugging
-        if (Array.isArray(data.monthly_balances)) {
-            onProgress?.(`Chunk ${index + 1} (pages ${result.chunk.startPage}-${result.chunk.endPage}) contains ${data.monthly_balances.length} monthly balances.`);
-            totalInitialMonthlyBalances += data.monthly_balances.length;
-        }
-
-        // Update text fields with highest confidence
-        ['bank_name', 'company_name', 'account_number', 'currency', 'statement_period'].forEach(field => {
-            if (data[field] && data[field].length > 0) {
-                const newConfidence = data[field].length;
-                if (newConfidence > confidence[field]) {
-                    merged[field] = data[field];
-                    confidence[field] = newConfidence;
-                }
-            }
-        });
-
-        // Update numeric fields with highest confidence
-        ['opening_balance', 'closing_balance'].forEach(field => {
-            if (data[field] !== null) {
-                merged[field] = data[field];
-                confidence[field]++;
-            }
-        });
-
-        // Collect all monthly balances
-        if (Array.isArray(data.monthly_balances)) {
-            // Filter out incomplete monthly balances
-            const validBalances = data.monthly_balances.filter(balance =>
-                balance &&
-                typeof balance.month === 'number' &&
-                typeof balance.year === 'number'
-            );
-
-            allMonthlyBalances.push(...validBalances);
-        }
+    
+    // First page typically has account details
+    if (firstPageResult.success && firstPageResult.extractedData) {
+      merged.bank_name = firstPageResult.extractedData.bank_name;
+      merged.company_name = firstPageResult.extractedData.company_name;
+      merged.account_number = firstPageResult.extractedData.account_number;
+      merged.currency = firstPageResult.extractedData.currency;
+      merged.statement_period = firstPageResult.extractedData.statement_period;
+      merged.opening_balance = firstPageResult.extractedData.opening_balance;
+    }
+    
+    // Last page might have closing balance or additional details
+    if (lastPageResult.success && lastPageResult.extractedData) {
+      // Only override if values weren't found in first page
+      merged.bank_name = merged.bank_name || lastPageResult.extractedData.bank_name;
+      merged.company_name = merged.company_name || lastPageResult.extractedData.company_name;
+      merged.account_number = merged.account_number || lastPageResult.extractedData.account_number;
+      merged.currency = merged.currency || lastPageResult.extractedData.currency;
+      merged.statement_period = merged.statement_period || lastPageResult.extractedData.statement_period;
+      merged.closing_balance = lastPageResult.extractedData.closing_balance;
+    }
+    
+    // Ensure we have the requested month (for UI manual entry)
+    merged.monthly_balances.push({
+      month: params.month,
+      year: params.year,
+      opening_balance: merged.opening_balance || null,
+      closing_balance: merged.closing_balance || null,
+      statement_page: 1,
+      highlight_coordinates: null,
+      is_verified: false,
+      verified_by: null,
+      verified_at: null
     });
-
-    onProgress?.(`Total monthly balances found across all chunks: ${totalInitialMonthlyBalances}`);
-    onProgress?.(`After filtering invalid entries: ${allMonthlyBalances.length}`);
-
-    // Normalize currency
-    if (merged.currency) {
-        merged.currency = normalizeCurrencyCode(merged.currency);
-    }
-
-    // Deduplicate monthly balances with improved logic
-    const balanceMap = new Map();
-
-    allMonthlyBalances.forEach(balance => {
-        if (!balance.month || !balance.year) return;
-
-        const key = `${balance.year}-${balance.month}`;
-
-        // Define a confidence score for this balance entry
-        const balanceConfidence =
-            (balance.opening_balance !== null ? 1 : 0) +
-            (balance.closing_balance !== null ? 1 : 0) +
-            (balance.opening_date ? 1 : 0) +
-            (balance.closing_date ? 1 : 0) +
-            (balance.statement_page ? 1 : 0);
-
-        if (!balanceMap.has(key)) {
-            balanceMap.set(key, {
-                balance,
-                confidence: balanceConfidence
-            });
-        } else {
-            // If we already have a balance for this month, compare confidence
-            const existing = balanceMap.get(key);
-
-            if (balanceConfidence > existing.confidence) {
-                // Replace with higher confidence entry
-                balanceMap.set(key, {
-                    balance,
-                    confidence: balanceConfidence
-                });
-            } else if (balanceConfidence === existing.confidence) {
-                // Merge entries with equal confidence, taking non-null values
-                balanceMap.set(key, {
-                    balance: {
-                        ...existing.balance,
-                        opening_balance: balance.opening_balance !== null ? balance.opening_balance : existing.balance.opening_balance,
-                        closing_balance: balance.closing_balance !== null ? balance.closing_balance : existing.balance.closing_balance,
-                        opening_date: balance.opening_date || existing.balance.opening_date,
-                        closing_date: balance.closing_date || existing.balance.closing_date,
-                        statement_page: balance.statement_page || existing.balance.statement_page
-                    },
-                    confidence: existing.confidence
-                });
-            }
-        }
-    });
-
-    // Extract just the balance objects and sort by year and month
-    merged.monthly_balances = Array.from(balanceMap.values())
-        .map(item => item.balance)
-        .sort((a, b) => {
-            if (a.year !== b.year) return a.year - b.year;
-            return a.month - b.month;
-        });
-
-    onProgress?.(`After deduplication: ${merged.monthly_balances.length} unique monthly balances`);
-
-    // Ensure we have the requested month/year
-    const hasRequestedMonth = merged.monthly_balances.some(
-        balance => balance.month === params.month && balance.year === params.year
-    );
-
-    if (!hasRequestedMonth && (merged.opening_balance !== null || merged.closing_balance !== null)) {
-        onProgress?.(`Adding requested month (${params.month}/${params.year}) that wasn't found in extractions`);
-        merged.monthly_balances.push({
-            month: params.month,
-            year: params.year,
-            opening_balance: merged.opening_balance || 0,
-            closing_balance: merged.closing_balance || 0,
-            statement_page: 1,
-            highlight_coordinates: null,
-            is_verified: false,
-            verified_by: null,
-            verified_at: null
-        });
-    }
-
-    // If statement period is missing, generate one from monthly balances
-    if (!merged.statement_period && merged.monthly_balances.length > 0) {
-        const balances = merged.monthly_balances;
-
-        // Format dates for statement period
-        const firstMonth = balances[0];
-        const lastMonth = balances[balances.length - 1];
-        const startDate = `01/${firstMonth.month.toString().padStart(2, '0')}/${firstMonth.year}`;
-
-        // Calculate last day of the month for end date
-        const lastDay = new Date(lastMonth.year, lastMonth.month, 0).getDate();
-        const endDate = `${lastDay}/${lastMonth.month.toString().padStart(2, '0')}/${lastMonth.year}`;
-
-        merged.statement_period = `${startDate} - ${endDate}`;
-        onProgress?.(`Generated statement period from monthly balances: ${merged.statement_period}`);
-    }
-
-    if (!merged.statement_period) {
-        // Generate a statement period for the requested month
-        const monthNames = [
-            'January', 'February', 'March', 'April', 'May', 'June',
-            'July', 'August', 'September', 'October', 'November', 'December'
-        ];
-
-        // Calculate first and last day of requested month
-        const daysInMonth = new Date(params.year, params.month, 0).getDate();
-        const startDate = `01/${params.month.toString().padStart(2, '0')}/${params.year}`;
-        const endDate = `${daysInMonth}/${params.month.toString().padStart(2, '0')}/${params.year}`;
-
-        merged.statement_period = `${startDate} - ${endDate}`;
-        onProgress?.(`Generated statement period for requested month: ${merged.statement_period}`);
-    }
-
+    
     return merged;
-}
+  }
+
+
+  // Function to handle multi-month statement submission
+async function handleMultiMonthStatement(
+    statementData,
+    bank,
+    cycleMonthYear,
+    statementCycleId,
+    extractedData,
+    documentPaths
+  ) {
+    try {
+      // Parse the statement period to get all months in the range
+      const periodDates = parseStatementPeriod(extractedData.statement_period);
+      
+      if (!periodDates) {
+        console.warn('Could not parse statement period, using only current month');
+        return;
+      }
+      
+      const { startMonth, startYear, endMonth, endYear } = periodDates;
+      const monthsInRange = generateMonthRange(startMonth, startYear, endMonth, endYear);
+      
+      // For each month in the range, create a separate statement entry
+      for (const { month, year } of monthsInRange) {
+        // Format month/year for cycle lookup
+        const monthStr = month.toString().padStart(2, '0');
+        const monthYearStr = `${year}-${monthStr}`;
+        
+        // Check if a statement cycle exists for this month, create if needed
+        let cyclePeriod;
+        
+        const { data: existingCycle, error: cycleError } = await supabase
+          .from('statement_cycles')
+          .select('id')
+          .eq('month_year', monthYearStr)
+          .single();
+          
+        if (cycleError) {
+          if (cycleError.code === 'PGRST116') { // No rows found
+            // Create new cycle for this month
+            const { data: newCycle, error: createError } = await supabase
+              .from('statement_cycles')
+              .insert({
+                month_year: monthYearStr,
+                status: 'active',
+                created_at: new Date().toISOString()
+              })
+              .select('id')
+              .single();
+              
+            if (createError) throw createError;
+            cyclePeriod = newCycle;
+          } else {
+            throw cycleError;
+          }
+        } else {
+          cyclePeriod = existingCycle;
+        }
+        
+        // Check if a statement already exists for this bank/month
+        const { data: existingStatement } = await supabase
+          .from('acc_cycle_bank_statements')
+          .select('id')
+          .eq('bank_id', bank.id)
+          .eq('statement_month', month)
+          .eq('statement_year', year)
+          .single();
+          
+        if (existingStatement) {
+          console.log(`Statement already exists for ${month}/${year}`);
+          continue; // Skip if already exists
+        }
+        
+        // Find specific month data if available
+        const monthData = extractedData.monthly_balances.find(
+          mb => mb.month === month && mb.year === year
+        ) || {
+          month,
+          year,
+          opening_balance: null,
+          closing_balance: null,
+          statement_page: 1
+        };
+        
+        // Create new statement for this month
+        const newStatementData = {
+          bank_id: bank.id,
+          company_id: bank.company_id,
+          statement_cycle_id: cyclePeriod.id,
+          statement_month: month,
+          statement_year: year,
+          statement_document: documentPaths, // Same document for all periods
+          statement_extractions: {
+            ...extractedData,
+            // Only include relevant month in monthly_balances
+            monthly_balances: [monthData]
+          },
+          has_soft_copy: true,
+          has_hard_copy: false,
+          validation_status: {
+            is_validated: false,
+            validation_date: null,
+            validated_by: null,
+            mismatches: []
+          },
+          status: {
+            status: 'pending_validation',
+            assigned_to: null,
+            verification_date: null
+          }
+        };
+        
+        // Insert the new statement
+        await supabase
+          .from('acc_cycle_bank_statements')
+          .insert([newStatementData]);
+          
+        console.log(`Created statement record for ${month}/${year}`);
+      }
+      
+      return true;
+    } catch (error) {
+      console.error('Error handling multi-month statement:', error);
+      throw error;
+    }
+  }
+

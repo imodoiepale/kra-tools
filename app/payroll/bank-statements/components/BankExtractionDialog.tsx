@@ -366,7 +366,7 @@ export function BankExtractionDialog({
 
                 // Get public URL for the PDF
                 const { data, error } = await supabase.storage
-                    .from('Payroll-Cycle')
+                    .from('Statement-Cycle')
                     .createSignedUrl(statement.statement_document.statement_pdf, 3600)
 
                 if (error) throw error
@@ -385,7 +385,7 @@ export function BankExtractionDialog({
 
                 // Get document size
                 const stats = await supabase.storage
-                    .from('Payroll-Cycle')
+                    .from('Statement-Cycle')
                     .getPublicUrl(statement.statement_document.statement_pdf);
 
                 if (stats) {
@@ -779,13 +779,13 @@ export function BankExtractionDialog({
             // Delete files from storage if they exist
             if (statement.statement_document.statement_pdf) {
                 await supabase.storage
-                    .from('Payroll-Cycle')
+                    .from('Statement-Cycle')
                     .remove([statement.statement_document.statement_pdf]);
             }
 
             if (statement.statement_document.statement_excel) {
                 await supabase.storage
-                    .from('Payroll-Cycle')
+                    .from('Statement-Cycle')
                     .remove([statement.statement_document.statement_excel]);
             }
 
