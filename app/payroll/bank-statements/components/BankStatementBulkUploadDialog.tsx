@@ -331,17 +331,14 @@ export function BankStatementBulkUploadDialog({
                 const matchedBank = findMatchingBank(extractionResult.extractedData, banks)
 
                 if (matchedBank) {
-                    setUploadItems(items => {
-                        const updated = [...items]
-                        updated[i] = {
-                            ...updated[i],
-                            status: 'matched',
-                            matchedBank,
-                            uploadProgress: 70
-                        }
-                        return updated
-                    })
-                    setTotalMatched(prev => prev + 1)
+                    // Create updated item with matched bank
+                    const updatedItem = {
+                        ...uploadItems[i],
+                        status: 'matched',
+                        matchedBank,
+                        extractedData: extractionResult.extractedData,
+                        uploadProgress: 70
+                    };
 
                     // Validate the extracted data against the matched bank
                     const validation = validateExtractedData(extractionResult.extractedData, matchedBank);
@@ -352,29 +349,46 @@ export function BankStatementBulkUploadDialog({
                     );
 
                     if (criticalMismatches.length > 0) {
-                        setCurrentValidationItem({ item: uploadItems[i], index: i });
+                        // Use the updated item for validation
+                        setCurrentValidationItem({ item: updatedItem, index: i });
                         setValidationResult(validation);
                         setShowValidation(true);
                         setUploading(false);
+                        
+                        // Update the items state with the matched bank
+                        setUploadItems(items => {
+                            const updated = [...items];
+                            updated[i] = updatedItem;
+                            return updated;
+                        });
+                        setTotalMatched(prev => prev + 1);
                         return;
                     }
+
+                    // Update state with matched bank
+                    setUploadItems(items => {
+                        const updated = [...items];
+                        updated[i] = updatedItem;
+                        return updated;
+                    });
+                    setTotalMatched(prev => prev + 1);
 
                     // Proceed with upload if no critical mismatches
                     await uploadStatementFile(i, matchedBank);
 
                 } else {
                     setUploadItems(items => {
-                        const updated = [...items]
+                        const updated = [...items];
                         updated[i] = {
                             ...updated[i],
                             status: 'unmatched',
                             uploadProgress: 60,
                             error: 'No matching bank found'
-                        }
-                        return updated
-                    })
-                    setTotalUnmatched(prev => prev + 1)
-                    continue // Skip to next file
+                        };
+                        return updated;
+                    });
+                    setTotalUnmatched(prev => prev + 1);
+                    continue; // Skip to next file
                 }
 
             } catch (error) {
@@ -443,45 +457,163 @@ export function BankStatementBulkUploadDialog({
         }
     }
 
-    const uploadStatementFile = async (index: number, bank: Bank) => {
+    const uploadStatementFile = async (index: number, matchedBank: Bank) => {
         try {
-            // Upload file to storage
-            const pdfFileName = `bank_statement_${bank.company_id}_${bank.id}_${cycleYear}_${cycleMonth}.pdf`
-            const pdfFilePath = `statement_documents/${cycleYear}/${cycleMonth}/${bank.company_id}/${pdfFileName}`
+            const item = uploadItems[index];
+            const extractedData = item.extractedData;
 
-            const { data: pdfUploadData, error: pdfUploadError } = await supabase.storage
-                .from('Statement-Cycle')
-                .upload(pdfFilePath, uploadItems[index].file, {
-                    cacheControl: '3600',
-                    upsert: true
-                })
+            // Get or create statement cycle based on period
+            let cyclePeriodId;
+            let targetMonth = cycleMonth;
+            let targetYear = cycleYear;
 
-            if (pdfUploadError) throw pdfUploadError
+            if (extractedData?.statement_period) {
+                const periodDates = parseStatementPeriod(extractedData.statement_period);
+                if (periodDates) {
+                    // For multi-month statements, create separate entries for each month
+                    const monthsInRange = generateMonthRange(
+                        periodDates.startMonth,
+                        periodDates.startYear,
+                        periodDates.endMonth,
+                        periodDates.endYear
+                    );
 
-            setUploadItems(items => {
-                const updated = [...items]
-                updated[index] = {
-                    ...updated[index],
-                    uploadProgress: 90
+                    // Create statement cycles for each month
+                    for (const { month, year } of monthsInRange) {
+                        // Check if statement already exists
+                        const existingStatementId = await checkStatementExists(matchedBank.id, month, year);
+                        if (existingStatementId) {
+                            console.log(`Statement already exists for bank ${matchedBank.id} in ${month}/${year}`);
+                            continue;
+                        }
+
+                        // Get or create cycle for this month
+                        cyclePeriodId = await getOrCreateStatementCycle(month, year);
+                        if (!cyclePeriodId) {
+                            throw new Error(`Failed to get or create statement cycle for ${month}/${year}`);
+                        }
+
+                        targetMonth = month;
+                        targetYear = year;
+
+                        // Upload file to storage
+                        let pdfPath = null;
+                        if (item.file) {
+                            const pdfFileName = `bank_statement_${matchedBank.company_id}_${matchedBank.id}_${year}_${month}.pdf`;
+                            const pdfFilePath = `statement_documents/${year}/${month}/${matchedBank.company_id}/${pdfFileName}`;
+
+                            const { data: pdfUploadData, error: pdfUploadError } = await supabase.storage
+                                .from('Statement-Cycle')
+                                .upload(pdfFilePath, item.file, {
+                                    cacheControl: '3600',
+                                    upsert: true
+                                });
+
+                            if (pdfUploadError) throw pdfUploadError;
+                            pdfPath = pdfUploadData.path;
+                        }
+
+                        // Prepare document paths
+                        const documentPaths = {
+                            statement_pdf: pdfPath,
+                            statement_excel: null,
+                            document_size: item.file ? item.file.size : 0
+                        };
+
+                        // Base statement data
+                        const baseStatementData = {
+                            bank_id: matchedBank.id,
+                            company_id: matchedBank.company_id,
+                            statement_cycle_id: cyclePeriodId,
+                            statement_month: month,
+                            statement_year: year,
+                            has_soft_copy: item.hasSoftCopy || false,
+                            has_hard_copy: item.hasHardCopy || false,
+                            statement_document: documentPaths,
+                            statement_extractions: extractedData,
+                            validation_status: {
+                                is_validated: false,
+                                validation_date: null,
+                                validated_by: null,
+                                mismatches: []
+                            },
+                            status: {
+                                status: 'pending_validation',
+                                assigned_to: null,
+                                verification_date: null
+                            }
+                        };
+
+                        // Create statement record
+                        const { error: insertError } = await supabase
+                            .from('acc_cycle_bank_statements')
+                            .insert(baseStatementData);
+
+                        if (insertError) throw insertError;
+                    }
+
+                    setUploadItems(items => {
+                        const updated = [...items];
+                        updated[index] = {
+                            ...updated[index],
+                            status: 'uploaded',
+                            matchedBank,
+                            uploadProgress: 100
+                        };
+                        return updated;
+                    });
+
+                    return;
                 }
-                return updated
-            })
+            }
 
-            // Create statement record in database
+            // For single month statement
+            const existingStatementId = await checkStatementExists(matchedBank.id, targetMonth, targetYear);
+            if (existingStatementId) {
+                throw new Error(`Statement already exists for bank ${matchedBank.id} in ${targetMonth}/${targetYear}`);
+            }
+
+            // Get or create cycle for single month
+            cyclePeriodId = await getOrCreateStatementCycle(targetMonth, targetYear);
+            if (!cyclePeriodId) {
+                throw new Error('Failed to get or create statement cycle');
+            }
+
+            // Upload file to storage
+            let pdfPath = null;
+            if (item.file) {
+                const pdfFileName = `bank_statement_${matchedBank.company_id}_${matchedBank.id}_${targetYear}_${targetMonth}.pdf`;
+                const pdfFilePath = `statement_documents/${targetYear}/${targetMonth}/${matchedBank.company_id}/${pdfFileName}`;
+
+                const { data: pdfUploadData, error: pdfUploadError } = await supabase.storage
+                    .from('Statement-Cycle')
+                    .upload(pdfFilePath, item.file, {
+                        cacheControl: '3600',
+                        upsert: true
+                    });
+
+                if (pdfUploadError) throw pdfUploadError;
+                pdfPath = pdfUploadData.path;
+            }
+
+            // Prepare document paths
+            const documentPaths = {
+                statement_pdf: pdfPath,
+                statement_excel: null,
+                document_size: item.file ? item.file.size : 0
+            };
+
+            // Base statement data for single month
             const baseStatementData = {
-                bank_id: bank.id,
-                company_id: bank.company_id,
-                statement_cycle_id: statementCycleId,
-                statement_month: cycleMonth,
-                statement_year: cycleYear,
-                statement_document: {
-                    statement_pdf: pdfUploadData.path,
-                    statement_excel: null,
-                    document_size: uploadItems[index].file.size
-                },
-                statement_extractions: uploadItems[index].extractedData,
-                has_soft_copy: uploadItems[index].hasSoftCopy || true,
-                has_hard_copy: uploadItems[index].hasHardCopy || false,
+                bank_id: matchedBank.id,
+                company_id: matchedBank.company_id,
+                statement_cycle_id: cyclePeriodId,
+                statement_month: targetMonth,
+                statement_year: targetYear,
+                has_soft_copy: item.hasSoftCopy || false,
+                has_hard_copy: item.hasHardCopy || false,
+                statement_document: documentPaths,
+                statement_extractions: extractedData,
                 validation_status: {
                     is_validated: false,
                     validation_date: null,
@@ -493,47 +625,32 @@ export function BankStatementBulkUploadDialog({
                     assigned_to: null,
                     verification_date: null
                 }
-            }
+            };
 
-            // Check if statement already exists for this bank/month
-            const { data: existingStatement } = await supabase
+            // Create statement record
+            const { error: insertError } = await supabase
                 .from('acc_cycle_bank_statements')
-                .select('id')
-                .eq('bank_id', bank.id)
-                .eq('statement_month', cycleMonth)
-                .eq('statement_year', cycleYear)
-                .single()
+                .insert(baseStatementData);
 
-            if (existingStatement) {
-                // Update existing statement
-                await supabase
-                    .from('acc_cycle_bank_statements')
-                    .update(baseStatementData)
-                    .eq('id', existingStatement.id)
-            } else {
-                // Create new statement
-                await supabase
-                    .from('acc_cycle_bank_statements')
-                    .insert([baseStatementData])
-            }
+            if (insertError) throw insertError;
 
-            // Update status to uploaded
             setUploadItems(items => {
-                const updated = [...items]
+                const updated = [...items];
                 updated[index] = {
                     ...updated[index],
                     status: 'uploaded',
+                    matchedBank,
                     uploadProgress: 100
-                }
-                return updated
-            })
+                };
+                return updated;
+            });
 
-            return true;
+            return;
         } catch (error) {
-            console.error('Error uploading file:', error);
+            console.error('Error uploading statement:', error);
             throw error;
         }
-    }
+    };
 
     const handleContinueAfterValidation = async () => {
         if (!currentValidationItem) return;
@@ -709,49 +826,251 @@ export function BankStatementBulkUploadDialog({
 
     // Helper function to find matching bank based on extracted data
     const findMatchingBank = (extractedData: any, banks: Bank[]) => {
-        if (!extractedData) return null
+        if (!extractedData || !Array.isArray(banks) || banks.length === 0) return null;
 
-        let bestMatch: Bank | null = null
-        let bestScore = 0
+        let bestMatch: Bank | null = null;
+        let bestScore = 0;
 
-        for (const bank of banks) {
-            let score = 0
+        // Filter out banks without company_id
+        const validBanks = banks.filter(bank => bank.company_id !== null);
 
-            // Check bank name match
-            if (extractedData.bank_name &&
+        for (const bank of validBanks) {
+            let score = 0;
+
+            // Check bank name match - with null safety
+            if (extractedData.bank_name && bank.bank_name &&
                 (bank.bank_name.toLowerCase().includes(extractedData.bank_name.toLowerCase()) ||
                     extractedData.bank_name.toLowerCase().includes(bank.bank_name.toLowerCase()))) {
-                score += 3
+                score += 3;
             }
 
             // Check account number match - highest priority
-            if (extractedData.account_number &&
+            if (extractedData.account_number && bank.account_number &&
                 (bank.account_number.includes(extractedData.account_number) ||
                     extractedData.account_number.includes(bank.account_number))) {
-                score += 5
+                score += 5;
             }
 
             // Check company name match
             if (extractedData.company_name && bank.company_name &&
                 (bank.company_name.toLowerCase().includes(extractedData.company_name.toLowerCase()) ||
                     extractedData.company_name.toLowerCase().includes(bank.company_name.toLowerCase()))) {
-                score += 2
+                score += 2;
             }
 
             // Check currency match
             if (extractedData.currency && bank.bank_currency &&
                 normalizeCurrencyCode(extractedData.currency) === normalizeCurrencyCode(bank.bank_currency)) {
-                score += 1
+                score += 1;
             }
 
             if (score > bestScore) {
-                bestScore = score
-                bestMatch = bank
+                bestScore = score;
+                bestMatch = bank;
             }
         }
 
-        // Only return a match if score is high enough (at least account number or bank name match)
-        return bestScore >= 3 ? bestMatch : null
+        // Only return a match if we have a minimum score
+        return bestScore >= 3 ? bestMatch : null;
+    };
+
+    // Helper function to parse statement period
+    const parseStatementPeriod = (periodString: string) => {
+        if (!periodString) return null;
+
+        // Try to match various date formats
+        // Format: "January 2024" (single month)
+        const singleMonthMatch = periodString.match(/(\w+)\s+(\d{4})/i);
+        if (singleMonthMatch) {
+            const month = new Date(`${singleMonthMatch[1]} 1, 2000`).getMonth() + 1;
+            const year = parseInt(singleMonthMatch[2]);
+            return {
+                startMonth: month,
+                startYear: year,
+                endMonth: month,
+                endYear: year
+            };
+        }
+
+        // Format: "January - March 2024" or "January to March 2024"
+        const sameYearMatch = periodString.match(/(\w+)\s*(?:-|to)\s*(\w+)\s+(\d{4})/i);
+        if (sameYearMatch) {
+            const startMonth = new Date(`${sameYearMatch[1]} 1, 2000`).getMonth() + 1;
+            const endMonth = new Date(`${sameYearMatch[2]} 1, 2000`).getMonth() + 1;
+            const year = parseInt(sameYearMatch[3]);
+            return {
+                startMonth,
+                startYear: year,
+                endMonth,
+                endYear: year
+            };
+        }
+
+        // Format: "January 2024 - March 2024" or "January 2024 to March 2024"
+        const differentYearMatch = periodString.match(/(\w+)\s+(\d{4})\s*(?:-|to)\s*(\w+)\s+(\d{4})/i);
+        if (differentYearMatch) {
+            const startMonth = new Date(`${differentYearMatch[1]} 1, 2000`).getMonth() + 1;
+            const startYear = parseInt(differentYearMatch[2]);
+            const endMonth = new Date(`${differentYearMatch[3]} 1, 2000`).getMonth() + 1;
+            const endYear = parseInt(differentYearMatch[4]);
+            return {
+                startMonth,
+                startYear,
+                endMonth,
+                endYear
+            };
+        }
+
+        return null;
+    }
+
+    // Helper function to generate month range
+    const generateMonthRange = (startMonth: number, startYear: number, endMonth: number, endYear: number) => {
+        const months = [];
+        let currentDate = new Date(startYear, startMonth - 1);
+        const endDate = new Date(endYear, endMonth - 1);
+
+        while (currentDate <= endDate) {
+            months.push({
+                month: currentDate.getMonth() + 1,
+                year: currentDate.getFullYear()
+            });
+            currentDate.setMonth(currentDate.getMonth() + 1);
+        }
+
+        return months;
+    }
+
+    // Helper function to get or create statement cycle
+    const getOrCreateStatementCycle = async (month: number, year: number) => {
+        try {
+            const monthStr = month.toString().padStart(2, '0');
+            const monthYearStr = `${year}-${monthStr}`;
+
+            // Try to find existing cycle
+            const { data: existingCycle, error: findError } = await supabase
+                .from('statement_cycles')
+                .select('id')
+                .eq('month_year', monthYearStr)
+                .maybeSingle();
+
+            if (findError && findError.code !== 'PGRST116') throw findError;
+
+            if (existingCycle) {
+                return existingCycle.id;
+            }
+
+            // Create new cycle if not found
+            const { data: newCycle, error: createError } = await supabase
+                .from('statement_cycles')
+                .insert({
+                    month_year: monthYearStr,
+                    status: 'active',
+                    created_at: new Date().toISOString()
+                })
+                .select()
+                .single();
+
+            if (createError) throw createError;
+            return newCycle.id;
+        } catch (error) {
+            console.error('Error in getOrCreateStatementCycle:', error);
+            throw error;
+        }
+    };
+
+    // Helper function to check if statement exists
+    const checkStatementExists = async (bankId: number, month: number, year: number) => {
+        try {
+            const { data, error } = await supabase
+                .from('acc_cycle_bank_statements')
+                .select('id')
+                .eq('bank_id', bankId)
+                .eq('statement_month', month)
+                .eq('statement_year', year)
+                .maybeSingle();
+
+            if (error && error.code !== 'PGRST116') throw error;
+            return data?.id;
+        } catch (error) {
+            console.error('Error checking statement existence:', error);
+            return null;
+        }
+    };
+
+    // Helper function to handle multi-month statement submission
+    const handleMultiMonthStatement = async (baseStatementData: any, bank: Bank, extractedData: any, documentPaths: any) => {
+        try {
+            // Parse the statement period
+            const periodDates = parseStatementPeriod(extractedData.statement_period);
+            if (!periodDates) {
+                console.warn('Could not parse statement period:', extractedData.statement_period);
+                return false;
+            }
+
+            const { startMonth, startYear, endMonth, endYear } = periodDates;
+            const monthsInRange = generateMonthRange(startMonth, startYear, endMonth, endYear);
+
+            // Create entries for each month
+            for (const { month, year } of monthsInRange) {
+                // Get or create statement cycle for this month
+                const cyclePeriodId = await getOrCreateStatementCycle(month, year);
+
+                // Check if statement already exists
+                const { data: existingStatement } = await supabase
+                    .from('acc_cycle_bank_statements')
+                    .select('id')
+                    .eq('bank_id', bank.id)
+                    .eq('statement_month', month)
+                    .eq('statement_year', year)
+                    .single();
+
+                if (existingStatement) {
+                    console.log(`Statement already exists for ${month}/${year}`);
+                    continue;
+                }
+
+                // Find specific month data if available
+                const monthData = extractedData.monthly_balances?.find(
+                    (mb: any) => mb.month === month && mb.year === year
+                ) || {
+                    month,
+                    year,
+                    opening_balance: null,
+                    closing_balance: null,
+                    statement_page: 1,
+                    highlight_coordinates: null,
+                    is_verified: false,
+                    verified_by: null,
+                    verified_at: null
+                };
+
+                // Create statement for this month
+                const newStatementData = {
+                    ...baseStatementData,
+                    statement_cycle_id: cyclePeriodId,
+                    statement_month: month,
+                    statement_year: year,
+                    statement_document: documentPaths,
+                    statement_extractions: {
+                        ...extractedData,
+                        monthly_balances: [monthData]
+                    }
+                };
+
+                // Insert the statement
+                await supabase
+                    .from('acc_cycle_bank_statements')
+                    .insert([newStatementData]);
+
+                console.log(`Created statement for ${month}/${year}`);
+            }
+
+            return true;
+        } catch (error) {
+            console.error('Error handling multi-month statement:', error);
+            throw error;
+        }
     }
 
     // Helper function to normalize currency codes

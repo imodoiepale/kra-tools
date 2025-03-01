@@ -175,6 +175,8 @@ export const useStatementCycle = () => {
             let query = supabase
                 .from('acc_portal_banks')
                 .select('*')
+                .not('company_id', 'is', null) // Ensure company_id is not null
+                .order('company_name', { ascending: true }) // Order by company name
 
             if (searchTerm) {
                 query = query.or(`company_name.ilike.%${searchTerm}%,bank_name.ilike.%${searchTerm}%`)
@@ -182,7 +184,11 @@ export const useStatementCycle = () => {
 
             const { data, error } = await query
             if (error) throw error
-            return data || []
+
+            // Filter out any banks that might have null company_id (double check)
+            const validBanks = data?.filter(bank => bank.company_id !== null) || []
+            
+            return validBanks
         } catch (error) {
             console.error('Error fetching banks:', error)
             toast({

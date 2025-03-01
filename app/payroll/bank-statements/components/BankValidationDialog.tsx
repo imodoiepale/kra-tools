@@ -170,8 +170,8 @@ function isPeriodContained(statementPeriod, cycleMonth, cycleYear) {
 }
 
 // Function to check if a currency extracted equals the expected one
-const isMatchingCurrency = (extracted: string | null, expected: string): boolean => {
-    if (!extracted) return false;
+const isMatchingCurrency = (extracted: string | null, expected: string | null): boolean => {
+    if (!extracted || !expected) return false;
     return normalizeCurrencyCode(extracted) === normalizeCurrencyCode(expected);
 };
 
@@ -186,6 +186,11 @@ export function BankValidationDialog({
     cycleMonth,
     cycleYear
 }: BankValidationDialogProps) {
+    if (!bank) {
+        console.error('Bank object is undefined in BankValidationDialog');
+        return null;
+    }
+
     // Extract expected month/year from the period if available
     let expectedMonth = null;
     let expectedYear = null;
@@ -207,16 +212,16 @@ export function BankValidationDialog({
     }
 
     // Check if currencies match using the normalization function
-    const currencyMatches = isMatchingCurrency(extractedData.currency, bank.bank_currency);
+    const currencyMatches = isMatchingCurrency(extractedData?.currency, bank?.bank_currency);
 
     // Check if period contains the expected month/year
     const periodMatches = isPeriodContained(
-        extractedData.statement_period,
+        extractedData?.statement_period,
         expectedMonth || cycleMonth,
         expectedYear || cycleYear
     );
 
-    const isPeriodValid = isPeriodContained(extractedData.statement_period, cycleMonth, cycleYear);
+    const isPeriodValid = isPeriodContained(extractedData?.statement_period, cycleMonth, cycleYear);
 
     return (
         <AlertDialog open={isOpen} onOpenChange={onClose}>
@@ -254,11 +259,11 @@ export function BankValidationDialog({
                                     <TableBody>
                                         <TableRow>
                                             <TableCell className="font-medium">Company Name</TableCell>
-                                            <TableCell>{bank.company_name}</TableCell>
-                                            <TableCell>{extractedData.company_name || 'Not detected'}</TableCell>
+                                            <TableCell>{bank?.company_name}</TableCell>
+                                            <TableCell>{extractedData?.company_name || 'Not detected'}</TableCell>
                                             <TableCell>
-                                                {extractedData.company_name &&
-                                                    extractedData.company_name.toLowerCase().includes(bank.company_name.toLowerCase()) ? (
+                                                {extractedData?.company_name &&
+                                                    extractedData.company_name.toLowerCase().includes(bank?.company_name?.toLowerCase()) ? (
                                                     <div className="flex items-center text-green-500 font-medium">
                                                         <CheckCircle className="h-4 w-4 mr-1" />
                                                         Match
@@ -273,11 +278,11 @@ export function BankValidationDialog({
                                         </TableRow>
                                         <TableRow>
                                             <TableCell className="font-medium">Bank Name</TableCell>
-                                            <TableCell>{bank.bank_name}</TableCell>
-                                            <TableCell>{extractedData.bank_name || 'Not detected'}</TableCell>
+                                            <TableCell>{bank?.bank_name}</TableCell>
+                                            <TableCell>{extractedData?.bank_name || 'Not detected'}</TableCell>
                                             <TableCell>
-                                                {extractedData.bank_name &&
-                                                    extractedData.bank_name.toLowerCase().includes(bank.bank_name.toLowerCase()) ? (
+                                                {extractedData?.bank_name &&
+                                                    extractedData.bank_name.toLowerCase().includes(bank?.bank_name?.toLowerCase()) ? (
                                                     <div className="flex items-center text-green-500 font-medium">
                                                         <CheckCircle className="h-4 w-4 mr-1" />
                                                         Match
@@ -292,11 +297,11 @@ export function BankValidationDialog({
                                         </TableRow>
                                         <TableRow>
                                             <TableCell className="font-medium">Account Number</TableCell>
-                                            <TableCell>{bank.account_number}</TableCell>
-                                            <TableCell>{extractedData.account_number || 'Not detected'}</TableCell>
+                                            <TableCell>{bank?.account_number}</TableCell>
+                                            <TableCell>{extractedData?.account_number || 'Not detected'}</TableCell>
                                             <TableCell>
-                                                {extractedData.account_number &&
-                                                    extractedData.account_number.includes(bank.account_number) ? (
+                                                {extractedData?.account_number &&
+                                                    extractedData.account_number.includes(bank?.account_number) ? (
                                                     <div className="flex items-center text-green-500 font-medium">
                                                         <CheckCircle className="h-4 w-4 mr-1" />
                                                         Match
@@ -311,8 +316,8 @@ export function BankValidationDialog({
                                         </TableRow>
                                         <TableRow>
                                             <TableCell className="font-medium">Currency</TableCell>
-                                            <TableCell>{bank.bank_currency}</TableCell>
-                                            <TableCell>{extractedData.currency || 'Not detected'}</TableCell>
+                                            <TableCell>{bank?.bank_currency}</TableCell>
+                                            <TableCell>{extractedData?.currency || 'Not detected'}</TableCell>
                                             <TableCell>
                                                 <div className={`flex items-center ${currencyMatches ? "text-green-500" : "text-red-500"} font-medium`}>
                                                     {currencyMatches ? (
@@ -351,7 +356,7 @@ export function BankValidationDialog({
                                             </div>
                                             <div className="col-span-2">
                                                 <p className="text-xs text-muted-foreground">Statement Period</p>
-                                                <p className="font-medium">{extractedData.statement_period || 'Not detected'}</p>
+                                                <p className="font-medium">{extractedData?.statement_period || 'Not detected'}</p>
                                             </div>
                                         </div>
                                         <div className="mt-2 pt-2 border-t border-blue-200 flex justify-between items-center">
@@ -370,11 +375,11 @@ export function BankValidationDialog({
                                         <div className="grid grid-cols-2 gap-4">
                                             <div className="p-2 bg-gray-50 rounded-md">
                                                 <p className="text-xs text-muted-foreground">Opening Balance</p>
-                                                <p className="font-medium">{extractedData.opening_balance != null ? formatCurrency(extractedData.opening_balance) : 'Not detected'}</p>
+                                                <p className="font-medium">{extractedData?.opening_balance != null ? formatCurrency(extractedData.opening_balance) : 'Not detected'}</p>
                                             </div>
                                             <div className="p-2 bg-gray-50 rounded-md">
                                                 <p className="text-xs text-muted-foreground">Closing Balance</p>
-                                                <p className="font-medium">{extractedData.closing_balance != null ? formatCurrency(extractedData.closing_balance) : 'Not detected'}</p>
+                                                <p className="font-medium">{extractedData?.closing_balance != null ? formatCurrency(extractedData.closing_balance) : 'Not detected'}</p>
                                             </div>
                                         </div>
                                     </div>
@@ -383,7 +388,7 @@ export function BankValidationDialog({
                         </Card>
                     </div>
 
-                    {extractedData.monthly_balances && extractedData.monthly_balances.length > 0 && (
+                    {extractedData?.monthly_balances && extractedData.monthly_balances.length > 0 && (
                         <Card>
                             <CardHeader className="py-3 bg-blue-50">
                                 <CardTitle className="text-base flex items-center">
