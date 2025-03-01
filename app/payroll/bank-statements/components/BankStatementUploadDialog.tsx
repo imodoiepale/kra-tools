@@ -96,7 +96,7 @@ interface BankStatementUploadDialogProps {
     cycleYear: number
     onStatementUploaded: (statement: BankStatement) => void
     existingStatement: BankStatement | null
-    payrollCycleId: string | null // Add this line
+    statementCycleId: string | null // Add this line
 }
 
 export function BankStatementUploadDialog({
@@ -107,7 +107,7 @@ export function BankStatementUploadDialog({
     cycleYear,
     onStatementUploaded,
     existingStatement,
-    payrollCycleId
+    statementCycleId
 }: BankStatementUploadDialogProps) {
     const [pdfFile, setPdfFile] = useState<File | null>(null)
     const [excelFile, setExcelFile] = useState<File | null>(null)
@@ -159,7 +159,7 @@ export function BankStatementUploadDialog({
         }
     }
 
-    if (!payrollCycleId) {
+    if (!statementCycleId) {
         toast({
             title: 'Error',
             description: 'No active payroll cycle found. Please ensure the cycle exists.',

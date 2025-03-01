@@ -30,11 +30,13 @@ import {
     FileText,
     Loader2,
     PieChart,
-    XCircle
+    XCircle,
+    UploadCloud
 } from 'lucide-react'
 import { BankReconciliationTable } from './BankReconciliationTable'
-import { usePayrollCycle } from '../hooks/usePayrollCycle'
+import { useStatementCycle       } from '../hooks/useStatementCycle'
 import { BankStatementFilters } from './components/BankStatementFilters'
+import { BankStatementBulkUploadDialog } from './components/BankStatementBulkUploadDialog'
 
 export default function BankReconciliationPage() {
     const [activeTab, setActiveTab] = useState<string>('statements')
@@ -47,156 +49,71 @@ export default function BankReconciliationPage() {
     const [selectedClientTypes, setSelectedClientTypes] = useState<string[]>(["acc"])
     const [selectedFilters, setSelectedFilters] = useState<string[]>([])
 
+    const [showBulkUpload, setShowBulkUpload] = useState<boolean>(false)
+    const [banks, setBanks] = useState<Bank[]>([])
+
     const {
         selectedYear,
-        selectedMonth,
         setSelectedYear,
+        selectedMonth,
         setSelectedMonth,
         searchTerm,
         setSearchTerm,
         loading,
-        fetchOrCreatePayrollCycle
-    } = usePayrollCycle()
+        statementCycleId,
+        fetchOrCreateStatementCycle,
+        fetchBanks,
+        fetchStatementStats
+    } = useStatementCycle()
 
     const { toast } = useToast()
 
     // Initialize payroll cycle and fetch stats
     useEffect(() => {
-        const initializeCycle = async () => {
+        const initializeData = async () => {
             try {
-                await fetchOrCreatePayrollCycle()
-                await fetchStats()
-            } catch (error) {
-                console.error('Error initializing:', error)
-            }
-        }
-
-        initializeCycle()
-    }, [fetchOrCreatePayrollCycle])
-
-    // Fetch stats whenever month/year changes
-    useEffect(() => {
-        fetchStats()
-    }, [selectedMonth, selectedYear])
-
-    // Fetch reconciliation statistics
-    const fetchStats = async () => {
-        try {
-            // Total banks query
-            const { data: banksData, error: banksError } = await supabase
-                .from('acc_portal_banks')
-                .select('id', { count: 'exact' })
-
-            if (banksError) throw banksError
-
-            // Format month for query
-            const monthStr = (selectedMonth).toString().padStart(2, '0')
-            const cycleMonthYear = `${selectedYear}-${monthStr}`
-
-            // Get cycle ID first
-            const { data: cycleData, error: cycleError } = await supabase
-                .from('statement_cycles')
-                .select('id')
-                .eq('month_year', cycleMonthYear)
-                .single()
-
-            if (cycleError && cycleError.code !== 'PGRST116') {
-                // PGRST116 is "No rows returned" error, which is expected if no cycle exists
-                throw cycleError
-            }
-
-            let statementsUploaded = 0
-            let reconciled = 0
-            let mismatches = 0
-
-            // Only proceed if we have a cycle
-            if (cycleData?.id) {
-                // Statements query
-                const { data: statementsData, error: statementsError } = await supabase
-                    .from('acc_cycle_bank_statements')
-                    .select(`
-                        id, 
-                        statement_document, 
-                        statement_extractions,
-                        quickbooks_balance
-                    `)
-                    .eq('payroll_cycle_id', cycleData.id)
-
-                if (statementsError) throw statementsError
-
-                // Calculate stats
-                statementsUploaded = statementsData?.filter(s =>
-                    s.statement_document?.statement_pdf !== null
-                ).length || 0
-
-                reconciled = statementsData?.filter(s =>
-                    s.statement_extractions?.closing_balance !== null &&
-                    s.quickbooks_balance !== null &&
-                    Math.abs(s.statement_extractions.closing_balance - s.quickbooks_balance) < 0.01
-                ).length || 0
-
-                mismatches = statementsData?.filter(s =>
-                    s.statement_extractions?.closing_balance !== null &&
-                    s.quickbooks_balance !== null &&
-                    Math.abs(s.statement_extractions.closing_balance - s.quickbooks_balance) >= 0.01
-                ).length || 0
-            }
-
-            setStats({
-                totalBanks: banksData?.length || 0,
-                statementsUploaded,
-                reconciled,
-                mismatches
-            })
-
-        } catch (error) {
-            console.error('Error fetching stats:', error)
-            toast({
-                title: 'Error',
-                description: 'Failed to load reconciliation statistics',
-                variant: 'destructive'
-            })
-        }
-    }
-
-    // Get the proper payroll cycle ID
-    const getCurrentCycleId = async (): Promise<string | null> => {
-        try {
-            const monthStr = (selectedMonth).toString().padStart(2, '0')
-            const cycleMonthYear = `${selectedYear}-${monthStr}`
-
-            const { data, error } = await supabase
-                .from('statement_cycles')
-                .select('id')
-                .eq('month_year', cycleMonthYear)
-                .single()
-
-            if (error) {
-                if (error.code === 'PGRST116') {
-                    // No cycle found
-                    return null
+                const cycleId = await fetchOrCreateStatementCycle();
+                if (cycleId) {
+                    const statsData = await fetchStatementStats(cycleId);
+                    setStats(statsData);
+                    
+                    const banksData = await fetchBanks();
+                    setBanks(banksData);
                 }
-                throw error
+            } catch (error) {
+                console.error('Error initializing data:', error);
             }
-
-            return data?.id || null
-        } catch (error) {
-            console.error('Error getting cycle ID:', error)
-            return null
         }
-    }
+
+        initializeData();
+    }, [fetchOrCreateStatementCycle]);
+
+    // Update stats when month/year changes
+    useEffect(() => {
+        const updateStats = async () => {
+            if (statementCycleId) {
+                const statsData = await fetchStatementStats(statementCycleId);
+                setStats(statsData);
+            }
+        }
+        
+        updateStats();
+    }, [selectedMonth, selectedYear, statementCycleId, fetchStatementStats]);
 
     // Handle stats update from table component
     const handleStatsChange = async () => {
-        await fetchStats()
+        if (statementCycleId) {
+            const statsData = await fetchStatementStats(statementCycleId);
+            setStats(statsData);
+        }
     }
 
     const handleFilterChange = (newFilters: string[]) => {
-        setSelectedFilters(newFilters)
+        setSelectedFilters(newFilters);
     }
 
     const handleClientTypeChange = (newTypes: string[]) => {
-        setSelectedClientTypes(newTypes)
+        setSelectedClientTypes(newTypes);
     }
 
     return (
@@ -210,79 +127,79 @@ export default function BankReconciliationPage() {
                 </div>
             </div>
 
-            {loading ? (
+            {/* {loading ? (
                 <div className="flex items-center justify-center h-40">
                     <Loader2 className="h-8 w-8 animate-spin text-primary" />
                 </div>
-            ) : (
+            ) : ( */}
                 <>
-                        <div className="grid grid-cols-4 gap-2">
-                            <Card className="shadow-sm border-blue-100">
-                                <div className="p-2 flex items-center gap-2.5">
-                                    <div className="p-1.5 bg-blue-100/70 text-blue-700 rounded-md shrink-0">
-                                        <FileText className="h-3.5 w-3.5" />
-                                    </div>
-                                    <div className="flex-1">
-                                        <div className="text-xl font-bold leading-none">{stats.totalBanks}</div>
-                                        <p className="text-xs text-muted-foreground mt-0.5">Total Banks</p>
-                                    </div>
-                                    <div className="text-2xs text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">
-                                        {stats.totalBanks} registered
-                                    </div>
+                    <div className="grid grid-cols-4 gap-2">
+                        <Card className="shadow-sm border-blue-100">
+                            <div className="p-2 flex items-center gap-2.5">
+                                <div className="p-1.5 bg-blue-100/70 text-blue-700 rounded-md shrink-0">
+                                    <FileText className="h-3.5 w-3.5" />
                                 </div>
-                            </Card>
+                                <div className="flex-1">
+                                    <div className="text-xl font-bold leading-none">{stats.totalBanks}</div>
+                                    <p className="text-xs text-muted-foreground mt-0.5">Total Banks</p>
+                                </div>
+                                <div className="text-2xs text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">
+                                    {stats.totalBanks} registered
+                                </div>
+                            </div>
+                        </Card>
 
-                            <Card className="shadow-sm border-green-100">
-                                <div className="p-2 flex items-center gap-2.5">
-                                    <div className="p-1.5 bg-green-100/70 text-green-700 rounded-md shrink-0">
-                                        <CheckCircle2 className="h-3.5 w-3.5" />
-                                    </div>
-                                    <div className="flex-1">
-                                        <div className="text-xl font-bold leading-none">{stats.statementsUploaded}</div>
-                                        <p className="text-xs text-muted-foreground mt-0.5">Statements</p>
-                                    </div>
-                                    <div className="text-2xs text-green-600 bg-green-50 px-1.5 py-0.5 rounded">
-                                        {stats.totalBanks > 0
-                                            ? ((stats.statementsUploaded / stats.totalBanks) * 100).toFixed(0)
-                                            : 0}% of banks
-                                    </div>
+                        <Card className="shadow-sm border-green-100">
+                            <div className="p-2 flex items-center gap-2.5">
+                                <div className="p-1.5 bg-green-100/70 text-green-700 rounded-md shrink-0">
+                                    <CheckCircle2 className="h-3.5 w-3.5" />
                                 </div>
-                            </Card>
+                                <div className="flex-1">
+                                    <div className="text-xl font-bold leading-none">{stats.statementsUploaded}</div>
+                                    <p className="text-xs text-muted-foreground mt-0.5">Statements</p>
+                                </div>
+                                <div className="text-2xs text-green-600 bg-green-50 px-1.5 py-0.5 rounded">
+                                    {stats.totalBanks > 0
+                                        ? ((stats.statementsUploaded / stats.totalBanks) * 100).toFixed(0)
+                                        : 0}% of banks
+                                </div>
+                            </div>
+                        </Card>
 
-                            <Card className="shadow-sm border-blue-100">
-                                <div className="p-2 flex items-center gap-2.5">
-                                    <div className="p-1.5 bg-blue-100/70 text-blue-700 rounded-md shrink-0">
-                                        <PieChart className="h-3.5 w-3.5" />
-                                    </div>
-                                    <div className="flex-1">
-                                        <div className="text-xl font-bold leading-none">{stats.reconciled}</div>
-                                        <p className="text-xs text-muted-foreground mt-0.5">Reconciled</p>
-                                    </div>
-                                    <div className="text-2xs text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">
-                                        {stats.statementsUploaded > 0
-                                            ? ((stats.reconciled / stats.statementsUploaded) * 100).toFixed(0)
-                                            : 0}% matched
-                                    </div>
+                        <Card className="shadow-sm border-blue-100">
+                            <div className="p-2 flex items-center gap-2.5">
+                                <div className="p-1.5 bg-blue-100/70 text-blue-700 rounded-md shrink-0">
+                                    <PieChart className="h-3.5 w-3.5" />
                                 </div>
-                            </Card>
+                                <div className="flex-1">
+                                    <div className="text-xl font-bold leading-none">{stats.reconciled}</div>
+                                    <p className="text-xs text-muted-foreground mt-0.5">Reconciled</p>
+                                </div>
+                                <div className="text-2xs text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">
+                                    {stats.statementsUploaded > 0
+                                        ? ((stats.reconciled / stats.statementsUploaded) * 100).toFixed(0)
+                                        : 0}% matched
+                                </div>
+                            </div>
+                        </Card>
 
-                            <Card className="shadow-sm border-red-100">
-                                <div className="p-2 flex items-center gap-2.5">
-                                    <div className="p-1.5 bg-red-100/70 text-red-700 rounded-md shrink-0">
-                                        <XCircle className="h-3.5 w-3.5" />
-                                    </div>
-                                    <div className="flex-1">
-                                        <div className="text-xl font-bold leading-none">{stats.mismatches}</div>
-                                        <p className="text-xs text-muted-foreground mt-0.5">Mismatches</p>
-                                    </div>
-                                    <div className="text-2xs text-red-600 bg-red-50 px-1.5 py-0.5 rounded">
-                                        {stats.statementsUploaded > 0
-                                            ? ((stats.mismatches / stats.statementsUploaded) * 100).toFixed(0)
-                                            : 0}% to reconcile
-                                    </div>
+                        <Card className="shadow-sm border-red-100">
+                            <div className="p-2 flex items-center gap-2.5">
+                                <div className="p-1.5 bg-red-100/70 text-red-700 rounded-md shrink-0">
+                                    <XCircle className="h-3.5 w-3.5" />
                                 </div>
-                            </Card>
-                        </div>
+                                <div className="flex-1">
+                                    <div className="text-xl font-bold leading-none">{stats.mismatches}</div>
+                                    <p className="text-xs text-muted-foreground mt-0.5">Mismatches</p>
+                                </div>
+                                <div className="text-2xs text-red-600 bg-red-50 px-1.5 py-0.5 rounded">
+                                    {stats.statementsUploaded > 0
+                                        ? ((stats.mismatches / stats.statementsUploaded) * 100).toFixed(0)
+                                        : 0}% to reconcile
+                                </div>
+                            </div>
+                        </Card>
+                    </div>
 
                     <div className="space-y-4">
                         <div className="flex flex-col space-y-4">
@@ -290,7 +207,6 @@ export default function BankReconciliationPage() {
 
                             {/* Table Controls - New organized layout with Input, Filters, and MonthYearSelector */}
                             <div className="flex items-center justify-between bg-muted/30 p-2 rounded-md">
-                                {/* <div className="text-sm font-medium">Table Controls</div> */}
                                 <div className="flex items-center gap-3">
                                     <Input
                                         placeholder="Search companies..."
@@ -311,6 +227,15 @@ export default function BankReconciliationPage() {
                                         onClientTypeChange={handleClientTypeChange}
                                     />
                                 </div>
+
+                                <Button
+                                    onClick={() => setShowBulkUpload(true)}
+                                    size="sm" 
+                                    className="h-8 flex items-center"
+                                >
+                                    <UploadCloud className="h-4 w-4" />
+                                    Bulk Upload
+                                </Button>
                             </div>
 
                             <BankReconciliationTable
@@ -322,11 +247,23 @@ export default function BankReconciliationPage() {
                                 onStatsChange={handleStatsChange}
                                 selectedCategories={selectedClientTypes}
                             />
+
+                            {showBulkUpload && (
+                                <BankStatementBulkUploadDialog
+                                    isOpen={showBulkUpload}
+                                    onClose={() => setShowBulkUpload(false)}
+                                    banks={banks}
+                                    cycleMonth={selectedMonth}
+                                    cycleYear={selectedYear}
+                                    statementCycleId={statementCycleId}
+                                    onUploadsComplete={handleStatsChange}
+                                />
+                            )}
                         </div>
                     </div>
 
                 </>
-            )}
+            {/* // )} */}
         </div>
     )
 }

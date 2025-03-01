@@ -160,7 +160,7 @@ export function BankReconciliationTable({
     const [extractionDialogOpen, setExtractionDialogOpen] = useState<boolean>(false)
     const [selectedStatement, setSelectedStatement] = useState<BankStatement | null>(null)
     const [quickbooksDialogOpen, setQuickbooksDialogOpen] = useState<boolean>(false)
-    const [payrollCycleId, setPayrollCycleId] = useState<string | null>(null)
+    const [statementCycleId, setstatementCycleId] = useState<string | null>(null)
 
     const { toast } = useToast()
 
@@ -301,19 +301,19 @@ export function BankReconciliationTable({
                 const monthStr = selectedMonth.toString().padStart(2, '0');
                 const cycleMonthYear = `${selectedYear}-${monthStr}`;
                 console.log(`Initializing data for period: ${cycleMonthYear}`);
-
-                // STEP 1: Get or create payroll cycle
+    
+                // STEP 1: Get or create statement cycle
                 let cycle;
                 const { data: existingCycle, error: cycleError } = await supabase
                     .from('statement_cycles')
                     .select('id')
                     .eq('month_year', cycleMonthYear)
                     .single();
-
+    
                 if (cycleError) {
                     if (cycleError.code === 'PGRST116') { // No rows found
-                        console.log('No existing payroll cycle found. Creating new cycle...');
-
+                        console.log('No existing statement cycle found. Creating new cycle...');
+    
                         // Create new cycle
                         const { data: newCycle, error: createError } = await supabase
                             .from('statement_cycles')
@@ -324,45 +324,45 @@ export function BankReconciliationTable({
                             })
                             .select('id')
                             .single();
-
+    
                         if (createError) {
-                            throw new Error(`Failed to create payroll cycle: ${createError.message}`);
+                            throw new Error(`Failed to create statement cycle: ${createError.message}`);
                         }
-
+    
                         cycle = newCycle;
-                        console.log('Created new payroll cycle:', cycle);
+                        console.log('Created new statement cycle:', cycle);
                     } else {
-                        throw new Error(`Failed to fetch payroll cycle: ${cycleError.message}`);
+                        throw new Error(`Failed to fetch statement cycle: ${cycleError.message}`);
                     }
                 } else {
                     cycle = existingCycle;
-                    console.log('Found existing payroll cycle:', cycle);
+                    console.log('Found existing statement cycle:', cycle);
                 }
-
+    
                 // Update state with cycle ID
-                setPayrollCycleId(cycle?.id || null);
-
+                setStatementCycleId(cycle?.id || null);
+    
                 // STEP 2: Fetch ALL banks (without filtering by searchTerm)
                 fetchCompaniesAndBanks();
-
+    
                 // STEP 3: Fetch bank statements if we have a cycle ID
                 if (cycle?.id) {
                     const { data: statementsData, error: statementsError } = await supabase
                         .from('acc_cycle_bank_statements')
                         .select('*')
-                        .eq('payroll_cycle_id', cycle.id);
-
+                        .eq('statement_cycle_id', cycle.id);
+    
                     if (statementsError) {
                         throw new Error(`Failed to fetch statements: ${statementsError.message}`);
                     }
-
+    
                     console.log(`Fetched ${statementsData?.length || 0} bank statements`);
                     setBankStatements(statementsData || []);
                 } else {
-                    console.warn('No payroll cycle ID - skipping statement fetch');
+                    console.warn('No statement cycle ID - skipping statement fetch');
                     setBankStatements([]);
                 }
-
+    
             } catch (error) {
                 console.error('Error initializing data:', error);
                 toast({
@@ -374,7 +374,7 @@ export function BankReconciliationTable({
                 setLoading(false);
             }
         };
-
+    
         initializeData();
     }, [selectedMonth, selectedYear, toast]);
 
@@ -796,7 +796,7 @@ export function BankReconciliationTable({
                     cycleYear={selectedYear}
                     onStatementUploaded={handleStatementUploaded}
                     existingStatement={bankStatements.find(s => s.bank_id === selectedBank.id) || null}
-                    payrollCycleId={payrollCycleId}
+                    statementCycleId={statementCycleId}
                 />
             )}
 
