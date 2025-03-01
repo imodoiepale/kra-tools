@@ -48,6 +48,7 @@ export default function BankReconciliationPage() {
     })
     const [selectedClientTypes, setSelectedClientTypes] = useState<string[]>(["acc"])
     const [selectedFilters, setSelectedFilters] = useState<string[]>([])
+    const [loading, setLoading] = useState<boolean>(true);
 
     const [showBulkUpload, setShowBulkUpload] = useState<boolean>(false)
     const [banks, setBanks] = useState<Bank[]>([])
@@ -59,7 +60,7 @@ export default function BankReconciliationPage() {
         setSelectedMonth,
         searchTerm,
         setSearchTerm,
-        loading,
+        // loading,
         statementCycleId,
         fetchOrCreateStatementCycle,
         fetchBanks,
@@ -68,37 +69,44 @@ export default function BankReconciliationPage() {
 
     const { toast } = useToast()
 
-    // Initialize payroll cycle and fetch stats
-    useEffect(() => {
-        const initializeData = async () => {
-            try {
-                const cycleId = await fetchOrCreateStatementCycle();
-                if (cycleId) {
-                    const statsData = await fetchStatementStats(cycleId);
-                    setStats(statsData);
-                    
-                    const banksData = await fetchBanks();
-                    setBanks(banksData);
-                }
-            } catch (error) {
-                console.error('Error initializing data:', error);
+// Initialize payroll cycle and fetch stats
+useEffect(() => {
+    const initializeData = async () => {
+        try {
+            const cycleId = await fetchOrCreateStatementCycle();
+            if (cycleId) {
+                const statsData = await fetchStatementStats(cycleId);
+                setStats(statsData);
+                
+                const banksData = await fetchBanks();
+                setBanks(banksData);
             }
+        } catch (error) {
+            console.error('Error initializing data:', error);
         }
+    }
 
-        initializeData();
-    }, [fetchOrCreateStatementCycle]);
+    initializeData();
+}, []);
 
-    // Update stats when month/year changes
-    useEffect(() => {
-        const updateStats = async () => {
-            if (statementCycleId) {
+// Update stats when month/year changes
+useEffect(() => {
+    if (statementCycleId) {
+        const updateData = async () => {
+            try {
+                setLoading(true);
                 const statsData = await fetchStatementStats(statementCycleId);
                 setStats(statsData);
+            } catch (error) {
+                console.error('Error updating stats:', error);
+            } finally {
+                setLoading(false);
             }
-        }
+        };
         
-        updateStats();
-    }, [selectedMonth, selectedYear, statementCycleId, fetchStatementStats]);
+        updateData();
+    }
+}, [selectedMonth, selectedYear, statementCycleId]);
 
     // Handle stats update from table component
     const handleStatsChange = async () => {

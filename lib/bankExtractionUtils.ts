@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import dayjs from 'dayjs';
 import { API_KEYS } from './apiKeys';
+import * as pdfjsLib from 'pdfjs-dist';
 
 // Constants
 const CHUNK_SIZE = 4; // Process 3 pages at a time
@@ -450,13 +451,29 @@ export async function performBankStatementExtraction(
   }
 
 
-  // Helper to get PDF page count
+// Helper to get PDF page count
 async function getPdfPageCount(fileUrl) {
-    // Implementation will depend on your PDF library
-    // Example implementation with PDF.js:
-    const pdf = await pdfjsLib.getDocument(fileUrl).promise;
-    return pdf.numPages;
+  try {
+      // If fileUrl is a string URL
+      if (typeof fileUrl === 'string') {
+          const pdf = await pdfjsLib.getDocument(fileUrl).promise;
+          return pdf.numPages;
+      }
+      
+      // If fileUrl is a File object
+      if (fileUrl instanceof File) {
+          const arrayBuffer = await fileUrl.arrayBuffer();
+          const pdf = await pdfjsLib.getDocument(new Uint8Array(arrayBuffer)).promise;
+          return pdf.numPages;
+      }
+      
+      // Default fallback
+      return 1;
+  } catch (error) {
+      console.error('Error getting PDF page count:', error);
+      return 1; // Default to 1 page if we can't determine
   }
+}
   
   // Specialized merge function for first and last page results
   function mergeFirstAndLastPageResults(firstPageResult, lastPageResult, params, onProgress) {

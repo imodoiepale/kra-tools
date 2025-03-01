@@ -190,9 +190,9 @@ export function BankValidationDialog({
     let expectedMonth = null;
     let expectedYear = null;
 
-    if (bank.statement_period) {
+    if (extractedData?.statement_period) {
         // Try to parse month/year from period
-        const matches = bank.statement_period.match(/(\w+)\s+(\d{4})/i);
+        const matches = extractedData.statement_period.match(/(\w+)\s+(\d{4})/i);
         if (matches && matches.length >= 3) {
             const monthName = matches[1];
             const year = parseInt(matches[2]);

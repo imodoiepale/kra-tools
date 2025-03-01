@@ -160,38 +160,78 @@ export function BankReconciliationTable({
     const [extractionDialogOpen, setExtractionDialogOpen] = useState<boolean>(false)
     const [selectedStatement, setSelectedStatement] = useState<BankStatement | null>(null)
     const [quickbooksDialogOpen, setQuickbooksDialogOpen] = useState<boolean>(false)
-    const [statementCycleId, setstatementCycleId] = useState<string | null>(null)
+    const [statementCycleId, setStatementCycleId] = useState<string | null>(null)
 
     const { toast } = useToast()
 
     // Fetch all companies and banks
-    const fetchCompaniesAndBanks = async () => {
-        try {
-            // Fetch all companies from acc_portal_company_duplicate
-            const { data: companiesData, error: companiesError } = await supabase
-                .from('acc_portal_company_duplicate')
-                .select('*');
+// Improved fetch function with extra logging and error handling
+const fetchCompaniesAndBanks = async () => {
+    console.log("Starting fetchCompaniesAndBanks...");
+    try {
+        setLoading(true);
+        
+        // Fetch all companies from acc_portal_company_duplicate
+        const { data: companiesData, error: companiesError } = await supabase
+            .from('acc_portal_company_duplicate')
+            .select('*');
 
-            if (companiesError) throw companiesError;
-
-            // Fetch all banks
-            const { data: banksData, error: banksError } = await supabase
-                .from('acc_portal_banks')
-                .select('*');
-
-            if (banksError) throw banksError;
-
-            setCompanies(companiesData || []);
-            setAllBanks(banksData || []);
-        } catch (error) {
-            console.error('Error fetching companies and banks:', error);
+        if (companiesError) {
+            console.error('Error fetching companies:', companiesError);
             toast({
                 title: 'Error',
-                description: 'Failed to fetch companies and banks',
+                description: 'Failed to fetch companies',
                 variant: 'destructive',
             });
+            return false;
         }
-    };
+
+        console.log(`Successfully fetched ${companiesData?.length || 0} companies`);
+
+        // Fetch all banks
+        const { data: banksData, error: banksError } = await supabase
+            .from('acc_portal_banks')
+            .select('*');
+
+        if (banksError) {
+            console.error('Error fetching banks:', banksError);
+            toast({
+                title: 'Error',
+                description: 'Failed to fetch banks',
+                variant: 'destructive',
+            });
+            return false;
+        }
+
+        console.log(`Successfully fetched ${banksData?.length || 0} banks`);
+        
+        // Verify data before setting state
+        if (!companiesData || companiesData.length === 0) {
+            console.warn('No companies data returned from API');
+        }
+        
+        if (!banksData || banksData.length === 0) {
+            console.warn('No banks data returned from API');
+        }
+
+        // Update state with the fetched data
+        setCompanies(companiesData || []);
+        setAllBanks(banksData || []);
+        
+        console.log("State updated with companies and banks");
+        return true;
+    } catch (error) {
+        console.error('Error fetching companies and banks:', error);
+        toast({
+            title: 'Error',
+            description: 'Failed to fetch companies and banks',
+            variant: 'destructive',
+        });
+        return false;
+    } finally {
+        setLoading(false);
+    }
+};
 
     // Filter companies based on selected categories
     const filteredCompanies = useMemo(() => {

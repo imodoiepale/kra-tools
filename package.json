@@ -90,7 +90,7 @@
     "next-themes": "^0.3.0",
     "papaparse": "^5.4.1",
     "pdf.js-extract": "^0.2.1",
-    "pdfjs-dist": "^3.4.120",
+    "pdfjs-dist": "^3.11.174",
     "pdfkit": "^0.16.0",
     "playwright": "^1.47.2",
     "react": "^18",

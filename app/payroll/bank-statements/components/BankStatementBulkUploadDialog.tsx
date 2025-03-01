@@ -801,28 +801,55 @@ export function BankStatementBulkUploadDialog({
         }
     }
 
-    const renderClosingBalanceInput = (item: BulkUploadItem, index: number) => {
-        const [inputValue, setInputValue] = useState<string>(
-            item.closingBalance !== undefined
-                ? item.closingBalance?.toString()
-                : item.extractedData?.closing_balance?.toString() || ''
-        )
+    const [vouchingNotes, setVouchingNotes] = useState<{ [key: number]: string }>({});
+    const [vouchingChecked, setVouchingChecked] = useState<{ [key: number]: boolean }>({});
+    const [closingBalanceInputs, setClosingBalanceInputs] = useState<{ [key: number]: string }>({});
+    const [selectedBankIds, setSelectedBankIds] = useState<{ [key: number]: number }>({});
+    const [softCopyStates, setSoftCopyStates] = useState<{ [key: number]: boolean }>({});
+    const [hardCopyStates, setHardCopyStates] = useState<{ [key: number]: boolean }>({});
 
+    // Initialize states when items change
+    useEffect(() => {
+        const newVouchingNotes: { [key: number]: string } = {};
+        const newVouchingChecked: { [key: number]: boolean } = {};
+        const newClosingBalances: { [key: number]: string } = {};
+        const newSelectedBanks: { [key: number]: number } = {};
+        const newSoftCopyStates: { [key: number]: boolean } = {};
+        const newHardCopyStates: { [key: number]: boolean } = {};
+
+        uploadItems.forEach((item, index) => {
+            newVouchingNotes[index] = item.vouchNotes || '';
+            newVouchingChecked[index] = item.isVouched || false;
+            newClosingBalances[index] = item.closingBalance?.toString() || item.extractedData?.closing_balance?.toString() || '';
+            newSelectedBanks[index] = item.matchedBank?.id || 0;
+            newSoftCopyStates[index] = item.hasSoftCopy || true;
+            newHardCopyStates[index] = item.hasHardCopy || false;
+        });
+
+        setVouchingNotes(newVouchingNotes);
+        setVouchingChecked(newVouchingChecked);
+        setClosingBalanceInputs(newClosingBalances);
+        setSelectedBankIds(newSelectedBanks);
+        setSoftCopyStates(newSoftCopyStates);
+        setHardCopyStates(newHardCopyStates);
+    }, [uploadItems]);
+
+    const renderClosingBalanceInput = (item: BulkUploadItem, index: number) => {
         return (
             <div className="flex items-center gap-2">
                 <Input
                     type="number"
                     step="0.01"
                     placeholder="Closing Balance"
-                    value={inputValue}
-                    onChange={(e) => setInputValue(e.target.value)}
+                    value={closingBalanceInputs[index] || ''}
+                    onChange={(e) => setClosingBalanceInputs(prev => ({ ...prev, [index]: e.target.value }))}
                     className="w-32"
                 />
                 <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => updateClosingBalance(index, parseFloat(inputValue))}
-                    disabled={!item.matchedBank || !inputValue}
+                    onClick={() => updateClosingBalance(index, parseFloat(closingBalanceInputs[index]))}
+                    disabled={!item.matchedBank || !closingBalanceInputs[index]}
                 >
                     Update
                 </Button>
@@ -831,18 +858,13 @@ export function BankStatementBulkUploadDialog({
     }
 
     const renderBankSelector = (item: BulkUploadItem, index: number) => {
-        const [selectedBankId, setSelectedBankId] = useState<number>(item.matchedBank?.id || 0)
-        const [closingBalance, setClosingBalance] = useState<string>('')
-        const [softCopy, setSoftCopy] = useState<boolean>(item.hasSoftCopy || true)
-        const [hardCopy, setHardCopy] = useState<boolean>(item.hasHardCopy || false)
-
         return (
             <div className="flex flex-col gap-3">
                 <div className="flex items-center gap-2">
                     <select
                         className="border rounded p-1 text-sm w-64"
-                        value={selectedBankId}
-                        onChange={(e) => setSelectedBankId(parseInt(e.target.value))}
+                        value={selectedBankIds[index] || 0}
+                        onChange={(e) => setSelectedBankIds(prev => ({ ...prev, [index]: parseInt(e.target.value) }))}
                     >
                         <option value={0}>-- Select Bank --</option>
                         {banks.map(bank => (
@@ -855,8 +877,8 @@ export function BankStatementBulkUploadDialog({
                         type="number"
                         step="0.01"
                         placeholder="Closing Balance"
-                        value={closingBalance}
-                        onChange={(e) => setClosingBalance(e.target.value)}
+                        value={closingBalanceInputs[index] || ''}
+                        onChange={(e) => setClosingBalanceInputs(prev => ({ ...prev, [index]: e.target.value }))}
                         className="w-32"
                     />
                 </div>
@@ -865,9 +887,9 @@ export function BankStatementBulkUploadDialog({
                     <div className="flex items-center gap-1">
                         <Checkbox
                             id={`soft-copy-${index}`}
-                            checked={softCopy}
+                            checked={softCopyStates[index]}
                             onCheckedChange={(checked) => {
-                                setSoftCopy(!!checked);
+                                setSoftCopyStates(prev => ({ ...prev, [index]: !!checked }));
                                 setUploadItems(items => {
                                     const updated = [...items];
                                     updated[index].hasSoftCopy = !!checked;
@@ -881,9 +903,9 @@ export function BankStatementBulkUploadDialog({
                     <div className="flex items-center gap-1">
                         <Checkbox
                             id={`hard-copy-${index}`}
-                            checked={hardCopy}
+                            checked={hardCopyStates[index]}
                             onCheckedChange={(checked) => {
-                                setHardCopy(!!checked);
+                                setHardCopyStates(prev => ({ ...prev, [index]: !!checked }));
                                 setUploadItems(items => {
                                     const updated = [...items];
                                     updated[index].hasHardCopy = !!checked;
@@ -899,10 +921,10 @@ export function BankStatementBulkUploadDialog({
                         variant="outline"
                         onClick={() => handleManualUpload(
                             index,
-                            selectedBankId,
-                            closingBalance ? parseFloat(closingBalance) : null
+                            selectedBankIds[index],
+                            closingBalanceInputs[index] ? parseFloat(closingBalanceInputs[index]) : null
                         )}
-                        disabled={selectedBankId === 0}
+                        disabled={selectedBankIds[index] === 0}
                     >
                         Upload
                     </Button>
@@ -912,9 +934,6 @@ export function BankStatementBulkUploadDialog({
     }
 
     const renderVouchingDetails = (item: BulkUploadItem, index: number) => {
-        const [notes, setNotes] = useState<string>(item.vouchNotes || '');
-        const [isChecked, setIsChecked] = useState<boolean>(item.isVouched || false);
-
         // Get balance data to display
         const extractedBalance = item.extractedData?.closing_balance;
         const manualBalance = item.closingBalance;
@@ -949,10 +968,9 @@ export function BankStatementBulkUploadDialog({
                     <Label className="text-xs text-slate-500">Vouching Notes</Label>
                     <Input
                         placeholder="Add notes about this statement verification..."
-                        value={notes}
+                        value={vouchingNotes[index] || ''}
                         onChange={(e) => {
-                            setNotes(e.target.value);
-                            // Update in the main items array
+                            setVouchingNotes(prev => ({ ...prev, [index]: e.target.value }));
                             setUploadItems(items => {
                                 const updated = [...items];
                                 updated[index].vouchNotes = e.target.value;
@@ -966,10 +984,9 @@ export function BankStatementBulkUploadDialog({
                     <div className="flex items-center space-x-2">
                         <Checkbox
                             id={`vouched-${index}`}
-                            checked={isChecked}
+                            checked={vouchingChecked[index] || false}
                             onCheckedChange={(checked) => {
-                                setIsChecked(!!checked);
-                                // Update in the main items array
+                                setVouchingChecked(prev => ({ ...prev, [index]: !!checked }));
                                 setUploadItems(items => {
                                     const updated = [...items];
                                     updated[index].isVouched = !!checked;
