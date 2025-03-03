@@ -438,61 +438,40 @@ async function downloadCompanyReports({
     supabaseKey,
     credentials 
 }) {
-    // Initialize Supabase client if URL and key are provided
-    let supabaseClient;
-    if (supabaseUrl && supabaseKey) {
-        try {
-            supabaseClient = createClient(supabaseUrl, supabaseKey);
-            console.log('Supabase client initialized with provided credentials');
-            
-            // Test the connection
-            const { data, error } = await supabaseClient.from('company_payroll_records').select('count').limit(1);
-            if (error) {
-                console.error('Supabase connection test failed:', error);
-                console.warn('Will continue without Supabase storage integration');
-                supabaseClient = null;
-            } else {
-                console.log('Supabase connection test successful');
-            }
-        } catch (error) {
-            console.error('Error initializing Supabase client:', error);
-            console.warn('Will continue without Supabase storage integration');
-            supabaseClient = null;
-        }
-    } else {
-        console.warn('Supabase credentials not provided, document storage will be local only');
-        supabaseClient = null;
-    }
+    console.log(`Starting document extraction for ${companies.length} companies`);
+    console.log(`Month/Year: ${monthYear}`);
 
+    // Create browser instance
     const browser = await chromium.launch({
         headless: false,
-        channel: "msedge",
         args: ['--disable-dev-shm-usage']
     });
 
     const context = await browser.newContext({
-        navigationTimeout: TIMEOUT_CONFIG.navigationTimeout,
+        acceptDownloads: true,
         viewport: { width: 1920, height: 1080 }
     });
 
-    const page = await context.newPage();
-    const downloadFolderPath = path.join(os.homedir(), 'Documents', 'Wingu Apps Statutory Extractions');
-    await fs.promises.mkdir(downloadFolderPath, { recursive: true });
-
     try {
-        // Initial login to WinguApps using provided credentials
+        // Create base download folder
+        const downloadFolderPath = path.join(os.homedir(), 'Downloads', 'Wingu Apps Extractions');
+        await fs.promises.mkdir(downloadFolderPath, { recursive: true });
+
+        // Login to WinguApps
         console.log('Logging in to WinguApps...');
+        const page = await context.newPage();
         await page.goto('https://winguapps.co.ke/Home/Login', {
             timeout: TIMEOUT_CONFIG.navigationTimeout,
             waitUntil: 'networkidle'
         });
 
-        await page.getByPlaceholder('Email').fill( 'info@booksmartconsult.com');
-        await page.getByPlaceholder('Password').fill('bclwinguapps@2024');
+        // Fill login form
+        await page.getByPlaceholder('Email').fill(credentials.email);
+        await page.getByPlaceholder('Password').fill(credentials.password);
         await page.getByRole('button', { name: 'LOGIN' }).click();
         await page.waitForLoadState('networkidle', { timeout: TIMEOUT_CONFIG.waitForLoadState });
 
-        // Navigate to subscriptions tab to get company URLs
+        // Navigate to subscriptions tab
         console.log('Navigating to subscriptions...');
         await page.goto('https://portal.winguapps.co.ke/Dashboard#tab-subscriptions', {
             timeout: TIMEOUT_CONFIG.navigationTimeout,
@@ -500,7 +479,7 @@ async function downloadCompanyReports({
         });
         await page.waitForLoadState('networkidle', { timeout: TIMEOUT_CONFIG.waitForLoadState });
 
-        // Get all available companies from the subscriptions tab
+        // Get available companies from the dashboard
         const availableCompanies = await page.evaluate(() => {
             const rows = document.querySelectorAll('table tbody tr');
             return Array.from(rows).map(row => {
@@ -525,8 +504,8 @@ async function downloadCompanyReports({
         const companiesToProcess = availableCompanies.filter(available =>
             companies.some(company => 
                 company.name && available.name && 
-                company.name.toLowerCase().includes(available.name.toLowerCase()) || 
-                available.name.toLowerCase().includes(company.name.toLowerCase())
+                (company.name.toLowerCase().includes(available.name.toLowerCase()) || 
+                available.name.toLowerCase().includes(company.name.toLowerCase()))
             )
         ).map(available => {
             const matchedCompany = companies.find(c => 
@@ -548,6 +527,15 @@ async function downloadCompanyReports({
         // Create a folder for the month/year
         const monthYearFolderPath = path.join(downloadFolderPath, monthYear);
         await fs.promises.mkdir(monthYearFolderPath, { recursive: true });
+
+        // Create Supabase client if credentials are provided
+        let supabaseClient = null;
+        if (supabaseUrl && supabaseKey) {
+            supabaseClient = createClient(supabaseUrl, supabaseKey);
+            console.log('Supabase client initialized');
+        } else {
+            console.log('No Supabase credentials provided, skipping database updates');
+        }
 
         // Process each company
         for (let i = 0; i < companiesToProcess.length; i++) {
@@ -577,9 +565,24 @@ async function downloadCompanyReports({
                     DOCUMENT_TYPES.NSSF
                 ];
 
+                // Track document download status
+                const documentStatus = {};
+                let hasAnySuccess = false;
+
                 for (const docType of documentTypes) {
                     if (!progress[docType.name]) {
                         try {
+                            console.log(`\nDownloading ${docType.name} for ${company.name}...`);
+                            
+                            // Update progress for UI
+                            if (onProgress) {
+                                onProgress(company.id, {
+                                    status: 'processing',
+                                    message: `Downloading ${docType.name}...`,
+                                    progress: ((documentTypes.indexOf(docType) + 1) / documentTypes.length) * 100
+                                });
+                            }
+                            
                             const downloadPath = await downloadDocument(payrollPage, company, companyFolderPath, docType, supabaseClient);
                             
                             if (downloadPath) {
@@ -590,76 +593,70 @@ async function downloadCompanyReports({
                                     timestamp: new Date().toISOString()
                                 };
                                 
-                                // Update document path in database
-                                if (company.id && company.company_id && supabaseClient) {
-                                    try {
-                                        const { error } = await supabaseClient
-                                            .from('company_payroll_records')
-                                            .update({
-                                                documents: {
-                                                    ...company.status?.documents,
-                                                    [docType.dbField]: downloadPath
-                                                },
-                                                status: {
-                                                    ...company.status,
-                                                    extracted: true,
-                                                    wingu_extraction: true,
-                                                    extraction_date: new Date().toISOString()
-                                                }
-                                            })
-                                            .eq('company_id', company.company_id);
-                                        
-                                        if (error) {
-                                            console.error(`Error updating document path for ${company.name}:`, error);
-                                        } else {
-                                            console.log(`Updated document path for ${company.name}: ${docType.name}`);
-                                        }
-                                    } catch (dbError) {
-                                        console.error(`Database error for ${company.name}:`, dbError);
-                                    }
-                                } else {
-                                    console.log(`Skipping database update for ${company.name} - Supabase client not available`);
-                                }
+                                documentStatus[docType.name] = 'Success';
+                                hasAnySuccess = true;
+                                
+                                // Save progress
+                                await saveProgress(companyFolderPath, progress);
+                            } else {
+                                documentStatus[docType.name] = 'Failed';
+                                console.error(`\nFailed to download ${docType.name}`);
                             }
                         } catch (error) {
-                            console.error(`Error downloading ${docType.name} for ${company.name}:`, error);
-                            progress[docType.name] = {
-                                status: 'failed',
-                                error: error.message,
-                                timestamp: new Date().toISOString()
-                            };
+                            documentStatus[docType.name] = `Failed - ${error.message}`;
+                            console.error(`\nError downloading ${docType.name}: ${error.message}`);
                         }
-                        
-                        // Save progress after each document
-                        await saveProgress(companyFolderPath, progress);
+                    } else {
+                        console.log(`${docType.name} already downloaded for ${company.name}`);
+                        documentStatus[docType.name] = 'Already downloaded';
                     }
                 }
 
-                // Calculate and report progress
-                const completedDocs = Object.values(progress).filter(p => p.status === 'completed').length;
-                const totalDocs = documentTypes.length;
-                const progressPercent = Math.round((completedDocs / totalDocs) * 100);
-                
-                if (onProgress) {
-                    onProgress(progressPercent);
-                }
+                // Process CSV files
+                console.log(`\nProcessing CSV files for ${company.name}...`);
+                await processCompanyCSVs(companyFolderPath);
 
-                console.log(`Completed ${progressPercent}% for ${company.name}`);
+                // Show document status summary
+                console.log(`\nDownload Status for ${company.name}:`);
+                Object.entries(documentStatus).forEach(([doc, status]) => {
+                    const statusSymbol = status.startsWith('Success') ? '✓' : '✗';
+                    console.log(`${statusSymbol} ${doc}: ${status}`);
+                });
 
                 // Close the payroll page
                 await payrollPage.close();
 
+                // Update progress for UI
+                if (onProgress) {
+                    onProgress(company.id, {
+                        status: 'completed',
+                        message: `Completed extraction for ${company.name}`,
+                        progress: 100,
+                        completedAt: new Date().toISOString()
+                    });
+                }
+
             } catch (error) {
-                console.error(`Error processing company ${company.name}:`, error);
+                console.error(`Error processing ${company.name}:`, error);
+                
+                // Update progress for UI
+                if (onProgress) {
+                    onProgress(company.id, {
+                        status: 'failed',
+                        error: error.message,
+                        completedAt: new Date().toISOString()
+                    });
+                }
             }
         }
 
-        console.log('All companies processed');
-        return true;
+        console.log('\nExtraction process completed');
+        
     } catch (error) {
-        console.error('Error in downloadCompanyReports:', error);
+        console.error('Fatal error:', error);
         throw error;
     } finally {
+        await context.close();
         await browser.close();
     }
 }
