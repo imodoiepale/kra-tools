@@ -19,6 +19,8 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Settings2 } from 'lucide-react'
 import { ObligationFilters } from '../components/ObligationFilters'
+import { toast } from '@/hooks/use-toast'
+import { ExtractDialog } from './components/dialogs/ExtractDialog'
 
 interface PayrollManagementProps {
     payrollRecords: CompanyPayrollRecord[]
@@ -48,14 +50,15 @@ export default function PayrollManagementWingu({
     handleDocumentDelete,
     handleStatusUpdate,
     setPayrollRecords,
-    updateExistingEmployeeCounts 
+    updateExistingEmployeeCounts
 }: PayrollManagementProps) {
     const handleDocumentUploadWithFolder = (recordId: string, file: File, documentType: DocumentType) => {
         return handleDocumentUpload(recordId, file, documentType, 'PREP DOCS')
     }
 
     const [selectedCategories, setSelectedCategories] = useState<string[]>(['acc']);
-    const [selectedObligations, setSelectedObligations] = useState<string[]>(['active']);
+    const [selectedObligations, setSelectedObligations] = useState<string[]>([]);
+    const [extractDialogOpen, setExtractDialogOpen] = useState(false)
 
     const handleFilterChange = useCallback((categories: string[]) => {
         setSelectedCategories(categories);
@@ -175,9 +178,17 @@ export default function PayrollManagementWingu({
         });
     }, [payrollRecords, searchTerm, selectedCategories, selectedObligations]);
 
+    const handleExtractAll = async () => {
+        // Open the extract dialog instead of directly extracting
+        setExtractDialogOpen(true)
+    }
+
+    // Month names array for display and API calls
+    const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
     return (
         <div className="space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <MonthYearSelector
                     selectedYear={selectedYear}
                     selectedMonth={selectedMonth}
@@ -192,7 +203,7 @@ export default function PayrollManagementWingu({
                         className="max-w-sm"
                     />
                     <ObligationFilters
-                        payrollRecords={payrollRecords} // Changed from records to payrollRecords
+                        payrollRecords={payrollRecords}
                         onFilterChange={handleObligationFilterChange}
                         selectedObligations={selectedObligations}
                     />
@@ -231,10 +242,25 @@ export default function PayrollManagementWingu({
                     >
                         Update Employee Counts
                     </Button>
+                    <Button
+                        onClick={handleExtractAll}
+                        className="h-8 px-2 bg-green-500 text-white hover:bg-green-600"
+                    >
+                        Extract All
+                    </Button>
                     <Button className="h-8 px-2 bg-blue-500 text-white">Export</Button>
-                    <Button className="h-8 px-2 bg-green-500 text-white hover:bg-green-600">Extract All</Button>
                 </div>
             </div>
+
+            {/* Extract Dialog */}
+            <ExtractDialog
+                open={extractDialogOpen}
+                onOpenChange={setExtractDialogOpen}
+                payrollRecords={payrollRecords}
+                monthNames={monthNames}
+                selectedMonth={selectedMonth}
+                selectedYear={selectedYear}
+            />
 
             <PayrollTable
                 records={filteredRecords}

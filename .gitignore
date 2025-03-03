@@ -40,3 +40,5 @@ yarn-error.log*
 
 
 .env.local
+
+/app/payroll/payroll-management-wingu/automation/node_modules

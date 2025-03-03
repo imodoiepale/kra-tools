@@ -199,7 +199,7 @@ export function PayrollTable({
                             <TableCell className="">
                                 {record.status.finalization_date ? (
                                     <p
-                                        // className={record.status.finalization_date === 'NIL' ? 'bg-purple-500' : 'bg-green-500'}
+                                        className={record.status.finalization_date === 'NIL' ? 'bg-purple-500' : 'bg-green-500'}
                                         variant="outline"
                                         onClick={() => updateState({ documentDetailsDialog: { isOpen: true, record } })}
                                     >
