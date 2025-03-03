@@ -50,6 +50,16 @@ import {
     CardTitle
 } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle
+} from "@/components/ui/alert-dialog";
 
 // Importing PDF.js functionality
 import * as pdfjsLib from 'pdfjs-dist';
@@ -257,6 +267,8 @@ export function BankExtractionDialog({
     const [selectedText, setSelectedText] = useState<string>('')
     const [allPagesRendered, setAllPagesRendered] = useState<boolean[]>([])
     const [renderedPageCanvases, setRenderedPageCanvases] = useState<HTMLCanvasElement[]>([])
+
+    const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
 
     // Detected periods in PDF
     const [detectedPeriods, setDetectedPeriods] = useState<{ month: number, year: number, page: number, lastDate?: string }[]>([])
@@ -523,7 +535,7 @@ export function BankExtractionDialog({
                 context.fillStyle = 'black';
                 context.font = '12px Arial';
                 context.fillText(
-                    `${format(new Date(balance.year, balance.month - 1, 1), 'MMM yyyy')}`,
+                    `${format(new Date(balance.year, balance.month, 1), 'MMM yyyy')}`,
                     x1 + 5,
                     y1 - 5
                 );
@@ -558,7 +570,7 @@ export function BankExtractionDialog({
                 const day = parseInt(match[1]);
                 const month = parseInt(match[2]);
                 const year = parseInt(match[3]);
-                return { text: match[0], date: new Date(year, month - 1, day) };
+                return { text: match[0], date: new Date(year, month, day) };
             }).sort((a, b) => b.date - a.date); // Latest date first
 
             // Get the latest date
@@ -767,12 +779,13 @@ export function BankExtractionDialog({
     }
 
     // In BankExtractionDialog.tsx
-    const handleDeleteStatement = async () => {
-        // Confirm deletion
-        if (!window.confirm("Are you sure you want to delete this statement? This action cannot be undone.")) {
-            return;
-        }
+    const handleDeleteStatement = () => {
+        // Show dialog instead of window.confirm
+        setShowDeleteConfirmation(true);
+    };
 
+    // 3. Add a new function to handle confirmed deletion:
+    const confirmDeleteStatement = async () => {
         try {
             setDeleting(true);
 
@@ -805,7 +818,6 @@ export function BankExtractionDialog({
             // Close dialog and pass null to update parent
             onClose();
             onStatementUpdated(null);
-
         } catch (error) {
             console.error('Error deleting statement:', error);
             toast({
@@ -815,6 +827,7 @@ export function BankExtractionDialog({
             });
         } finally {
             setDeleting(false);
+            setShowDeleteConfirmation(false);
         }
     };
 
@@ -875,7 +888,7 @@ export function BankExtractionDialog({
 
         if (existingIndex >= 0) {
             toast({
-                description: `Balance for ${format(new Date(selectedYear, selectedMonth - 1, 1), 'MMMM yyyy')} already exists.`,
+                description: `Balance for ${format(new Date(selectedYear, selectedMonth, 1), 'MMMM yyyy')} already exists.`,
                 variant: 'default'
             });
             return;
@@ -885,7 +898,7 @@ export function BankExtractionDialog({
         setMonthlyBalances(prev => [...prev, newBalance]);
 
         toast({
-            description: `Added ${format(new Date(selectedYear, selectedMonth - 1, 1), 'MMMM yyyy')} to monthly balances.`,
+            description: `Added ${format(new Date(selectedYear, selectedMonth, 1), 'MMMM yyyy')} to monthly balances.`,
             variant: 'default'
         });
     };
@@ -931,7 +944,7 @@ export function BankExtractionDialog({
         }
 
         toast({
-            description: `Navigated to ${format(new Date(period.year, period.month - 1, 1), 'MMMM yyyy')}${period.lastDate ? ` (Last date: ${period.lastDate})` : ''}`,
+            description: `Navigated to ${format(new Date(period.year, period.month, 1), 'MMMM yyyy')}${period.lastDate ? ` (Last date: ${period.lastDate})` : ''}`,
             variant: 'default'
         });
     };
@@ -1030,7 +1043,7 @@ export function BankExtractionDialog({
         // Clear selection and show toast
         setSelection(null);
         toast({
-            description: `Set closing balance for ${format(new Date(selectedYear, selectedMonth - 1, 1), 'MMMM yyyy')}${selection.date ? ` (Date: ${selection.date})` : ''}`,
+            description: `Set closing balance for ${format(new Date(selectedYear, selectedMonth, 1), 'MMMM yyyy')}${selection.date ? ` (Date: ${selection.date})` : ''}`,
             variant: 'default'
         });
 
@@ -1156,7 +1169,7 @@ export function BankExtractionDialog({
                             .insert([newStatement]);
 
                         toast({
-                            description: `Created statement for ${format(new Date(year, month - 1), 'MMMM yyyy')}`,
+                            description: `Created statement for ${format(new Date(year, month), 'MMMM yyyy')}`,
                             variant: 'default'
                         });
                     }
@@ -1196,7 +1209,7 @@ export function BankExtractionDialog({
                             </div>
                         </div>
                         <div className="text-base">
-                            Bank Statement - {bank.bank_name} {bank.account_number} | {format(new Date(statement.statement_year, statement.statement_month - 1), 'MMMM yyyy')}
+                            Bank Statement - {bank.bank_name} {bank.account_number} | {format(new Date(statement.statement_year, statement.statement_month), 'MMMM yyyy')}
                         </div>
                     </DialogTitle>
                 </DialogHeader>
@@ -1242,7 +1255,7 @@ export function BankExtractionDialog({
                                             <SelectContent>
                                                 {detectedPeriods.map((period, index) => (
                                                     <SelectItem key={index} value={`${period.month}-${period.year}`}>
-                                                        {format(new Date(period.year, period.month - 1, 1), 'MMMM yyyy')}
+                                                        {format(new Date(period.year, period.month, 1), 'MMMM yyyy')}
                                                         {period.lastDate && ` (${period.lastDate})`}
                                                         {isPeriodVerified(period.month, period.year) && ' ✓'}
                                                     </SelectItem>
@@ -1445,7 +1458,7 @@ export function BankExtractionDialog({
                                                                         className={isCurrentPeriod ? "bg-blue-50" : ""}
                                                                     >
                                                                         <TableCell className="font-medium whitespace-nowrap">
-                                                                            {format(new Date(balance.year, balance.month - 1, 1), 'MMM yyyy')}
+                                                                            {format(new Date(balance.year, balance.month, 1), 'MMM yyyy')}
                                                                             {balance.is_verified && (
                                                                                 <CheckCircle className="h-3 w-3 inline ml-1 text-green-500" />
                                                                             )}
@@ -1595,7 +1608,7 @@ export function BankExtractionDialog({
                                                 <span className="text-sm">Period</span>
                                                 <span className="text-sm font-medium">
                                                     {statement.statement_extractions.statement_period ||
-                                                        format(new Date(statement.statement_year, statement.statement_month - 1, 1), 'MMMM yyyy')}
+                                                        format(new Date(statement.statement_year, statement.statement_month, 1), 'MMMM yyyy')}
                                                 </span>
                                             </div>
                                         </div>
@@ -1720,7 +1733,7 @@ export function BankExtractionDialog({
                                                     }).map((balance, index) => (
                                                         <TableRow key={index} className={balance.month === statement.statement_month && balance.year === statement.statement_year ? "bg-blue-50" : ""}>
                                                             <TableCell>
-                                                                {format(new Date(balance.year, balance.month - 1, 1), 'MMMM yyyy')}
+                                                                {format(new Date(balance.year, balance.month, 1), 'MMMM yyyy')}
                                                                 {balance.month === statement.statement_month && balance.year === statement.statement_year && (
                                                                     <Badge variant="outline" className="ml-2 bg-blue-50 text-blue-500 border-blue-200">
                                                                         Current
@@ -1809,6 +1822,27 @@ export function BankExtractionDialog({
                         </div>
                     </TabsContent>
                 </Tabs>
+
+                {/* Delete Confirmation Dialog */}
+                <AlertDialog open={showDeleteConfirmation} onOpenChange={setShowDeleteConfirmation}>
+                    <AlertDialogContent>
+                        <AlertDialogHeader>
+                            <AlertDialogTitle>Delete Statement</AlertDialogTitle>
+                            <AlertDialogDescription>
+                                Are you sure you want to delete this statement? This action cannot be undone.
+                            </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction
+                                onClick={confirmDeleteStatement}
+                                className="bg-red-600 hover:bg-red-700 text-white"
+                            >
+                                Delete
+                            </AlertDialogAction>
+                        </AlertDialogFooter>
+                    </AlertDialogContent>
+                </AlertDialog>
 
                 <DialogFooter>
                     <Button

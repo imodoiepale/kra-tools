@@ -158,7 +158,7 @@ export function QuickbooksBalanceDialog({
     }
 
     const statementPeriod = statement?.statement_extractions?.statement_period ||
-        format(new Date(cycleYear, cycleMonth - 1), 'MMMM yyyy')
+        format(new Date(cycleYear, cycleMonth ), 'MMMM yyyy')
 
     const currencyCode = normalizeCurrencyCode(
         statement?.statement_extractions?.currency || bank.bank_currency
@@ -237,7 +237,7 @@ export function QuickbooksBalanceDialog({
                                     <div className="flex items-center gap-2">
                                         <Calendar className="h-4 w-4 text-emerald-600" />
                                         <span className="font-medium">
-                                            {statementPeriod || format(new Date(cycleYear, cycleMonth - 1), 'MMMM yyyy')}
+                                            {statementPeriod || format(new Date(cycleYear, cycleMonth ), 'MMMM yyyy')}
                                         </span>
                                     </div>
                                     <div className="flex items-center gap-1 bg-emerald-100/50 px-2 py-0.5 rounded text-xs text-emerald-700 border border-emerald-200">

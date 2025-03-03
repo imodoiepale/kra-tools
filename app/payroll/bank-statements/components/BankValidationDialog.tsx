@@ -95,7 +95,7 @@ const formatDate = (year, month) => {
     if (year == null || month == null) return 'Unknown Date';
 
     try {
-        return new Date(year, month - 1).toLocaleString('default', { month: 'long', year: 'numeric' });
+        return new Date(year, month ).toLocaleString('default', { month: 'long', year: 'numeric' });
     } catch (error) {
         console.warn("Error formatting date:", error);
         return 'Invalid Date';
@@ -112,7 +112,7 @@ function isPeriodContained(statementPeriod, cycleMonth, cycleYear) {
     if (monthYearRegex.test(statementPeriod)) {
         // Check if the month matches
         const normalizedPeriod = statementPeriod.toLowerCase();
-        const cycleMonthName = monthNames[cycleMonth - 1];
+        const cycleMonthName = monthNames[cycleMonth ];
         return normalizedPeriod.includes(cycleMonthName);
     }
 

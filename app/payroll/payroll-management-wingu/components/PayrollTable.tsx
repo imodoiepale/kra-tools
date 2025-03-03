@@ -256,7 +256,7 @@ export function PayrollTable({
                                 <TableCell>
                                     {record.status.finalization_date ? (
                                         <p className={`text-xs px-2 py-1 rounded-full text-white ${record.status.finalization_date === 'NIL' ? 'bg-purple-500' : 'bg-green-500'}`}>
-                                            {record.status.finalization_date}
+                                            {record.status.finalization_date === 'NIL' ? 'NIL' : formatDate(record.status.finalization_date)}
                                         </p>
                                     ) : (
                                         <Button

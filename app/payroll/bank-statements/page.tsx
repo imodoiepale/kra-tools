@@ -34,7 +34,7 @@ import {
     UploadCloud
 } from 'lucide-react'
 import { BankReconciliationTable } from './BankReconciliationTable'
-import { useStatementCycle       } from '../hooks/useStatementCycle'
+import { useStatementCycle } from '../hooks/useStatementCycle'
 import { BankStatementFilters } from './components/BankStatementFilters'
 import { BankStatementBulkUploadDialog } from './components/BankStatementBulkUploadDialog'
 
@@ -69,44 +69,44 @@ export default function BankReconciliationPage() {
 
     const { toast } = useToast()
 
-// Initialize payroll cycle and fetch stats
-useEffect(() => {
-    const initializeData = async () => {
-        try {
-            const cycleId = await fetchOrCreateStatementCycle();
-            if (cycleId) {
-                const statsData = await fetchStatementStats(cycleId);
-                setStats(statsData);
-                
-                const banksData = await fetchBanks();
-                setBanks(banksData);
-            }
-        } catch (error) {
-            console.error('Error initializing data:', error);
-        }
-    }
-
-    initializeData();
-}, []);
-
-// Update stats when month/year changes
-useEffect(() => {
-    if (statementCycleId) {
-        const updateData = async () => {
+    // Initialize payroll cycle and fetch stats
+    useEffect(() => {
+        const initializeData = async () => {
             try {
-                setLoading(true);
-                const statsData = await fetchStatementStats(statementCycleId);
-                setStats(statsData);
+                const cycleId = await fetchOrCreateStatementCycle();
+                if (cycleId) {
+                    const statsData = await fetchStatementStats(cycleId);
+                    setStats(statsData);
+
+                    const banksData = await fetchBanks();
+                    setBanks(banksData);
+                }
             } catch (error) {
-                console.error('Error updating stats:', error);
-            } finally {
-                setLoading(false);
+                console.error('Error initializing data:', error);
             }
-        };
-        
-        updateData();
-    }
-}, [selectedMonth, selectedYear, statementCycleId]);
+        }
+
+        initializeData();
+    }, []);
+
+    // Update stats when month/year changes
+    useEffect(() => {
+        if (statementCycleId) {
+            const updateData = async () => {
+                try {
+                    setLoading(true);
+                    const statsData = await fetchStatementStats(statementCycleId);
+                    setStats(statsData);
+                } catch (error) {
+                    console.error('Error updating stats:', error);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            updateData();
+        }
+    }, [selectedMonth, selectedYear, statementCycleId]);
 
     // Handle stats update from table component
     const handleStatsChange = async () => {
@@ -140,137 +140,137 @@ useEffect(() => {
                     <Loader2 className="h-8 w-8 animate-spin text-primary" />
                 </div>
             ) : ( */}
-                <>
-                    <div className="grid grid-cols-4 gap-2">
-                        <Card className="shadow-sm border-blue-100">
-                            <div className="p-2 flex items-center gap-2.5">
-                                <div className="p-1.5 bg-blue-100/70 text-blue-700 rounded-md shrink-0">
-                                    <FileText className="h-3.5 w-3.5" />
-                                </div>
-                                <div className="flex-1">
-                                    <div className="text-xl font-bold leading-none">{stats.totalBanks}</div>
-                                    <p className="text-xs text-muted-foreground mt-0.5">Total Banks</p>
-                                </div>
-                                <div className="text-2xs text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">
-                                    {stats.totalBanks} registered
-                                </div>
+            <>
+                <div className="grid grid-cols-4 gap-2">
+                    <Card className="shadow-sm border-blue-100">
+                        <div className="p-2 flex items-center gap-2.5">
+                            <div className="p-1.5 bg-blue-100/70 text-blue-700 rounded-md shrink-0">
+                                <FileText className="h-3.5 w-3.5" />
                             </div>
-                        </Card>
-
-                        <Card className="shadow-sm border-green-100">
-                            <div className="p-2 flex items-center gap-2.5">
-                                <div className="p-1.5 bg-green-100/70 text-green-700 rounded-md shrink-0">
-                                    <CheckCircle2 className="h-3.5 w-3.5" />
-                                </div>
-                                <div className="flex-1">
-                                    <div className="text-xl font-bold leading-none">{stats.statementsUploaded}</div>
-                                    <p className="text-xs text-muted-foreground mt-0.5">Statements</p>
-                                </div>
-                                <div className="text-2xs text-green-600 bg-green-50 px-1.5 py-0.5 rounded">
-                                    {stats.totalBanks > 0
-                                        ? ((stats.statementsUploaded / stats.totalBanks) * 100).toFixed(0)
-                                        : 0}% of banks
-                                </div>
+                            <div className="flex-1">
+                                <div className="text-xl font-bold leading-none">{stats.totalBanks}</div>
+                                <p className="text-xs text-muted-foreground mt-0.5">Total Banks</p>
                             </div>
-                        </Card>
-
-                        <Card className="shadow-sm border-blue-100">
-                            <div className="p-2 flex items-center gap-2.5">
-                                <div className="p-1.5 bg-blue-100/70 text-blue-700 rounded-md shrink-0">
-                                    <PieChart className="h-3.5 w-3.5" />
-                                </div>
-                                <div className="flex-1">
-                                    <div className="text-xl font-bold leading-none">{stats.reconciled}</div>
-                                    <p className="text-xs text-muted-foreground mt-0.5">Reconciled</p>
-                                </div>
-                                <div className="text-2xs text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">
-                                    {stats.statementsUploaded > 0
-                                        ? ((stats.reconciled / stats.statementsUploaded) * 100).toFixed(0)
-                                        : 0}% matched
-                                </div>
+                            <div className="text-2xs text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">
+                                {stats.totalBanks} registered
                             </div>
-                        </Card>
-
-                        <Card className="shadow-sm border-red-100">
-                            <div className="p-2 flex items-center gap-2.5">
-                                <div className="p-1.5 bg-red-100/70 text-red-700 rounded-md shrink-0">
-                                    <XCircle className="h-3.5 w-3.5" />
-                                </div>
-                                <div className="flex-1">
-                                    <div className="text-xl font-bold leading-none">{stats.mismatches}</div>
-                                    <p className="text-xs text-muted-foreground mt-0.5">Mismatches</p>
-                                </div>
-                                <div className="text-2xs text-red-600 bg-red-50 px-1.5 py-0.5 rounded">
-                                    {stats.statementsUploaded > 0
-                                        ? ((stats.mismatches / stats.statementsUploaded) * 100).toFixed(0)
-                                        : 0}% to reconcile
-                                </div>
-                            </div>
-                        </Card>
-                    </div>
-
-                    <div className="space-y-4">
-                        <div className="flex flex-col space-y-4">
-                            {/* <h2 className="text-2xl font-semibold tracking-tight">Bank Statements</h2> */}
-
-                            {/* Table Controls - New organized layout with Input, Filters, and MonthYearSelector */}
-                            <div className="flex items-center justify-between bg-muted/30 p-2 rounded-md">
-                                <div className="flex items-center gap-3">
-                                    <Input
-                                        placeholder="Search companies..."
-                                        value={searchTerm}
-                                        onChange={(e) => setSearchTerm(e.target.value)}
-                                        className="w-60"
-                                    />
-                                    <MonthYearSelector
-                                        selectedMonth={selectedMonth}
-                                        selectedYear={selectedYear}
-                                        onMonthChange={(month) => setSelectedMonth(month - 1)}
-                                        onYearChange={setSelectedYear}
-                                    />
-                                    <BankStatementFilters
-                                        selectedCategories={selectedFilters}
-                                        onFilterChange={handleFilterChange}
-                                        selectedClientTypes={selectedClientTypes}
-                                        onClientTypeChange={handleClientTypeChange}
-                                    />
-                                </div>
-
-                                <Button
-                                    onClick={() => setShowBulkUpload(true)}
-                                    size="sm" 
-                                    className="h-8 flex items-center"
-                                >
-                                    <UploadCloud className="h-4 w-4" />
-                                    Bulk Upload
-                                </Button>
-                            </div>
-
-                            <BankReconciliationTable
-                                activeFilters={selectedFilters}
-                                selectedYear={selectedYear}
-                                selectedMonth={selectedMonth}
-                                searchTerm={searchTerm}
-                                setSearchTerm={setSearchTerm}
-                                onStatsChange={handleStatsChange}
-                                selectedCategories={selectedClientTypes}
-                            />
-
-                            {showBulkUpload && (
-                                <BankStatementBulkUploadDialog
-                                    isOpen={showBulkUpload}
-                                    onClose={() => setShowBulkUpload(false)}
-                                    banks={banks}
-                                    cycleMonth={selectedMonth}
-                                    cycleYear={selectedYear}
-                                    statementCycleId={statementCycleId}
-                                    onUploadsComplete={handleStatsChange}
-                                />
-                            )}
                         </div>
-                    </div>
+                    </Card>
 
-                </>
+                    <Card className="shadow-sm border-green-100">
+                        <div className="p-2 flex items-center gap-2.5">
+                            <div className="p-1.5 bg-green-100/70 text-green-700 rounded-md shrink-0">
+                                <CheckCircle2 className="h-3.5 w-3.5" />
+                            </div>
+                            <div className="flex-1">
+                                <div className="text-xl font-bold leading-none">{stats.statementsUploaded}</div>
+                                <p className="text-xs text-muted-foreground mt-0.5">Statements</p>
+                            </div>
+                            <div className="text-2xs text-green-600 bg-green-50 px-1.5 py-0.5 rounded">
+                                {stats.totalBanks > 0
+                                    ? ((stats.statementsUploaded / stats.totalBanks) * 100).toFixed(0)
+                                    : 0}% of banks
+                            </div>
+                        </div>
+                    </Card>
+
+                    <Card className="shadow-sm border-blue-100">
+                        <div className="p-2 flex items-center gap-2.5">
+                            <div className="p-1.5 bg-blue-100/70 text-blue-700 rounded-md shrink-0">
+                                <PieChart className="h-3.5 w-3.5" />
+                            </div>
+                            <div className="flex-1">
+                                <div className="text-xl font-bold leading-none">{stats.reconciled}</div>
+                                <p className="text-xs text-muted-foreground mt-0.5">Reconciled</p>
+                            </div>
+                            <div className="text-2xs text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">
+                                {stats.statementsUploaded > 0
+                                    ? ((stats.reconciled / stats.statementsUploaded) * 100).toFixed(0)
+                                    : 0}% matched
+                            </div>
+                        </div>
+                    </Card>
+
+                    <Card className="shadow-sm border-red-100">
+                        <div className="p-2 flex items-center gap-2.5">
+                            <div className="p-1.5 bg-red-100/70 text-red-700 rounded-md shrink-0">
+                                <XCircle className="h-3.5 w-3.5" />
+                            </div>
+                            <div className="flex-1">
+                                <div className="text-xl font-bold leading-none">{stats.mismatches}</div>
+                                <p className="text-xs text-muted-foreground mt-0.5">Mismatches</p>
+                            </div>
+                            <div className="text-2xs text-red-600 bg-red-50 px-1.5 py-0.5 rounded">
+                                {stats.statementsUploaded > 0
+                                    ? ((stats.mismatches / stats.statementsUploaded) * 100).toFixed(0)
+                                    : 0}% to reconcile
+                            </div>
+                        </div>
+                    </Card>
+                </div>
+
+                <div className="space-y-4">
+                    <div className="flex flex-col space-y-4">
+                        {/* <h2 className="text-2xl font-semibold tracking-tight">Bank Statements</h2> */}
+
+                        {/* Table Controls - New organized layout with Input, Filters, and MonthYearSelector */}
+                        <div className="flex items-center justify-between bg-muted/30 p-2 rounded-md">
+                            <div className="flex items-center gap-3">
+                                <Input
+                                    placeholder="Search companies..."
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                    className="w-60"
+                                />
+                                <MonthYearSelector
+                                    selectedMonth={selectedMonth}
+                                    selectedYear={selectedYear}
+                                    onMonthChange={(month) => setSelectedMonth(month)}
+                                    onYearChange={setSelectedYear}
+                                />
+                                <BankStatementFilters
+                                    selectedCategories={selectedFilters}
+                                    onFilterChange={handleFilterChange}
+                                    selectedClientTypes={selectedClientTypes}
+                                    onClientTypeChange={handleClientTypeChange}
+                                />
+                            </div>
+
+                            <Button
+                                onClick={() => setShowBulkUpload(true)}
+                                size="sm"
+                                className="h-8 flex items-center"
+                            >
+                                <UploadCloud className="h-4 w-4" />
+                                Bulk Upload
+                            </Button>
+                        </div>
+
+                        <BankReconciliationTable
+                            activeFilters={selectedFilters}
+                            selectedYear={selectedYear}
+                            selectedMonth={selectedMonth}
+                            searchTerm={searchTerm}
+                            setSearchTerm={setSearchTerm}
+                            onStatsChange={handleStatsChange}
+                            selectedCategories={selectedClientTypes}
+                        />
+
+                        {showBulkUpload && (
+                            <BankStatementBulkUploadDialog
+                                isOpen={showBulkUpload}
+                                onClose={() => setShowBulkUpload(false)}
+                                banks={banks}
+                                cycleMonth={selectedMonth}
+                                cycleYear={selectedYear}
+                                statementCycleId={statementCycleId}
+                                onUploadsComplete={handleStatsChange}
+                            />
+                        )}
+                    </div>
+                </div>
+
+            </>
             {/* // )} */}
         </div>
     )

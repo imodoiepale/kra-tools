@@ -649,7 +649,7 @@ export function BankStatementUploadDialog({
                                     <div className="flex items-center gap-2">
                                         <Calendar className="h-4 w-4 text-blue-600" />
                                         <span className="font-medium">
-                                            {format(new Date(cycleYear, cycleMonth - 1, 1), 'MMMM yyyy')}
+                                            {format(new Date(cycleYear, cycleMonth, 1), 'MMMM yyyy')}
                                         </span>
                                     </div>
                                 </div>

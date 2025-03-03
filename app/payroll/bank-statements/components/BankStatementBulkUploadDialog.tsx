@@ -927,8 +927,8 @@ export function BankStatementBulkUploadDialog({
     // Helper function to generate month range
     const generateMonthRange = (startMonth: number, startYear: number, endMonth: number, endYear: number) => {
         const months = [];
-        let currentDate = new Date(startYear, startMonth - 1);
-        const endDate = new Date(endYear, endMonth - 1);
+        let currentDate = new Date(startYear, startMonth );
+        const endDate = new Date(endYear, endMonth );
 
         while (currentDate <= endDate) {
             months.push({
@@ -1267,7 +1267,7 @@ export function BankStatementBulkUploadDialog({
                             <p><span className="font-medium">Bank Name:</span> {item.extractedData?.bank_name || 'Not detected'}</p>
                             <p><span className="font-medium">Account Number:</span> {item.extractedData?.account_number || 'Not detected'}</p>
                             <p><span className="font-medium">Currency:</span> {item.extractedData?.currency || 'Not detected'}</p>
-                            <p><span className="font-medium">Period:</span> {item.extractedData?.statement_period || format(new Date(cycleYear, cycleMonth - 1), 'MMMM yyyy')}</p>
+                            <p><span className="font-medium">Period:</span> {item.extractedData?.statement_period || format(new Date(cycleYear, cycleMonth ), 'MMMM yyyy')}</p>
                         </div>
                     </div>
 
@@ -1377,7 +1377,7 @@ export function BankStatementBulkUploadDialog({
                             </div>
                             <DialogTitle className="text-center text-xl text-blue-800">Bulk Upload Bank Statements</DialogTitle>
                             <p className="text-center text-blue-600 text-sm mt-1">
-                                {format(new Date(cycleYear, cycleMonth - 1, 1), 'MMMM yyyy')}
+                                {format(new Date(cycleYear, cycleMonth , 1), 'MMMM yyyy')}
                             </p>
                         </div>
                     </DialogHeader>
