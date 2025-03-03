@@ -64,72 +64,154 @@ export const usePayrollCycle = () => {
         }
     }, [selectedMonthYear, toast])
 
+    // const fetchPayrollRecords = async (cycleId: string) => {
+    //     try {
+    //         // First get records with company details
+    //         const { data: records, error: recordsError } = await supabase
+    //             .from('company_payroll_records')
+    //             .select(`
+    //             *,
+    //             company:acc_portal_company_duplicate(
+    //                 id,
+    //                 company_name,
+    //                 kra_pin,
+    //                 acc_client_effective_from,
+    //                 acc_client_effective_to,
+    //                 audit_tax_client_effective_from,
+    //                 audit_tax_client_effective_to,
+    //                 cps_sheria_client_effective_from,
+    //                 cps_sheria_client_effective_to,
+    //                 imm_client_effective_from,
+    //                 imm_client_effective_to
+    //             )
+    //         `)
+    //             .eq('payroll_cycle_id', cycleId)
+    //             .ilike('company.company_name', `%${searchTerm}%`)
+
+    //         if (recordsError) throw recordsError
+
+    //         if (records) {
+    //             // Filter out records without company data
+    //             const validRecords = records.filter(record => record.company);
+
+    //             // Get all company names for valid records
+    //             const companyNames = validRecords.map(record => record.company.company_name);
+
+    //             // Fetch all PinCheckerDetails in a single query
+    //             const { data: pinData, error: pinError } = await supabase
+    //                 .from('PinCheckerDetails')
+    //                 .select('*')
+    //                 .in('company_name', companyNames)
+
+    //             if (pinError) throw pinError
+
+    //             // Create a map of company_name to pin details for quick lookup
+    //             const pinDetailsMap = (pinData || []).reduce((acc, detail) => {
+    //                 acc[detail.company_name] = detail;
+    //                 return acc;
+    //             }, {} as Record<string, any>);
+
+    //             // Combine records with their pin details
+    //             const recordsWithPinDetails = records.map(record => ({
+    //                 ...record,
+    //                 pin_details: record.company
+    //                     ? pinDetailsMap[record.company.company_name] || null
+    //                     : null
+    //             }));
+
+    //             setPayrollRecords(recordsWithPinDetails)
+    //         }
+    //     } catch (error) {
+    //         console.error('Fetch error:', error)
+    //         toast({
+    //             title: 'Error',
+    //             description: 'Failed to fetch payroll records',
+    //             variant: 'destructive'
+    //         })
+    //     }
+    // }
+
     const fetchPayrollRecords = async (cycleId: string) => {
         try {
-            // First get records with company details
-            const { data: records, error: recordsError } = await supabase
+            setLoading(true);
+
+            // Step 1: Fetch company payroll records
+            const { data: recordsData, error: recordsError } = await supabase
                 .from('company_payroll_records')
-                .select(`
-                *,
-                company:acc_portal_company_duplicate(
-                    id,
-                    company_name,
-                    kra_pin,
-                    acc_client_effective_from,
-                    acc_client_effective_to,
-                    audit_tax_client_effective_from,
-                    audit_tax_client_effective_to,
-                    cps_sheria_client_effective_from,
-                    cps_sheria_client_effective_to,
-                    imm_client_effective_from,
-                    imm_client_effective_to
-                )
-            `)
-                .eq('payroll_cycle_id', cycleId)
-                .ilike('company.company_name', `%${searchTerm}%`)
+                .select('*')
+                .eq('payroll_cycle_id', cycleId);
 
-            if (recordsError) throw recordsError
+            if (recordsError) throw recordsError;
+            if (!recordsData) throw new Error('No records found');
 
-            if (records) {
-                // Filter out records without company data
-                const validRecords = records.filter(record => record.company);
+            // Step 2: Extract company IDs for fetching company details
+            const companyIds = recordsData.map(record => record.company_id);
 
-                // Get all company names for valid records
-                const companyNames = validRecords.map(record => record.company.company_name);
+            // Step 3: Fetch company details
+            const { data: companiesData, error: companiesError } = await supabase
+                .from('acc_portal_company_duplicate')
+                .select('*')
+                .in('id', companyIds)
+                .ilike('company_name', `%${searchTerm}%`);
 
-                // Fetch all PinCheckerDetails in a single query
-                const { data: pinData, error: pinError } = await supabase
-                    .from('PinCheckerDetails')
-                    .select('*')
-                    .in('company_name', companyNames)
+            if (companiesError) throw companiesError;
 
-                if (pinError) throw pinError
+            // Create company lookup map for faster access
+            const companyMap = (companiesData || []).reduce((map, company) => {
+                map[company.id] = company;
+                return map;
+            }, {});
 
-                // Create a map of company_name to pin details for quick lookup
-                const pinDetailsMap = (pinData || []).reduce((acc, detail) => {
-                    acc[detail.company_name] = detail;
-                    return acc;
-                }, {} as Record<string, any>);
+            // Step 4: Get all company names to fetch PIN details
+            const companyNames = companiesData.map(company => company.company_name);
 
-                // Combine records with their pin details
-                const recordsWithPinDetails = records.map(record => ({
+            // Step 5: Fetch PIN details for all companies
+            const { data: pinData, error: pinError } = await supabase
+                .from('PinCheckerDetails')
+                .select('*')
+                .in('company_name', companyNames);
+
+            if (pinError) throw pinError;
+
+            // Create PIN details lookup map
+            const pinDetailsMap = (pinData || []).reduce((map, detail) => {
+                map[detail.company_name] = detail;
+                return map;
+            }, {});
+
+            // Step 6: Combine all data into complete records
+            const completeRecords = recordsData.map(record => {
+                const company = companyMap[record.company_id];
+
+                // Skip records without company data
+                if (!company) return null;
+
+                // Find corresponding PIN details
+                const pinDetails = pinDetailsMap[company.company_name] || null;
+
+                // Construct complete record
+                return {
                     ...record,
-                    pin_details: record.company
-                        ? pinDetailsMap[record.company.company_name] || null
-                        : null
-                }));
+                    company,
+                    pin_details: pinDetails,
+                    // Include any additional derived properties here
+                    number_of_employees: record.number_of_employees || 0
+                };
+            }).filter(Boolean); // Remove null entries
 
-                setPayrollRecords(recordsWithPinDetails)
-            }
+            setPayrollRecords(completeRecords);
         } catch (error) {
-            console.error('Fetch error:', error)
+            console.error('Fetch error:', error);
             toast({
                 title: 'Error',
                 description: 'Failed to fetch payroll records',
                 variant: 'destructive'
-            })
+            });
+        } finally {
+            setLoading(false);
         }
-    }
+    };
+    
     const handleDocumentUpload = async (
         recordId: string,
         file: File,
