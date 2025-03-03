@@ -123,15 +123,31 @@ export function PayrollTable({
         }));
     };
 
+    // If using an inline function in PayrollTable.tsx
     const getDocumentCount = (record: CompanyPayrollRecord) => {
         if (record.status.finalization_date === 'NIL') {
             return 'N/A';
         }
-        const totalDocs = Object.keys(record.documents).length - 1; // Exclude all_csv
-        const uploadedDocs = Object.entries(record.documents)
-            .filter(([key, value]) => key !== 'all_csv' && value !== null)
-            .length;
-        return `${uploadedDocs}/${totalDocs}`;
+
+        // Define the document types we're counting
+        const documentTypes = ['paye_csv', 'hslevy_csv', 'zip_file_kra', 'shif_exl', 'nssf_exl'];
+        const totalDocs = documentTypes.length;
+
+        // For temporary records, assume no documents
+        if (record.is_temporary || record.id.toString().startsWith('temp_')) {
+            return `0/${totalDocs}`;
+        }
+
+        // Count documents that are actually uploaded (not null and not empty string)
+        let uploadedCount = 0;
+        for (const docType of documentTypes) {
+            // Make sure to check for both null and empty string
+            if (record.documents[docType] && record.documents[docType].trim() !== '') {
+                uploadedCount++;
+            }
+        }
+
+        return `${uploadedCount}/${totalDocs}`;
     };
 
     const allDocumentsUploaded = (record: CompanyPayrollRecord | undefined): boolean => {
@@ -342,7 +358,7 @@ export function PayrollTable({
                                         allDocuments={getDocumentsForUpload(record)}
                                         companyName={record?.company?.company_name || 'Unknown Company'}
                                     />
-                                </TableCell>
+                                </TableCell>    
                             )}
                             {columnVisibility.allCsv && (
                                 <TableCell>

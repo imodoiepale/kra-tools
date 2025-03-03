@@ -1,16 +1,16 @@
 // @ts-nocheck
 import { useState } from 'react';
-import { format } from 'date-fns';
 import { CompanyPayrollRecord, DocumentType } from '../types';
 import { supabase } from '@/lib/supabase';
+import { toast } from '@/hooks/use-toast';
 
 interface PayrollState {
-    isSubmitting: boolean;
     finalizeDialog: {
         isOpen: boolean;
         recordId: string | null;
         assignedTo: string;
         isNil: boolean;
+        record?: CompanyPayrollRecord;
     };
     filingDialog: {
         isOpen: boolean;
@@ -29,87 +29,191 @@ interface PayrollState {
     };
 }
 
-export function usePayrollState(
+export const usePayrollState = (
     records: CompanyPayrollRecord[],
-    setPayrollRecords: (records: CompanyPayrollRecord[]) => void,
-    toast: any
-) {
+    setRecords: React.Dispatch<React.SetStateAction<CompanyPayrollRecord[]>>,
+    toast: toast
+) => {
     const [state, setState] = useState<PayrollState>({
-        isSubmitting: false,
         finalizeDialog: {
             isOpen: false,
             recordId: null,
-            assignedTo: 'Tushar',
-            isNil: false
+            assignedTo: '',
+            isNil: false,
         },
         filingDialog: {
             isOpen: false,
             recordId: null,
             isNil: false,
-            confirmOpen: false
+            confirmOpen: false,
         },
         documentDetailsDialog: {
             isOpen: false,
-            record: null
+            record: null,
         },
         deleteAllDialog: {
             isOpen: false,
-            record: null
-        }
+            record: null,
+        },
     });
-
-    const [selectedMonthYear, setSelectedMonthYear] = useState<string>(format(new Date(), 'yyyy-MM'));
 
     const handleFinalize = async (recordId: string, isNil: boolean, assignedTo: string) => {
         try {
-            await onStatusUpdate(recordId, {
-                finalization_date: isNil ? 'NIL' : new Date().toISOString(),
-                status: 'completed',
-                assigned_to: assignedTo
-            });
+            // First, check if this is a temporary record
+            const record = records.find(r => r.id === recordId);
+            if (!record) {
+                throw new Error('Record not found');
+            }
+
+            // If this is a temporary record (starts with "temp_"), create a real record first
+            let realRecordId = recordId;
+            if (recordId.startsWith('temp_')) {
+                // Extract the company_id from the temporary ID or use it directly from the record
+                const companyId = record.company_id;
+
+                // Create a new real record in the database
+                const { data: newRecord, error: insertError } = await supabase
+                    .from('company_payroll_records')
+                    .insert([
+                        {
+                            company_id: companyId,
+                            payroll_cycle_id: record.payroll_cycle_id,
+                            documents: {},
+                            status: {
+                                finalization_date: null,
+                                assigned_to: null,
+                                filing: null
+                            },
+                            number_of_employees: 0
+                        }
+                    ])
+                    .select()
+                    .single();
+
+                if (insertError) throw insertError;
+                realRecordId = newRecord.id;
+            }
+
+            // Now update the finalization status using the real record ID
+            const currentDate = new Date().toISOString();
+            const { error } = await supabase
+                .from('company_payroll_records')
+                .update({
+                    status: {
+                        ...record.status,
+                        finalization_date: isNil ? 'NIL' : currentDate,
+                        assigned_to: assignedTo
+                    }
+                })
+                .eq('id', realRecordId);
+
+            if (error) throw error;
+
+            // Update the records state to reflect changes
+            setRecords(prevRecords =>
+                prevRecords.map(r =>
+                    r.id === recordId
+                        ? {
+                            ...r,
+                            id: realRecordId, // Update the ID if it was temporary
+                            is_temporary: false,
+                            status: {
+                                ...r.status,
+                                finalization_date: isNil ? 'NIL' : currentDate,
+                                assigned_to: assignedTo
+                            }
+                        }
+                        : r
+                )
+            );
+
+            // Close the dialog
             setState(prev => ({
                 ...prev,
                 finalizeDialog: {
                     ...prev.finalizeDialog,
                     isOpen: false,
                     recordId: null,
-                    assignedTo: 'Tushar',
+                    assignedTo: '',
                     isNil: false
                 }
             }));
+
+            toast({
+                title: 'Success',
+                description: 'Record finalized successfully'
+            });
         } catch (error) {
             console.error('Finalization error:', error);
             toast({
                 title: 'Error',
-                description: 'Failed to finalize documents',
+                description: 'Failed to finalize record',
                 variant: 'destructive'
             });
+            throw error;
         }
     };
 
     const handleRevertFinalize = async (recordId: string) => {
         try {
-            await onStatusUpdate(recordId, {
-                finalization_date: null,
-                status: 'pending',
-                assigned_to: null
+            // Only proceed if this is a real record (not temporary)
+            if (recordId.startsWith('temp_')) {
+                toast({
+                    title: 'Error',
+                    description: 'Cannot revert a record that has not been finalized',
+                    variant: 'destructive'
+                });
+                return;
+            }
+
+            const { error } = await supabase
+                .from('company_payroll_records')
+                .update({
+                    status: {
+                        finalization_date: null,
+                        assigned_to: null,
+                        filing: null
+                    }
+                })
+                .eq('id', recordId);
+
+            if (error) throw error;
+
+            // Update records state
+            setRecords(prevRecords =>
+                prevRecords.map(r =>
+                    r.id === recordId
+                        ? {
+                            ...r,
+                            status: {
+                                finalization_date: null,
+                                assigned_to: null,
+                                filing: null
+                            }
+                        }
+                        : r
+                )
+            );
+
+            toast({
+                title: 'Success',
+                description: 'Finalization reverted successfully'
             });
+
+            // Close dialog if open
             setState(prev => ({
                 ...prev,
                 finalizeDialog: {
                     ...prev.finalizeDialog,
-                    isOpen: false,
-                    recordId: null,
-                    assignedTo: 'Tushar',
-                    isNil: false
+                    isOpen: false
+                },
+                documentDetailsDialog: {
+                    ...prev.documentDetailsDialog,
+                    isOpen: false
                 }
             }));
-            toast({
-                title: 'Success',
-                description: 'Finalization reverted successfully',
-            });
         } catch (error) {
-            console.error('Revert finalization error:', error);
+            console.error('Revert error:', error);
             toast({
                 title: 'Error',
                 description: 'Failed to revert finalization',
@@ -118,47 +222,77 @@ export function usePayrollState(
         }
     };
 
-    const handleFilingConfirm = async (recordId: string) => {
+    const handleFilingConfirm = async (recordId: string, date: Date) => {
         try {
+            // First, check if this is a temporary record
             const record = records.find(r => r.id === recordId);
-            if (!record) return;
+            if (!record) {
+                throw new Error('Record not found');
+            }
 
-            const { data: currentRecord, error: fetchError } = await supabase
+            // If this is a temporary record, create a real record first
+            let realRecordId = recordId;
+            if (recordId.startsWith('temp_')) {
+                // Create a new record in the database
+                const { data: newRecord, error: insertError } = await supabase
+                    .from('company_payroll_records')
+                    .insert([
+                        {
+                            company_id: record.company_id,
+                            payroll_cycle_id: record.payroll_cycle_id,
+                            documents: {},
+                            status: {
+                                finalization_date: null,
+                                assigned_to: null,
+                                filing: null
+                            },
+                            number_of_employees: 0
+                        }
+                    ])
+                    .select()
+                    .single();
+
+                if (insertError) throw insertError;
+                realRecordId = newRecord.id;
+            }
+
+            // Now update the filing status
+            const { error } = await supabase
                 .from('company_payroll_records')
-                .select('status')
-                .eq('id', recordId)
-                .single();
+                .update({
+                    status: {
+                        ...record.status,
+                        filing: {
+                            filingDate: date.toISOString(),
+                            filedBy: record.status.assigned_to || 'Unknown'
+                        }
+                    }
+                })
+                .eq('id', realRecordId);
 
-            if (fetchError) throw fetchError;
+            if (error) throw error;
 
-            const currentDate = state.filingDialog.isNil ? 'NIL' : new Date().toISOString();
+            // Update records state
+            setRecords(prevRecords =>
+                prevRecords.map(r =>
+                    r.id === recordId
+                        ? {
+                            ...r,
+                            id: realRecordId, // Update ID if it was temporary
+                            is_temporary: false,
+                            status: {
+                                ...r.status,
+                                filing: {
+                                    filingDate: date.toISOString(),
+                                    filedBy: r.status.assigned_to || 'Unknown'
+                                }
+                            }
+                        }
+                        : r
+                )
+            );
 
-            const updatedStatus = {
-                ...currentRecord.status,
-                filing: {
-                    isReady: true,
-                    filingDate: currentDate,
-                    isNil: state.filingDialog.isNil,
-                    filedBy: record.status.assigned_to || 'Unassigned'
-                }
-            };
-
-            const { error: updateError } = await supabase
-                .from('company_payroll_records')
-                .update({ status: updatedStatus })
-                .eq('id', recordId);
-
-            if (updateError) throw updateError;
-
-            setPayrollRecords(records.map(r => 
-                r.id === recordId ? { ...r, status: updatedStatus } : r
-            ));
-
-            toast({
-                title: "Success",
-                description: "Filing status updated successfully"
-            });
-
+            // Close dialog
             setState(prev => ({
                 ...prev,
                 filingDialog: {
@@ -166,141 +300,167 @@ export function usePayrollState(
                     isOpen: false,
                     recordId: null,
                     isNil: false,
-                    confirmOpen: false
+                    confirmOpen: false,
+                    record: null
                 }
             }));
-        } catch (error) {
-            console.error('Filing update error:', error);
+
             toast({
-                title: "Error",
-                description: "Failed to update filing status",
-                variant: "destructive"
+                title: 'Success',
+                description: 'Filing status updated successfully'
+            });
+        } catch (error) {
+            console.error('Filing error:', error);
+            toast({
+                title: 'Error',
+                description: 'Failed to update filing status',
+                variant: 'destructive'
             });
         }
     };
 
     const handleRemoveFiling = async (recordId: string) => {
         try {
-            const { data: currentRecord, error: fetchError } = await supabase
+            // Only proceed if this is a real record
+            if (recordId.startsWith('temp_')) {
+                toast({
+                    title: 'Error',
+                    description: 'Cannot remove filing from a record that has not been filed',
+                    variant: 'destructive'
+                });
+                return;
+            }
+
+            const record = records.find(r => r.id === recordId);
+            if (!record) return;
+
+            const { error } = await supabase
                 .from('company_payroll_records')
-                .select('status')
-                .eq('id', recordId)
-                .single();
-
-            if (fetchError) throw fetchError;
-
-            const { filing, ...restStatus } = currentRecord.status;
-            const updatedStatus = { ...restStatus };
-
-            const { error: updateError } = await supabase
-                .from('company_payroll_records')
-                .update({ status: updatedStatus })
+                .update({
+                    status: {
+                        ...record.status,
+                        filing: null
+                    }
+                })
                 .eq('id', recordId);
 
-            if (updateError) throw updateError;
+            if (error) throw error;
 
-            setPayrollRecords(records.map(r =>
-                r.id === recordId ? { ...r, status: updatedStatus } : r
-            ));
+            // Update records state
+            setRecords(prevRecords =>
+                prevRecords.map(r =>
+                    r.id === recordId
+                        ? {
+                            ...r,
+                            status: {
+                                ...r.status,
+                                filing: null
+                            }
+                        }
+                        : r
+                )
+            );
 
+            // Close dialog
             setState(prev => ({
                 ...prev,
-                filingDialog: { ...prev.filingDialog, isOpen: false }
+                filingDialog: {
+                    ...prev.filingDialog,
+                    isOpen: false,
+                    recordId: null,
+                    isNil: false,
+                    confirmOpen: false,
+                    record: null
+                }
             }));
 
             toast({
-                title: "Success",
-                description: "Filing status has been removed successfully.",
-                variant: "default",
+                title: 'Success',
+                description: 'Filing status removed successfully'
             });
         } catch (error) {
-            console.error('Error removing filing status:', error);
+            console.error('Remove filing error:', error);
             toast({
-                title: "Error",
-                description: "Failed to remove filing status. Please try again.",
-                variant: "destructive",
+                title: 'Error',
+                description: 'Failed to remove filing status',
+                variant: 'destructive'
             });
         }
     };
 
     const handleDeleteAll = async (record: CompanyPayrollRecord) => {
         try {
-            setState(prev => ({ ...prev, isSubmitting: true }));
-
-            const documentsToDelete = Object.entries(record.documents)
-                .filter(([_, path]) => path !== null) as [DocumentType, string][];
-
-            if (documentsToDelete.length === 0) {
+            // Skip if this is a temporary record with no documents
+            if (record.is_temporary || record.id.startsWith('temp_')) {
                 toast({
-                    title: 'No documents',
-                    description: 'No documents to delete'
+                    title: 'Info',
+                    description: 'No documents to delete for this record',
                 });
                 return;
             }
 
-            await Promise.all(
-                documentsToDelete.map(async ([_, path]) => {
-                    const { error: deleteError } = await supabase.storage
-                        .from('Payroll-Cycle')
-                        .remove([path]);
-                    if (deleteError) throw deleteError;
-                })
-            );
+            // First, get all document paths that need to be deleted
+            const documentPaths = Object.values(record.documents).filter(Boolean);
+
+            if (documentPaths.length === 0) {
+                toast({
+                    title: 'Info',
+                    description: 'No documents to delete for this record',
+                });
+                return;
+            }
+
+            // Delete files from storage
+            const { error: deleteError } = await supabase.storage
+                .from('Payroll-Cycle')
+                .remove(documentPaths);
+
+            if (deleteError) throw deleteError;
+
+            // Update record to remove all document references
+            const emptyDocuments = Object.keys(record.documents).reduce((acc, key) => {
+                acc[key] = null;
+                return acc;
+            }, {});
 
             const { error: updateError } = await supabase
                 .from('company_payroll_records')
                 .update({
-                    documents: {
-                        paye_csv: null,
-                        hslevy_csv: null,
-                        shif_exl: null,
-                        nssf_exl: null,
-                        zip_file_kra: null,
-                        all_csv: null
-                    }
+                    documents: emptyDocuments,
+                    number_of_employees: 0
                 })
                 .eq('id', record.id);
 
             if (updateError) throw updateError;
 
-            setPayrollRecords(records.map(r => {
-                if (r.id === record.id) {
-                    return {
-                        ...r,
-                        documents: {
-                            paye_csv: null,
-                            hslevy_csv: null,
-                            shif_exl: null,
-                            nssf_exl: null,
-                            zip_file_kra: null,
-                            all_csv: null
+            // Update records state
+            setRecords(prevRecords =>
+                prevRecords.map(r =>
+                    r.id === record.id
+                        ? {
+                            ...r,
+                            documents: emptyDocuments,
+                            number_of_employees: 0
                         }
-                    };
-                }
-                return r;
-            }));
+                        : r
+                )
+            );
 
             toast({
                 title: 'Success',
-                description: `Successfully deleted ${documentsToDelete.length} documents`
+                description: 'All documents deleted successfully'
             });
         } catch (error) {
             console.error('Delete all error:', error);
             toast({
                 title: 'Error',
-                description: 'Failed to delete documents',
+                description: 'Failed to delete all documents',
                 variant: 'destructive'
             });
-        } finally {
-            setState(prev => ({ 
-                ...prev, 
-                isSubmitting: false,
-                deleteAllDialog: { isOpen: false, record: null }
-            }));
         }
     };
 
-    const handleDownload = async (path: string): Promise<void> => {
+    const handleDownload = async (path: string) => {
         try {
             const { data, error } = await supabase.storage
                 .from('Payroll-Cycle')
@@ -308,15 +468,17 @@ export function usePayrollState(
 
             if (error) throw error;
 
-            const url = URL.createObjectURL(data);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = path.split('/').pop() || 'document';
-            document.body.appendChild(a);
-            a.click();
-            URL.revokeObjectURL(url);
-            document.body.removeChild(a);
+            // Create a download link
+            const url = window.URL.createObjectURL(data);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = path.split('/').pop() || 'document';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            window.URL.revokeObjectURL(url);
         } catch (error) {
+            console.error('Download error:', error);
             toast({
                 title: 'Error',
                 description: 'Failed to download document',
@@ -327,18 +489,41 @@ export function usePayrollState(
 
     const handleDownloadAll = async (record: CompanyPayrollRecord) => {
         try {
-            const documentsToDownload = Object.entries(record.documents)
-                .filter(([key, value]) => key !== 'all_csv' && value !== null);
+            // Skip if this is a temporary record with no documents
+            if (record.is_temporary || record.id.startsWith('temp_')) {
+                toast({
+                    title: 'Info',
+                    description: 'No documents to download for this record',
+                });
+                return;
+            }
 
-            for (const [_, path] of documentsToDownload) {
-                if (path) await handleDownload(path);
+            // Get all document paths that need to be downloaded
+            const documentPaths = Object.values(record.documents).filter(Boolean);
+
+            if (documentPaths.length === 0) {
+                toast({
+                    title: 'Info',
+                    description: 'No documents to download for this record',
+                });
+                return;
+            }
+
+            // Download each document one by one
+            for (const path of documentPaths) {
+                try {
+                    await handleDownload(path);
+                } catch (error) {
+                    console.error(`Failed to download ${path}:`, error);
+                }
             }
 
             toast({
                 title: 'Success',
-                description: 'All documents downloaded successfully'
+                description: 'All documents downloaded'
             });
         } catch (error) {
+            console.error('Download all error:', error);
             toast({
                 title: 'Error',
                 description: 'Failed to download all documents',
@@ -347,31 +532,15 @@ export function usePayrollState(
         }
     };
 
-    const onStatusUpdate = async (recordId: string, statusUpdate: any) => {
-        const { error } = await supabase
-            .from('company_payroll_records')
-            .update({ status: statusUpdate })
-            .eq('id', recordId);
-
-        if (error) throw error;
-
-        setPayrollRecords(records.map(r =>
-            r.id === recordId ? { ...r, status: statusUpdate } : r
-        ));
-    };
-
     return {
         state,
         setState,
-        selectedMonthYear,
-        setSelectedMonthYear,
         handleFinalize,
         handleRevertFinalize,
         handleFilingConfirm,
         handleRemoveFiling,
         handleDeleteAll,
         handleDownload,
-        handleDownloadAll,
-        onStatusUpdate
+        handleDownloadAll
     };
-}
+};
