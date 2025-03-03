@@ -28,6 +28,17 @@ import {
     DropdownMenuSeparator
 } from "@/components/ui/dropdown-menu"
 
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+
 interface Bank {
     id: number
     bank_name: string
@@ -161,6 +172,11 @@ export function BankReconciliationTable({
     const [selectedStatement, setSelectedStatement] = useState<BankStatement | null>(null)
     const [quickbooksDialogOpen, setQuickbooksDialogOpen] = useState<boolean>(false)
     const [statementCycleId, setStatementCycleId] = useState<string | null>(null)
+
+    // const [showDeleteConfirmation, setShowDeleteConfirmation] = useState<boolean>(false);
+    // const [statementToDelete, setStatementToDelete] = useState<{ id: string, bankId: number } | null>(null);
+    const [showDeleteConfirmation, setShowDeleteConfirmation] = useState<boolean>(false);
+    const [statementToDelete, setStatementToDelete] = useState<{ id: string, bankId: number } | null>(null);
 
     const { toast } = useToast()
 
@@ -391,7 +407,6 @@ const fetchCompaniesAndBanks = async () => {
                         .from('acc_cycle_bank_statements')
                         .select('*')
                         .eq('statement_cycle_id', cycle.id);
-    
                     if (statementsError) {
                         throw new Error(`Failed to fetch statements: ${statementsError.message}`);
                     }
@@ -534,12 +549,18 @@ const fetchCompaniesAndBanks = async () => {
         const statement = filteredStatements.find(s => s.bank_id === bankId);
         if (!statement) return;
 
-        // Confirm deletion
-        if (!window.confirm("Are you sure you want to delete this statement? This action cannot be undone.")) {
-            return;
-        }
+        // Show confirmation dialog instead of using window.confirm
+        setStatementToDelete({ id: statement.id, bankId });
+        setShowDeleteConfirmation(true);
+    };
+
+    const confirmDeleteStatement = async () => {
+        if (!statementToDelete) return;
 
         try {
+            const statement = filteredStatements.find(s => s.bank_id === statementToDelete.bankId);
+            if (!statement) return;
+
             // Delete files from storage if they exist
             if (statement.statement_document?.statement_pdf) {
                 await supabase.storage
@@ -561,7 +582,7 @@ const fetchCompaniesAndBanks = async () => {
 
             if (error) throw error;
 
-            // Update the UI
+            // Update the UI state
             setBankStatements(prev => prev.filter(s => s.id !== statement.id));
 
             // Reset selected statement and bank to prevent null reference errors
@@ -586,6 +607,10 @@ const fetchCompaniesAndBanks = async () => {
                 description: 'Failed to delete bank statement',
                 variant: 'destructive'
             });
+        } finally {
+            // Close the confirmation dialog
+            setShowDeleteConfirmation(false);
+            setStatementToDelete(null);
         }
     };
 
@@ -874,6 +899,30 @@ const fetchCompaniesAndBanks = async () => {
                     onBalanceUpdated={handleQuickbooksBalanceUpdated}
                 />
             )}
+
+            {/* Delete Confirmation Dialog */}
+            <AlertDialog open={showDeleteConfirmation} onOpenChange={setShowDeleteConfirmation}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            This action cannot be undone. This will permanently delete the bank statement
+                            and remove all associated data.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel onClick={() => setStatementToDelete(null)}>
+                            Cancel
+                        </AlertDialogCancel>
+                        <AlertDialogAction
+                            onClick={confirmDeleteStatement}
+                            className="bg-red-600 hover:bg-red-700 text-white"
+                        >
+                            Delete Statement
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </div>
     );
 }
