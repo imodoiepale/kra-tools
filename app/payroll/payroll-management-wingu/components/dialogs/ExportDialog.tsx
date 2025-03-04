@@ -329,7 +329,7 @@ export function ExportDialog({
         onOpenChange(isOpen);
       }
     }}>
-      <DialogContent className="sm:max-w-[1200px] max-h-[90vh] overflow-y-auto bg-white rounded-lg shadow-lg">
+      <DialogContent className="sm:max-w-[1000px] max-h-[90vh] overflow-y-auto bg-white rounded-lg shadow-lg">
         <DialogHeader className="border-b pb-4">
           <DialogTitle className="text-xl font-semibold flex items-center justify-between text-blue-800">
             <span>Export Documents</span>
@@ -428,7 +428,8 @@ export function ExportDialog({
             </div>
           </div>
 
-          {/* Document Types */}
+          
+          <div className="space-y-3 grid grid-cols-3">
           <div className="space-y-3">
             <h3 className="text-sm font-medium text-gray-700">Document Types</h3>
             <div className="bg-gray-50 p-3 rounded-md">
@@ -534,7 +535,10 @@ export function ExportDialog({
                 ))}
               </div>
             </div>
+            </div>
+            
           </div>
+          {/* Document Types */}
 
           {/* Export Summary */}
           <div className="bg-blue-50 p-4 rounded-md">
