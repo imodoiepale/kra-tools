@@ -739,10 +739,10 @@ export function PayslipPaymentReceiptsTable({
     return (
         <div className="rounded-md border h-[calc(100vh-220px)] overflow-auto">
             <Table aria-label="Payroll Records" className="border border-gray-200">
-                <TableHeader className="sticky top-0 z-10">
-                    <TableRow className="bg-blue-600 hover:bg-blue-600 [&>th]:border-r [&>th]:border-blue-500 last:[&>th]:border-r-0">
+                <TableHeader className="bg-blue-500 text-white">
+                    <TableRow>
                         {columnVisibility?.index !== false && (
-                            <TableHead className="text-white font-semibold border-b" scope="col">#</TableHead>
+                            <TableHead className="text-white font-semibold" scope="col">Index (#)</TableHead>
                         )}
                         {columnVisibility?.companyName !== false && (
                             <TableHead className="text-white font-semibold" scope="col">Company Name</TableHead>
@@ -751,22 +751,22 @@ export function PayslipPaymentReceiptsTable({
                             <TableHead className="text-white font-semibold" scope="col">Email Date</TableHead>
                         )}
                         {columnVisibility?.whatsappDate !== false && (
-                            <TableHead className="text-white font-semibold" scope="col">WA Date</TableHead>
+                            <TableHead className="text-white font-semibold" scope="col">WhatsApp Date</TableHead>
                         )}
                         {columnVisibility?.payeReceipt !== false && (
-                            <TableHead className="text-white font-semibold" scope="col">PAYE Rct</TableHead>
+                            <TableHead className="text-white font-semibold" scope="col">PAYE Receipt</TableHead>
                         )}
                         {columnVisibility?.housingLevyReceipt !== false && (
-                            <TableHead className="text-white font-semibold" scope="col">Hs. Levy Rct</TableHead>
+                            <TableHead className="text-white font-semibold" scope="col">Housing Levy Receipt</TableHead>
                         )}
                         {columnVisibility?.nitaReceipt !== false && (
-                            <TableHead className="text-white font-semibold" scope="col">NITA Rct</TableHead>
+                            <TableHead className="text-white font-semibold" scope="col">NITA Receipt</TableHead>
                         )}
                         {columnVisibility?.shifReceipt !== false && (
-                            <TableHead className="text-white font-semibold" scope="col">SHIF Rct</TableHead>
+                            <TableHead className="text-white font-semibold" scope="col">SHIF Receipt</TableHead>
                         )}
                         {columnVisibility?.nssfReceipt !== false && (
-                            <TableHead className="text-white font-semibold" scope="col">NSSF Rct</TableHead>
+                            <TableHead className="text-white font-semibold" scope="col">NSSF Receipt</TableHead>
                         )}
                         {columnVisibility?.allDocuments !== false && (
                             <TableHead className="text-white font-semibold" scope="col">All Documents</TableHead>

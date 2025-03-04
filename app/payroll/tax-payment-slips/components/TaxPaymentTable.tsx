@@ -690,10 +690,10 @@ export function TaxPaymentTable({
     return (
         <div className="rounded-md border h-[calc(100vh-220px)] overflow-auto">
             <Table aria-label="Payroll Records" className="border border-gray-200">
-                <TableHeader className="sticky top-0 z-10">
-                    <TableRow className="bg-blue-600 hover:bg-blue-600 [&>th]:border-r [&>th]:border-blue-500 last:[&>th]:border-r-0">
+                <TableHeader className="bg-blue-500 text-white">
+                    <TableRow>
                         {columnVisibility?.index !== false && (
-                            <TableHead className="text-white font-semibold border-b" scope="col">#</TableHead>
+                            <TableHead className="text-white font-semibold" scope="col">Index (#)</TableHead>
                         )}
                         {columnVisibility?.companyName !== false && (
                             <TableHead className="text-white font-semibold" scope="col">Company Name</TableHead>
@@ -701,17 +701,30 @@ export function TaxPaymentTable({
                         {columnVisibility?.readyToFile !== false && (
                             <TableHead className="text-white font-semibold" scope="col">Ready to File</TableHead>
                         )}
-                        {Object.entries(DOCUMENT_LABELS).map(([key]) => (
-                            key !== 'all_csv' && columnVisibility?.[key] !== false ? (
-                                <TableHead key={key} className="text-white font-semibold" scope="col">{DOCUMENT_LABELS[key]}</TableHead>
-                            ) : null
-                        ))}
-                        {columnVisibility?.all_csv !== false && (
+                        {columnVisibility?.payeAcknowledgment !== false && (
+                            <TableHead className="text-white font-semibold" scope="col">PAYE Ack.</TableHead>
+                        )}
+                        {columnVisibility?.payeSlip !== false && (
+                            <TableHead className="text-white font-semibold" scope="col">PAYE Slip</TableHead>
+                        )}
+                        {columnVisibility?.housingLevy !== false && (
+                            <TableHead className="text-white font-semibold" scope="col">Housing Levy</TableHead>
+                        )}
+                        {columnVisibility?.nita !== false && (
+                            <TableHead className="text-white font-semibold" scope="col">NITA</TableHead>
+                        )}
+                        {columnVisibility?.shif !== false && (
+                            <TableHead className="text-white font-semibold" scope="col">SHIF</TableHead>
+                        )}
+                        {columnVisibility?.nssf !== false && (
+                            <TableHead className="text-white font-semibold" scope="col">NSSF</TableHead>
+                        )}
+                        {columnVisibility?.allTaxSlips !== false && (
                             <TableHead className="text-white font-semibold" scope="col">All Tax Slips</TableHead>
                         )}
-                        {columnVisibility?.emailStatus !== false && (
+                        {/* {columnVisibility?.emailStatus !== false && (
                             <TableHead className="text-white font-semibold" scope="col">Email Status</TableHead>
-                        )}
+                        )} */}
                         {columnVisibility?.email !== false && (
                             <TableHead className="text-white font-semibold" scope="col">Email</TableHead>
                         )}

@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useToast } from '@/hooks/use-toast'
 import { ObligationFilters } from '../components/ObligationFilters'
-import { Settings2, Download, SlidersHorizontal } from 'lucide-react'
+import { Settings2, Download } from 'lucide-react'
 import {
     DropdownMenu,
     DropdownMenuCheckboxItem,
@@ -52,11 +52,12 @@ export default function PayslipPaymentReceipts({
     const [selectedCategories, setSelectedCategories] = useState<string[]>(['acc']);
     const [selectedObligations, setSelectedObligations] = useState<string[]>(['active']);
 
+    // Column definitions for visibility toggle
     const columnDefinitions = [
         { id: 'index', label: 'Index (#)', defaultVisible: true },
         { id: 'companyName', label: 'Company Name', defaultVisible: true },
         { id: 'emailDate', label: 'Email Date', defaultVisible: true },
-        { id: 'whatsappDate', label: 'WA Date', defaultVisible: true },
+        { id: 'whatsappDate', label: 'WhatsApp Date', defaultVisible: true },
         { id: 'payeReceipt', label: 'PAYE Receipt', defaultVisible: true },
         { id: 'housingLevyReceipt', label: 'Housing Levy Receipt', defaultVisible: true },
         { id: 'nitaReceipt', label: 'NITA Receipt', defaultVisible: true },
@@ -64,30 +65,30 @@ export default function PayslipPaymentReceipts({
         { id: 'nssfReceipt', label: 'NSSF Receipt', defaultVisible: true },
         { id: 'allDocuments', label: 'All Documents', defaultVisible: true },
         { id: 'actions', label: 'Actions', defaultVisible: true },
-        { id: 'emailStatus', label: 'Email Status', defaultVisible: true },
+        { id: 'emailStatus', label: 'Email Status', defaultVisible: true }
     ];
 
     const [visibleColumns, setVisibleColumns] = useState<string[]>(() => 
         columnDefinitions.filter(col => col.defaultVisible).map(col => col.id)
     );
 
-    // Convert columnDefinitions to visibility object
-    const columnVisibility = useMemo(() => {
-        const visibilityObj: Record<string, boolean> = {};
-        columnDefinitions.forEach(col => {
-            visibilityObj[col.id] = visibleColumns.includes(col.id);
-        });
-        return visibilityObj;
-    }, [visibleColumns, columnDefinitions]);
-
     // Toggle column visibility
     const toggleColumnVisibility = (columnId: string, isVisible: boolean) => {
         if (isVisible) {
             setVisibleColumns(prev => [...prev, columnId]);
         } else {
-            setVisibleColumns(prev => prev.filter(col => col !== columnId));
+            setVisibleColumns(prev => prev.filter(id => id !== columnId));
         }
     };
+
+    // Convert visibleColumns array to an object for the table component
+    const columnVisibility = useMemo(() => {
+        const visibility: Record<string, boolean> = {};
+        columnDefinitions.forEach(column => {
+            visibility[column.id] = visibleColumns.includes(column.id);
+        });
+        return visibility;
+    }, [visibleColumns]);
 
     const handleFilterChange = useCallback((categories: string[]) => {
         setSelectedCategories(categories);

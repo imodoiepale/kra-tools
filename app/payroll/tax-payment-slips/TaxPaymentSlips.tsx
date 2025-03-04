@@ -54,25 +54,21 @@ export default function TaxPaymentSlips({
     const [selectedCategories, setSelectedCategories] = useState<string[]>(['acc']);
     const [selectedObligations, setSelectedObligations] = useState<string[]>(['active']);
 
+    // Column definitions for visibility toggle
     const columnDefinitions = [
         { id: 'index', label: 'Index (#)', defaultVisible: true },
         { id: 'companyName', label: 'Company Name', defaultVisible: true },
-        { id: 'kraPin', label: 'KRA PIN', defaultVisible: true },
-        { id: 'obligationDate', label: 'Obligation Date', defaultVisible: false },
-        { id: 'numberOfEmployees', label: 'No. of Employees', defaultVisible: false },
-        { id: 'finalizationDate', label: 'Finalization Date', defaultVisible: true },
         { id: 'readyToFile', label: 'Ready to File', defaultVisible: true },
         { id: 'payeAcknowledgment', label: 'PAYE Ack.', defaultVisible: true },
         { id: 'payeSlip', label: 'PAYE Slip', defaultVisible: true },
-        { id: 'housingLevy', label: 'Hs. Levy', defaultVisible: true },
+        { id: 'housingLevy', label: 'Housing Levy', defaultVisible: true },
         { id: 'nita', label: 'NITA', defaultVisible: true },
         { id: 'shif', label: 'SHIF', defaultVisible: true },
         { id: 'nssf', label: 'NSSF', defaultVisible: true },
         { id: 'allTaxSlips', label: 'All Tax Slips', defaultVisible: true },
-        { id: 'emailStatus', label: 'Email Status', defaultVisible: true },
+        // { id: 'emailStatus', label: 'Email Status', defaultVisible: true },
         { id: 'email', label: 'Email', defaultVisible: true },
         { id: 'whatsapp', label: 'WhatsApp', defaultVisible: true },
-        { id: 'assignedTo', label: 'Assigned To', defaultVisible: false },
         { id: 'actions', label: 'Actions', defaultVisible: true },
     ];
 
@@ -80,23 +76,23 @@ export default function TaxPaymentSlips({
         columnDefinitions.filter(col => col.defaultVisible).map(col => col.id)
     );
 
-    // Convert columnDefinitions to visibility object
-    const columnVisibility = useMemo(() => {
-        const visibilityObj: Record<string, boolean> = {};
-        columnDefinitions.forEach(col => {
-            visibilityObj[col.id] = visibleColumns.includes(col.id);
-        });
-        return visibilityObj;
-    }, [visibleColumns, columnDefinitions]);
-
     // Toggle column visibility
     const toggleColumnVisibility = (columnId: string, isVisible: boolean) => {
         if (isVisible) {
             setVisibleColumns(prev => [...prev, columnId]);
         } else {
-            setVisibleColumns(prev => prev.filter(col => col !== columnId));
+            setVisibleColumns(prev => prev.filter(id => id !== columnId));
         }
     };
+
+    // Convert visibleColumns array to an object for the table component
+    const columnVisibility = useMemo(() => {
+        const visibility: Record<string, boolean> = {};
+        columnDefinitions.forEach(column => {
+            visibility[column.id] = visibleColumns.includes(column.id);
+        });
+        return visibility;
+    }, [visibleColumns]);
 
     const handleFilterChange = useCallback((categories: string[]) => {
         setSelectedCategories(categories);
