@@ -67,7 +67,7 @@ export function ExportDialog({
   const [selectedDocTypes, setSelectedDocTypes] = useState<DocumentType[]>([]);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [selectedObligations, setSelectedObligations] = useState<string[]>([]);
-  const [exportName, setExportName] = useState<string>(`Payroll_Export_${monthNames[selectedMonth - 1]}_${selectedYear}`);
+  const [exportName, setExportName] = useState<string>(`Payroll_Export_${monthNames[selectedMonth ]}_${selectedYear}`);
   const [exportAll, setExportAll] = useState<boolean>(true);
   const [exportInProgress, setExportInProgress] = useState<boolean>(false);
   const [exportProgress, setExportProgress] = useState<{ current: number; total: number }>({ current: 0, total: 0 });
@@ -86,7 +86,7 @@ export function ExportDialog({
     setSelectedDocTypes([]);
     setSelectedCategories([]);
     setSelectedObligations([]);
-    setExportName(`Payroll_Export_${monthNames[selectedMonth - 1]}_${selectedYear}`);
+    setExportName(`Payroll_Export_${monthNames[selectedMonth ]}_${selectedYear}`);
     setExportAll(true);
     setExportInProgress(false);
     setExportProgress({ current: 0, total: 0 });
@@ -341,7 +341,7 @@ export function ExportDialog({
               <Calendar className="h-5 w-5 text-blue-700 mr-2" />
               <span className="text-lg font-medium text-blue-800">Export Period:</span>
             </div>
-            <span className="text-lg font-bold text-blue-900">{monthNames[selectedMonth - 1]} {selectedYear}</span>
+            <span className="text-lg font-bold text-blue-900">{monthNames[selectedMonth ]} {selectedYear}</span>
           </div>
         </DialogHeader>
 
@@ -365,8 +365,8 @@ export function ExportDialog({
             <div className="flex items-center space-x-3">
               <Checkbox
                 id="export-all"
-                checked={exportAll}
-                onCheckedChange={(checked) => setExportAll(checked === true)}
+                // checked={exportAll}
+                onCheckedChange={(checked) => setExportAll(checked === false)}
                 className="h-5 w-5 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
                 disabled={exportInProgress}
               />
