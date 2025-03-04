@@ -95,6 +95,7 @@ interface PayrollTableProps {
     onStatusUpdate: (recordId: string, statusUpdate: any) => Promise<void>
     loading: boolean
     setPayrollRecords: (records: CompanyPayrollRecord[]) => void
+    columnVisibility?: Record<string, boolean>
 }
 
 const formatDate = (date: string | null | undefined): string => {
@@ -110,6 +111,18 @@ const formatDate = (date: string | null | undefined): string => {
 };
 
 const getDocumentsForUpload = (record: CompanyPayrollRecord) => {
+    // Return empty array if payment_receipts_documents is undefined
+    if (!record.payment_receipts_documents) {
+        return Object.entries(DOCUMENT_LABELS)
+            .filter(([key]) => key !== 'all_csv')
+            .map(([type, label]) => ({
+                type: type as DocumentType,
+                label,
+                status: 'missing' as const,
+                path: null
+            }));
+    }
+    
     return Object.entries(DOCUMENT_LABELS)
         .filter(([key]) => key !== 'all_csv')
         .map(([type, label]) => ({
@@ -339,7 +352,7 @@ const handleDeleteAll = async (record: CompanyPayrollRecord) => {
         setIsSubmitting(true);
 
         // Filter out null values before using the paths
-        const documentsToDelete = Object.entries(record.payment_receipts_documents).filter(([_, path]) => path !== null) as [DocumentType, string][];
+        const documentsToDelete = Object.entries(record.payment_receipts_documents || {}).filter(([_, path]) => path !== null) as [DocumentType, string][];
 
         if (documentsToDelete.length === 0) {
             toast({
@@ -437,7 +450,7 @@ const handleDownload = async (path: string): Promise<void> => {
 
 const handleDownloadAll = async (record: CompanyPayrollRecord) => {
     try {
-        const documentsToDownload = Object.entries(record.payment_receipts_documents)
+        const documentsToDownload = Object.entries(record.payment_receipts_documents || {})
             .filter(([key, value]) => key !== 'all_csv' && value !== null);
 
         for (const [_, path] of documentsToDownload) {
@@ -478,8 +491,8 @@ const handleDocumentUpload = async (recordId: string, file: File, documentType: 
         if (fetchError) throw fetchError;
         if (!currentRecord) throw new Error('Failed to fetch current record');
 
-        const fileName = `${documentType} - ${record.company.company_name} - ${format(new Date(), 'yyyy-MM-dd')}${file.name.substring(file.name.lastIndexOf('.'))}`;
-        const filePath = `${selectedMonthYear}/PAYMENT RECEIPTS/${record.company.company_name}/${fileName}`;
+        const fileName = `${documentType} - ${record.company?.company_name || 'Unknown'} - ${format(new Date(), 'yyyy-MM-dd')}${file.name.substring(file.name.lastIndexOf('.'))}`;
+        const filePath = `${selectedMonthYear}/PAYMENT RECEIPTS/${record.company?.company_name || 'Unknown'}/${fileName}`;
         
         // Upload file to storage
         const { data: uploadData, error: uploadError } = await supabase.storage
@@ -545,7 +558,7 @@ const handleDocumentDelete = async (recordId: string, documentType: DocumentType
         const record = records.find(r => r.id === recordId);
         if (!record) return;
 
-        const documentPath = record.payment_receipts_documents[documentType];
+        const documentPath = record.payment_receipts_documents?.[documentType];
         if (!documentPath) return;
 
         const { error: deleteError } = await supabase.storage
@@ -652,7 +665,8 @@ export function PayslipPaymentReceiptsTable({
     onStatusUpdate,
     onDocumentDelete,
     loading,
-    setPayrollRecords
+    setPayrollRecords,
+    columnVisibility
 }: PayrollTableProps) {
     const { toast } = useToast()
 
@@ -679,15 +693,19 @@ export function PayslipPaymentReceiptsTable({
     }>({ isOpen: false, record: null });
 
     const getDocumentCount = (record: CompanyPayrollRecord) => {
-        if (record.status.finalization_date === 'NIL') {
+        if (!record.status || record.status.finalization_date === 'NIL') {
             return 'N/A';
+        }
+        // Check if payment_receipts_documents exists
+        if (!record.payment_receipts_documents) {
+            return '0/5';
         }
         // Count all document types
         const requiredDocs = ['paye_receipt', 'housing_levy_receipt', 'shif_receipt', 'nssf_receipt', 'nita_receipt'];
         const totalDocs = requiredDocs.length;
         const uploadedDocs = requiredDocs.filter(docType =>
-            record.payment_receipts_documents[docType as DocumentType] !== null &&
-            record.payment_receipts_documents[docType as DocumentType] !== undefined
+            record.payment_receipts_documents?.[docType as DocumentType] !== null &&
+            record.payment_receipts_documents?.[docType as DocumentType] !== undefined
         ).length;
         return `${uploadedDocs}/${totalDocs}`;
     };
@@ -695,7 +713,7 @@ export function PayslipPaymentReceiptsTable({
     const allDocumentsUploaded = (record: CompanyPayrollRecord | undefined): boolean => {
         if (!record) return false;
         const requiredDocs = ['paye_receipt', 'housing_levy_receipt', 'shif_receipt', 'nssf_receipt', 'nita_receipt'];
-        return requiredDocs.every(docType => record.payment_receipts_documents[docType as DocumentType] !== null);
+        return requiredDocs.every(docType => record.payment_receipts_documents?.[docType as DocumentType] !== null);
     };
 
     // Memoize sorted records for performance
@@ -723,20 +741,42 @@ export function PayslipPaymentReceiptsTable({
             <Table aria-label="Payroll Records" className="border border-gray-200">
                 <TableHeader className="sticky top-0 z-10">
                     <TableRow className="bg-blue-600 hover:bg-blue-600 [&>th]:border-r [&>th]:border-blue-500 last:[&>th]:border-r-0">
-                        <TableHead className="text-white font-semibold border-b" scope="col">#</TableHead>
-                        <TableHead className="text-white font-semibold" scope="col">Company Name</TableHead>
-                        <TableHead className="text-white font-semibold" scope="col">Email Date</TableHead>
-                        <TableHead className="text-white font-semibold" scope="col">WA Date</TableHead>
-                        {/* <TableHead className="text-white font-semibold" scope="col">Ready to File</TableHead> */}
-                        {/* <TableHead className="text-white font-semibold" scope="col">PAYE Ack.</TableHead> */}
-                        <TableHead className="text-white font-semibold" scope="col">PAYE Rct</TableHead>
-                        <TableHead className="text-white font-semibold" scope="col">Hs. Levy Rct</TableHead>
-                        <TableHead className="text-white font-semibold" scope="col">NITA Rct</TableHead>
-                        <TableHead className="text-white font-semibold" scope="col">SHIF Rct</TableHead>
-                        <TableHead className="text-white font-semibold" scope="col">NSSF Rct</TableHead>
-                        <TableHead className="text-white font-semibold" scope="col">All Tax Rcts</TableHead>
-                        <TableHead className="text-white font-semibold" scope="col">Actions</TableHead>
-                        <TableHead className="text-white font-semibold" scope="col">Email Status</TableHead>
+                        {columnVisibility?.index !== false && (
+                            <TableHead className="text-white font-semibold border-b" scope="col">#</TableHead>
+                        )}
+                        {columnVisibility?.companyName !== false && (
+                            <TableHead className="text-white font-semibold" scope="col">Company Name</TableHead>
+                        )}
+                        {columnVisibility?.emailDate !== false && (
+                            <TableHead className="text-white font-semibold" scope="col">Email Date</TableHead>
+                        )}
+                        {columnVisibility?.whatsappDate !== false && (
+                            <TableHead className="text-white font-semibold" scope="col">WA Date</TableHead>
+                        )}
+                        {columnVisibility?.payeReceipt !== false && (
+                            <TableHead className="text-white font-semibold" scope="col">PAYE Rct</TableHead>
+                        )}
+                        {columnVisibility?.housingLevyReceipt !== false && (
+                            <TableHead className="text-white font-semibold" scope="col">Hs. Levy Rct</TableHead>
+                        )}
+                        {columnVisibility?.nitaReceipt !== false && (
+                            <TableHead className="text-white font-semibold" scope="col">NITA Rct</TableHead>
+                        )}
+                        {columnVisibility?.shifReceipt !== false && (
+                            <TableHead className="text-white font-semibold" scope="col">SHIF Rct</TableHead>
+                        )}
+                        {columnVisibility?.nssfReceipt !== false && (
+                            <TableHead className="text-white font-semibold" scope="col">NSSF Rct</TableHead>
+                        )}
+                        {columnVisibility?.allDocuments !== false && (
+                            <TableHead className="text-white font-semibold" scope="col">All Documents</TableHead>
+                        )}
+                        {columnVisibility?.actions !== false && (
+                            <TableHead className="text-white font-semibold" scope="col">Actions</TableHead>
+                        )}
+                        {columnVisibility?.emailStatus !== false && (
+                            <TableHead className="text-white font-semibold" scope="col">Email Status</TableHead>
+                        )}
                     </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -765,212 +805,271 @@ export function PayslipPaymentReceiptsTable({
                         <TableRow
                             key={record.id}
                             className={`${index % 2 === 0 ? 'bg-blue-50 hover:bg-blue-100' : 'bg-white hover:bg-gray-50'} [&>td]:border-r [&>td]:border-gray-200 last:[&>td]:border-r-0`}
-                            aria-label={`Payroll record for ${record.company.company_name}`}
+                            aria-label={`Payroll record for ${record.company?.company_name || 'Unknown'}`}
                         >
-                            <TableCell>{index + 1}</TableCell>
-                            <TooltipProvider>
-                                <TableCell className="font-medium">
-                                    <Tooltip>
-                                        <TooltipTrigger className=" ">
-                                            {record.company.company_name.split(" ").slice(0, 3).join(" ")}
-                                        </TooltipTrigger>
-                                        <TooltipContent>{record.company.company_name}</TooltipContent>
-                                    </Tooltip>
-                                </TableCell>
-                            </TooltipProvider>
-
-                            <TableCell className="text-center">
+                            {columnVisibility?.index !== false && (
+                                <TableCell>{index + 1}</TableCell>
+                            )}
+                            {columnVisibility?.companyName !== false && (
                                 <TooltipProvider>
-                                    <Tooltip>
-                                        <TooltipTrigger asChild>
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                className="relative h-8 w-8 p-0"
-                                                onClick={() => {
-                                                    const emailHistory = record.email_history || [];
-                                                    if (emailHistory.length > 0) {
-                                                        toast({
-                                                            title: "Email History",
-                                                            description: (
-                                                                <div className="mt-2 space-y-1">
-                                                                    {emailHistory.map((history, i) => (
-                                                                        <div key={i} className="text-sm">
-                                                                            <p>Sent: {format(new Date(history.date), 'dd/MM/yyyy HH:mm')}</p>
-                                                                            <p className="text-xs text-gray-500">To: {history.recipients.join(', ')}</p>
-                                                                        </div>
-                                                                    ))}
-                                                                </div>
-                                                            ),
-                                                            duration: 5000,
-                                                        });
-                                                    }
-                                                }}
-                                            >
-                                                <Mail className="h-4 w-4" />
-                                                {record.email_history?.length > 0 && (
-                                                    <Badge
-                                                        className="absolute -top-2 -right-2 h-5 w-5 rounded-full bg-green-500"
-                                                        variant="secondary"
-                                                    >
-                                                        {record.email_history.length}
-                                                    </Badge>
-                                                )}
-                                            </Button>
-                                        </TooltipTrigger>
-                                        <TooltipContent>
-                                            {record.email_history?.length > 0 ? (
-                                                <div className="space-y-2">
-                                                    <p className="font-semibold">Latest Email: {format(new Date(record.email_history[record.email_history.length - 1].date), 'dd/MM/yyyy HH:mm')}</p>
-                                                    <p className="text-sm text-gray-500">Click to view full history</p>
-                                                </div>
-                                            ) : (
-                                                "No emails sent yet"
-                                            )}
-                                        </TooltipContent>
-                                    </Tooltip>
+                                    <TableCell className="font-medium">
+                                        <Tooltip>
+                                            <TooltipTrigger className=" ">
+                                                {record.company?.company_name ? record.company.company_name.split(" ").slice(0, 3).join(" ") : 'Unknown'}
+                                            </TooltipTrigger>
+                                            <TooltipContent>{record.company?.company_name || 'Unknown'}</TooltipContent>
+                                        </Tooltip>
+                                    </TableCell>
                                 </TooltipProvider>
-                            </TableCell>
-                            <TableCell className="text-center">
-                                <WhatsAppModal
-                                    trigger={
-                                        <Button
-                                            size="sm"
-                                            variant="ghost"
-                                            className="h-8 w-8 p-0"
-                                        >
-                                            <MessageSquare className="h-4 w-4" />
-                                        </Button>
-                                    }
-                                    companyName={record.company.company_name}
-                                    companyPhone={record.company.phone_number}
-                                    documents={getDocumentsForUpload(record)}
-                                    onMessageSent={(data) => {
-                                        // Update message history if needed
-                                        handleMessageSent(record.id, data);
-                                    }}
-                                />
-                            </TableCell>
-
-                            {/* Document cells */}
-                            {Object.entries(DOCUMENT_LABELS).map(([key, label]) => (
-                                <TableCell key={key} className="text-center">
-                                    {key === 'all_csv' ? (
-                                        <Badge className={record.status.finalization_date === 'NIL' ? 'bg-purple-500' : 'bg-blue-500'}>
-                                            {getDocumentCount(record)}
-                                        </Badge>
-                                    ) : (
-                                        <DocumentUploadDialog
-                                            documentType={key as DocumentType}
-                                            recordId={record.id}
-                                            onUpload={(file, docType) => handleDocumentUpload(record.id, file, docType || key as DocumentType)}
-                                            onDelete={(docType) => handleDocumentDelete(record.id, docType || key as DocumentType)}
-                                            existingDocument={record.payment_receipts_documents[key as DocumentType]}
-                                            label={label}
-                                            isNilFiling={record.status.finalization_date === 'NIL'}
-                                            allDocuments={getDocumentsForUpload(record)}
-                                            companyName={record.company.company_name}
-                                        />
-                                    )}
-                                </TableCell>
-                            ))}
-
-                            <TableCell className="text-center">
-                                <DropdownMenu>
-                                    <DropdownMenuTrigger asChild>
-                                        <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
-                                            <MoreHorizontal className="h-4 w-4" />
-                                        </Button>
-                                    </DropdownMenuTrigger>
-                                    <DropdownMenuContent align="end" className="w-48">
-                                        <DropdownMenuItem
-                                            onClick={() => setDocumentDetailsDialog({ isOpen: true, record })}
-                                            className="flex items-center gap-2"
-                                        >
-                                            <Eye className="h-4 w-4" />
-                                            View Details
-                                        </DropdownMenuItem>
-                                        <DropdownMenuSeparator />
-                                        <DropdownMenuItem
-                                            className="flex items-center gap-2 text-blue-600"
-                                            onClick={() => handleDownloadAll(record)}
-                                        >
-                                            <Download className="h-4 w-4" />
-                                            Download All
-                                        </DropdownMenuItem>
-                                        <DropdownMenuItem
-                                            className="flex items-center gap-2 text-red-600"
-                                            onClick={() => setDeleteAllDialog({ isOpen: true, record })}
-                                        >
-                                            <Trash2 className="h-4 w-4" />
-                                            Delete All
-                                        </DropdownMenuItem>
-                                    </DropdownMenuContent>
-                                </DropdownMenu>
-                            </TableCell>
-                            <TableCell>
-                                <div className="flex items-center gap-2">
+                            )}
+                            {columnVisibility?.emailDate !== false && (
+                                <TableCell className="text-center">
                                     <TooltipProvider>
                                         <Tooltip>
                                             <TooltipTrigger asChild>
-                                                <ContactModal
-                                                    trigger={
-                                                        <Button
-                                                            variant="outline"
-                                                            size="icon"
-                                                            className="relative"
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    className="relative h-8 w-8 p-0"
+                                                    onClick={() => {
+                                                        const emailHistory = record.email_history || [];
+                                                        if (emailHistory.length > 0) {
+                                                            toast({
+                                                                title: "Email History",
+                                                                description: (
+                                                                    <div className="mt-2 space-y-1">
+                                                                        {emailHistory.map((history, i) => (
+                                                                            <div key={i} className="text-sm">
+                                                                                <p>Sent: {format(new Date(history.date), 'dd/MM/yyyy HH:mm')}</p>
+                                                                                <p className="text-xs text-gray-500">To: {history.recipients.join(', ')}</p>
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+                                                                ),
+                                                                duration: 5000,
+                                                            });
+                                                        }
+                                                    }}
+                                                >
+                                                    <Mail className="h-4 w-4" />
+                                                    {record.email_history?.length > 0 && (
+                                                        <Badge
+                                                            className="absolute -top-2 -right-2 h-5 w-5 rounded-full bg-green-500"
+                                                            variant="secondary"
                                                         >
-                                                            <Mail className="h-4 w-4" />
-                                                            {record.email_history?.length > 0 && (
-                                                                <div className="absolute -top-2 -right-2">
-                                                                    <Badge
-                                                                        className="h-5 w-5 rounded-full bg-green-500 text-white"
-                                                                        variant="secondary"
-                                                                    >
-                                                                        {record.email_history.length}
-                                                                    </Badge>
-                                                                </div>
-                                                            )}
-                                                        </Button>
-                                                    }
-                                                    companyName={record.company?.company_name || ''}
-                                                    companyEmail={record.company?.email}
-                                                    documents={getDocumentsForUpload(record)}
-                                                    onEmailSent={(data) => handleEmailSent(record.id, data)}
-                                                />
+                                                            {record.email_history.length}
+                                                        </Badge>
+                                                    )}
+                                                </Button>
                                             </TooltipTrigger>
-                                            <TooltipContent side="left" align="center" className="w-72">
+                                            <TooltipContent>
                                                 {record.email_history?.length > 0 ? (
                                                     <div className="space-y-2">
-                                                        <div className="flex items-center justify-between">
-                                                            <p className="font-semibold">Email History</p>
-                                                            <Badge variant="outline" className="ml-2">
-                                                                {record.email_history.length} {record.email_history.length === 1 ? 'time' : 'times'}
-                                                            </Badge>
-                                                        </div>
-                                                        <div className="max-h-48 overflow-y-auto space-y-2">
-                                                            {record.email_history.map((history, i) => (
-                                                                <div key={i} className="text-sm bg-gray-50 p-2 rounded">
-                                                                    <p className="font-medium">{format(new Date(history.date), 'dd/MM/yyyy HH:mm')}</p>
-                                                                    <p className="text-xs text-gray-500 truncate">
-                                                                        To: {history.recipients.join(', ')}
-                                                                    </p>
-                                                                </div>
-                                                            ))}
-                                                        </div>
+                                                        <p className="font-semibold">Latest Email: {format(new Date(record.email_history[record.email_history.length - 1].date), 'dd/MM/yyyy HH:mm')}</p>
+                                                        <p className="text-sm text-gray-500">Click to view full history</p>
                                                     </div>
                                                 ) : (
-                                                    <div className="text-center py-2">
-                                                        <p>No emails sent yet</p>
-                                                        <p className="text-xs text-gray-500 mt-1">Click to send documents</p>
-                                                    </div>
+                                                    "No emails sent yet"
                                                 )}
                                             </TooltipContent>
                                         </Tooltip>
                                     </TooltipProvider>
-                                </div>
-                            </TableCell>
-                            </TableRow>
+                                </TableCell>
+                            )}
+                            {columnVisibility?.whatsappDate !== false && (
+                                <TableCell className="text-center">
+                                    <WhatsAppModal
+                                        trigger={
+                                            <Button
+                                                size="sm"
+                                                variant="ghost"
+                                                className="h-8 w-8 p-0"
+                                            >
+                                                <MessageSquare className="h-4 w-4" />
+                                            </Button>
+                                        }
+                                        companyName={record.company?.company_name || ''}
+                                        companyPhone={record.company?.phone_number || ''}
+                                        documents={getDocumentsForUpload(record)}
+                                        onMessageSent={(data) => {
+                                            // Update message history if needed
+                                            handleMessageSent(record.id, data);
+                                        }}
+                                    />
+                                </TableCell>
+                            )}
+                            {columnVisibility?.payeReceipt !== false && (
+                                <TableCell className="text-center">
+                                    {getDocumentsForUpload(record).find(doc => doc.type === 'paye_receipt')?.status === 'uploaded' ? (
+                                        <Badge className="bg-green-500">
+                                            Uploaded
+                                        </Badge>
+                                    ) : (
+                                        <Badge className="bg-yellow-500">
+                                            Missing
+                                        </Badge>
+                                    )}
+                                </TableCell>
+                            )}
+                            {columnVisibility?.housingLevyReceipt !== false && (
+                                <TableCell className="text-center">
+                                    {getDocumentsForUpload(record).find(doc => doc.type === 'housing_levy_receipt')?.status === 'uploaded' ? (
+                                        <Badge className="bg-green-500">
+                                            Uploaded
+                                        </Badge>
+                                    ) : (
+                                        <Badge className="bg-yellow-500">
+                                            Missing
+                                        </Badge>
+                                    )}
+                                </TableCell>
+                            )}
+                            {columnVisibility?.nitaReceipt !== false && (
+                                <TableCell className="text-center">
+                                    {getDocumentsForUpload(record).find(doc => doc.type === 'nita_receipt')?.status === 'uploaded' ? (
+                                        <Badge className="bg-green-500">
+                                            Uploaded
+                                        </Badge>
+                                    ) : (
+                                        <Badge className="bg-yellow-500">
+                                            Missing
+                                        </Badge>
+                                    )}
+                                </TableCell>
+                            )}
+                            {columnVisibility?.shifReceipt !== false && (
+                                <TableCell className="text-center">
+                                    {getDocumentsForUpload(record).find(doc => doc.type === 'shif_receipt')?.status === 'uploaded' ? (
+                                        <Badge className="bg-green-500">
+                                            Uploaded
+                                        </Badge>
+                                    ) : (
+                                        <Badge className="bg-yellow-500">
+                                            Missing
+                                        </Badge>
+                                    )}
+                                </TableCell>
+                            )}
+                            {columnVisibility?.nssfReceipt !== false && (
+                                <TableCell className="text-center">
+                                    {getDocumentsForUpload(record).find(doc => doc.type === 'nssf_receipt')?.status === 'uploaded' ? (
+                                        <Badge className="bg-green-500">
+                                            Uploaded
+                                        </Badge>
+                                    ) : (
+                                        <Badge className="bg-yellow-500">
+                                            Missing
+                                        </Badge>
+                                    )}
+                                </TableCell>
+                            )}
+                            {columnVisibility?.allDocuments !== false && (
+                                <TableCell className="text-center">
+                                    <Badge className={record.status?.finalization_date === 'NIL' ? 'bg-purple-500' : 'bg-blue-500'}>
+                                        {getDocumentCount(record)}
+                                    </Badge>
+                                </TableCell>
+                            )}
+                            {columnVisibility?.actions !== false && (
+                                <TableCell className="text-center">
+                                    <DropdownMenu>
+                                        <DropdownMenuTrigger asChild>
+                                            <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                                                <MoreHorizontal className="h-4 w-4" />
+                                            </Button>
+                                        </DropdownMenuTrigger>
+                                        <DropdownMenuContent align="end" className="w-48">
+                                            <DropdownMenuItem
+                                                onClick={() => setDocumentDetailsDialog({ isOpen: true, record })}
+                                                className="flex items-center gap-2"
+                                            >
+                                                <Eye className="h-4 w-4" />
+                                                View Details
+                                            </DropdownMenuItem>
+                                            <DropdownMenuSeparator />
+                                            <DropdownMenuItem
+                                                className="flex items-center gap-2 text-blue-600"
+                                                onClick={() => handleDownloadAll(record)}
+                                            >
+                                                <Download className="h-4 w-4" />
+                                                Download All
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem
+                                                className="flex items-center gap-2 text-red-600"
+                                                onClick={() => setDeleteAllDialog({ isOpen: true, record })}
+                                            >
+                                                <Trash2 className="h-4 w-4" />
+                                                Delete All
+                                            </DropdownMenuItem>
+                                        </DropdownMenuContent>
+                                    </DropdownMenu>
+                                </TableCell>
+                            )}
+                            {columnVisibility?.emailStatus !== false && (
+                                <TableCell>
+                                    <div className="flex items-center gap-2">
+                                        <TooltipProvider>
+                                            <Tooltip>
+                                                <TooltipTrigger asChild>
+                                                    <ContactModal
+                                                        trigger={
+                                                            <Button
+                                                                variant="outline"
+                                                                size="icon"
+                                                                className="relative"
+                                                            >
+                                                                <Mail className="h-4 w-4" />
+                                                                {record.email_history?.length > 0 && (
+                                                                    <div className="absolute -top-2 -right-2">
+                                                                        <Badge
+                                                                            className="h-5 w-5 rounded-full bg-green-500 text-white"
+                                                                            variant="secondary"
+                                                                        >
+                                                                            {record.email_history.length}
+                                                                        </Badge>
+                                                                    </div>
+                                                                )}
+                                                            </Button>
+                                                        }
+                                                        companyName={record.company?.company_name || ''}
+                                                        companyEmail={record.company?.email || ''}
+                                                        documents={getDocumentsForUpload(record)}
+                                                        onEmailSent={(data) => handleEmailSent(record.id, data)}
+                                                    />
+                                                </TooltipTrigger>
+                                                <TooltipContent side="left" align="center" className="w-72">
+                                                    {record.email_history?.length > 0 ? (
+                                                        <div className="space-y-2">
+                                                            <div className="flex items-center justify-between">
+                                                                <p className="font-medium">Email History</p>
+                                                                <Badge variant="outline" className="ml-2">
+                                                                    {record.email_history.length} {record.email_history.length === 1 ? 'time' : 'times'}
+                                                                </Badge>
+                                                            </div>
+                                                            <div className="max-h-48 overflow-y-auto space-y-2">
+                                                                {record.email_history.map((history, i) => (
+                                                                    <div key={i} className="text-sm bg-gray-50 p-2 rounded">
+                                                                        <p className="font-medium">{format(new Date(history.date), 'dd/MM/yyyy HH:mm')}</p>
+                                                                        <p className="text-xs text-gray-500 truncate">
+                                                                            To: {history.recipients.join(', ')}
+                                                                        </p>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="text-center py-2">
+                                                            <p>No emails sent yet</p>
+                                                            <p className="text-xs text-gray-500 mt-1">Click to send documents</p>
+                                                        </div>
+                                                    )}
+                                                </TooltipContent>
+                                            </Tooltip>
+                                        </TooltipProvider>
+                                    </div>
+                                </TableCell>
+                            )}
+                        </TableRow>
                         );
                     })}
                 </TableBody>
@@ -1101,8 +1200,8 @@ export function PayslipPaymentReceiptsTable({
                                 <div className="space-y-2">
                                     <Label>Finalization Date</Label>
                                     <div className="flex items-center gap-2">
-                                        <Badge className={documentDetailsDialog.record.status.finalization_date === 'NIL' ? 'bg-purple-500' : 'bg-green-500'}>
-                                            {formatDate(documentDetailsDialog.record.status.finalization_date)}
+                                        <Badge className={documentDetailsDialog.record.status?.finalization_date === 'NIL' ? 'bg-purple-500' : 'bg-green-500'}>
+                                            {formatDate(documentDetailsDialog.record.status?.finalization_date)}
                                         </Badge>
                                     </div>
                                 </div>
@@ -1110,7 +1209,7 @@ export function PayslipPaymentReceiptsTable({
                                     <Label>Assigned To</Label>
                                     <div className="flex items-center gap-2">
                                         <Badge className="bg-blue-500">
-                                            {documentDetailsDialog.record.status.assigned_to || 'Unassigned'}
+                                            {documentDetailsDialog.record.status?.assigned_to || 'Unassigned'}
                                         </Badge>
                                     </div>
                                 </div>
@@ -1141,7 +1240,7 @@ export function PayslipPaymentReceiptsTable({
                                 {Object.entries(DOCUMENT_LABELS)
                                     .filter(([key]) => key !== 'all_csv') // Remove All CSV Files
                                     .map(([type, label]) => {
-                                        const document = documentDetailsDialog?.record?.documents[type as DocumentType];
+                                        const document = documentDetailsDialog?.record?.payment_receipts_documents?.[type as DocumentType];
                                         const isNilFiling = documentDetailsDialog?.record?.status?.finalization_date === 'NIL';
                                         return (
                                             <div key={type} className="flex justify-between items-center">

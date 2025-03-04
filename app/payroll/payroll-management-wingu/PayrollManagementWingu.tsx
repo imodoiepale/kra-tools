@@ -58,7 +58,8 @@ export default function PayrollManagementWingu({
     }
 
     const [selectedCategories, setSelectedCategories] = useState<string[]>(['acc']);
-    const [selectedObligations, setSelectedObligations] = useState<string[]>([]);
+    const [selectedObligations, setSelectedObligations] = useState<string[]>(['active']);
+
     const [extractDialogOpen, setExtractDialogOpen] = useState(false)
     const [exportDialogOpen, setExportDialogOpen] = useState(false)
 
