@@ -91,15 +91,20 @@ export const getFileExtension = (path: string): string => {
  * @returns {string} Document type label
  */
 export const getDocumentTypeLabel = (docType: DocumentType): string => {
-    const labels: Record<DocumentType, string> = {
-        'paye_csv': 'PAYE Returns',
-        'hslevy_csv': 'Housing Levy Returns',
-        'zip_file_kra': 'KRA ZIP File',
-        'shif_exl': 'SHIF Returns',
-        'nssf_exl': 'NSSF Returns',
-        'all_csv': 'All CSV Files'
-    };
-    return labels[docType] || docType;
+    switch (docType) {
+        case 'paye_csv':
+            return 'PAYE Returns';
+        case 'hslevy_csv':
+            return 'Housing Levy Returns';
+        case 'zip_file_kra':
+            return 'KRA ZIP File';
+        case 'shif_exl':
+            return 'SHIF Returns';
+        case 'nssf_exl':
+            return 'NSSF Returns';
+        default:
+            return docType;
+    }
 };
 
 /**
@@ -167,6 +172,7 @@ export const downloadFileFromStorage = async (path: string): Promise<Blob> => {
  * @param {Function} config.onProgress - Progress callback
  * @param {Function} config.onSuccess - Success callback
  * @param {Function} config.onError - Error callback
+ * @param {Function} config.shouldCancel - Cancellation callback
  * @returns {Promise<void>}
  */
 export const exportDocuments = async ({
@@ -175,7 +181,8 @@ export const exportDocuments = async ({
     records,
     onProgress,
     onSuccess,
-    onError
+    onError,
+    shouldCancel
 }: {
     name: string;
     documentTypes: DocumentType[];
@@ -183,12 +190,21 @@ export const exportDocuments = async ({
     onProgress?: (progress: number, total: number) => void;
     onSuccess?: (count: number) => void;
     onError?: (error: Error) => void;
+    shouldCancel?: () => boolean;
 }): Promise<void> => {
     try {
-        // Filter records to only include those with documents
+        console.log("Export started with document types:", documentTypes);
+
+        if (!documentTypes || documentTypes.length === 0) {
+            throw new Error("No document types specified for export");
+        }
+
+        // Filter records to only include those with documents of the selected types
         const recordsWithDocuments = records.filter(record =>
-            documentTypes.some(docType => record.documents[docType])
+            documentTypes.some(docType => record.documents && record.documents[docType])
         );
+
+        console.log("Records with documents:", recordsWithDocuments.length);
 
         // Count total documents that will be exported
         let documentCount = 0;
@@ -200,8 +216,9 @@ export const exportDocuments = async ({
         }> = [];
 
         recordsWithDocuments.forEach(record => {
+            // Only include documents of the selected types
             documentTypes.forEach(docType => {
-                if (record.documents[docType]) {
+                if (record.documents && record.documents[docType]) {
                     documentCount++;
                     documentsToExport.push({
                         recordId: record.id,
@@ -213,6 +230,8 @@ export const exportDocuments = async ({
             });
         });
 
+        console.log("Documents to export:", documentsToExport.length, "of types:", documentTypes);
+
         if (documentCount === 0) {
             throw new Error("No documents match the selected criteria");
         }
@@ -220,43 +239,101 @@ export const exportDocuments = async ({
         // Create a new ZIP file
         const zip = new JSZip();
         let processedCount = 0;
+        let errorCount = 0;
 
-        // Process each document
-        for (const doc of documentsToExport) {
-            try {
-                // Download the file from Supabase storage
-                const fileBlob = await downloadFileFromStorage(doc.path);
+        // Define batch size for parallel processing
+        const BATCH_SIZE = 5;
+        const batches = [];
 
-                // Get file extension
-                const fileExtension = getFileExtension(doc.path);
+        // Split documents into batches
+        for (let i = 0; i < documentsToExport.length; i += BATCH_SIZE) {
+            batches.push(documentsToExport.slice(i, i + BATCH_SIZE));
+        }
 
-                // Create a sanitized filename
-                const sanitizedCompanyName = sanitizeFilename(doc.companyName);
-                const docTypeLabel = getDocumentTypeLabel(doc.docType);
-                const filename = `${sanitizedCompanyName}_${docTypeLabel}.${fileExtension}`;
+        // Process each batch in sequence
+        for (const batch of batches) {
+            // Check for cancellation
+            if (shouldCancel && shouldCancel()) {
+                console.log("Export cancelled by user");
+                throw new Error("Export cancelled by user");
+            }
 
-                // Add file to ZIP
-                zip.file(filename, fileBlob);
+            // Process documents in parallel within each batch
+            const batchPromises = batch.map(async (doc) => {
+                try {
+                    // Download the file from Supabase storage
+                    const fileBlob = await downloadFileFromStorage(doc.path);
+
+                    // Get file extension
+                    const fileExtension = getFileExtension(doc.path);
+
+                    // Create a sanitized filename
+                    const sanitizedCompanyName = sanitizeFilename(doc.companyName);
+                    const docTypeLabel = getDocumentTypeLabel(doc.docType);
+                    const filename = `${sanitizedCompanyName}_${docTypeLabel}.${fileExtension}`;
+
+                    return {
+                        success: true,
+                        filename,
+                        fileBlob,
+                        error: null
+                    };
+                } catch (err) {
+                    errorCount++;
+                    console.error(`Error processing document: ${doc.path}`, err);
+                    return {
+                        success: false,
+                        filename: null,
+                        fileBlob: null,
+                        error: err
+                    };
+                }
+            });
+
+            // Wait for all downloads in the batch to complete
+            const results = await Promise.all(batchPromises);
+
+            // Add successful downloads to the ZIP file
+            results.forEach(result => {
+                if (result.success && result.filename && result.fileBlob) {
+                    zip.file(result.filename, result.fileBlob);
+                }
 
                 // Update progress
                 processedCount++;
                 if (onProgress) {
                     onProgress(processedCount, documentCount);
                 }
-            } catch (err) {
-                console.error(`Error processing document: ${doc.path}`, err);
-                // Continue with other documents even if one fails
+            });
+
+            // Check for cancellation after each batch
+            if (shouldCancel && shouldCancel()) {
+                console.log("Export cancelled by user");
+                throw new Error("Export cancelled by user");
             }
         }
 
         // Generate the ZIP file
         const zipBlob = await zip.generateAsync({ type: 'blob' });
 
+        // Check for cancellation before saving
+        if (shouldCancel && shouldCancel()) {
+            console.log("Export cancelled by user");
+            throw new Error("Export cancelled by user");
+        }
+
         // Save the ZIP file
         saveAs(zipBlob, `${name}.zip`);
 
+        const successCount = processedCount - errorCount;
+
         if (onSuccess) {
-            onSuccess(processedCount);
+            onSuccess(successCount);
+        }
+
+        // If there were errors but some documents were processed, notify the user
+        if (errorCount > 0 && successCount > 0) {
+            console.warn(`Exported ${successCount} documents, but ${errorCount} failed to export.`);
         }
     } catch (error) {
         console.error('Export error:', error);

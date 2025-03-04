@@ -67,13 +67,14 @@ export function ExportDialog({
   const [selectedDocTypes, setSelectedDocTypes] = useState<DocumentType[]>([]);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [selectedObligations, setSelectedObligations] = useState<string[]>([]);
-  const [exportName, setExportName] = useState<string>(`Payroll_Export_${monthNames[selectedMonth ]}_${selectedYear}`);
+  const [exportName, setExportName] = useState<string>(`Payroll_Export_${monthNames[selectedMonth]}_${selectedYear}`);
   const [exportAll, setExportAll] = useState<boolean>(true);
   const [exportInProgress, setExportInProgress] = useState<boolean>(false);
   const [exportProgress, setExportProgress] = useState<{ current: number; total: number }>({ current: 0, total: 0 });
   const [filterCompanies, setFilterCompanies] = useState(false);
   const [selectedCompanies, setSelectedCompanies] = useState<string[]>([]);
   const [companySearchTerm, setCompanySearchTerm] = useState('');
+  const [cancelExport, setCancelExport] = useState(false);
 
   // Reset state when dialog opens
   useEffect(() => {
@@ -86,7 +87,7 @@ export function ExportDialog({
     setSelectedDocTypes([]);
     setSelectedCategories([]);
     setSelectedObligations([]);
-    setExportName(`Payroll_Export_${monthNames[selectedMonth ]}_${selectedYear}`);
+    setExportName(`Payroll_Export_${monthNames[selectedMonth]}_${selectedYear}`);
     setExportAll(true);
     setExportInProgress(false);
     setExportProgress({ current: 0, total: 0 });
@@ -97,11 +98,15 @@ export function ExportDialog({
 
   // Toggle document type selection
   const toggleDocType = (docType: DocumentType) => {
-    setSelectedDocTypes(prev =>
-      prev.includes(docType)
+    console.log("Toggling document type:", docType);
+    setSelectedDocTypes(prev => {
+      const isSelected = prev.includes(docType);
+      const newSelection = isSelected
         ? prev.filter(type => type !== docType)
-        : [...prev, docType]
-    );
+        : [...prev, docType];
+      console.log("New document type selection:", newSelection);
+      return newSelection;
+    });
   };
 
   // Toggle category selection
@@ -146,6 +151,21 @@ export function ExportDialog({
       setSelectedObligations([]);
     } else {
       setSelectedObligations(OBLIGATION_STATUSES.map(obl => obl.id));
+    }
+  };
+
+  // Toggle exportAll option
+  const toggleExportAll = () => {
+    const newExportAll = !exportAll;
+    setExportAll(newExportAll);
+
+    // If turning on exportAll, clear selected document types
+    // If turning off exportAll, select all document types by default
+    if (newExportAll) {
+      setSelectedDocTypes([]);
+    } else {
+      // When disabling "Export All", pre-select all document types for better UX
+      setSelectedDocTypes(DOCUMENT_TYPES.map(doc => doc.id));
     }
   };
 
@@ -273,34 +293,65 @@ export function ExportDialog({
     }
 
     setExportInProgress(true);
+    setCancelExport(false);
     setExportProgress({ current: 0, total: documentCount });
 
-    // Use the exportDocuments utility function
-    await exportDocuments({
-      name: exportName,
-      documentTypes: exportAll ? DOCUMENT_TYPES.map(doc => doc.id) : selectedDocTypes,
-      records: filteredRecords,
-      onProgress: (current, total) => {
-        setExportProgress({ current, total });
-      },
-      onSuccess: (count) => {
-        toast({
-          title: "Export successful",
-          description: `${count} documents have been exported`,
-        });
-        onOpenChange(false);
-      },
-      onError: (error) => {
-        toast({
-          title: "Export failed",
-          description: error.message || "There was an error exporting the documents",
-          variant: "destructive",
-        });
-        setExportInProgress(false);
-      }
-    });
+    // Only use the selected document types if exportAll is false
+    const docTypesToExport = exportAll
+      ? DOCUMENT_TYPES.map(doc => doc.id)
+      : [...selectedDocTypes]; // Create a copy to avoid reference issues
 
-    setExportInProgress(false);
+    console.log("Export all:", exportAll);
+    console.log("Selected document types:", selectedDocTypes);
+    console.log("Exporting document types:", docTypesToExport);
+
+    try {
+      await exportDocuments({
+        name: exportName,
+        documentTypes: docTypesToExport,
+        records: filteredRecords,
+        onProgress: (current, total) => {
+          if (cancelExport) return;
+          setExportProgress({ current, total });
+        },
+        onSuccess: (count) => {
+          if (cancelExport) return;
+          toast({
+            title: "Export successful",
+            description: `${count} documents have been exported`,
+          });
+          onOpenChange(false);
+        },
+        onError: (error) => {
+          if (error.message === "Export cancelled by user") {
+            toast({
+              title: "Export cancelled",
+              description: "The export process has been cancelled",
+            });
+          } else {
+            toast({
+              title: "Export failed",
+              description: error.message || "There was an error exporting the documents",
+              variant: "destructive",
+            });
+          }
+        },
+        shouldCancel: () => cancelExport
+      });
+    } catch (error) {
+      console.error("Export error:", error);
+    } finally {
+      setExportInProgress(false);
+    }
+  };
+
+  // Handle cancel export
+  const handleCancelExport = () => {
+    setCancelExport(true);
+    toast({
+      title: "Export cancelled",
+      description: "The export process has been cancelled",
+    });
   };
 
   const getFilteredCompanies = () => {
@@ -334,14 +385,14 @@ export function ExportDialog({
           <DialogTitle className="text-xl font-semibold flex items-center justify-between text-blue-800">
             <span>Export Documents</span>
           </DialogTitle>
-          
+
           {/* Period Display - Made more prominent */}
           <div className="bg-blue-100 p-3 mt-2 rounded-md flex items-center justify-between">
             <div className="flex items-center">
               <Calendar className="h-5 w-5 text-blue-700 mr-2" />
               <span className="text-lg font-medium text-blue-800">Export Period:</span>
             </div>
-            <span className="text-lg font-bold text-blue-900">{monthNames[selectedMonth ]} {selectedYear}</span>
+            <span className="text-lg font-bold text-blue-900">{monthNames[selectedMonth]} {selectedYear}</span>
           </div>
         </DialogHeader>
 
@@ -360,20 +411,63 @@ export function ExportDialog({
             />
           </div>
 
-          {/* Export All Option */}
-          <div className="bg-blue-50 p-4 rounded-md">
-            <div className="flex items-center space-x-3">
-              <Checkbox
-                id="export-all"
-                // checked={exportAll}
-                onCheckedChange={(checked) => setExportAll(checked === false)}
-                className="h-5 w-5 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
-                disabled={exportInProgress}
-              />
-              <Label htmlFor="export-all" className="font-medium text-blue-800">
-                Export all documents (ignore filters)
-              </Label>
+          {/* Document Type Selection */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-sm font-medium">Document Types</Label>
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="export-all"
+                  checked={exportAll}
+                  onCheckedChange={toggleExportAll}
+                  disabled={exportInProgress}
+                />
+                <Label htmlFor="export-all" className="text-xs cursor-pointer">
+                  Export All Types
+                </Label>
+              </div>
             </div>
+
+            {!exportAll && (
+              <div className="space-y-2 mt-2">
+                <div className="flex justify-between items-center">
+                  <Label className="text-xs text-gray-500">Select document types to export</Label>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 text-xs"
+                    onClick={selectAllDocTypes}
+                    disabled={exportInProgress}
+                  >
+                    {selectedDocTypes.length === DOCUMENT_TYPES.length ? "Deselect All" : "Select All"}
+                  </Button>
+                </div>
+
+                <div className="grid grid-cols-1 gap-2 max-h-40 overflow-y-auto pr-1">
+                  {DOCUMENT_TYPES.map((docType) => (
+                    <div
+                      key={docType.id}
+                      className="flex items-center space-x-2 p-2 rounded-md border border-gray-200 hover:bg-gray-50"
+                    >
+                      <Checkbox
+                        id={`doc-type-${docType.id}`}
+                        checked={selectedDocTypes.includes(docType.id)}
+                        onCheckedChange={() => toggleDocType(docType.id)}
+                        disabled={exportInProgress}
+                      />
+                      <Label
+                        htmlFor={`doc-type-${docType.id}`}
+                        className="flex items-center space-x-2 text-sm cursor-pointer flex-1"
+                      >
+                        {docType.icon}
+                        <span>{docType.label}</span>
+                      </Label>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Company Filtering */}
@@ -428,115 +522,77 @@ export function ExportDialog({
             </div>
           </div>
 
-          
           <div className="space-y-3 grid grid-cols-3">
-          <div className="space-y-3">
-            <h3 className="text-sm font-medium text-gray-700">Document Types</h3>
-            <div className="bg-gray-50 p-3 rounded-md">
-              <div className="flex items-center space-x-2 mb-3 pb-2 border-b border-gray-200">
-                <Checkbox
-                  id="select-all-docs"
-                  checked={selectedDocTypes.length === DOCUMENT_TYPES.length}
-                  onCheckedChange={selectAllDocTypes}
-                  className="h-4 w-4 text-blue-600 rounded"
-                  disabled={exportInProgress}
-                />
-                <Label htmlFor="select-all-docs" className="font-medium text-gray-700">
-                  Select All
-                </Label>
-              </div>
-              <div className="space-y-2">
-                {DOCUMENT_TYPES.map((docType) => (
-                  <div key={docType.id} className="flex items-center space-x-2">
-                    <Checkbox
-                      id={`doc-${docType.id}`}
-                      checked={selectedDocTypes.includes(docType.id)}
-                      onCheckedChange={() => toggleDocType(docType.id)}
-                      className="h-4 w-4 text-blue-600 rounded"
-                      disabled={exportInProgress}
-                    />
-                    <div className="flex items-center space-x-2">
-                      {docType.icon}
-                      <Label htmlFor={`doc-${docType.id}`} className="font-normal text-gray-700">
-                        {docType.label}
+            {/* Company Categories */}
+            <div className="space-y-3">
+              <h3 className="text-sm font-medium text-gray-700">Company Categories</h3>
+              <div className="bg-gray-50 p-3 rounded-md">
+                <div className="flex items-center space-x-2 mb-3 pb-2 border-b border-gray-200">
+                  <Checkbox
+                    id="select-all-categories"
+                    checked={selectedCategories.length === COMPANY_CATEGORIES.length}
+                    onCheckedChange={selectAllCategories}
+                    className="h-4 w-4 text-blue-600 rounded"
+                    disabled={exportInProgress}
+                  />
+                  <Label htmlFor="select-all-categories" className="font-medium text-gray-700">
+                    Select All
+                  </Label>
+                </div>
+                <div className="space-y-2">
+                  {COMPANY_CATEGORIES.map((category) => (
+                    <div key={category.id} className="flex items-center space-x-2">
+                      <Checkbox
+                        id={`cat-${category.id}`}
+                        checked={selectedCategories.includes(category.id)}
+                        onCheckedChange={() => toggleCategory(category.id)}
+                        className="h-4 w-4 text-blue-600 rounded"
+                        disabled={exportInProgress}
+                      />
+                      <Label htmlFor={`cat-${category.id}`} className="font-normal text-gray-700">
+                        {category.label}
                       </Label>
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
             </div>
-          </div>
 
-          {/* Company Categories */}
-          <div className="space-y-3">
-            <h3 className="text-sm font-medium text-gray-700">Company Categories</h3>
-            <div className="bg-gray-50 p-3 rounded-md">
-              <div className="flex items-center space-x-2 mb-3 pb-2 border-b border-gray-200">
-                <Checkbox
-                  id="select-all-categories"
-                  checked={selectedCategories.length === COMPANY_CATEGORIES.length}
-                  onCheckedChange={selectAllCategories}
-                  className="h-4 w-4 text-blue-600 rounded"
-                  disabled={exportInProgress}
-                />
-                <Label htmlFor="select-all-categories" className="font-medium text-gray-700">
-                  Select All
-                </Label>
-              </div>
-              <div className="space-y-2">
-                {COMPANY_CATEGORIES.map((category) => (
-                  <div key={category.id} className="flex items-center space-x-2">
-                    <Checkbox
-                      id={`cat-${category.id}`}
-                      checked={selectedCategories.includes(category.id)}
-                      onCheckedChange={() => toggleCategory(category.id)}
-                      className="h-4 w-4 text-blue-600 rounded"
-                      disabled={exportInProgress}
-                    />
-                    <Label htmlFor={`cat-${category.id}`} className="font-normal text-gray-700">
-                      {category.label}
-                    </Label>
-                  </div>
-                ))}
+            {/* Obligation Statuses */}
+            <div className="space-y-3">
+              <h3 className="text-sm font-medium text-gray-700">Obligation Status</h3>
+              <div className="bg-gray-50 p-3 rounded-md">
+                <div className="flex items-center space-x-2 mb-3 pb-2 border-b border-gray-200">
+                  <Checkbox
+                    id="select-all-obligations"
+                    checked={selectedObligations.length === OBLIGATION_STATUSES.length}
+                    onCheckedChange={selectAllObligations}
+                    className="h-4 w-4 text-blue-600 rounded"
+                    disabled={exportInProgress}
+                  />
+                  <Label htmlFor="select-all-obligations" className="font-medium text-gray-700">
+                    Select All
+                  </Label>
+                </div>
+                <div className="space-y-2">
+                  {OBLIGATION_STATUSES.map((obligation) => (
+                    <div key={obligation.id} className="flex items-center space-x-2">
+                      <Checkbox
+                        id={`obl-${obligation.id}`}
+                        checked={selectedObligations.includes(obligation.id)}
+                        onCheckedChange={() => toggleObligation(obligation.id)}
+                        className="h-4 w-4 text-blue-600 rounded"
+                        disabled={exportInProgress}
+                      />
+                      <Label htmlFor={`obl-${obligation.id}`} className="font-normal text-gray-700">
+                        {obligation.label}
+                      </Label>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
-          </div>
 
-          {/* Obligation Statuses */}
-          <div className="space-y-3">
-            <h3 className="text-sm font-medium text-gray-700">Obligation Status</h3>
-            <div className="bg-gray-50 p-3 rounded-md">
-              <div className="flex items-center space-x-2 mb-3 pb-2 border-b border-gray-200">
-                <Checkbox
-                  id="select-all-obligations"
-                  checked={selectedObligations.length === OBLIGATION_STATUSES.length}
-                  onCheckedChange={selectAllObligations}
-                  className="h-4 w-4 text-blue-600 rounded"
-                  disabled={exportInProgress}
-                />
-                <Label htmlFor="select-all-obligations" className="font-medium text-gray-700">
-                  Select All
-                </Label>
-              </div>
-              <div className="space-y-2">
-                {OBLIGATION_STATUSES.map((obligation) => (
-                  <div key={obligation.id} className="flex items-center space-x-2">
-                    <Checkbox
-                      id={`obl-${obligation.id}`}
-                      checked={selectedObligations.includes(obligation.id)}
-                      onCheckedChange={() => toggleObligation(obligation.id)}
-                      className="h-4 w-4 text-blue-600 rounded"
-                      disabled={exportInProgress}
-                    />
-                    <Label htmlFor={`obl-${obligation.id}`} className="font-normal text-gray-700">
-                      {obligation.label}
-                    </Label>
-                  </div>
-                ))}
-              </div>
-            </div>
-            </div>
-            
           </div>
           {/* Document Types */}
 
@@ -563,6 +619,17 @@ export function ExportDialog({
                 <span>{exportProgress.current} of {exportProgress.total}</span>
               </div>
               <Progress value={progressPercentage} className="h-2 bg-gray-200" />
+              <div className="flex justify-end mt-2">
+                <Button
+                  type="button"
+                  variant="destructive"
+                  onClick={handleCancelExport}
+                  className="text-sm"
+                  size="sm"
+                >
+                  Cancel Export
+                </Button>
+              </div>
             </div>
           )}
         </div>

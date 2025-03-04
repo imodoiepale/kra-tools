@@ -117,6 +117,13 @@ const navItems = [
     available: true,
   },
   {
+    href: "/payroll/etr",
+    icon: FileSpreadsheet,
+    label: "ETR Statements",
+    category: "Accounting Cycles",
+    available: false,
+  },
+  {
     href: "/suppliers",
     icon: FileSpreadsheet,
     label: "Supplier Statements",
