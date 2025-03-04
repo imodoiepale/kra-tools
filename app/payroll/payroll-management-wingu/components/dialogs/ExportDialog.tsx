@@ -468,9 +468,9 @@ export function ExportDialog({
 
           <div className="space-y-3 grid grid-cols-3 gap-4">
             {/* Document Types */}
-            <div className="space-y-2">
+            <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <Label className="text-sm font-medium">Document Types</Label>
+                <h3 className="text-sm font-medium text-gray-700">Document Types</h3>
                 <div className="flex items-center space-x-2">
                   <Checkbox
                     id="export-all"
@@ -485,44 +485,41 @@ export function ExportDialog({
               </div>
 
               {!exportAll && (
-                <div className="space-y-2 mt-2">
-                  <div className="flex justify-between items-center">
-                    <Label className="text-xs text-gray-500">Select types</Label>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="h-6 text-xs"
-                      onClick={selectAllDocTypes}
+                <div className="bg-gray-50 p-3 rounded-md">
+                  <div className="flex items-center space-x-2 mb-3 pb-2 border-b border-gray-200">
+                    <Checkbox
+                      id="select-all-doc-types"
+                      checked={selectedDocTypes.length === DOCUMENT_TYPES.length}
+                      onCheckedChange={selectAllDocTypes}
+                      className="h-4 w-4 text-blue-600 rounded"
                       disabled={exportInProgress}
-                    >
-                      {selectedDocTypes.length === DOCUMENT_TYPES.length ? "Deselect All" : "Select All"}
-                    </Button>
+                    />
+                    <Label htmlFor="select-all-doc-types" className="font-medium text-gray-700">
+                      Select All
+                    </Label>
                   </div>
 
-                  <div className="bg-gray-50 p-3 rounded-md">
-                    <div className="max-h-40 overflow-y-auto pr-1 space-y-1">
-                      {DOCUMENT_TYPES.map((docType) => (
-                        <div
-                          key={docType.id}
-                          className="flex items-center space-x-2 p-1 rounded hover:bg-gray-100"
+                  <div className="max-h-40 overflow-y-auto space-y-1">
+                    {DOCUMENT_TYPES.map((docType) => (
+                      <div
+                        key={docType.id}
+                        className="flex items-center space-x-2 p-1 rounded hover:bg-gray-100"
+                      >
+                        <Checkbox
+                          id={`doc-type-${docType.id}`}
+                          checked={selectedDocTypes.includes(docType.id)}
+                          onCheckedChange={() => toggleDocType(docType.id)}
+                          disabled={exportInProgress}
+                        />
+                        <Label
+                          htmlFor={`doc-type-${docType.id}`}
+                          className="flex items-center space-x-2 text-sm cursor-pointer flex-1"
                         >
-                          <Checkbox
-                            id={`doc-type-${docType.id}`}
-                            checked={selectedDocTypes.includes(docType.id)}
-                            onCheckedChange={() => toggleDocType(docType.id)}
-                            disabled={exportInProgress}
-                          />
-                          <Label
-                            htmlFor={`doc-type-${docType.id}`}
-                            className="flex items-center space-x-2 text-sm cursor-pointer flex-1"
-                          >
-                            {docType.icon}
-                            <span>{docType.label}</span>
-                          </Label>
-                        </div>
-                      ))}
-                    </div>
+                          {docType.icon}
+                          <span>{docType.label}</span>
+                        </Label>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
