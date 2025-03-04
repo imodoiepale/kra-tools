@@ -1,0 +1,601 @@
+// @ts-nocheck
+import { useState, useMemo, useEffect } from "react";
+import { Download, X, Check, FileText, Calendar } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Progress } from "@/components/ui/progress";
+import { CompanyPayrollRecord, DocumentType } from "../../types";
+import { exportDocuments } from "../../utils/payrollUtils";
+import { useToast } from "@/hooks/use-toast";
+
+interface ExportDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  payrollRecords: CompanyPayrollRecord[];
+  monthNames: string[];
+  selectedMonth: number;
+  selectedYear: number;
+}
+
+// Document types that can be exported
+const DOCUMENT_TYPES: { id: DocumentType; label: string; icon: React.ReactNode }[] = [
+  { id: "paye_csv", label: "PAYE Returns (CSV)", icon: <FileText className="h-4 w-4 text-blue-500" /> },
+  { id: "hslevy_csv", label: "Housing Levy Returns (CSV)", icon: <FileText className="h-4 w-4 text-green-500" /> },
+  { id: "zip_file_kra", label: "KRA ZIP File", icon: <FileText className="h-4 w-4 text-amber-500" /> },
+  { id: "shif_exl", label: "SHIF Returns (Excel)", icon: <FileText className="h-4 w-4 text-purple-500" /> },
+  { id: "nssf_exl", label: "NSSF Returns (Excel)", icon: <FileText className="h-4 w-4 text-rose-500" /> },
+];
+
+// Company categories
+const COMPANY_CATEGORIES = [
+  { id: "acc", label: "Accounting" },
+  { id: "audit_tax", label: "Audit & Tax" },
+  { id: "cps_sheria", label: "CPS Sheria" },
+  { id: "imm", label: "IMM" },
+];
+
+// Obligation statuses
+const OBLIGATION_STATUSES = [
+  { id: "active", label: "Active" },
+  { id: "cancelled", label: "Cancelled" },
+  { id: "dormant", label: "Dormant" },
+  { id: "no_obligation", label: "No Obligation" },
+  { id: "missing", label: "Missing" },
+];
+
+export function ExportDialog({
+  open,
+  onOpenChange,
+  payrollRecords,
+  monthNames,
+  selectedMonth,
+  selectedYear,
+}: ExportDialogProps) {
+  const { toast } = useToast();
+
+  // State for export configuration
+  const [selectedDocTypes, setSelectedDocTypes] = useState<DocumentType[]>([]);
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [selectedObligations, setSelectedObligations] = useState<string[]>([]);
+  const [exportName, setExportName] = useState<string>(`Payroll_Export_${monthNames[selectedMonth - 1]}_${selectedYear}`);
+  const [exportAll, setExportAll] = useState<boolean>(true);
+  const [exportInProgress, setExportInProgress] = useState<boolean>(false);
+  const [exportProgress, setExportProgress] = useState<{ current: number; total: number }>({ current: 0, total: 0 });
+  const [filterCompanies, setFilterCompanies] = useState(false);
+  const [selectedCompanies, setSelectedCompanies] = useState<string[]>([]);
+  const [companySearchTerm, setCompanySearchTerm] = useState('');
+
+  // Reset state when dialog opens
+  useEffect(() => {
+    if (open) {
+      resetState();
+    }
+  }, [open, selectedMonth, selectedYear, monthNames]);
+
+  const resetState = () => {
+    setSelectedDocTypes([]);
+    setSelectedCategories([]);
+    setSelectedObligations([]);
+    setExportName(`Payroll_Export_${monthNames[selectedMonth - 1]}_${selectedYear}`);
+    setExportAll(true);
+    setExportInProgress(false);
+    setExportProgress({ current: 0, total: 0 });
+    setFilterCompanies(false);
+    setSelectedCompanies([]);
+    setCompanySearchTerm('');
+  };
+
+  // Toggle document type selection
+  const toggleDocType = (docType: DocumentType) => {
+    setSelectedDocTypes(prev =>
+      prev.includes(docType)
+        ? prev.filter(type => type !== docType)
+        : [...prev, docType]
+    );
+  };
+
+  // Toggle category selection
+  const toggleCategory = (category: string) => {
+    setSelectedCategories(prev =>
+      prev.includes(category)
+        ? prev.filter(cat => cat !== category)
+        : [...prev, category]
+    );
+  };
+
+  // Toggle obligation status selection
+  const toggleObligation = (obligation: string) => {
+    setSelectedObligations(prev =>
+      prev.includes(obligation)
+        ? prev.filter(obl => obl !== obligation)
+        : [...prev, obligation]
+    );
+  };
+
+  // Select all document types
+  const selectAllDocTypes = () => {
+    if (selectedDocTypes.length === DOCUMENT_TYPES.length) {
+      setSelectedDocTypes([]);
+    } else {
+      setSelectedDocTypes(DOCUMENT_TYPES.map(doc => doc.id));
+    }
+  };
+
+  // Select all categories
+  const selectAllCategories = () => {
+    if (selectedCategories.length === COMPANY_CATEGORIES.length) {
+      setSelectedCategories([]);
+    } else {
+      setSelectedCategories(COMPANY_CATEGORIES.map(cat => cat.id));
+    }
+  };
+
+  // Select all obligation statuses
+  const selectAllObligations = () => {
+    if (selectedObligations.length === OBLIGATION_STATUSES.length) {
+      setSelectedObligations([]);
+    } else {
+      setSelectedObligations(OBLIGATION_STATUSES.map(obl => obl.id));
+    }
+  };
+
+  // Check if date is in range
+  const isDateInRange = (date: Date, from?: string | null, to?: string | null): boolean => {
+    if (!from || !to) return false;
+    try {
+      const fromDate = new Date(from.split('/').reverse().join('-'));
+      const toDate = new Date(to.split('/').reverse().join('-'));
+      return date >= fromDate && date <= toDate;
+    } catch (error) {
+      console.error('Error parsing dates:', error);
+      return false;
+    }
+  };
+
+  // Filter records based on selected criteria
+  const filteredRecords = useMemo(() => {
+    if (exportAll) return payrollRecords;
+
+    return payrollRecords.filter(record => {
+      // Skip if record or company doesn't exist
+      if (!record || !record.company) return false;
+
+      // Check category filters
+      let matchesCategory = true;
+      if (selectedCategories.length > 0) {
+        matchesCategory = selectedCategories.some(category => {
+          const currentDate = new Date();
+          switch (category) {
+            case 'acc':
+              return isDateInRange(currentDate, record.company.acc_client_effective_from, record.company.acc_client_effective_to);
+            case 'audit_tax':
+              return isDateInRange(currentDate, record.company.audit_tax_client_effective_from, record.company.audit_tax_client_effective_to);
+            case 'cps_sheria':
+              return isDateInRange(currentDate, record.company.cps_sheria_client_effective_from, record.company.cps_sheria_client_effective_to);
+            case 'imm':
+              return isDateInRange(currentDate, record.company.imm_client_effective_from, record.company.imm_client_effective_to);
+            default:
+              return false;
+          }
+        });
+      }
+
+      // Check obligation filters
+      let matchesObligation = true;
+      if (selectedObligations.length > 0) {
+        const obligationStatus = record.pin_details?.paye_status?.toLowerCase();
+        const effectiveFrom = record.pin_details?.paye_effective_from;
+
+        // Determine specific status types
+        const isCancelled = obligationStatus === 'cancelled';
+        const isDormant = obligationStatus === 'dormant';
+        const isNoObligation = effectiveFrom?.toLowerCase() === 'no obligation';
+        const isMissing = !effectiveFrom || effectiveFrom === 'Missing';
+
+        // Explicitly check if it has an active date (not any of the special cases)
+        const hasActiveDate = effectiveFrom &&
+          !isNoObligation &&
+          !isCancelled &&
+          !isDormant &&
+          !isMissing;
+
+        // Match against selected filters
+        matchesObligation = (
+          (selectedObligations.includes('active') && hasActiveDate) ||
+          (selectedObligations.includes('cancelled') && isCancelled) ||
+          (selectedObligations.includes('dormant') && isDormant) ||
+          (selectedObligations.includes('no_obligation') && isNoObligation) ||
+          (selectedObligations.includes('missing') && isMissing)
+        );
+      }
+
+      // Check company filters
+      let matchesCompany = true;
+      if (filterCompanies) {
+        matchesCompany = selectedCompanies.includes(record.company.id);
+      }
+
+      return matchesCategory && matchesObligation && matchesCompany;
+    });
+  }, [payrollRecords, selectedCategories, selectedObligations, exportAll, filterCompanies, selectedCompanies]);
+
+  // Count documents that will be exported
+  const documentCount = useMemo(() => {
+    let count = 0;
+
+    filteredRecords.forEach(record => {
+      if (selectedDocTypes.length === 0) return;
+
+      selectedDocTypes.forEach(docType => {
+        if (record.documents[docType]) {
+          count++;
+        }
+      });
+    });
+
+    return count;
+  }, [filteredRecords, selectedDocTypes]);
+
+  // Calculate progress percentage
+  const progressPercentage = useMemo(() => {
+    if (exportProgress.total === 0) return 0;
+    return Math.round((exportProgress.current / exportProgress.total) * 100);
+  }, [exportProgress]);
+
+  // Handle export action
+  const handleExport = async () => {
+    if (selectedDocTypes.length === 0 && !exportAll) {
+      toast({
+        title: "No document types selected",
+        description: "Please select at least one document type to export",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (documentCount === 0) {
+      toast({
+        title: "No documents to export",
+        description: "No documents match your selected criteria",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setExportInProgress(true);
+    setExportProgress({ current: 0, total: documentCount });
+
+    // Use the exportDocuments utility function
+    await exportDocuments({
+      name: exportName,
+      documentTypes: exportAll ? DOCUMENT_TYPES.map(doc => doc.id) : selectedDocTypes,
+      records: filteredRecords,
+      onProgress: (current, total) => {
+        setExportProgress({ current, total });
+      },
+      onSuccess: (count) => {
+        toast({
+          title: "Export successful",
+          description: `${count} documents have been exported`,
+        });
+        onOpenChange(false);
+      },
+      onError: (error) => {
+        toast({
+          title: "Export failed",
+          description: error.message || "There was an error exporting the documents",
+          variant: "destructive",
+        });
+        setExportInProgress(false);
+      }
+    });
+
+    setExportInProgress(false);
+  };
+
+  const getFilteredCompanies = () => {
+    if (filterCompanies) {
+      return payrollRecords.filter(record => selectedCompanies.includes(record.company.id));
+    }
+    return payrollRecords;
+  };
+
+  const searchResults = useMemo(() => {
+    if (!companySearchTerm) return payrollRecords;
+    return payrollRecords.filter(record => record.company.company_name.toLowerCase().includes(companySearchTerm.toLowerCase()));
+  }, [companySearchTerm, payrollRecords]);
+
+  const toggleCompany = (companyId: string, checked: boolean) => {
+    if (checked) {
+      setSelectedCompanies(prev => [...prev, companyId]);
+    } else {
+      setSelectedCompanies(prev => prev.filter(id => id !== companyId));
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(isOpen) => {
+      if (!exportInProgress) {
+        onOpenChange(isOpen);
+      }
+    }}>
+      <DialogContent className="sm:max-w-[1200px] max-h-[90vh] overflow-y-auto bg-white rounded-lg shadow-lg">
+        <DialogHeader className="border-b pb-4">
+          <DialogTitle className="text-xl font-semibold flex items-center justify-between text-blue-800">
+            <span>Export Documents</span>
+          </DialogTitle>
+          
+          {/* Period Display - Made more prominent */}
+          <div className="bg-blue-100 p-3 mt-2 rounded-md flex items-center justify-between">
+            <div className="flex items-center">
+              <Calendar className="h-5 w-5 text-blue-700 mr-2" />
+              <span className="text-lg font-medium text-blue-800">Export Period:</span>
+            </div>
+            <span className="text-lg font-bold text-blue-900">{monthNames[selectedMonth - 1]} {selectedYear}</span>
+          </div>
+        </DialogHeader>
+
+        <div className="py-3 space-y-5">
+          {/* Export Name */}
+          <div className="space-y-2">
+            <Label htmlFor="export-name" className="text-sm font-medium text-gray-700">
+              Export Name
+            </Label>
+            <Input
+              id="export-name"
+              value={exportName}
+              onChange={(e) => setExportName(e.target.value)}
+              className="w-full border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+              disabled={exportInProgress}
+            />
+          </div>
+
+          {/* Export All Option */}
+          <div className="bg-blue-50 p-4 rounded-md">
+            <div className="flex items-center space-x-3">
+              <Checkbox
+                id="export-all"
+                checked={exportAll}
+                onCheckedChange={(checked) => setExportAll(checked === true)}
+                className="h-5 w-5 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                disabled={exportInProgress}
+              />
+              <Label htmlFor="export-all" className="font-medium text-blue-800">
+                Export all documents (ignore filters)
+              </Label>
+            </div>
+          </div>
+
+          {/* Company Filtering */}
+          <div className="space-y-2">
+            <h3 className="text-sm font-medium text-gray-700">Company Selection</h3>
+            <div className="bg-blue-50 p-4 rounded-md">
+              <div className="flex items-center space-x-3">
+                <Checkbox
+                  id="export-all-companies"
+                  checked={!filterCompanies}
+                  onCheckedChange={(checked) => setFilterCompanies(checked !== true)}
+                  className="h-5 w-5 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                  disabled={exportInProgress}
+                />
+                <Label htmlFor="export-all-companies" className="font-medium text-blue-800">
+                  Include all companies ({payrollRecords.length})
+                </Label>
+              </div>
+
+              {filterCompanies && (
+                <div className="mt-3 p-3 bg-white rounded border border-blue-100">
+                  <div className="text-sm text-gray-600 mb-2">
+                    {getFilteredCompanies().length} of {payrollRecords.length} companies selected
+                  </div>
+                  <Input
+                    placeholder="Search companies..."
+                    value={companySearchTerm}
+                    onChange={(e) => setCompanySearchTerm(e.target.value)}
+                    className="mb-2"
+                  />
+                  <div className="max-h-32 overflow-y-auto border rounded">
+                    {searchResults.length > 0 ? (
+                      searchResults.map(record => (
+                        <div key={record.id} className="flex items-center p-2 hover:bg-gray-50 border-b last:border-0">
+                          <Checkbox
+                            id={`company-${record.id}`}
+                            checked={selectedCompanies.includes(record.id)}
+                            onCheckedChange={(checked) => toggleCompany(record.id, checked === true)}
+                            className="mr-2"
+                          />
+                          <Label htmlFor={`company-${record.id}`} className="text-sm cursor-pointer">
+                            {record.company?.company_name || 'Unknown Company'}
+                          </Label>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="p-2 text-sm text-gray-500">No companies match your search</div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Document Types */}
+          <div className="space-y-3">
+            <h3 className="text-sm font-medium text-gray-700">Document Types</h3>
+            <div className="bg-gray-50 p-3 rounded-md">
+              <div className="flex items-center space-x-2 mb-3 pb-2 border-b border-gray-200">
+                <Checkbox
+                  id="select-all-docs"
+                  checked={selectedDocTypes.length === DOCUMENT_TYPES.length}
+                  onCheckedChange={selectAllDocTypes}
+                  className="h-4 w-4 text-blue-600 rounded"
+                  disabled={exportInProgress}
+                />
+                <Label htmlFor="select-all-docs" className="font-medium text-gray-700">
+                  Select All
+                </Label>
+              </div>
+              <div className="space-y-2">
+                {DOCUMENT_TYPES.map((docType) => (
+                  <div key={docType.id} className="flex items-center space-x-2">
+                    <Checkbox
+                      id={`doc-${docType.id}`}
+                      checked={selectedDocTypes.includes(docType.id)}
+                      onCheckedChange={() => toggleDocType(docType.id)}
+                      className="h-4 w-4 text-blue-600 rounded"
+                      disabled={exportInProgress}
+                    />
+                    <div className="flex items-center space-x-2">
+                      {docType.icon}
+                      <Label htmlFor={`doc-${docType.id}`} className="font-normal text-gray-700">
+                        {docType.label}
+                      </Label>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Company Categories */}
+          <div className="space-y-3">
+            <h3 className="text-sm font-medium text-gray-700">Company Categories</h3>
+            <div className="bg-gray-50 p-3 rounded-md">
+              <div className="flex items-center space-x-2 mb-3 pb-2 border-b border-gray-200">
+                <Checkbox
+                  id="select-all-categories"
+                  checked={selectedCategories.length === COMPANY_CATEGORIES.length}
+                  onCheckedChange={selectAllCategories}
+                  className="h-4 w-4 text-blue-600 rounded"
+                  disabled={exportInProgress}
+                />
+                <Label htmlFor="select-all-categories" className="font-medium text-gray-700">
+                  Select All
+                </Label>
+              </div>
+              <div className="space-y-2">
+                {COMPANY_CATEGORIES.map((category) => (
+                  <div key={category.id} className="flex items-center space-x-2">
+                    <Checkbox
+                      id={`cat-${category.id}`}
+                      checked={selectedCategories.includes(category.id)}
+                      onCheckedChange={() => toggleCategory(category.id)}
+                      className="h-4 w-4 text-blue-600 rounded"
+                      disabled={exportInProgress}
+                    />
+                    <Label htmlFor={`cat-${category.id}`} className="font-normal text-gray-700">
+                      {category.label}
+                    </Label>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Obligation Statuses */}
+          <div className="space-y-3">
+            <h3 className="text-sm font-medium text-gray-700">Obligation Status</h3>
+            <div className="bg-gray-50 p-3 rounded-md">
+              <div className="flex items-center space-x-2 mb-3 pb-2 border-b border-gray-200">
+                <Checkbox
+                  id="select-all-obligations"
+                  checked={selectedObligations.length === OBLIGATION_STATUSES.length}
+                  onCheckedChange={selectAllObligations}
+                  className="h-4 w-4 text-blue-600 rounded"
+                  disabled={exportInProgress}
+                />
+                <Label htmlFor="select-all-obligations" className="font-medium text-gray-700">
+                  Select All
+                </Label>
+              </div>
+              <div className="space-y-2">
+                {OBLIGATION_STATUSES.map((obligation) => (
+                  <div key={obligation.id} className="flex items-center space-x-2">
+                    <Checkbox
+                      id={`obl-${obligation.id}`}
+                      checked={selectedObligations.includes(obligation.id)}
+                      onCheckedChange={() => toggleObligation(obligation.id)}
+                      className="h-4 w-4 text-blue-600 rounded"
+                      disabled={exportInProgress}
+                    />
+                    <Label htmlFor={`obl-${obligation.id}`} className="font-normal text-gray-700">
+                      {obligation.label}
+                    </Label>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Export Summary */}
+          <div className="bg-blue-50 p-4 rounded-md">
+            <h3 className="font-medium text-blue-800 mb-2">Export Summary</h3>
+            <div className="text-sm text-blue-700 space-y-1">
+              <div className="flex justify-between">
+                <span>Companies:</span>
+                <span className="font-medium">{getFilteredCompanies().length}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Documents:</span>
+                <span className="font-medium">{documentCount}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Export Progress */}
+          {exportInProgress && (
+            <div className="space-y-2">
+              <div className="flex justify-between text-sm text-gray-600">
+                <span>Exporting documents...</span>
+                <span>{exportProgress.current} of {exportProgress.total}</span>
+              </div>
+              <Progress value={progressPercentage} className="h-2 bg-gray-200" />
+            </div>
+          )}
+        </div>
+
+        <DialogFooter className="border-t pt-4 flex justify-end space-x-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            className="border-gray-300 text-gray-700 hover:bg-gray-50"
+            disabled={exportInProgress}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            className={`flex items-center gap-2 ${exportInProgress ? 'bg-blue-400' : 'bg-blue-600 hover:bg-blue-700'}`}
+            onClick={handleExport}
+            disabled={exportInProgress || documentCount === 0}
+          >
+            {exportInProgress ? (
+              <>
+                <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Exporting...
+              </>
+            ) : (
+              <>
+                <Download className="h-4 w-4" />
+                Export Documents
+              </>
+            )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}

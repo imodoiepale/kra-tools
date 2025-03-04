@@ -17,10 +17,11 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { Settings2 } from 'lucide-react'
+import { Settings2, Download } from 'lucide-react'
 import { ObligationFilters } from '../components/ObligationFilters'
 import { toast } from '@/hooks/use-toast'
 import { ExtractDialog } from './components/dialogs/ExtractDialog'
+import { ExportDialog } from './components/dialogs/ExportDialog'
 
 interface PayrollManagementProps {
     payrollRecords: CompanyPayrollRecord[]
@@ -59,6 +60,7 @@ export default function PayrollManagementWingu({
     const [selectedCategories, setSelectedCategories] = useState<string[]>(['acc']);
     const [selectedObligations, setSelectedObligations] = useState<string[]>([]);
     const [extractDialogOpen, setExtractDialogOpen] = useState(false)
+    const [exportDialogOpen, setExportDialogOpen] = useState(false)
 
     const handleFilterChange = useCallback((categories: string[]) => {
         setSelectedCategories(categories);
@@ -183,6 +185,11 @@ export default function PayrollManagementWingu({
         setExtractDialogOpen(true)
     }
 
+    const handleExportAll = () => {
+        // Open the export dialog
+        setExportDialogOpen(true)
+    }
+
     // Month names array for display and API calls
     const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
@@ -248,7 +255,13 @@ export default function PayrollManagementWingu({
                     >
                         Extract All
                     </Button>
-                    <Button className="h-8 px-2 bg-blue-500 text-white">Export</Button>
+                    <Button 
+                        onClick={handleExportAll}
+                        className="h-8 px-2 bg-blue-500 text-white hover:bg-blue-600 flex items-center gap-1"
+                    >
+                        <Download className="h-4 w-4" />
+                        Export
+                    </Button>
                 </div>
             </div>
 
@@ -256,6 +269,16 @@ export default function PayrollManagementWingu({
             <ExtractDialog
                 open={extractDialogOpen}
                 onOpenChange={setExtractDialogOpen}
+                payrollRecords={payrollRecords}
+                monthNames={monthNames}
+                selectedMonth={selectedMonth}
+                selectedYear={selectedYear}
+            />
+
+            {/* Export Dialog */}
+            <ExportDialog
+                open={exportDialogOpen}
+                onOpenChange={setExportDialogOpen}
                 payrollRecords={payrollRecords}
                 monthNames={monthNames}
                 selectedMonth={selectedMonth}

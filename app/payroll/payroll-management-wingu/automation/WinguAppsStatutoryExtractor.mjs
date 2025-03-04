@@ -283,20 +283,38 @@ async function downloadDocument(page, company, companyFolderPath, docType, supab
         const newFileName = `${docType.filePrefix}_${timestamp}${originalExtension}`;
         const newFilePath = path.join(subFolderPath, newFileName);
         
-        // Copy the file to the destination
-        await fs.promises.copyFile(filePath, newFilePath);
-        console.log(`File saved to ${newFilePath}`);
+        try {
+            // Copy the file to the destination
+            await fs.promises.copyFile(filePath, newFilePath);
+            console.log(`File saved to ${newFilePath}`);
+        } catch (fileError) {
+            console.error(`Error saving file to ${newFilePath}:`, fileError);
+            throw new Error(`Failed to save file: ${fileError.message}`);
+        }
         
         // Process CSV files if needed
         if (originalExtension === '.csv') {
-            await processCSVFile(newFilePath);
+            try {
+                await processCSVFile(newFilePath);
+            } catch (csvError) {
+                console.error(`Error processing CSV file ${newFilePath}:`, csvError);
+                // Continue execution even if CSV processing fails
+            }
         }
         
         // Upload to Supabase storage if client is provided
         let downloadPath = newFilePath;
         if (supabaseClient) {
             try {
-                const fileContent = await fs.promises.readFile(newFilePath);
+                // Read file content
+                let fileContent;
+                try {
+                    fileContent = await fs.promises.readFile(newFilePath);
+                } catch (readError) {
+                    console.error(`Error reading file ${newFilePath}:`, readError);
+                    throw new Error(`Failed to read file for upload: ${readError.message}`);
+                }
+                
                 const companyName = company.name.replace(/[^a-zA-Z0-9]/g, '_');
                 const storagePath = `${companyName}/${docType.filePrefix}_${timestamp}${originalExtension}`;
                 
@@ -316,7 +334,7 @@ async function downloadDocument(page, company, companyFolderPath, docType, supab
                     console.log(`Uploaded to Supabase: ${storagePath}`);
                     
                     // Get public URL
-                    const { data: urlData } = supabaseClient
+                    const { data: urlData } = await supabaseClient
                         .storage
                         .from('statutory-documents')
                         .getPublicUrl(storagePath);
@@ -328,21 +346,42 @@ async function downloadDocument(page, company, companyFolderPath, docType, supab
                         // Update document path in database
                         if (company.id && company.company_id) {
                             try {
+                                // First get the current record to ensure we have the latest data
+                                const { data: currentRecord, error: fetchError } = await supabaseClient
+                                    .from('company_payroll_records')
+                                    .select('documents, status')
+                                    .eq('id', company.id)
+                                    .single();
+                                
+                                if (fetchError) {
+                                    console.error(`Error fetching current record for ${company.name}:`, fetchError);
+                                    return downloadPath;
+                                }
+                                
+                                // Prepare the documents object with existing documents
+                                const currentDocuments = currentRecord?.documents || {};
+                                const updatedDocuments = {
+                                    ...currentDocuments,
+                                    [docType.dbField]: downloadPath
+                                };
+                                
+                                // Prepare the status object with existing status
+                                const currentStatus = currentRecord?.status || {};
+                                const updatedStatus = {
+                                    ...currentStatus,
+                                    extracted: true,
+                                    wingu_extraction: true,
+                                    extraction_date: new Date().toISOString()
+                                };
+                                
+                                // Update the record with new documents and status
                                 const { error } = await supabaseClient
                                     .from('company_payroll_records')
                                     .update({
-                                        documents: {
-                                            ...company.status?.documents,
-                                            [docType.dbField]: downloadPath
-                                        },
-                                        status: {
-                                            ...company.status,
-                                            extracted: true,
-                                            wingu_extraction: true,
-                                            extraction_date: new Date().toISOString()
-                                        }
+                                        documents: updatedDocuments,
+                                        status: updatedStatus
                                     })
-                                    .eq('company_id', company.company_id);
+                                    .eq('id', company.id);
                                 
                                 if (error) {
                                     console.error(`Error updating document path for ${company.name}:`, error);
@@ -403,7 +442,7 @@ async function downloadPayslips(page, company, downloadFolderPath) {
     }
 }
 
-async function setupPayrollPage(context, company) {
+async function setupPayrollPage(context, company, credentials = {}) {
     try {
         console.log(`Setting up payroll page for ${company.name}...`);
         const payrollPage = await context.newPage();
@@ -413,12 +452,15 @@ async function setupPayrollPage(context, company) {
         });
         await payrollPage.waitForLoadState('networkidle', { timeout: TIMEOUT_CONFIG.waitForLoadState });
 
-        // Login if needed using global credentials
+        // Login if needed using provided credentials or fallbacks
         const loginButton = await payrollPage.$('button:has-text("Log In")');
         if (loginButton) {
             console.log(`Logging in to payroll for ${company.name}...`);
-            await payrollPage.getByPlaceholder('Username').fill('tushar');
-            await payrollPage.getByPlaceholder('Password').fill('0700298298');
+            const username = credentials?.username || 'tushar';
+            const password = credentials?.password || '0700298298';
+            
+            await payrollPage.getByPlaceholder('Username').fill(username);
+            await payrollPage.getByPlaceholder('Password').fill(password);
             await payrollPage.getByRole('button', { name: 'Log In' }).click();
             await payrollPage.waitForLoadState('networkidle', { timeout: TIMEOUT_CONFIG.waitForLoadState });
         }
@@ -465,9 +507,13 @@ async function downloadCompanyReports({
             waitUntil: 'networkidle'
         });
 
+        // Use provided credentials or fallback to defaults
+        const username = credentials?.username || 'tushar';
+        const password = credentials?.password || '0700298298';
+        
         // Fill login form
-        await page.getByPlaceholder('Email').fill(credentials.email);
-        await page.getByPlaceholder('Password').fill(credentials.password);
+        await page.getByPlaceholder('Email').fill(username);
+        await page.getByPlaceholder('Password').fill(password);
         await page.getByRole('button', { name: 'LOGIN' }).click();
         await page.waitForLoadState('networkidle', { timeout: TIMEOUT_CONFIG.waitForLoadState });
 
@@ -531,8 +577,22 @@ async function downloadCompanyReports({
         // Create Supabase client if credentials are provided
         let supabaseClient = null;
         if (supabaseUrl && supabaseKey) {
-            supabaseClient = createClient(supabaseUrl, supabaseKey);
-            console.log('Supabase client initialized');
+            try {
+                supabaseClient = createClient(supabaseUrl, supabaseKey);
+                console.log('Supabase client initialized');
+                
+                // Test the connection
+                const { data, error } = await supabaseClient.from('company_payroll_records').select('count').limit(1);
+                if (error) {
+                    console.error('Error connecting to Supabase:', error.message);
+                    supabaseClient = null;
+                } else {
+                    console.log('Successfully connected to Supabase');
+                }
+            } catch (error) {
+                console.error('Failed to initialize Supabase client:', error.message);
+                supabaseClient = null;
+            }
         } else {
             console.log('No Supabase credentials provided, skipping database updates');
         }
@@ -551,7 +611,7 @@ async function downloadCompanyReports({
                 let progress = await loadProgress(companyFolderPath);
 
                 // Setup payroll page for the company
-                const payrollPage = await setupPayrollPage(context, company);
+                const payrollPage = await setupPayrollPage(context, company, credentials);
                 if (!payrollPage) {
                     console.error(`Failed to setup payroll page for ${company.name}`);
                     continue;
@@ -643,21 +703,47 @@ async function downloadCompanyReports({
                 if (onProgress) {
                     onProgress(company.id, {
                         status: 'failed',
-                        error: error.message,
+                        error: error.message || 'Unknown error occurred',
                         completedAt: new Date().toISOString()
                     });
                 }
+                
+                // Log detailed error information
+                console.error(`Error details for ${company.name}:`, {
+                    message: error.message,
+                    stack: error.stack,
+                    name: error.name,
+                    company: company.name,
+                    companyId: company.id
+                });
             }
         }
 
         console.log('\nExtraction process completed');
+        return {
+            success: true,
+            message: 'Extraction process completed successfully',
+            timestamp: new Date().toISOString()
+        };
         
     } catch (error) {
-        console.error('Fatal error:', error);
-        throw error;
+        console.error('Fatal error in extraction process:', error);
+        
+        // Return structured error response
+        return {
+            success: false,
+            error: error.message || 'Unknown fatal error occurred',
+            timestamp: new Date().toISOString()
+        };
     } finally {
-        await context.close();
-        await browser.close();
+        // Ensure browser is always closed
+        try {
+            if (context) await context.close();
+            if (browser) await browser.close();
+            console.log('Browser closed successfully');
+        } catch (closingError) {
+            console.error('Error closing browser:', closingError);
+        }
     }
 }
 
