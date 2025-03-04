@@ -411,65 +411,6 @@ export function ExportDialog({
             />
           </div>
 
-          {/* Document Type Selection */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <Label className="text-sm font-medium">Document Types</Label>
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="export-all"
-                  checked={exportAll}
-                  onCheckedChange={toggleExportAll}
-                  disabled={exportInProgress}
-                />
-                <Label htmlFor="export-all" className="text-xs cursor-pointer">
-                  Export All Types
-                </Label>
-              </div>
-            </div>
-
-            {!exportAll && (
-              <div className="space-y-2 mt-2">
-                <div className="flex justify-between items-center">
-                  <Label className="text-xs text-gray-500">Select document types to export</Label>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 text-xs"
-                    onClick={selectAllDocTypes}
-                    disabled={exportInProgress}
-                  >
-                    {selectedDocTypes.length === DOCUMENT_TYPES.length ? "Deselect All" : "Select All"}
-                  </Button>
-                </div>
-
-                <div className="grid grid-cols-1 gap-2 max-h-40 overflow-y-auto pr-1">
-                  {DOCUMENT_TYPES.map((docType) => (
-                    <div
-                      key={docType.id}
-                      className="flex items-center space-x-2 p-2 rounded-md border border-gray-200 hover:bg-gray-50"
-                    >
-                      <Checkbox
-                        id={`doc-type-${docType.id}`}
-                        checked={selectedDocTypes.includes(docType.id)}
-                        onCheckedChange={() => toggleDocType(docType.id)}
-                        disabled={exportInProgress}
-                      />
-                      <Label
-                        htmlFor={`doc-type-${docType.id}`}
-                        className="flex items-center space-x-2 text-sm cursor-pointer flex-1"
-                      >
-                        {docType.icon}
-                        <span>{docType.label}</span>
-                      </Label>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
           {/* Company Filtering */}
           <div className="space-y-2">
             <h3 className="text-sm font-medium text-gray-700">Company Selection</h3>
@@ -489,40 +430,104 @@ export function ExportDialog({
 
               {filterCompanies && (
                 <div className="mt-3 p-3 bg-white rounded border border-blue-100">
-                  <div className="text-sm text-gray-600 mb-2">
-                    {getFilteredCompanies().length} of {payrollRecords.length} companies selected
-                  </div>
                   <Input
                     placeholder="Search companies..."
                     value={companySearchTerm}
                     onChange={(e) => setCompanySearchTerm(e.target.value)}
                     className="mb-2"
+                    disabled={exportInProgress}
                   />
-                  <div className="max-h-32 overflow-y-auto border rounded">
-                    {searchResults.length > 0 ? (
-                      searchResults.map(record => (
-                        <div key={record.id} className="flex items-center p-2 hover:bg-gray-50 border-b last:border-0">
-                          <Checkbox
-                            id={`company-${record.id}`}
-                            checked={selectedCompanies.includes(record.id)}
-                            onCheckedChange={(checked) => toggleCompany(record.id, checked === true)}
-                            className="mr-2"
-                          />
-                          <Label htmlFor={`company-${record.id}`} className="text-sm cursor-pointer">
-                            {record.company?.company_name || 'Unknown Company'}
-                          </Label>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="p-2 text-sm text-gray-500">No companies match your search</div>
-                    )}
+                  <div className="max-h-40 overflow-y-auto space-y-1 pr-1">
+                    {filteredCompanies.map((record) => (
+                      <div key={record.id} className="flex items-center space-x-2">
+                        <Checkbox
+                          id={`company-${record.id}`}
+                          checked={selectedCompanies.includes(record.id)}
+                          onCheckedChange={(checked) => {
+                            if (checked) {
+                              setSelectedCompanies((prev) => [...prev, record.id]);
+                            } else {
+                              setSelectedCompanies((prev) => prev.filter((id) => id !== record.id));
+                            }
+                          }}
+                          disabled={exportInProgress}
+                        />
+                        <Label
+                          htmlFor={`company-${record.id}`}
+                          className="text-sm cursor-pointer truncate"
+                        >
+                          {record.company?.company_name || "Unknown Company"}
+                        </Label>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
             </div>
           </div>
 
-          <div className="space-y-3 grid grid-cols-3">
+          <div className="space-y-3 grid grid-cols-3 gap-4">
+            {/* Document Types */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-sm font-medium">Document Types</Label>
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="export-all"
+                    checked={exportAll}
+                    onCheckedChange={toggleExportAll}
+                    disabled={exportInProgress}
+                  />
+                  <Label htmlFor="export-all" className="text-xs cursor-pointer">
+                    Export All Types
+                  </Label>
+                </div>
+              </div>
+
+              {!exportAll && (
+                <div className="space-y-2 mt-2">
+                  <div className="flex justify-between items-center">
+                    <Label className="text-xs text-gray-500">Select types</Label>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 text-xs"
+                      onClick={selectAllDocTypes}
+                      disabled={exportInProgress}
+                    >
+                      {selectedDocTypes.length === DOCUMENT_TYPES.length ? "Deselect All" : "Select All"}
+                    </Button>
+                  </div>
+
+                  <div className="bg-gray-50 p-3 rounded-md">
+                    <div className="max-h-40 overflow-y-auto pr-1 space-y-1">
+                      {DOCUMENT_TYPES.map((docType) => (
+                        <div
+                          key={docType.id}
+                          className="flex items-center space-x-2 p-1 rounded hover:bg-gray-100"
+                        >
+                          <Checkbox
+                            id={`doc-type-${docType.id}`}
+                            checked={selectedDocTypes.includes(docType.id)}
+                            onCheckedChange={() => toggleDocType(docType.id)}
+                            disabled={exportInProgress}
+                          />
+                          <Label
+                            htmlFor={`doc-type-${docType.id}`}
+                            className="flex items-center space-x-2 text-sm cursor-pointer flex-1"
+                          >
+                            {docType.icon}
+                            <span>{docType.label}</span>
+                          </Label>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
             {/* Company Categories */}
             <div className="space-y-3">
               <h3 className="text-sm font-medium text-gray-700">Company Categories</h3>
@@ -594,8 +599,6 @@ export function ExportDialog({
             </div>
 
           </div>
-          {/* Document Types */}
-
           {/* Export Summary */}
           <div className="bg-blue-50 p-4 rounded-md">
             <h3 className="font-medium text-blue-800 mb-2">Export Summary</h3>
