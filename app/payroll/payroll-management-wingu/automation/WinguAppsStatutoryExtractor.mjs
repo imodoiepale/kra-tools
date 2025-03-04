@@ -177,7 +177,7 @@ async function downloadDocument(page, company, companyFolderPath, docType, supab
     while (!download && retryCount < TIMEOUT_CONFIG.maxRetries) {
         try {
             console.log(`Downloading ${docType.name} for ${company.name}... (Attempt ${retryCount + 1})`);
-            
+
             // Set navigation timeout for the page
             page.setDefaultNavigationTimeout(TIMEOUT_CONFIG.navigationTimeout);
             page.setDefaultTimeout(TIMEOUT_CONFIG.navigationTimeout);
@@ -185,20 +185,20 @@ async function downloadDocument(page, company, companyFolderPath, docType, supab
             // Wait for network to be idle
             await page.waitForLoadState('networkidle', { timeout: TIMEOUT_CONFIG.waitForLoadState });
 
-            // Click the main Export menu
+            // Click the main menu (Export or Reports)
             if (docType.menuLink === 'Export') {
-                // Click on Export Payroll in the sidebar menu
-                await page.getByRole('link', { name: 'Export Payroll' }).click();
+                // Using getByText with exact match as in the first script
+                await page.getByText(docType.menuLink, { exact: true }).click();
                 await page.waitForLoadState('networkidle', { timeout: TIMEOUT_CONFIG.waitForLoadState });
             } else if (docType.menuLink === 'Reports') {
-                // Click on Reports in the sidebar menu
                 await page.locator('#sidebar-menu').getByText('Reports', { exact: true }).click();
                 await page.waitForLoadState('networkidle', { timeout: TIMEOUT_CONFIG.waitForLoadState });
             }
 
-            // Click the specific export type submenu
+            // Click the specific submenu option
+            console.log(`Clicking on ${docType.subMenuLink}...`);
             if (docType.menuLink === 'Export') {
-                console.log(`Clicking on ${docType.subMenuLink}...`);
+                // Don't use exact:false to avoid potential issues
                 const subMenuLink = await page.getByRole('link', { name: docType.subMenuLink }).first();
                 if (!subMenuLink) {
                     throw new Error(`${docType.name} export option not found`);
@@ -207,24 +207,23 @@ async function downloadDocument(page, company, companyFolderPath, docType, supab
             } else if (docType.menuLink === 'Reports') {
                 await page.getByRole('link', { name: 'Reports Selector' }).click();
                 await page.waitForLoadState('networkidle', { timeout: TIMEOUT_CONFIG.waitForLoadState });
-                
-                // Click on the Payslips tab if needed
+
                 if (docType.name === 'Company Payslips') {
                     await page.getByRole('tab', { name: 'Payslips' }).click();
                 }
             }
-            
+
             await page.waitForLoadState('networkidle', { timeout: TIMEOUT_CONFIG.waitForLoadState });
 
             // Start download and wait for it
             const downloadPromise = page.waitForEvent('download', { timeout: TIMEOUT_CONFIG.downloadTimeout });
-            
-            // Click the download button based on document type
+
+            // Click the download button
             console.log(`Clicking download button for ${docType.name}...`);
-            
+
             if (docType.name === 'Company Payslips') {
                 await page.getByRole('link', { name: docType.downloadLink }).click({
-                    modifiers: ['Alt']  // Use Alt modifier to force download
+                    modifiers: ['Alt']
                 });
             } else {
                 const downloadLink = await page.getByRole('link', { name: docType.downloadLink }).first();
@@ -233,11 +232,11 @@ async function downloadDocument(page, company, companyFolderPath, docType, supab
                 }
                 await downloadLink.click();
             }
-            
+
             // Wait for download to start
             download = await downloadPromise;
             console.log(`Download started for ${docType.name}`);
-            
+
         } catch (err) {
             error = err;
             retryCount++;
@@ -258,31 +257,34 @@ async function downloadDocument(page, company, companyFolderPath, docType, supab
 
     try {
         // Wait for download to complete
+        // IMPORTANT: Use suggestedFilename to get the proper filename with extension
+        const suggestedFilename = download.suggestedFilename();
+        console.log(`Download suggested filename: ${suggestedFilename}`);
+
+        // Get path of downloaded file
         const filePath = await download.path();
         if (!filePath) {
             throw new Error(`Download failed for ${docType.name}`);
         }
-        
+
         console.log(`Download completed for ${docType.name}: ${filePath}`);
-        
+
         // Create subfolder if needed
         const subFolderPath = docType.subFolder ? path.join(companyFolderPath, docType.subFolder) : companyFolderPath;
         await fs.promises.mkdir(subFolderPath, { recursive: true });
-        
-        // Get file extension from the downloaded file
-        const originalExtension = path.extname(filePath).toLowerCase();
-        const expectedExtension = `.${docType.fileExtension.toLowerCase()}`;
-        
-        // Validate file extension if specified
-        if (docType.fileExtension && originalExtension !== expectedExtension) {
-            console.warn(`Warning: Downloaded file extension (${originalExtension}) does not match expected extension (${expectedExtension})`);
+
+        // Extract extension from suggested filename or use the expected extension
+        let fileExtension = path.extname(suggestedFilename);
+        if (!fileExtension || fileExtension === '') {
+            fileExtension = `.${docType.fileExtension.toLowerCase()}`;
+            console.log(`Using default extension ${fileExtension} since downloaded file doesn't have one`);
         }
-        
+
         // Generate a filename with timestamp to avoid conflicts
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const newFileName = `${docType.filePrefix}_${timestamp}${originalExtension}`;
+        const newFileName = `${company.name}_${docType.filePrefix}_${timestamp}${fileExtension}`;
         const newFilePath = path.join(subFolderPath, newFileName);
-        
+
         try {
             // Copy the file to the destination
             await fs.promises.copyFile(filePath, newFilePath);
@@ -291,9 +293,9 @@ async function downloadDocument(page, company, companyFolderPath, docType, supab
             console.error(`Error saving file to ${newFilePath}:`, fileError);
             throw new Error(`Failed to save file: ${fileError.message}`);
         }
-        
+
         // Process CSV files if needed
-        if (originalExtension === '.csv') {
+        if (fileExtension.toLowerCase() === '.csv') {
             try {
                 await processCSVFile(newFilePath);
             } catch (csvError) {
@@ -301,7 +303,7 @@ async function downloadDocument(page, company, companyFolderPath, docType, supab
                 // Continue execution even if CSV processing fails
             }
         }
-        
+
         // Upload to Supabase storage if client is provided
         let downloadPath = newFilePath;
         if (supabaseClient) {
@@ -314,35 +316,61 @@ async function downloadDocument(page, company, companyFolderPath, docType, supab
                     console.error(`Error reading file ${newFilePath}:`, readError);
                     throw new Error(`Failed to read file for upload: ${readError.message}`);
                 }
-                
+
                 const companyName = company.name.replace(/[^a-zA-Z0-9]/g, '_');
-                const storagePath = `${companyName}/${docType.filePrefix}_${timestamp}${originalExtension}`;
-                
+                const storagePath = `${companyName}/${docType.filePrefix}_${timestamp}${fileExtension}`;
+
+                // Check if bucket exists before uploading
+                try {
+                    const { data: buckets, error: bucketError } = await supabaseClient
+                        .storage
+                        .listBuckets();
+
+                    if (bucketError) {
+                        console.error(`Error listing buckets: ${bucketError.message}`);
+                        throw new Error(`Failed to list buckets: ${bucketError.message}`);
+                    }
+
+                    const bucketExists = buckets.some(bucket => bucket.name === 'statutory-documents');
+                    if (!bucketExists) {
+                        console.error(`Bucket 'statutory-documents' not found. Available buckets: ${buckets.map(b => b.name).join(', ')}`);
+                        throw new Error(`Bucket 'statutory-documents' not found`);
+                    }
+                } catch (bucketCheckError) {
+                    console.error(`Error checking bucket existence: ${bucketCheckError.message}`);
+                    throw bucketCheckError;
+                }
+
+                // Upload file to bucket
+                const fileType = fileExtension.toLowerCase() === '.csv' ? 'text/csv' :
+                    fileExtension.toLowerCase() === '.xlsx' ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' :
+                        fileExtension.toLowerCase() === '.pdf' ? 'application/pdf' : 'application/octet-stream';
+
+                console.log(`Uploading to Supabase with content type: ${fileType}`);
+
                 const { data, error } = await supabaseClient
                     .storage
                     .from('statutory-documents')
                     .upload(storagePath, fileContent, {
-                        contentType: originalExtension === '.csv' ? 'text/csv' : 
-                                     originalExtension === '.xlsx' ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' : 
-                                     originalExtension === '.pdf' ? 'application/pdf' : 'application/octet-stream',
+                        contentType: fileType,
                         upsert: true
                     });
-                
+
                 if (error) {
                     console.error(`Error uploading to Supabase: ${error.message}`);
                 } else {
                     console.log(`Uploaded to Supabase: ${storagePath}`);
-                    
+
                     // Get public URL
                     const { data: urlData } = await supabaseClient
                         .storage
                         .from('statutory-documents')
                         .getPublicUrl(storagePath);
-                    
+
                     if (urlData && urlData.publicUrl) {
                         downloadPath = urlData.publicUrl;
                         console.log(`Public URL: ${downloadPath}`);
-                        
+
                         // Update document path in database
                         if (company.id && company.company_id) {
                             try {
@@ -352,19 +380,19 @@ async function downloadDocument(page, company, companyFolderPath, docType, supab
                                     .select('documents, status')
                                     .eq('id', company.id)
                                     .single();
-                                
+
                                 if (fetchError) {
                                     console.error(`Error fetching current record for ${company.name}:`, fetchError);
                                     return downloadPath;
                                 }
-                                
+
                                 // Prepare the documents object with existing documents
                                 const currentDocuments = currentRecord?.documents || {};
                                 const updatedDocuments = {
                                     ...currentDocuments,
                                     [docType.dbField]: downloadPath
                                 };
-                                
+
                                 // Prepare the status object with existing status
                                 const currentStatus = currentRecord?.status || {};
                                 const updatedStatus = {
@@ -373,7 +401,7 @@ async function downloadDocument(page, company, companyFolderPath, docType, supab
                                     wingu_extraction: true,
                                     extraction_date: new Date().toISOString()
                                 };
-                                
+
                                 // Update the record with new documents and status
                                 const { error } = await supabaseClient
                                     .from('company_payroll_records')
@@ -382,7 +410,7 @@ async function downloadDocument(page, company, companyFolderPath, docType, supab
                                         status: updatedStatus
                                     })
                                     .eq('id', company.id);
-                                
+
                                 if (error) {
                                     console.error(`Error updating document path for ${company.name}:`, error);
                                 } else {
@@ -398,7 +426,7 @@ async function downloadDocument(page, company, companyFolderPath, docType, supab
                 console.error(`Error in Supabase upload: ${uploadError.message}`);
             }
         }
-        
+
         return downloadPath;
     } catch (error) {
         console.error(`Error processing downloaded file for ${docType.name}:`, error);
@@ -512,8 +540,9 @@ async function downloadCompanyReports({
         const password = credentials?.password || '0700298298';
         
         // Fill login form
-        await page.getByPlaceholder('Email').fill(username);
-        await page.getByPlaceholder('Password').fill(password);
+
+        await page.getByPlaceholder('Email').fill('info@booksmartconsult.com');
+        await page.getByPlaceholder('Password').fill('bclwinguapps@2024');
         await page.getByRole('button', { name: 'LOGIN' }).click();
         await page.waitForLoadState('networkidle', { timeout: TIMEOUT_CONFIG.waitForLoadState });
 

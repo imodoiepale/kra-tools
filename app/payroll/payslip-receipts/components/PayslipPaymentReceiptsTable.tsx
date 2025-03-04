@@ -742,7 +742,7 @@ export function PayslipPaymentReceiptsTable({
                 <TableHeader className="bg-blue-500 text-white">
                     <TableRow>
                         {columnVisibility?.index !== false && (
-                            <TableHead className="text-white font-semibold" scope="col">Index (#)</TableHead>
+                            <TableHead className="text-white font-semibold" scope="col">#</TableHead>
                         )}
                         {columnVisibility?.companyName !== false && (
                             <TableHead className="text-white font-semibold" scope="col">Company Name</TableHead>
