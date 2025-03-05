@@ -152,9 +152,15 @@ export function PayrollTable({
 
     const allDocumentsUploaded = (record: CompanyPayrollRecord | undefined): boolean => {
         if (!record) return false;
-        return Object.entries(record.documents)
-            .filter(([key]) => key !== 'all_csv')
-            .every(([_, value]) => value !== null);
+        if (record.status?.finalization_date === 'NIL') return true; // NIL filings don't need documents
+        
+        // Define the document types we're counting
+        const documentTypes = ['paye_csv', 'hslevy_csv', 'zip_file_kra', 'shif_exl', 'nssf_exl'];
+        
+        // Check if all required documents are uploaded (not null and not empty string)
+        return documentTypes.every(docType => 
+            record.documents[docType] && record.documents[docType].trim() !== ''
+        );
     };
 
     // Memoize sorted records for performance
@@ -372,22 +378,38 @@ export function PayrollTable({
                                     {record?.status?.filing?.filingDate ? (
                                         <Button
                                             size="sm"
-                                            className={`h-6 text-xs px-2 ${record.status.finalization_date === 'NIL' ? 'bg-purple-500 hover:bg-purple-600' : 'bg-green-500 hover:bg-green-600'}`}
-                                            onClick={() => updateState({ filingDialog: { isOpen: true, recordId: record.id, isNil: record.status.finalization_date === 'NIL', confirmOpen: false, record } })}
+                                            className={`h-6 text-xs px-2 ${record.status?.finalization_date === 'NIL' ? 'bg-purple-500 hover:bg-purple-600' : 'bg-green-500 hover:bg-green-600'}`}
+                                            onClick={() => updateState({ 
+                                                filingDialog: { 
+                                                    isOpen: true, 
+                                                    recordId: record.id, 
+                                                    isNil: record.status?.finalization_date === 'NIL', 
+                                                    confirmOpen: false, 
+                                                    record 
+                                                } 
+                                            })}
                                         >
                                             {formatDate(record?.status?.filing?.filingDate)}
                                         </Button>
                                     ) : (
                                         <Button
                                             size="sm"
-                                            className={`h-6 text-xs  px-2 ${(!allDocumentsUploaded(record) && record.status.finalization_date !== 'NIL')
+                                            className={`h-6 text-xs px-2 ${(!allDocumentsUploaded(record) && record.status?.finalization_date !== 'NIL')
                                                 ? "bg-red-500 hover:bg-red-500"
                                                 : "bg-yellow-500 hover:bg-yellow-500"
                                                 }`}
-                                            disabled={!allDocumentsUploaded(record) && record.status.finalization_date !== 'NIL'}
-                                            onClick={() => updateState({ filingDialog: { isOpen: true, recordId: record.id, isNil: record.status.finalization_date === 'NIL', confirmOpen: false, record } })}
+                                            disabled={!allDocumentsUploaded(record) && record.status?.finalization_date !== 'NIL'}
+                                            onClick={() => updateState({ 
+                                                filingDialog: { 
+                                                    isOpen: true, 
+                                                    recordId: record.id, 
+                                                    isNil: record.status?.finalization_date === 'NIL', 
+                                                    confirmOpen: false, 
+                                                    record 
+                                                } 
+                                            })}
                                         >
-                                            {(!allDocumentsUploaded(record) && record.status.finalization_date !== 'NIL')
+                                            {(!allDocumentsUploaded(record) && record.status?.finalization_date !== 'NIL')
                                                 ? 'Pending'
                                                 : 'File Now'
                                             }
@@ -456,6 +478,7 @@ export function PayrollTable({
                     }));
                 }}
                 onConfirm={handleFinalize}
+                onFilingConfirm={handleFilingConfirm}
                 onRevert={handleRevertFinalize}
                 recordId={state.finalizeDialog.recordId}
                 record={records.find(r => r.id === state.finalizeDialog.recordId) || state.finalizeDialog.record}

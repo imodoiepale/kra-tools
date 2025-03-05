@@ -17,11 +17,12 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { Settings2, Download } from 'lucide-react'
+import { Settings2, Download, FileText } from 'lucide-react'
 import { ObligationFilters } from '../components/ObligationFilters'
 import { toast } from '@/hooks/use-toast'
 import { ExtractDialog } from './components/dialogs/ExtractDialog'
 import { ExportDialog } from './components/dialogs/ExportDialog'
+import { BulkFilingDialog } from './components/dialogs/BulkFilingDialog'
 
 interface PayrollManagementProps {
     payrollRecords: CompanyPayrollRecord[]
@@ -62,6 +63,7 @@ export default function PayrollManagementWingu({
 
     const [extractDialogOpen, setExtractDialogOpen] = useState(false)
     const [exportDialogOpen, setExportDialogOpen] = useState(false)
+    const [bulkFilingDialogOpen, setBulkFilingDialogOpen] = useState(false)
 
     const handleFilterChange = useCallback((categories: string[]) => {
         setSelectedCategories(categories);
@@ -247,21 +249,32 @@ export default function PayrollManagementWingu({
                     <Button
                         onClick={updateExistingEmployeeCounts}
                         className="h-8 px-2 bg-orange-500 text-white hover:bg-orange-600"
+                        size="sm"
                     >
                         Update Employee Counts
                     </Button>
                     <Button
                         onClick={handleExtractAll}
                         className="h-8 px-2 bg-green-500 text-white hover:bg-green-600"
+                        size="sm"
                     >
                         Extract All
                     </Button>
                     <Button 
                         onClick={handleExportAll}
                         className="h-8 px-2 bg-blue-500 text-white hover:bg-blue-600 flex items-center gap-1"
+                        size="sm"
                     >
                         <Download className="h-4 w-4" />
                         Export
+                    </Button>
+                    <Button 
+                        onClick={() => setBulkFilingDialogOpen(true)}
+                        className="h-8 px-2 bg-purple-500 text-white hover:bg-purple-600 flex items-center gap-1"
+                        size="sm"
+                    >
+                        <FileText className="h-4 w-4" />
+                        Bulk Filing
                     </Button>
                 </div>
             </div>
@@ -280,6 +293,15 @@ export default function PayrollManagementWingu({
             <ExportDialog
                 open={exportDialogOpen}
                 onOpenChange={setExportDialogOpen}
+                payrollRecords={payrollRecords}
+                monthNames={monthNames}
+                selectedMonth={selectedMonth}
+                selectedYear={selectedYear}
+            />
+
+            <BulkFilingDialog
+                open={bulkFilingDialogOpen}
+                onOpenChange={setBulkFilingDialogOpen}
                 payrollRecords={payrollRecords}
                 monthNames={monthNames}
                 selectedMonth={selectedMonth}

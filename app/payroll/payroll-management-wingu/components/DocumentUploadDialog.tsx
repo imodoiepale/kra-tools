@@ -388,7 +388,7 @@ export function DocumentUploadDialog({
                         <TabsContent value="bulk" className="space-y-4">
                             {allDocuments && allDocuments.length > 0 ? (
                                 <div className="space-y-4">
-                                    <div className="bg-gray-50 rounded-lg p-4">
+                                    <div className="bg-purple-50 rounded-lg p-4">
                                         <h4 className="text-sm font-semibold text-gray-900 flex items-center gap-1.5 mb-4">
                                             <Upload className="h-4 w-4 text-blue-500" />
                                             Document Management

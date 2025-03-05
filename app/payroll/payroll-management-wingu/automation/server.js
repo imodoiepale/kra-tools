@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import { downloadCompanyReports } from './WinguAppsStatutoryExtractor.mjs';
+import { fileCompanyReturns } from './WinguAppsFilingAutomation.mjs';
 import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
 import path from 'path';
@@ -22,6 +23,7 @@ let supabase;
 
 // In-memory status storage
 const extractionStatus = {};
+const filingStatus = {};
 
 // Middleware
 app.use(cors());
@@ -38,6 +40,14 @@ app.get('/', (req, res) => {
     });
 });
 
+// Health check endpoint for compatibility
+app.get('/health', (req, res) => {
+    res.json({
+        status: 'ok',
+        message: 'Extraction server is running'
+    });
+});
+
 // Status endpoint
 app.get('/api/status/:companyId', (req, res) => {
     const { companyId } = req.params;
@@ -49,12 +59,23 @@ app.get('/api/status/:companyId', (req, res) => {
     res.json(extractionStatus[companyId]);
 });
 
+// Status endpoint for filing
+app.get('/api/filing-status/:companyId', (req, res) => {
+    const { companyId } = req.params;
+    
+    if (!filingStatus[companyId]) {
+        return res.status(404).json({ error: 'No filing status found for this company' });
+    }
+    
+    res.json(filingStatus[companyId]);
+});
+
 // Extract endpoint
 app.post('/api/extract', async (req, res) => {
     console.log('Received extraction request');
     
     try {
-        const { companies, monthYear, supabaseUrl, supabaseKey, credentials } = req.body;
+        const { companies, monthYear, month, year, supabaseUrl, supabaseKey, credentials } = req.body;
         
         if (!companies || !Array.isArray(companies) || companies.length === 0) {
             return res.status(400).json({ error: 'No companies provided for extraction' });
@@ -62,6 +83,7 @@ app.post('/api/extract', async (req, res) => {
         
         console.log(`Processing ${companies.length} companies`);
         console.log('Companies:', companies.map(c => c.name));
+        console.log('Period:', monthYear, `(Month: ${month}, Year: ${year})`);
         
         // Initialize extraction status for each company
         companies.forEach(company => {
@@ -69,7 +91,10 @@ app.post('/api/extract', async (req, res) => {
                 status: 'queued',
                 progress: 0,
                 startTime: new Date().toISOString(),
-                company: company.name
+                company: company.name,
+                monthYear,
+                month,
+                year
             };
         });
         
@@ -104,6 +129,8 @@ app.post('/api/extract', async (req, res) => {
                 await downloadCompanyReports({
                     companies: [company],
                     monthYear,
+                    month,
+                    year,
                     onProgress,
                     supabaseUrl: supabaseUrlToUse,
                     supabaseKey: supabaseKeyToUse,
@@ -121,27 +148,31 @@ app.post('/api/extract', async (req, res) => {
                         const supabaseClient = createClient(supabaseUrlToUse, supabaseKeyToUse);
                         
                         // Get current status
-                        const { data: currentRecord, error: fetchError } = await supabaseClient
+                        const { data: records, error: fetchError } = await supabaseClient
                             .from('company_payroll_records')
-                            .select('status')
-                            .eq('company_id', company.company_id)
-                            .single();
+                            .select('id, status')
+                            .eq('company_id', company.company_id);
                             
                         if (fetchError) {
                             console.error(`Error fetching current status for ${company.name}:`, fetchError);
+                        } else if (!records || records.length === 0) {
+                            console.error(`No records found for ${company.name}`);
                         } else {
+                            // Find the record that matches the company's ID
+                            const currentRecord = records.find(record => record.id === company.id) || records[0];
+                            
                             // Update with new status
                             const { error: updateError } = await supabaseClient
                                 .from('company_payroll_records')
                                 .update({
                                     status: {
-                                        ...currentRecord.status,
+                                        ...(currentRecord.status || {}),
                                         extracted: true,
                                         wingu_extraction: true,
                                         extraction_date: new Date().toISOString()
                                     }
                                 })
-                                .eq('company_id', company.company_id);
+                                .eq('id', currentRecord.id);
                                 
                             if (updateError) {
                                 console.error(`Error updating status for ${company.name}:`, updateError);
@@ -166,27 +197,31 @@ app.post('/api/extract', async (req, res) => {
                         const supabaseClient = createClient(supabaseUrlToUse, supabaseKeyToUse);
                         
                         // Get current status
-                        const { data: currentRecord, error: fetchError } = await supabaseClient
+                        const { data: records, error: fetchError } = await supabaseClient
                             .from('company_payroll_records')
-                            .select('status')
-                            .eq('company_id', company.company_id)
-                            .single();
+                            .select('id, status')
+                            .eq('company_id', company.company_id);
                             
                         if (fetchError) {
                             console.error(`Error fetching current status for ${company.name}:`, fetchError);
+                        } else if (!records || records.length === 0) {
+                            console.error(`No records found for ${company.name}`);
                         } else {
+                            // Find the record that matches the company's ID
+                            const currentRecord = records.find(record => record.id === company.id) || records[0];
+                            
                             // Update with failed status
                             const { error: updateError } = await supabaseClient
                                 .from('company_payroll_records')
                                 .update({
                                     status: {
-                                        ...currentRecord.status,
+                                        ...(currentRecord.status || {}),
                                         extraction_error: error.message,
                                         extraction_failed: true,
                                         extraction_attempt_date: new Date().toISOString()
                                     }
                                 })
-                                .eq('company_id', company.company_id);
+                                .eq('id', currentRecord.id);
                                 
                             if (updateError) {
                                 console.error(`Error updating failed status for ${company.name}:`, updateError);
@@ -208,6 +243,75 @@ app.post('/api/extract', async (req, res) => {
     } catch (error) {
         console.error('Error in extraction process:', error);
         // We've already sent the response, so we can't send an error response here
+    }
+});
+
+// Filing endpoint
+app.post('/api/file', async (req, res) => {
+    console.log('Received filing request');
+    
+    try {
+        const { companies, monthYear, filingDate, supabaseUrl, supabaseKey, credentials } = req.body;
+        
+        if (!companies || !Array.isArray(companies) || companies.length === 0) {
+            return res.status(400).json({ error: 'No companies provided for filing' });
+        }
+        
+        console.log(`Processing ${companies.length} companies for filing`);
+        console.log('Companies:', companies.map(c => c.name));
+        console.log('Period:', monthYear);
+        console.log('Filing Date:', filingDate);
+        
+        // Initialize filing status for each company
+        companies.forEach(company => {
+            filingStatus[company.id] = {
+                status: 'queued',
+                progress: 0,
+                startTime: new Date().toISOString(),
+                company: company.name,
+                monthYear,
+                filingDate
+            };
+        });
+        
+        // Send response immediately
+        res.json({
+            message: 'Filing process started',
+            companies: companies.map(c => c.id)
+        });
+        
+        // Define progress callback
+        const onProgress = (companyId, status) => {
+            filingStatus[companyId] = {
+                ...filingStatus[companyId],
+                ...status
+            };
+        };
+        
+        // Use provided Supabase credentials or fall back to environment variables
+        const supabaseUrlToUse = supabaseUrl || process.env.NEXT_PUBLIC_SUPABASE_URL;
+        const supabaseKeyToUse = supabaseKey || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+        
+        // Initialize Supabase client if not already done
+        if (!supabase) {
+            supabase = createClient(supabaseUrlToUse, supabaseKeyToUse);
+        }
+        
+        // Call the filing function
+        await fileCompanyReturns({
+            companies,
+            monthYear,
+            filingDate: new Date(filingDate),
+            onProgress,
+            supabaseUrl: supabaseUrlToUse,
+            supabaseKey: supabaseKeyToUse,
+            credentials
+        });
+        
+        console.log('All filings completed');
+    } catch (error) {
+        console.error('Error in filing process:', error);
+        res.status(500).json({ error: error.message });
     }
 });
 

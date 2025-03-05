@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import { createClient } from '@supabase/supabase-js';
 import os from 'os';
 import xlsx from 'xlsx';
+import { format } from 'date-fns';
 
 // Get the directory name
 const __filename = fileURLToPath(import.meta.url);
@@ -26,10 +27,10 @@ const TIMEOUT_CONFIG = {
 
 // Configuration for document paths in database
 const DOCUMENT_PATHS = {
-    HOUSING: 'housing_levy_file',
-    PAYE: 'paye_file',
-    SHIF: 'shif_file',
-    NSSF: 'nssf_file',
+    HOUSING: 'hslevy_csv',
+    PAYE: 'paye_csv',
+    SHIF: 'shif_exl',
+    NSSF: 'nssf_exl',
     PAYSLIPS: 'payslips_file'
 };
 
@@ -44,7 +45,7 @@ const DOCUMENT_TYPES = {
         filePrefix: 'HOUSING LEVY',
         pageIndex: 0,
         subFolder: 'PREP DOCS',
-        dbField: 'housing_levy_file'
+        dbField: 'hslevy_csv'
     },
     PAYE: {
         name: 'iTax',
@@ -55,7 +56,7 @@ const DOCUMENT_TYPES = {
         filePrefix: 'PAYE',
         pageIndex: 1,
         subFolder: 'PREP DOCS',
-        dbField: 'paye_file'
+        dbField: 'paye_csv'
     },
     SHIF: {
         name: 'SHIF',
@@ -66,7 +67,7 @@ const DOCUMENT_TYPES = {
         filePrefix: 'SHIF',
         pageIndex: 2,
         subFolder: 'PREP DOCS',
-        dbField: 'shif_file'
+        dbField: 'shif_exl'
     },
     NSSF: {
         name: 'NSSF',
@@ -77,7 +78,7 @@ const DOCUMENT_TYPES = {
         filePrefix: 'NSSF',
         pageIndex: 3,
         subFolder: 'PREP DOCS',
-        dbField: 'nssf_file'
+        dbField: 'nssf_exl'
     },
     PAYSLIPS: {
         name: 'Company Payslips',
@@ -318,7 +319,9 @@ async function downloadDocument(page, company, companyFolderPath, docType, supab
                 }
 
                 const companyName = company.name.replace(/[^a-zA-Z0-9]/g, '_');
-                const storagePath = `${companyName}/${docType.filePrefix}_${timestamp}${fileExtension}`;
+                // Update file path structure to match manual upload process
+                const fileName = `${docType.filePrefix}_${company.name}_${format(new Date(), 'yyyy-MM-dd')}${fileExtension}`;
+                const storagePath = `${monthYear}/PREP DOCS/${company.name}/${fileName}`;
 
                 // Check if bucket exists before uploading
                 try {
@@ -331,10 +334,10 @@ async function downloadDocument(page, company, companyFolderPath, docType, supab
                         throw new Error(`Failed to list buckets: ${bucketError.message}`);
                     }
 
-                    const bucketExists = buckets.some(bucket => bucket.name === 'statutory-documents');
+                    const bucketExists = buckets.some(bucket => bucket.name === 'Payroll-Cycle');
                     if (!bucketExists) {
-                        console.error(`Bucket 'statutory-documents' not found. Available buckets: ${buckets.map(b => b.name).join(', ')}`);
-                        throw new Error(`Bucket 'statutory-documents' not found`);
+                        console.error(`Bucket 'Payroll-Cycle' not found. Available buckets: ${buckets.map(b => b.name).join(', ')}`);
+                        throw new Error(`Bucket 'Payroll-Cycle' not found`);
                     }
                 } catch (bucketCheckError) {
                     console.error(`Error checking bucket existence: ${bucketCheckError.message}`);
@@ -350,7 +353,7 @@ async function downloadDocument(page, company, companyFolderPath, docType, supab
 
                 const { data, error } = await supabaseClient
                     .storage
-                    .from('statutory-documents')
+                    .from('Payroll-Cycle')
                     .upload(storagePath, fileContent, {
                         contentType: fileType,
                         upsert: true
@@ -364,7 +367,7 @@ async function downloadDocument(page, company, companyFolderPath, docType, supab
                     // Get public URL
                     const { data: urlData } = await supabaseClient
                         .storage
-                        .from('statutory-documents')
+                        .from('Payroll-Cycle')
                         .getPublicUrl(storagePath);
 
                     if (urlData && urlData.publicUrl) {
@@ -390,7 +393,7 @@ async function downloadDocument(page, company, companyFolderPath, docType, supab
                                 const currentDocuments = currentRecord?.documents || {};
                                 const updatedDocuments = {
                                     ...currentDocuments,
-                                    [docType.dbField]: downloadPath
+                                    [docType.dbField]: storagePath // Use storage path instead of public URL
                                 };
 
                                 // Prepare the status object with existing status

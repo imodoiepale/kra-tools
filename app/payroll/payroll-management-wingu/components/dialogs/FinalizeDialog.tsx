@@ -30,6 +30,7 @@ interface FinalizeDialogProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     onConfirm: (recordId: string, isNil: boolean, assignedTo: string) => Promise<void>;
+    onFilingConfirm: (recordId: string, date: Date) => Promise<void>;
     onRevert?: (recordId: string) => Promise<void>;
     recordId: string | null;
     record?: CompanyPayrollRecord;
@@ -41,6 +42,7 @@ export function FinalizeDialog({
     open,
     onOpenChange,
     onConfirm,
+    onFilingConfirm,
     onRevert,
     recordId,
     record,
@@ -59,6 +61,21 @@ export function FinalizeDialog({
         setIsSubmitting(true);
         try {
             await onConfirm(recordId, isNil, assignedTo);
+            
+            // If it's a NIL return, automatically submit the filing date
+            if (isNil && onFilingConfirm) {
+                try {
+                    await onFilingConfirm(recordId, new Date());
+                } catch (filingError) {
+                    console.error('Error during automatic filing:', filingError);
+                    // We don't want to show an error toast here since the finalization was successful
+                    // Just log the error for debugging purposes
+                }
+            }
+        } catch (error) {
+            console.error('Finalization error:', error);
+            // Keep the dialog open if there's an error
+            return;
         } finally {
             setIsSubmitting(false);
         }
@@ -152,6 +169,12 @@ export function FinalizeDialog({
                                         onCheckedChange={setIsNil}
                                     />
                                 </div>
+
+                                {isNil && (
+                                    <div className="text-sm text-purple-600 bg-purple-50 p-3 rounded-md">
+                                        <p>When finalizing as NIL Return, Filing Date and Filing date will be automatically submitted.</p>
+                                    </div>
+                                )}
 
                                 <div className="space-y-2">
                                     <Label htmlFor="assigned-to" className="text-sm text-gray-600">Assigned To</Label>

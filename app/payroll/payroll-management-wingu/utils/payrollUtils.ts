@@ -44,7 +44,8 @@ export const getDocumentCount = (record: CompanyPayrollRecord): string => {
 
 export const allDocumentsUploaded = (record: CompanyPayrollRecord | undefined): boolean => {
     if (!record) return false;
-    return Object.entries(record.documents)
+    const documents = record.documents ? record.documents : {};
+    return Object.entries(documents)
         .filter(([key]) => key !== 'all_csv')
         .every(([_, value]) => value !== null);
 };

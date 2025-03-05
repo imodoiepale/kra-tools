@@ -71,27 +71,41 @@ export const usePayrollState = (
                 // Extract the company_id from the temporary ID or use it directly from the record
                 const companyId = record.company_id;
 
-                // Create a new real record in the database
-                const { data: newRecord, error: insertError } = await supabase
+                // Check if a record with the same company_id and payroll_cycle_id already exists
+                const { data: existingRecords, error: fetchError } = await supabase
                     .from('company_payroll_records')
-                    .insert([
-                        {
-                            company_id: companyId,
-                            payroll_cycle_id: record.payroll_cycle_id,
-                            documents: {},
-                            status: {
-                                finalization_date: null,
-                                assigned_to: null,
-                                filing: null
-                            },
-                            number_of_employees: 0
-                        }
-                    ])
-                    .select()
-                    .single();
+                    .select('id')
+                    .eq('company_id', companyId)
+                    .eq('payroll_cycle_id', record.payroll_cycle_id);
+                
+                if (fetchError) throw fetchError;
+                
+                // If a record already exists, use that instead of creating a new one
+                if (existingRecords && existingRecords.length > 0) {
+                    realRecordId = existingRecords[0].id;
+                } else {
+                    // Create a new real record in the database
+                    const { data: newRecord, error: insertError } = await supabase
+                        .from('company_payroll_records')
+                        .insert([
+                            {
+                                company_id: companyId,
+                                payroll_cycle_id: record.payroll_cycle_id,
+                                documents: {},
+                                status: {
+                                    finalization_date: null,
+                                    assigned_to: null,
+                                    filing: null
+                                },
+                                number_of_employees: 0
+                            }
+                        ])
+                        .select()
+                        .single();
 
-                if (insertError) throw insertError;
-                realRecordId = newRecord.id;
+                    if (insertError) throw insertError;
+                    realRecordId = newRecord.id;
+                }
             }
 
             // Now update the finalization status using the real record ID
@@ -230,30 +244,49 @@ export const usePayrollState = (
                 throw new Error('Record not found');
             }
 
+            // Ensure we have a valid date
+            if (!date || isNaN(date.getTime())) {
+                date = new Date(); // Default to current date if invalid
+            }
+
             // If this is a temporary record, create a real record first
             let realRecordId = recordId;
             if (recordId.startsWith('temp_')) {
-                // Create a new record in the database
-                const { data: newRecord, error: insertError } = await supabase
+                // Check if a record with the same company_id and payroll_cycle_id already exists
+                const { data: existingRecords, error: fetchError } = await supabase
                     .from('company_payroll_records')
-                    .insert([
-                        {
-                            company_id: record.company_id,
-                            payroll_cycle_id: record.payroll_cycle_id,
-                            documents: {},
-                            status: {
-                                finalization_date: null,
-                                assigned_to: null,
-                                filing: null
-                            },
-                            number_of_employees: 0
-                        }
-                    ])
-                    .select()
-                    .single();
+                    .select('id')
+                    .eq('company_id', record.company_id)
+                    .eq('payroll_cycle_id', record.payroll_cycle_id);
+                
+                if (fetchError) throw fetchError;
+                
+                // If a record already exists, use that instead of creating a new one
+                if (existingRecords && existingRecords.length > 0) {
+                    realRecordId = existingRecords[0].id;
+                } else {
+                    // Create a new record in the database
+                    const { data: newRecord, error: insertError } = await supabase
+                        .from('company_payroll_records')
+                        .insert([
+                            {
+                                company_id: record.company_id,
+                                payroll_cycle_id: record.payroll_cycle_id,
+                                documents: {},
+                                status: {
+                                    finalization_date: null,
+                                    assigned_to: null,
+                                    filing: null
+                                },
+                                number_of_employees: 0
+                            }
+                        ])
+                        .select()
+                        .single();
 
-                if (insertError) throw insertError;
-                realRecordId = newRecord.id;
+                    if (insertError) throw insertError;
+                    realRecordId = newRecord.id;
+                }
             }
 
             // Now update the filing status
@@ -264,7 +297,7 @@ export const usePayrollState = (
                         ...record.status,
                         filing: {
                             filingDate: date.toISOString(),
-                            filedBy: record.status.assigned_to || 'Unknown'
+                            filedBy: record.status?.assigned_to || 'Unknown'
                         }
                     }
                 })
@@ -284,7 +317,7 @@ export const usePayrollState = (
                                 ...r.status,
                                 filing: {
                                     filingDate: date.toISOString(),
-                                    filedBy: r.status.assigned_to || 'Unknown'
+                                    filedBy: r.status?.assigned_to || 'Unknown'
                                 }
                             }
                         }

@@ -17,7 +17,7 @@ import { Progress } from '@/components/ui/progress'
 import { Badge } from '@/components/ui/badge'
 
 // Define the API URL with a fallback to localhost if environment variable is not set
-const API_BASE_URL = process.env.NEXT_PUBLIC_EXTRACTION_API_URL || 'http://localhost:3005';
+const API_BASE_URL = 'http://localhost:3005';
 
 interface ExtractDialogProps {
   open: boolean
@@ -46,7 +46,7 @@ export function ExtractDialog({
   const [completedCount, setCompletedCount] = useState(0)
   const [totalCount, setTotalCount] = useState(0)
 
-  // Reset state when dialog opens
+  // Reset state when dialog opens or closes
   useEffect(() => {
     if (open) {
       console.log('API Base URL:', API_BASE_URL);
@@ -80,6 +80,15 @@ export function ExtractDialog({
       setCompletedCount(0);
       setTotalCount(0);
     }
+    
+    // Cleanup function to clear any intervals when the dialog closes
+    return () => {
+      // Clear any active intervals
+      const intervals = window.setInterval(() => {}, 0);
+      for (let i = 0; i < intervals; i++) {
+        window.clearInterval(i);
+      }
+    };
   }, [open, payrollRecords]);
 
   // Other functions remain the same...
@@ -127,14 +136,22 @@ export function ExtractDialog({
 
       // First check if the server is running
       try {
-        const healthCheck = await fetch(`${API_BASE_URL}/health`);
+        // Try the health endpoint first, then fall back to root endpoint
+        let healthCheck;
+        try {
+          healthCheck = await fetch(`${API_BASE_URL}/health`);
+        } catch (e) {
+          console.log('Health endpoint failed, trying root endpoint');
+          healthCheck = await fetch(`${API_BASE_URL}/`);
+        }
+        
         if (!healthCheck.ok) {
           throw new Error(`Server health check failed: ${healthCheck.status}`);
         }
         console.log('Server is running:', await healthCheck.json());
       } catch (healthError) {
         console.error('Server health check error:', healthError);
-        throw new Error(`Extraction server is not running. Please start the server at ${API_BASE_URL} first.`);
+        throw new Error(`Extraction server is not running. The server at ${API_BASE_URL} is not available.`);
       }
 
       // Trigger the extraction process
@@ -146,6 +163,8 @@ export function ExtractDialog({
         body: JSON.stringify({
           companies: companiesToExtract,
           monthYear: `${monthNames[selectedMonth]} ${selectedYear}`,
+          month: selectedMonth + 1, // Adding 1 because months are 0-indexed in JavaScript
+          year: selectedYear,
           supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
           supabaseKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
           credentials: {
@@ -177,6 +196,49 @@ export function ExtractDialog({
       setTotalCount(companiesToExtract.length);
       setCompletedCount(0);
 
+      // Start polling for status updates
+      const statusInterval = setInterval(async () => {
+        try {
+          let completed = 0;
+          const updatedStatus = { ...extractionStatus };
+          
+          for (const company of companiesToExtract) {
+            try {
+              const statusResponse = await fetch(`${API_BASE_URL}/api/status/${company.id}`);
+              
+              if (statusResponse.ok) {
+                const statusData = await statusResponse.json();
+                updatedStatus[company.id] = statusData;
+                
+                if (statusData.status === 'completed' || statusData.status === 'failed') {
+                  completed++;
+                }
+              } else {
+                console.log(`Status endpoint returned ${statusResponse.status} for company ${company.id}`);
+              }
+            } catch (statusError) {
+              console.error(`Error fetching status for ${company.name}:`, statusError);
+            }
+          }
+          
+          setExtractionStatus(updatedStatus);
+          setCompletedCount(completed);
+          
+          if (completed === companiesToExtract.length) {
+            clearInterval(statusInterval);
+            setExtractionState('completed');
+            
+            toast({
+              title: "Extraction Complete",
+              description: `Completed extraction for ${completed} companies.`,
+              variant: "default"
+            });
+          }
+        } catch (pollingError) {
+          console.error('Error polling for status:', pollingError);
+        }
+      }, 5000); // Poll every 5 seconds
+
       toast({
         title: "Extraction Started",
         description: `Started extracting data for ${selectedCompanies.length} companies.`,
@@ -186,7 +248,7 @@ export function ExtractDialog({
       console.error('Extraction error:', error)
       toast({
         title: "Extraction Failed",
-        description: error.message || "Failed to start the extraction process. Please try again.",
+        description: error.message || "Failed to connect to the extraction server. Please try again later or contact support.",
         variant: "destructive"
       })
       setExtractionState('failed')
@@ -195,17 +257,24 @@ export function ExtractDialog({
 
   // Handle dialog close
   const handleCloseDialog = () => {
+    // If extraction is in progress, show a toast notification
     if (extractionState === 'extracting') {
       toast({
         title: "Extraction in Progress",
-        description: "Please wait for the extraction to complete before closing.",
-        variant: "destructive"
+        description: "The extraction will continue in the background. You can check the status later.",
+        variant: "default"
       })
-      return
     }
 
-    // Reset state and close dialog
+    // Reset state
+    setSelectedCompanies([])
+    setSelectAll(false)
+    setExtractionStatus({})
+    setCompletedCount(0)
+    setTotalCount(0)
     setExtractionState('idle')
+    
+    // Close dialog
     onOpenChange(false)
   }
 
