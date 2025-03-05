@@ -220,15 +220,166 @@ export function DocumentUploadDialog({
     }
 
     if (isNilFiling) {
-        return (
-            <Button
-                size="sm"
-                className="bg-purple-700 hover:bg-purple-600 h-6 text-xs px-2"
-                disabled
-            >
-                NIL
-            </Button>
-        )
+        // For NIL filings, only allow PAYE Acknowledgment to be uploaded
+        // All other document types should show NIL and be disabled
+        if (documentType === 'paye_acknowledgment') {
+            return (
+                <div>
+                    <div className="flex gap-1">
+                        <Button
+                            size="sm"
+                            className={existingDocument
+                                ? "bg-green-500 hover:bg-green-600 h-6 text-xs px-2"
+                                : "bg-red-500 hover:bg-red-600 h-6 text-xs px-2"}
+                            onClick={() => existingDocument ? handleViewDocument(existingDocument, label) : setUploadDialog(true)}
+                        >
+                            {existingDocument ? 'View' : 'Missing'}
+                        </Button>
+
+                        {existingDocument && (
+                            <>
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-6 text-xs px-2"
+                                    onClick={() => handleViewDocument(existingDocument, label)}
+                                >
+                                    <Eye className="h-3 w-3" />
+                                </Button>
+                                <Button
+                                    size="sm"
+                                    variant="destructive"
+                                    className="h-6 text-xs px-2"
+                                    onClick={() => setConfirmDeleteDialog(true)}
+                                >
+                                    <Trash2 className="h-3 w-3" />
+                                </Button>
+                            </>
+                        )}
+                    </div>
+
+                    {/* Include all dialogs for PAYE Acknowledgment */}
+                    <Dialog open={uploadDialog} onOpenChange={setUploadDialog}>
+                        <DialogContent className="max-w-2xl">
+                            <DialogHeader className="pb-2 border-b">
+                                <div className="flex justify-between items-end">
+                                    <DialogTitle className="text-lg font-semibold text-blue-600">
+                                        {companyName} - NIL Filing (PAYE Acknowledgment Only)
+                                    </DialogTitle>
+                                </div>
+                            </DialogHeader>
+
+                            <div className="mt-4 bg-gray-50 rounded-lg p-4 space-y-3">
+                                <h4 className="text-sm font-semibold text-gray-900 flex items-center gap-1.5">
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-blue-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                    </svg>
+                                    Upload {label} for NIL Filing
+                                </h4>
+                                <div className="space-y-4">
+                                    <div className="space-y-2">
+                                        <Label>Select File</Label>
+                                        <Input
+                                            type="file"
+                                            onChange={(e) => {
+                                                const file = e.target.files?.[0]
+                                                if (file) handleFileSelect(file)
+                                            }}
+                                            accept=".xlsx, .xls, .zip, .pdf"
+                                        />
+                                    </div>
+                                    {existingDocument && (
+                                        <div className="pt-4 border-t">
+                                            <h4 className="text-sm font-medium text-gray-900 mb-2">Current Document</h4>
+                                            <div className="flex items-center gap-2 bg-white p-2 rounded border">
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-green-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                                                </svg>
+                                                <span className="text-sm text-gray-600 flex-1">
+                                                    {existingDocument.split('/').pop()}
+                                                </span>
+                                                <div className="flex items-center gap-2">
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        className="h-7 px-2"
+                                                        onClick={() => window.open(existingDocument, '_blank')}
+                                                    >
+                                                        <Download className="h-3 w-3" />
+                                                    </Button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </DialogContent>
+                    </Dialog>
+
+                    <AlertDialog open={confirmUploadDialog} onOpenChange={setConfirmUploadDialog}>
+                        <AlertDialogContent>
+                            <AlertDialogHeader>
+                                <AlertDialogTitle>Confirm Upload</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                    Are you sure you want to {existingDocument ? 'replace the existing document with' : 'upload'} {selectedFile?.name} for {label}?
+                                </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                                <AlertDialogCancel onClick={() => setSelectedFile(null)}>
+                                    Cancel
+                                </AlertDialogCancel>
+                                <AlertDialogAction onClick={handleConfirmUpload}>
+                                    Upload
+                                </AlertDialogAction>
+                            </AlertDialogFooter>
+                        </AlertDialogContent>
+                    </AlertDialog>
+
+                    <AlertDialog open={confirmDeleteDialog} onOpenChange={setConfirmDeleteDialog}>
+                        <AlertDialogContent>
+                            <AlertDialogHeader>
+                                <AlertDialogTitle>Confirm Delete</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                    Are you sure you want to delete this document? This action cannot be undone.
+                                </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                                <AlertDialogCancel>
+                                    Cancel
+                                </AlertDialogCancel>
+                                <AlertDialogAction
+                                    onClick={handleDelete}
+                                    className="bg-red-500 hover:bg-red-600"
+                                >
+                                    Delete
+                                </AlertDialogAction>
+                            </AlertDialogFooter>
+                        </AlertDialogContent>
+                    </AlertDialog>
+
+                    {selectedDocument && (
+                        <DocumentViewer
+                            url={selectedDocument.url}
+                            isOpen={!!selectedDocument}
+                            onClose={() => setSelectedDocument(null)}
+                            title={selectedDocument.title}
+                            companyName={companyName}
+                        />
+                    )}
+                </div>
+            );
+        } else {
+            // For all other document types in NIL filing, show disabled NIL button
+            return (
+                <Button
+                    size="sm"
+                    className="bg-purple-700 hover:bg-purple-600 h-6 text-xs px-2"
+                    disabled
+                >
+                    NIL
+                </Button>
+            );
+        }
     }
 
     return (
@@ -239,7 +390,7 @@ export function DocumentUploadDialog({
                     className={existingDocument
                         ? "bg-green-500 hover:bg-green-600 h-6 text-xs px-2"
                         : "bg-red-500 hover:bg-red-600 h-6 text-xs px-2"}
-                    onClick={() => existingDocument ? handleView(existingDocument) : setUploadDialog(true)}
+                    onClick={() => existingDocument ? handleViewDocument(existingDocument, label) : setUploadDialog(true)}
                 // disabled={!existingDocument}
                 >
                     {existingDocument ? 'View' : 'Missing'}
@@ -247,14 +398,14 @@ export function DocumentUploadDialog({
 
                 {existingDocument && (
                     <>
-                        <Button
+                        {/* <Button
                             variant="ghost"
                             size="sm"
                             className="h-6 text-xs px-2"
                             onClick={() => handleViewDocument(existingDocument, label)}
                         >
                             <Eye className="h-3 w-3" />
-                        </Button>
+                        </Button> */}
                         <Button
                             size="sm"
                             variant="destructive"
@@ -322,7 +473,6 @@ export function DocumentUploadDialog({
                                                             onClick={() => window.open(existingDocument, '_blank')}
                                                         >
                                                             <Download className="h-3 w-3" />
-                                                            {/* <span className="text-xs">Download</span> */}
                                                         </Button>
                                                     </div>
                                                 </div>
