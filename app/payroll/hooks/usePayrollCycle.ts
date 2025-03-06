@@ -97,6 +97,7 @@ export const usePayrollCycle = () => {
                     payroll_cycle_id: cycle.id,
                     // Use existing data or set defaults
                     documents: existingRecord?.documents || {},
+                    payment_slips_documents: existingRecord?.payment_slips_documents || {},
                     status: existingRecord?.status || {
                         finalization_date: null,
                         assigned_to: null,
@@ -199,6 +200,7 @@ export const usePayrollCycle = () => {
                         shif_exl: null,
                         nssf_exl: null,
                     },
+                    payment_slips_documents: record?.payment_slips_documents || {},
                     status: record?.status || {
                         finalization_date: null,
                         assigned_to: null,
@@ -471,6 +473,226 @@ export const usePayrollCycle = () => {
         }
     }
 
+    const handlePaymentSlipsDocumentUpload = async (
+        recordId: string,
+        file: File,
+        documentType: DocumentType,
+        subFolder: string
+    ) => {
+        try {
+            // Find the record in our state
+            const record = payrollRecords.find(r => r.id === recordId)
+            if (!record) {
+                throw new Error('Record not found')
+            }
+
+            // If this is a temporary record, we need to create a real record first
+            let realRecordId = recordId
+
+            if (record.is_temporary) {
+                // Create a new record in the database
+                const { data: newRecord, error: insertError } = await supabase
+                    .from('company_payroll_records')
+                    .insert([
+                        {
+                            company_id: record.company_id,
+                            payroll_cycle_id: record.payroll_cycle_id,
+                            payment_slips_documents: {},
+                            documents: {},
+                            status: {
+                                finalization_date: null,
+                                assigned_to: null,
+                                filing: null
+                            },
+                            number_of_employees: 0
+                        }
+                    ])
+                    .select()
+                    .single()
+
+                if (insertError) throw insertError
+                realRecordId = newRecord.id
+
+                // Update our record with the real ID
+                record.id = realRecordId
+                record.is_temporary = false
+            }
+
+            // Ensure company information is available
+            if (!record.company?.company_name) {
+                throw new Error('Company information is missing')
+            }
+
+            // Get current record to ensure we have the latest state
+            const { data: currentRecord, error: fetchError } = await supabase
+                .from('company_payroll_records')
+                .select('payment_slips_documents')
+                .eq('id', realRecordId)
+                .single()
+
+            if (fetchError) throw fetchError
+            if (!currentRecord) throw new Error('Failed to fetch current record')
+
+            // Ensure we're using the correct month-year format for the file path
+            const fileExtension = file.name.substring(file.name.lastIndexOf('.'))
+            const fileName = `${documentType} - ${record.company.company_name} - ${format(new Date(), 'yyyy-MM-dd')}${fileExtension}`
+            const filePath = `${selectedMonthYear}/${subFolder}/${record.company.company_name}/${fileName}`
+
+            // Upload file to storage
+            const { data: uploadData, error: uploadError } = await supabase.storage
+                .from('Payroll-Cycle')
+                .upload(filePath, file, {
+                    cacheControl: '0',
+                    upsert: true
+                })
+
+            if (uploadError) throw uploadError
+
+            // Initialize payment_slips_documents if it doesn't exist
+            const currentDocuments = currentRecord.payment_slips_documents || {}
+
+            // Update with the new document path
+            const updatedDocuments = {
+                ...currentDocuments,
+                [documentType]: uploadData.path
+            }
+
+            // Update the database record
+            const { error: updateError } = await supabase
+                .from('company_payroll_records')
+                .update({
+                    payment_slips_documents: updatedDocuments
+                })
+                .eq('id', realRecordId)
+
+            if (updateError) {
+                // If database update fails, clean up the uploaded file
+                await supabase.storage
+                    .from('Payroll-Cycle')
+                    .remove([uploadData.path])
+                throw updateError
+            }
+
+            // Update local state
+            const updatedRecords = payrollRecords.map(r => {
+                if (r.id === realRecordId) {
+                    return {
+                        ...r,
+                        payment_slips_documents: updatedDocuments
+                    }
+                }
+                return r
+            })
+
+            setPayrollRecords(updatedRecords)
+
+            toast({
+                title: 'Success',
+                description: 'Document uploaded successfully'
+            })
+
+            return uploadData.path
+        } catch (error) {
+            console.error('Payment slips document upload error:', error)
+            toast({
+                title: 'Error',
+                description: error instanceof Error ? error.message : 'Failed to upload document',
+                variant: 'destructive'
+            })
+            throw error
+        }
+    }
+
+    const handlePaymentSlipsDocumentDelete = async (recordId: string, documentType: DocumentType) => {
+        try {
+            // Find the record in our state
+            const record = payrollRecords.find(r => r.id === recordId)
+            if (!record) {
+                throw new Error('Record not found')
+            }
+
+            // If this is a temporary record, we can't delete anything
+            if (record.is_temporary) {
+                toast({
+                    title: 'Error',
+                    description: 'Cannot delete document from an unfinalized record',
+                    variant: 'destructive'
+                })
+                return
+            }
+
+            // Check if payment_slips_documents exists and has the document
+            if (!record.payment_slips_documents || !record.payment_slips_documents[documentType]) {
+                toast({
+                    title: 'Error',
+                    description: 'Document not found',
+                    variant: 'destructive'
+                })
+                return
+            }
+
+            const documentPath = record.payment_slips_documents[documentType]
+
+            // Delete the file from storage
+            const { error: deleteError } = await supabase.storage
+                .from('Payroll-Cycle')
+                .remove([documentPath])
+
+            if (deleteError) throw deleteError
+
+            // Get current record to ensure we have the latest state
+            const { data: currentRecord, error: fetchError } = await supabase
+                .from('company_payroll_records')
+                .select('payment_slips_documents')
+                .eq('id', recordId)
+                .single()
+
+            if (fetchError) throw fetchError
+            if (!currentRecord) throw new Error('Failed to fetch current record')
+
+            // Create updated document object with the specific document set to null
+            const updatedDocuments = {
+                ...(currentRecord.payment_slips_documents || {}),
+                [documentType]: null
+            }
+
+            // Update the database record
+            const { error: updateError } = await supabase
+                .from('company_payroll_records')
+                .update({
+                    payment_slips_documents: updatedDocuments
+                })
+                .eq('id', recordId)
+
+            if (updateError) throw updateError
+
+            // Update local state
+            const updatedRecords = payrollRecords.map(r => {
+                if (r.id === recordId) {
+                    return {
+                        ...r,
+                        payment_slips_documents: updatedDocuments
+                    }
+                }
+                return r
+            })
+
+            setPayrollRecords(updatedRecords)
+
+            toast({
+                title: 'Success',
+                description: 'Document deleted successfully'
+            })
+        } catch (error) {
+            console.error('Payment slips document delete error:', error)
+            toast({
+                title: 'Error',
+                description: error instanceof Error ? error.message : 'Failed to delete document',
+                variant: 'destructive'
+            })
+        }
+    }
+
     const updateExistingEmployeeCounts = async () => {
         try {
             // First get the current cycle ID
@@ -533,7 +755,7 @@ export const usePayrollCycle = () => {
                         if (fileExt === 'csv') {
                             // Handle CSV file - No header row, so count all rows
                             const text = await fileData.text()
-                            const rows = text.split('\n').filter(row => row.trim())
+                            const rows = text.split('\n')
                             employeeCount = rows.length // Count all rows as they're all employee data
                         } else if (['xls', 'xlsx'].includes(fileExt)) {
                             // For Excel files, set to 1 as placeholder
@@ -606,6 +828,8 @@ export const usePayrollCycle = () => {
         handleDocumentUpload,
         handleDocumentDelete,
         handleStatusUpdate,
+        handlePaymentSlipsDocumentUpload,
+        handlePaymentSlipsDocumentDelete,
         updateExistingEmployeeCounts
     }
 }

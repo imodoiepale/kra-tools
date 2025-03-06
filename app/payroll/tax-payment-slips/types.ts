@@ -6,6 +6,8 @@ export interface Company {
     updated_at: string
 }
 
+
+
 export interface CompanyTaxPaymentRecord {
     id: string
     company: Company
@@ -30,4 +32,10 @@ export interface CompanyTaxPaymentRecord {
     };
 }
 
-export type DocumentType = 'paye_acknowledgment' | 'paye_slip' | 'housing_levy_slip' | 'shif_slip' | 'nssf_slip' | 'nita_slip';
+export type DocumentType =
+    | 'paye_acknowledgment'
+    | 'paye_slip'
+    | 'housing_levy_slip'
+    | 'shif_slip'
+    | 'nssf_slip'
+    | 'nita_slip';

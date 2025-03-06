@@ -483,88 +483,97 @@ export function DocumentUploadDialog({
                             </TabsContent>
 
                             <TabsContent value="bulk" className="space-y-4 mt-4">
-                                <div className="bg-gray-50 rounded-lg p-4">
-                                    <h4 className="text-sm font-semibold text-gray-900 flex items-center gap-1.5 mb-4">
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-blue-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                        </svg>
-                                        Document Management
-                                    </h4>
-                                    <div className="divide-y">
-                                        {allDocuments && allDocuments.map((doc) => (
-                                            <div key={doc.type} className="py-3 first:pt-0 last:pb-0">
-                                                <div className="flex items-center justify-between gap-4">
-                                                    <div className="min-w-[150px]">
-                                                        <h4 className="font-medium text-sm">{doc.label}</h4>
-                                                        <p className="text-sm text-muted-foreground">
-                                                            <span className={doc.status === 'missing' ? 'text-yellow-500' : 'text-green-500'}>
-                                                                {doc.status === 'missing' ? 'Missing' : 'Uploaded'}
-                                                            </span>
-                                                            {bulkFiles.has(doc.type) && (
-                                                                <span className="ml-2 text-blue-500">
-                                                                    (New file selected)
-                                                                </span>
-                                                            )}
-                                                        </p>
-                                                    </div>
-                                                    <div className="flex gap-2 items-center flex-1">
-                                                        <Input
-                                                            type="file"
-                                                            className="flex-1"
-                                                            accept={doc.type.includes('csv') ? '.csv, .zip, .pdf' : '.xlsx, .xls, .zip, .pdf'}
-                                                            onChange={(e) => {
-                                                                const file = e.target.files?.[0];
-                                                                if (file) handleBulkFileSelect(file, doc.type, doc.label);
-                                                            }}
-                                                        />
-                                                        {doc.path && (
-                                                            <div className="flex gap-2">
-                                                                <Button
-                                                                    size="sm"
-                                                                    variant="outline"
-                                                                    className="h-7 px-2 gap-1"
-                                                                    onClick={() => handleDownload(doc.path!)}
-                                                                >
-                                                                    <Download className="h-3 w-3" />
-                                                                </Button>
-                                                                <Button
-                                                                    size="sm"
-                                                                    variant="destructive"
-                                                                    className="h-7 px-2"
-                                                                    onClick={() => {
-                                                                        setSelectedDocType(doc.type);
-                                                                        setConfirmDeleteDialog(true);
-                                                                    }}
-                                                                >
-                                                                    <Trash2 className="h-3 w-3" />
-                                                                </Button>
+                                {allDocuments && allDocuments.length > 0 ? (
+                                    <div className="space-y-4">
+                                        <div className="bg-gray-50 rounded-lg p-4">
+                                            <h4 className="text-sm font-semibold text-gray-900 flex items-center gap-1.5 mb-4">
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-blue-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                                </svg>
+                                                Document Management
+                                            </h4>
+                                            <div className="divide-y">
+                                                {allDocuments.map((doc) => (
+                                                    <div key={doc.type} className="py-3 first:pt-0 last:pb-0">
+                                                        <div className="flex items-center justify-between gap-4">
+                                                            <div className="min-w-[150px]">
+                                                                <h4 className="font-medium text-sm">{doc.label}</h4>
+                                                                <p className="text-sm text-muted-foreground">
+                                                                    <span className={doc.status === 'missing' ? 'text-yellow-500' : 'text-green-500'}>
+                                                                        {doc.status === 'missing' ? 'Missing' : 'Uploaded'}
+                                                                    </span>
+                                                                    {bulkFiles.has(doc.type) && (
+                                                                        <span className="ml-2 text-blue-500">
+                                                                            (New file selected)
+                                                                        </span>
+                                                                    )}
+                                                                </p>
                                                             </div>
-                                                        )}
+                                                            <div className="flex gap-2 items-center flex-1">
+                                                                <Input
+                                                                    type="file"
+                                                                    className="flex-1"
+                                                                    accept={doc.type.includes('csv') ? '.csv, .zip, .pdf' : '.xlsx, .xls, .zip, .pdf'}
+                                                                    onChange={(e) => {
+                                                                        const file = e.target.files?.[0];
+                                                                        if (file) handleBulkFileSelect(file, doc.type, doc.label);
+                                                                    }}
+                                                                />
+                                                                {doc.path && (
+                                                                    <div className="flex gap-2">
+                                                                        <Button
+                                                                            size="sm"
+                                                                            variant="outline"
+                                                                            className="h-7 px-2 gap-1"
+                                                                            onClick={() => handleDownload(doc.path!)}
+                                                                        >
+                                                                            <Download className="h-3 w-3" />
+                                                                            {/* <span className="text-xs">Download</span> */}
+                                                                        </Button>
+                                                                        <Button
+                                                                            size="sm"
+                                                                            variant="destructive"
+                                                                            className="h-7 px-2"
+                                                                            onClick={() => {
+                                                                                setSelectedDocType(doc.type);
+                                                                                setConfirmDeleteDialog(true);
+                                                                            }}
+                                                                        >
+                                                                            <Trash2 className="h-3 w-3" />
+                                                                        </Button>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        </div>
                                                     </div>
-                                                </div>
+                                                ))}
                                             </div>
-                                        ))}
+                                        </div>
+                                        <div className="flex justify-end">
+                                            <Button
+                                                onClick={handleBulkSubmit}
+                                                disabled={bulkFiles.size === 0 || isSubmitting}
+                                                className="bg-blue-500 hover:bg-blue-600"
+                                            >
+                                                {isSubmitting ? (
+                                                    <>
+                                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                                        Uploading...
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <Upload className="mr-2 h-4 w-4" />
+                                                        Upload Selected ({bulkFiles.size})
+                                                    </>
+                                                )}
+                                            </Button>
+                                        </div>
                                     </div>
-                                </div>
-                                <div className="flex justify-end">
-                                    <Button
-                                        onClick={handleBulkSubmit}
-                                        disabled={bulkFiles.size === 0 || isSubmitting}
-                                        className="bg-blue-500 hover:bg-blue-600"
-                                    >
-                                        {isSubmitting ? (
-                                            <>
-                                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                                Uploading...
-                                            </>
-                                        ) : (
-                                            <>
-                                                <Upload className="mr-2 h-4 w-4" />
-                                                Upload Selected ({bulkFiles.size})
-                                            </>
-                                        )}
-                                    </Button>
-                                </div>
+                                ) : (
+                                    <div className="text-center py-4 text-muted-foreground">
+                                        No documents to manage
+                                    </div>
+                                )}
                             </TabsContent>
                         </Tabs>
                     </div>

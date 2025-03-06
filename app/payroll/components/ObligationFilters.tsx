@@ -41,6 +41,13 @@ export function ObligationFilters({ onFilterChange, selectedObligations, payroll
             newSelectedObligations = [...selectedObligations, key];
         }
 
+        // If no filters are selected after removing one, default to "All"
+        if (newSelectedObligations.length === 0) {
+            // This is equivalent to selecting "All"
+            onFilterChange([]);
+            return;
+        }
+
         onFilterChange(newSelectedObligations);
     };
 

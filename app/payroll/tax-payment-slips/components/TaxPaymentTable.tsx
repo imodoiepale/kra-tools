@@ -106,7 +106,7 @@ const getDocumentsForUpload = (record: CompanyPayrollRecord) => {
             .filter(([key]) => key !== 'all_csv')
             .map(([type, label]) => ({
                 type: type as DocumentType,
-                label,
+                label,  
                 status: 'missing' as const,
                 path: null
             }));
@@ -114,12 +114,16 @@ const getDocumentsForUpload = (record: CompanyPayrollRecord) => {
     
     return Object.entries(DOCUMENT_LABELS)
         .filter(([key]) => key !== 'all_csv')
-        .map(([type, label]) => ({
-            type: type as DocumentType,
-            label,
-            status: record.payment_slips_documents[type as DocumentType] ? 'uploaded' as const : 'missing' as const,
-            path: record.payment_slips_documents[type as DocumentType]
-        }));
+        .map(([type, label]) => {
+            const docPath = record.payment_slips_documents[type as DocumentType];
+            const isUploaded = docPath !== null && docPath !== undefined && docPath !== '';
+            return {
+                type: type as DocumentType,
+                label,
+                status: isUploaded ? 'uploaded' as const : 'missing' as const,
+                path: isUploaded ? docPath : null
+            };
+        });
 };
 
 export function TaxPaymentTable({
@@ -175,7 +179,11 @@ export function TaxPaymentTable({
     const allDocumentsUploaded = (record: CompanyPayrollRecord | undefined): boolean => {
         if (!record || !record.payment_slips_documents) return false;
         const requiredDocs = ['paye_acknowledgment', 'paye_slip', 'housing_levy_slip', 'shif_slip', 'nssf_slip', 'nita_slip'];
-        return requiredDocs.every(docType => record.payment_slips_documents[docType as DocumentType] !== null);
+        return requiredDocs.every(docType => {
+            const docPath = record.payment_slips_documents[docType as DocumentType];
+            // Check that the document path exists AND is not an empty string
+            return docPath !== null && docPath !== undefined && docPath !== '';
+        });
     };
 
     // Memoize sorted records for performance
@@ -453,66 +461,12 @@ export function TaxPaymentTable({
                 throw new Error('Record not found');
             }
 
-            if (!record.company || !record.company.company_name) {
+            if (!record.company?.company_name) {
                 throw new Error('Company information is missing');
             }
 
-            // First, fetch the current record to get latest document paths
-            const { data: currentRecord, error: fetchError } = await supabase
-                .from('company_payroll_records')
-                .select('payment_slips_documents')
-                .eq('id', recordId)
-                .single();
-
-            if (fetchError) throw fetchError;
-            if (!currentRecord) throw new Error('Failed to fetch current record');
-
-            const fileName = `${documentType} - ${record.company?.company_name || 'Unknown'} - ${format(new Date(), 'yyyy-MM-dd')}${file.name.substring(file.name.lastIndexOf('.'))}`;
-            const filePath = `${selectedMonthYear}/PAYMENT SLIPS/${record.company?.company_name || 'Unknown'}/${fileName}`;
-
-            // Upload file to storage
-            const { data: uploadData, error: uploadError } = await supabase.storage
-                .from('Payroll-Cycle')
-                .upload(filePath, file, {
-                    cacheControl: '0',
-                    upsert: true
-                });
-
-            if (uploadError) throw uploadError;
-
-            // Preserve existing document paths and update the new one
-            const updatedDocuments = {
-                ...currentRecord.payment_slips_documents,
-                [documentType]: uploadData.path
-            };
-
-            // Update database record with merged document paths
-            const { error: updateError } = await supabase
-                .from('company_payroll_records')
-                .update({
-                    payment_slips_documents: updatedDocuments
-                })
-                .eq('id', recordId);
-
-            if (updateError) {
-                // If database update fails, clean up the uploaded file
-                await supabase.storage
-                    .from('Payroll-Cycle')
-                    .remove([uploadData.path]);
-                throw updateError;
-            }
-
-            // Update local state
-            const updatedRecords: CompanyPayrollRecord[] = records.map(r => {
-                if (r.id === recordId) {
-                    return {
-                        ...r,
-                        payment_slips_documents: updatedDocuments
-                    };
-                }
-                return r;
-            });
-            setPayrollRecords(updatedRecords);
+            // Call the onDocumentUpload function passed from parent
+            await onDocumentUpload(recordId, file, documentType);
 
             toast({
                 title: 'Success',
@@ -532,52 +486,27 @@ export function TaxPaymentTable({
     const handleDocumentDelete = async (recordId: string, documentType: DocumentType) => {
         try {
             const record = records.find(r => r.id === recordId);
-            if (!record) return;
+            if (!record) {
+                throw new Error('Record not found');
+            }
 
-            const documentPath = record.payment_slips_documents[documentType];
-            if (!documentPath) return;
+            // Check if payment_slips_documents exists and has the document
+            if (!record.payment_slips_documents || !record.payment_slips_documents[documentType]) {
+                throw new Error('Document not found');
+            }
 
-            const { error: deleteError } = await supabase.storage
-                .from('Payroll-Cycle')
-                .remove([documentPath]);
-
-            if (deleteError) throw deleteError;
-
-            const { error: updateError } = await supabase
-                .from('company_payroll_records')
-                .update({
-                    payment_slips_documents: {
-                        ...record.payment_slips_documents,
-                        [documentType]: null
-                    }
-                })
-                .eq('id', recordId);
-
-            if (updateError) throw updateError;
-
-            // Update local state
-            const updatedRecords: CompanyPayrollRecord[] = records.map(r => {
-                if (r.id === recordId) {
-                    return {
-                        ...r,
-                        payment_slips_documents: {
-                            ...r.payment_slips_documents,
-                            [documentType]: null
-                        }
-                    };
-                }
-                return r;
-            });
-            setPayrollRecords(updatedRecords);
+            // Call the onDocumentDelete function passed from parent
+            await onDocumentDelete(recordId, documentType);
 
             toast({
                 title: 'Success',
                 description: 'Document deleted successfully'
             });
         } catch (error) {
+            console.error('Document delete error:', error);
             toast({
                 title: 'Error',
-                description: 'Failed to delete document',
+                description: error instanceof Error ? error.message : 'Failed to delete document',
                 variant: 'destructive'
             });
         }
@@ -794,15 +723,30 @@ export function TaxPaymentTable({
                                             <Button
                                                 size="sm"
                                                 className={
-                                                        !allDocumentsUploaded(record) && record.status?.finalization_date !== 'NIL'
-                                                            ? "h-6 text-xs text-center px-2 bg-red-500 hover:bg-red-500"
-                                                        : "h-6 text-xs text-center px-2"
+                                                    !allDocumentsUploaded(record) && record.status?.finalization_date !== 'NIL'
+                                                        ? "h-6 text-xs text-center px-2 bg-red-500 hover:bg-red-600"
+                                                        : record.status?.finalization_date === 'NIL'
+                                                            ? "h-6 text-xs text-center px-2 bg-gray-500 hover:bg-gray-600"
+                                                            : "h-6 text-xs text-center px-2 bg-yellow-500 hover:bg-yellow-600"
                                                 }
-
                                                 disabled={!allDocumentsUploaded(record) && record.status?.finalization_date !== 'NIL'}
-                                              
+                                                onClick={() => {
+                                                    if (allDocumentsUploaded(record) || record.status?.finalization_date === 'NIL') {
+                                                        setFilingDialog({
+                                                            isOpen: true,
+                                                            recordId: record.id,
+                                                            isNil: record.status?.finalization_date === 'NIL',
+                                                            confirmOpen: false,
+                                                            record
+                                                        });
+                                                    }
+                                                }}
                                             >
-                                                {(!allDocumentsUploaded(record) && record.status?.finalization_date !== 'NIL') && 'Pending'}
+                                                {!allDocumentsUploaded(record) && record.status?.finalization_date !== 'NIL' 
+                                                    ? 'Pending' 
+                                                    : record.status?.finalization_date === 'NIL'
+                                                        ? 'N/A'
+                                                        : 'Ready'}
                                             </Button>
                                         )}
                                     </TableCell>

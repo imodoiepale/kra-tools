@@ -34,6 +34,8 @@ interface TaxPaymentSlipsProps {
     handleDocumentUpload: (recordId: string, file: File, documentType: DocumentType, subFolder: string) => Promise<string | undefined>
     handleDocumentDelete: (recordId: string, documentType: DocumentType) => Promise<void>
     handleStatusUpdate: (recordId: string, statusUpdate: Partial<CompanyPayrollRecord['status']>) => Promise<void>
+    handlePaymentSlipsDocumentUpload: (recordId: string, file: File, documentType: DocumentType, subFolder: string) => Promise<string | undefined>
+    handlePaymentSlipsDocumentDelete: (recordId: string, documentType: DocumentType) => Promise<void>
     setPayrollRecords: React.Dispatch<React.SetStateAction<CompanyPayrollRecord[]>>
 }
 
@@ -49,6 +51,8 @@ export default function TaxPaymentSlips({
     handleDocumentUpload,
     handleDocumentDelete,
     handleStatusUpdate,
+    handlePaymentSlipsDocumentUpload,
+    handlePaymentSlipsDocumentDelete,
     setPayrollRecords
 }: TaxPaymentSlipsProps) {
     const [selectedCategories, setSelectedCategories] = useState<string[]>(['acc']);
@@ -103,7 +107,7 @@ export default function TaxPaymentSlips({
     }, []);
 
     const handleDocumentUploadWithFolder = (recordId: string, file: File, documentType: DocumentType) => {
-        return handleDocumentUpload(recordId, file, documentType, 'PAYMENT SLIPS')
+        return handlePaymentSlipsDocumentUpload(recordId, file, documentType, 'PAYMENT SLIPS')
     }
 
     const isDateInRange = (date: Date, from?: string | null, to?: string | null): boolean => {
@@ -149,24 +153,24 @@ export default function TaxPaymentSlips({
             // Check obligation filters
             let matchesObligation = true;
             if (selectedObligations.length > 0) {
-                const obligationStatus = record.pin_details?.paye_status?.toLowerCase();
-                const effectiveFrom = record.pin_details?.paye_effective_from;
+                const obligationStatus = record.pin_details?.paye_status?.toLowerCase() || '';
+                const effectiveFrom = record.pin_details?.paye_effective_from || '';
 
                 // Determine specific status types
                 const isCancelled = obligationStatus === 'cancelled';
                 const isDormant = obligationStatus === 'dormant';
-                const isNoObligation = effectiveFrom && effectiveFrom.toLowerCase() === 'no obligation';
-                const isMissing = !effectiveFrom || effectiveFrom === 'Missing';
+                const isNoObligation = effectiveFrom.toLowerCase().includes('no obligation');
+                const isMissing = !effectiveFrom || effectiveFrom.toLowerCase().includes('missing');
 
                 // Explicitly check if it has an active date (not any of the special cases)
                 const hasActiveDate = effectiveFrom &&
-                    effectiveFrom !== 'No Obligation' &&
-                    effectiveFrom !== 'Missing' &&
+                    !isNoObligation &&
+                    !isMissing &&
                     !isCancelled &&
                     !isDormant;
 
                 // Match against selected filters
-                matchesObligation = (
+                matchesObligation = selectedObligations.length === 0 || (
                     (selectedObligations.includes('active') && hasActiveDate) ||
                     (selectedObligations.includes('cancelled') && isCancelled) ||
                     (selectedObligations.includes('dormant') && isDormant) ||
@@ -250,7 +254,7 @@ export default function TaxPaymentSlips({
             <TaxPaymentTable
                 records={filteredRecords}
                 onDocumentUpload={handleDocumentUploadWithFolder}
-                onDocumentDelete={handleDocumentDelete}
+                onDocumentDelete={handlePaymentSlipsDocumentDelete}
                 onStatusUpdate={handleStatusUpdate}
                 loading={loading}
                 setPayrollRecords={setPayrollRecords}
