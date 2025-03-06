@@ -12,7 +12,7 @@ import { CategoryFilters } from '../components/CategoryFilters'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ObligationFilters } from '../components/ObligationFilters'
-import { Settings2, Download } from 'lucide-react'
+import { Settings2, Download, Upload } from 'lucide-react'
 import {
     DropdownMenu,
     DropdownMenuCheckboxItem,
@@ -36,7 +36,7 @@ interface TaxPaymentSlipsProps {
     handleStatusUpdate: (recordId: string, statusUpdate: Partial<CompanyPayrollRecord['status']>) => Promise<void>
     handlePaymentSlipsDocumentUpload: (recordId: string, file: File, documentType: DocumentType, subFolder: string) => Promise<string | undefined>
     handlePaymentSlipsDocumentDelete: (recordId: string, documentType: DocumentType) => Promise<void>
-    setPayrollRecords: React.Dispatch<React.SetStateAction<CompanyPayrollRecord[]>>
+    handleBulkExport: (records: CompanyPayrollRecord[]) => Promise<void>
 }
 
 export default function TaxPaymentSlips({
@@ -53,10 +53,11 @@ export default function TaxPaymentSlips({
     handleStatusUpdate,
     handlePaymentSlipsDocumentUpload,
     handlePaymentSlipsDocumentDelete,
-    setPayrollRecords
+    handleBulkExport
 }: TaxPaymentSlipsProps) {
     const [selectedCategories, setSelectedCategories] = useState<string[]>(['acc']);
     const [selectedObligations, setSelectedObligations] = useState<string[]>(['active']);
+    const [bulkUploadDialogOpen, setBulkUploadDialogOpen] = useState(false);
 
     // Column definitions for visibility toggle
     const columnDefinitions = [
@@ -107,7 +108,7 @@ export default function TaxPaymentSlips({
     }, []);
 
     const handleDocumentUploadWithFolder = (recordId: string, file: File, documentType: DocumentType) => {
-        return handlePaymentSlipsDocumentUpload(recordId, file, documentType, 'PAYMENT SLIPS')
+        return handlePaymentSlipsDocumentUpload(recordId, file, documentType, 'payment-slips')
     }
 
     const isDateInRange = (date: Date, from?: string | null, to?: string | null): boolean => {
@@ -183,6 +184,25 @@ export default function TaxPaymentSlips({
         });
     }, [payrollRecords, searchTerm, selectedCategories, selectedObligations]);
 
+    const handleExportAll = () => {
+        if (filteredRecords.length === 0) {
+            return;
+        }
+        
+        // Get all records that have documents
+        const recordsWithDocuments = filteredRecords.filter(record => 
+            record.payment_slips_documents && 
+            Object.values(record.payment_slips_documents).some(doc => doc)
+        );
+        
+        if (recordsWithDocuments.length === 0) {
+            return;
+        }
+        
+        // Export CSV with document links
+        handleBulkExport(recordsWithDocuments);
+    };
+
     return (
         <div className="space-y-4">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -242,11 +262,18 @@ export default function TaxPaymentSlips({
                         Extract All
                     </Button>
                     <Button
-                        // onClick={handleExportAll}
+                        onClick={handleExportAll}
                         className="h-8 px-2 bg-blue-500 text-white hover:bg-blue-600 flex items-center gap-1"
                     >
                         <Download className="h-4 w-4" />
                         Export
+                    </Button>
+                    <Button
+                        onClick={() => setBulkUploadDialogOpen(true)}
+                        className="h-8 px-2 bg-blue-500 text-white hover:bg-blue-600 flex items-center gap-1"
+                    >
+                        <Upload className="h-4 w-4" />
+                        Bulk Upload
                     </Button>
                 </div>
             </div>
@@ -257,8 +284,10 @@ export default function TaxPaymentSlips({
                 onDocumentDelete={handlePaymentSlipsDocumentDelete}
                 onStatusUpdate={handleStatusUpdate}
                 loading={loading}
-                setPayrollRecords={setPayrollRecords}
                 columnVisibility={columnVisibility}
+                onExportCsv={handleBulkExport}
+                bulkUploadDialogOpen={bulkUploadDialogOpen}
+                setBulkUploadDialogOpen={setBulkUploadDialogOpen}
             />
         </div>
     )

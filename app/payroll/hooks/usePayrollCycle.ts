@@ -5,6 +5,16 @@ import { supabase } from '@/lib/supabase'
 import { CompanyPayrollRecord, DocumentType } from '../types'
 import { useToast } from '@/hooks/use-toast'
 
+const DOCUMENT_LABELS: Record<DocumentType, string> = {
+    paye_acknowledgment: 'PAYE Acknowledgment Receipt',
+    paye_slip: 'PAYE Payment Slip',
+    housing_levy_slip: 'Housing Levy Payment Slip',
+    shif_slip: 'SHIF Payment Slip',
+    nssf_slip: 'NSSF Payment Slip',
+    nita_slip: 'NITA Payment Slip',
+    all_csv: 'All CSV Files'
+}
+
 export const usePayrollCycle = () => {
     const [payrollRecords, setPayrollRecords] = useState<CompanyPayrollRecord[]>([])
     const [selectedYear, setSelectedYear] = useState(new Date().getFullYear())
@@ -693,6 +703,56 @@ export const usePayrollCycle = () => {
         }
     }
 
+    const handleBulkExport = async (records: CompanyPayrollRecord[]) => {
+        try {
+            // Create CSV content
+            let csvContent = "Company Name,PIN,Document Type,Document URL\n";
+            
+            for (const record of records) {
+                if (!record.payment_slips_documents) continue;
+                
+                const companyName = record.company?.company_name || 'Unknown';
+                const pin = record.pin_details?.pin || 'Unknown';
+                
+                for (const [docType, path] of Object.entries(record.payment_slips_documents)) {
+                    if (!path) continue;
+                    
+                    // Get public URL for the document
+                    const { data: publicUrl } = await supabase.storage
+                        .from('Payroll-Cycle')
+                        .getPublicUrl(path);
+                    
+                    if (publicUrl) {
+                        const documentTypeLabel = DOCUMENT_LABELS[docType as DocumentType] || docType;
+                        csvContent += `"${companyName}","${pin}","${documentTypeLabel}","${publicUrl.publicUrl}"\n`;
+                    }
+                }
+            }
+            
+            // Create and download the CSV file
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.setAttribute('href', url);
+            link.setAttribute('download', `payment_slips_export_${format(new Date(), 'yyyy-MM-dd')}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            toast({
+                title: 'Export Successful',
+                description: 'Document links have been exported to CSV'
+            });
+        } catch (error) {
+            console.error('Export error:', error);
+            toast({
+                title: 'Export Failed',
+                description: 'Failed to export document links',
+                variant: 'destructive'
+            });
+        }
+    };
+
     const updateExistingEmployeeCounts = async () => {
         try {
             // First get the current cycle ID
@@ -816,20 +876,20 @@ export const usePayrollCycle = () => {
 
     return {
         payrollRecords,
-        setPayrollRecords,
+        loading,
         selectedYear,
         setSelectedYear,
         selectedMonth,
         setSelectedMonth,
         searchTerm,
         setSearchTerm,
-        loading,
         fetchOrCreatePayrollCycle,
         handleDocumentUpload,
         handleDocumentDelete,
         handleStatusUpdate,
         handlePaymentSlipsDocumentUpload,
         handlePaymentSlipsDocumentDelete,
+        handleBulkExport,
         updateExistingEmployeeCounts
     }
 }
