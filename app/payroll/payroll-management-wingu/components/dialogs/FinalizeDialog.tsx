@@ -29,7 +29,7 @@ import { RotateCcw } from "lucide-react";
 interface FinalizeDialogProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
-    onConfirm: (recordId: string, isNil: boolean, assignedTo: string) => Promise<void>;
+    onConfirm: (recordId: string, isNil: boolean, assignedTo: string, finalizationDate?: Date) => Promise<void>;
     onFilingConfirm: (recordId: string, date: Date) => Promise<void>;
     onRevert?: (recordId: string) => Promise<void>;
     recordId: string | null;
@@ -60,12 +60,16 @@ export function FinalizeDialog({
         if (!recordId) return;
         setIsSubmitting(true);
         try {
-            await onConfirm(recordId, isNil, assignedTo);
+            // Create a new Date object to use as the finalization date
+            const finalizationDate = new Date();
+            
+            // Pass the finalization date to onConfirm
+            await onConfirm(recordId, isNil, assignedTo, finalizationDate);
             
             // If it's a NIL return, automatically submit the filing date
             if (isNil && onFilingConfirm) {
                 try {
-                    await onFilingConfirm(recordId, new Date());
+                    await onFilingConfirm(recordId, finalizationDate);
                 } catch (filingError) {
                     console.error('Error during automatic filing:', filingError);
                     // We don't want to show an error toast here since the finalization was successful

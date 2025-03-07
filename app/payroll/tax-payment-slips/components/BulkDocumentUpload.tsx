@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Upload, X, FileCheck, AlertCircle, CloudUpload, RefreshCw, Check, Eye, EyeOff } from 'lucide-react';
@@ -10,15 +10,32 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useToast } from '@/hooks/use-toast'
 
-const BulkDocumentUpload = ({ isOpen, onClose, onUpload, payrollRecords }) => {
+const BulkDocumentUpload = ({ open, onClose, onUpload, payrollRecords }) => {
   const [files, setFiles] = useState([]);
   const [mappedFiles, setMappedFiles] = useState([]);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [activeTab, setActiveTab] = useState("upload");
   const [previewFile, setPreviewFile] = useState(null);
+  const [previousFiles, setPreviousFiles] = useState([]); // Store previous files in case of accidental close
+  const [previousMappedFiles, setPreviousMappedFiles] = useState([]); // Store previous mapped files
   const fileInputRef = useRef(null);
+  const { toast } = useToast();
+
+  // Reset state when dialog is opened or closed
+  useEffect(() => {
+    if (open) {
+      // If dialog is opening, keep the state as is
+    } else {
+      // If dialog is closing, store current state for potential recovery
+      if (files.length > 0 || mappedFiles.length > 0) {
+        setPreviousFiles(files);
+        setPreviousMappedFiles(mappedFiles);
+      }
+    }
+  }, [open, files, mappedFiles]);
 
   // Group mapped files by company for table display
   const groupedByCompany = mappedFiles.reduce((acc, file, idx) => {
@@ -62,24 +79,132 @@ const BulkDocumentUpload = ({ isOpen, onClose, onUpload, payrollRecords }) => {
       let matchedRecord = null;
       let documentType = null;
 
+      console.log('Processing file:', fileName); // Log the current file being processed
+
       // Extract information from filename
-      // Format: MM-YYYY - COMPANY NAME - PIN - DOCUMENT TYPE
       const fileNameParts = fileName.split(' - ');
+      
+      // Handle filenames with different formats
+      if (fileNameParts.length >= 2) {
+        // Try to extract company name and PIN
+        let possibleCompanyName = '';
+        let possiblePin = '';
+        
+        // Check if filename has PIN format (e.g., P052249266P)
+        const pinRegex = /[A-Z]\d{9}[A-Z]/;
+        
+        // Extract company name and PIN from different parts of the filename
+        fileNameParts.forEach(part => {
+          const pinMatch = part.match(pinRegex);
+          if (pinMatch) {
+            possiblePin = pinMatch[0];
+          } else if (!possibleCompanyName || possibleCompanyName === fileNameParts[0].trim()) {
+            // Only replace the default company name (which might be a date) if we find something better
+            if (part.trim().length > 3 && !part.trim().match(/^\d{2}-\d{4}$/)) {
+              possibleCompanyName = part.trim();
+            }
+          }
+        });
+        
+        // If we still don't have a good company name, use the second part if available
+        if ((!possibleCompanyName || possibleCompanyName.match(/^\d{2}-\d{4}$/)) && fileNameParts.length > 1) {
+          possibleCompanyName = fileNameParts[1].trim();
+        }
 
-      if (fileNameParts.length >= 3) {
-        // Try to find the company by name in the filename
-        const possibleCompanyName = fileNameParts[1].trim();
+        console.log('Possible company name:', possibleCompanyName);
+        console.log('Possible PIN:', possiblePin);
 
-        // Find the record with matching company name
-        matchedRecord = payrollRecords.find(record =>
-          record.company?.company_name?.toLowerCase() === possibleCompanyName.toLowerCase()
-        );
+        // First, try to find the company by PIN if available
+        if (possiblePin) {
+          // Check both the main PIN field and the KRA PIN field
+          matchedRecord = payrollRecords.find(record => {
+            const companyPin = record.company?.pin;
+            const kraPin = record.company?.kra_pin;
+            
+            // Case-insensitive comparison for both PIN fields
+            return (companyPin && companyPin.toUpperCase() === possiblePin.toUpperCase()) || 
+                  (kraPin && kraPin.toUpperCase() === possiblePin.toUpperCase());
+          });
+          
+          console.log('PIN match:', matchedRecord?.company?.company_name || 'Not found');
+        }
+
+        // If no match by PIN, try to find the company by full name
+        if (!matchedRecord) {
+          matchedRecord = payrollRecords.find(record =>
+            record.company?.company_name?.toLowerCase() === possibleCompanyName.toLowerCase()
+          );
+
+          console.log('Full name match:', matchedRecord?.company?.company_name || 'Not found');
+        }
+
+        // If still no match, try fuzzy matching with improved logic
+        if (!matchedRecord) {
+          // Get all company names from payroll records
+          const companyNames = payrollRecords
+            .filter(record => record.company?.company_name)
+            .map(record => ({
+              record,
+              name: record.company.company_name.toLowerCase()
+            }));
+
+          // Split the possible company name into words
+          const companyNameParts = possibleCompanyName.toLowerCase().split(' ');
+          
+          // Try multi-word matching first (more specific)
+          for (let wordCount = Math.min(companyNameParts.length, 3); wordCount >= 2; wordCount--) {
+            // Try different combinations of consecutive words
+            for (let startIdx = 0; startIdx <= companyNameParts.length - wordCount; startIdx++) {
+              const searchPhrase = companyNameParts.slice(startIdx, startIdx + wordCount).join(' ');
+              
+              // Skip very short phrases (less than 4 characters)
+              if (searchPhrase.length < 4) continue;
+              
+              // Find companies that contain this phrase
+              const matchingCompanies = companyNames.filter(company => 
+                company.name.includes(searchPhrase)
+              );
+              
+              if (matchingCompanies.length === 1) {
+                // Exact single match found
+                matchedRecord = matchingCompanies[0].record;
+                console.log(`Multi-word match (${wordCount} words):`, matchedRecord?.company?.company_name);
+                break;
+              }
+            }
+            
+            if (matchedRecord) break;
+          }
+          
+          // If still no match, try single word matching (less specific)
+          if (!matchedRecord) {
+            // Find significant words (longer than 3 characters)
+            const significantWords = companyNameParts.filter(word => word.length > 3);
+            
+            for (const word of significantWords) {
+              // Find companies that contain this word
+              const matchingCompanies = companyNames.filter(company => 
+                company.name.includes(word)
+              );
+              
+              if (matchingCompanies.length === 1) {
+                // Single match found
+                matchedRecord = matchingCompanies[0].record;
+                console.log(`Single word match (${word}):`, matchedRecord?.company?.company_name);
+                break;
+              }
+            }
+          }
+        }
+
+        console.log('Final matched record:', matchedRecord?.company?.company_name || 'Not found'); // Log matched record
 
         // Determine document type based on filename
         const lowerFileName = fileName.toLowerCase();
         if (lowerFileName.includes('acknowledgement') || lowerFileName.includes('ack')) {
           documentType = 'paye_acknowledgment';
-        } else if (lowerFileName.includes('paye') && lowerFileName.includes('payment')) {
+        } else if ((lowerFileName.includes('paye') || lowerFileName.includes('p.a.y.e')) && 
+                  (lowerFileName.includes('payment') || lowerFileName.includes('slip') || lowerFileName.includes('return'))) {
           documentType = 'paye_slip';
         } else if (lowerFileName.includes('housing levy') || lowerFileName.includes('hslevy')) {
           documentType = 'housing_levy_slip';
@@ -90,25 +215,80 @@ const BulkDocumentUpload = ({ isOpen, onClose, onUpload, payrollRecords }) => {
         } else if (lowerFileName.includes('nssf')) {
           documentType = 'nssf_slip';
         }
-      }
 
-      if (matchedRecord && documentType) {
-        mappedResults.push({
-          file,
-          recordId: matchedRecord.id,
-          documentType,
-          companyName: matchedRecord.company?.company_name || 'Unknown',
-          status: 'pending'
-        });
+        console.log('Document type:', documentType); // Log determined document type
+
+        if (matchedRecord && documentType) {
+          mappedResults.push({
+            file,
+            recordId: matchedRecord.id,
+            documentType,
+            companyName: matchedRecord.company?.company_name || 'Unknown',
+            status: 'pending'
+          });
+        } else {
+          mappedResults.push({
+            file,
+            recordId: '',
+            documentType: documentType || null,
+            companyName: '',
+            status: 'error',
+            message: matchedRecord ? 'Could not determine document type' : 'Could not match file to a company'
+          });
+        }
       } else {
-        mappedResults.push({
-          file,
-          recordId: '',
-          documentType: null,
-          companyName: '',
-          status: 'error',
-          message: 'Could not match file to a company or determine document type'
-        });
+        // Handle files that don't match the expected format
+        // Try to extract company name from single-part filenames (e.g., "COPPER SYNTEC LTD_PAYSLIPS.pdf")
+        const fileName = file.name;
+        const possibleCompanyName = fileName.split('_')[0].trim();
+        
+        console.log('Single part filename, possible company name:', possibleCompanyName);
+        
+        // Try to match by company name
+        if (possibleCompanyName) {
+          // Try exact match first
+          matchedRecord = payrollRecords.find(record =>
+            record.company?.company_name?.toLowerCase() === possibleCompanyName.toLowerCase()
+          );
+          
+          // If no exact match, try contains match
+          if (!matchedRecord) {
+            const matchingRecords = payrollRecords.filter(record =>
+              record.company?.company_name?.toLowerCase().includes(possibleCompanyName.toLowerCase())
+            );
+            
+            if (matchingRecords.length === 1) {
+              matchedRecord = matchingRecords[0];
+            }
+          }
+          
+          console.log('Single part filename match:', matchedRecord);
+        }
+        
+        // Try to determine document type
+        const lowerFileName = fileName.toLowerCase();
+        if (lowerFileName.includes('payslip') || lowerFileName.includes('pay slip')) {
+          documentType = 'paye_slip'; // Default to PAYE slip for payslips
+        }
+        
+        if (matchedRecord && documentType) {
+          mappedResults.push({
+            file,
+            recordId: matchedRecord.id,
+            documentType,
+            companyName: matchedRecord.company?.company_name || 'Unknown',
+            status: 'pending'
+          });
+        } else {
+          mappedResults.push({
+            file,
+            recordId: '',
+            documentType: null,
+            companyName: '',
+            status: 'error',
+            message: 'Filename format not recognized. Expected format: "Type - Company - Date.pdf"'
+          });
+        }
       }
     });
 
@@ -116,8 +296,14 @@ const BulkDocumentUpload = ({ isOpen, onClose, onUpload, payrollRecords }) => {
   };
 
   const removeFile = (index) => {
-    setMappedFiles(prev => prev.filter((_, i) => i !== index));
-    setFiles(prev => prev.filter((_, i) => i !== index));
+    // Create new arrays instead of modifying existing ones to ensure state updates trigger re-renders
+    const newMappedFiles = [...mappedFiles];
+    newMappedFiles.splice(index, 1);
+    setMappedFiles(newMappedFiles);
+    
+    const newFiles = [...files];
+    newFiles.splice(index, 1);
+    setFiles(newFiles);
 
     if (previewFile && previewFile.index === index) {
       setPreviewFile(null);
@@ -125,10 +311,19 @@ const BulkDocumentUpload = ({ isOpen, onClose, onUpload, payrollRecords }) => {
   };
 
   const handleUpload = async () => {
-    const validFiles = mappedFiles.filter(f => f.status === 'pending' && f.recordId && f.documentType);
+    // Get all files with valid recordId and documentType, regardless of previous status
+    const validFiles = mappedFiles.filter(f => f.recordId && f.documentType);
+
+    console.log('Mapped files before upload:', mappedFiles); // Log mapped files state
+    console.log('Valid files for upload:', validFiles); // Log valid files
 
     if (validFiles.length === 0) {
-      // Toast would be triggered here
+      console.error('No valid files to upload.'); // Log error
+      toast({
+        title: 'Error',
+        description: 'No valid files to upload. Please check file mappings.',
+        variant: 'destructive'
+      });
       return;
     }
 
@@ -152,15 +347,29 @@ const BulkDocumentUpload = ({ isOpen, onClose, onUpload, payrollRecords }) => {
         validFiles
       );
 
-      // Success toast would be triggered here
+      console.log('Upload successful!'); // Log success
+      toast({
+        title: 'Success',
+        description: `Successfully uploaded ${validFiles.length} documents`,
+        variant: 'default'
+      });
 
       // Clear interval if it's still running
       clearInterval(interval);
 
+      // Clear the files state after successful upload
+      setFiles([]);
+      setMappedFiles([]);
+      
       // Simulate complete upload
       setUploadProgress(100);
     } catch (error) {
-      // Error toast would be triggered here
+      console.error('Upload failed:', error); // Log error
+      toast({
+        title: 'Error',
+        description: 'Failed to upload documents. Please try again.',
+        variant: 'destructive'
+      });
       clearInterval(interval);
     } finally {
       setIsUploading(false);
@@ -206,8 +415,41 @@ const BulkDocumentUpload = ({ isOpen, onClose, onUpload, payrollRecords }) => {
     ));
   };
 
+  const handleCancel = () => {
+    // Store current files before clearing
+    if (files.length > 0 || mappedFiles.length > 0) {
+      setPreviousFiles(files);
+      setPreviousMappedFiles(mappedFiles);
+    }
+    
+    // Clear current state
+    setFiles([]);
+    setMappedFiles([]);
+    setPreviewFile(null);
+    setUploadProgress(0);
+    
+    // Close the dialog
+    onClose();
+  };
+
+  const handleReopen = () => {
+    // Restore previous files if available
+    if (previousFiles.length > 0 || previousMappedFiles.length > 0) {
+      setFiles(previousFiles);
+      setMappedFiles(previousMappedFiles);
+    }
+  };
+
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
+    <Dialog open={open} onOpenChange={(open) => {
+      if (open) {
+        // Dialog is opening
+        handleReopen();
+      } else {
+        // Dialog is closing without explicit cancel
+        onClose();
+      }
+    }}>
       <DialogContent className="sm:max-w-7xl h-[90vh] overflow-hidden p-0">
         <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-3 border-b">
           <div className="flex items-center mb-1">
@@ -251,9 +493,16 @@ const BulkDocumentUpload = ({ isOpen, onClose, onUpload, payrollRecords }) => {
                 <Card className="mb-3 flex-1 flex flex-col">
                   <div className="p-2 bg-blue-50 border-b text-xs font-medium flex justify-between items-center">
                     <span>Files to upload ({mappedFiles.length})</span>
-                    <Badge variant={mappedFiles.some(f => f.status === 'error') ? "destructive" : "outline"}>
-                      {mappedFiles.filter(f => f.status === 'pending').length} valid
-                    </Badge>
+                    <div className="flex gap-2">
+                      <Badge variant="outline" className="bg-green-100 text-green-800 border-green-300">
+                        {mappedFiles.filter(f => f.status === 'pending').length} valid
+                      </Badge>
+                      {mappedFiles.some(f => f.status === 'error') && (
+                        <Badge variant="destructive">
+                          {mappedFiles.filter(f => f.status === 'error').length} invalid
+                        </Badge>
+                      )}
+                    </div>
                   </div>
 
                   <Table className="text-xs">
@@ -267,116 +516,125 @@ const BulkDocumentUpload = ({ isOpen, onClose, onUpload, payrollRecords }) => {
                         <TableHead className="w-[15%] text-right">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
-                    {/* <div className="overflow-y-auto flex-1" style={{ minHeight: 0 }}> */}
-                      <TableBody className="overflow-y-auto flex-1" style={{ minHeight: 0 }}>
-                        {Object.entries(groupedByCompany).map(([company, { index, files }]) => (
-                          files.map((file, fileIndex) => (
-                            <TableRow
-                              key={`${company}-${fileIndex}`}
-                              className={`text-xs ${file.status === 'error' ? 'bg-red-50' : ''} ${previewFile && previewFile.index === file.globalIndex ? 'bg-blue-50' : ''}`}
-                            >
-                              {fileIndex === 0 ? (
-                                <TableCell
-                                  rowSpan={files.length}
-                                  className="text-center font-medium"
-                                >
-                                  {index}
-                                </TableCell>
-                              ) : null}
-                              {fileIndex === 0 ? (
-                                <TableCell
-                                  rowSpan={files.length}
-                                  className="font-medium truncate max-w-[120px]"
-                                >
-                                  {company !== 'Unmatched' ? company : (
-                                    <Select
-                                      value={file.companyName}
-                                      onValueChange={(value) => handleCompanyChange(file.globalIndex, value)}
-                                    >
-                                      <SelectTrigger className="w-[180px]">
-                                        <SelectValue placeholder="Select Company" />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        {payrollRecords.map((record) => (
-                                          <SelectItem key={record.id} value={record.company.company_name}>
-                                            {record.company.company_name}
-                                          </SelectItem>
-                                        ))}
-                                      </SelectContent>
-                                    </Select>
-                                  )}
-                                </TableCell>
-                              ) : null}
-                              <TableCell className="truncate max-w-[120px]">
-                                {file.file.name}
-                                {file.status === 'error' && (
-                                  <div className="text-xs text-red-500">
-                                    {file.message}
-                                  </div>
-                                )}
+                    <TableBody>
+                      {Object.entries(groupedByCompany).map(([company, { index, files }]) => (
+                        files.map((file, fileIndex) => (
+                          <TableRow
+                            key={`${company}-${fileIndex}`}
+                            className={`text-xs ${file.status === 'error' ? 'bg-red-50' : ''} ${previewFile && previewFile.index === file.globalIndex ? 'bg-blue-50' : ''}`}
+                          >
+                            {fileIndex === 0 ? (
+                              <TableCell
+                                rowSpan={files.length}
+                                className="text-center font-medium"
+                              >
+                                {index}
                               </TableCell>
-                              <TableCell>
-                                {file.documentType ? (
-                                  <Badge variant="outline" className="bg-blue-50 text-blue-800 whitespace-nowrap">
-                                    {getDocumentTypeName(file.documentType)}
-                                  </Badge>
-                                ) : (
+                            ) : null}
+                            {fileIndex === 0 ? (
+                              <TableCell
+                                rowSpan={files.length}
+                                className="font-medium truncate max-w-[120px]"
+                              >
+                                {company !== 'Unmatched' ? company : (
                                   <Select
-                                    value={file.documentType}
-                                    onValueChange={(value) => handleDocumentTypeChange(file.globalIndex, value)}
+                                    value={file.companyName}
+                                    onValueChange={(value) => handleCompanyChange(file.globalIndex, value)}
                                   >
-                                    <SelectTrigger className="w-[180px]">
-                                      <SelectValue placeholder="Select Document Type" />
+                                    <SelectTrigger className="h-8 text-xs">
+                                      <SelectValue placeholder="Select Company" />
                                     </SelectTrigger>
                                     <SelectContent>
-                                      <SelectItem value="paye_acknowledgment">PAYE Acknowledgment</SelectItem>
-                                      <SelectItem value="paye_slip">PAYE Slip</SelectItem>
-                                      <SelectItem value="housing_levy_slip">Housing Levy Slip</SelectItem>
-                                      <SelectItem value="nita_slip">NITA Slip</SelectItem>
-                                      <SelectItem value="shif_slip">SHIF Slip</SelectItem>
-                                      <SelectItem value="nssf_slip">NSSF Slip</SelectItem>
+                                      {payrollRecords
+                                        .sort((a, b) => {
+                                          if (a.company && b.company) {
+                                            return a.company.company_name.localeCompare(b.company.company_name);
+                                          }
+                                          return 0;
+                                        })
+                                        .map((record) => (
+                                          <SelectItem
+                                            key={record.id}
+                                            value={record.company?.company_name || ''}
+                                            className="text-xs"
+                                          >
+                                            {record.company?.company_name || 'Unknown Company'}
+                                          </SelectItem>
+                                        ))}
                                     </SelectContent>
                                   </Select>
                                 )}
                               </TableCell>
-                              <TableCell>
-                                {file.status === 'pending' ? (
-                                  <Badge className="bg-green-100 text-green-800 border-green-300">
-                                    Ready
-                                  </Badge>
-                                ) : (
-                                  <Badge variant="destructive">
-                                    Error
-                                  </Badge>
-                                )}
-                              </TableCell>
-                              <TableCell>
-                                <div className="flex justify-end space-x-1">
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={() => previewDocument(file.file, file.globalIndex)}
-                                    className="h-6 w-6"
-                                    title="Preview document"
-                                  >
-                                    <Eye className="h-3 w-3" />
-                                  </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={() => removeFile(file.globalIndex)}
-                                    className="h-6 w-6"
-                                    title="Remove document"
-                                  >
-                                    <X className="h-3 w-3" />
-                                  </Button>
+                            ) : null}
+                            <TableCell className="truncate max-w-[120px]">
+                              {file.file.name}
+                              {file.status === 'error' && (
+                                <div className="text-xs text-red-500">
+                                  {file.message}
                                 </div>
-                              </TableCell>
-                            </TableRow>
-                          ))
-                        ))}
-                      </TableBody>
-                    {/* </div> */}
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              {file.documentType ? (
+                                <Badge variant="outline" className="bg-blue-50 text-blue-800 whitespace-nowrap">
+                                  {getDocumentTypeName(file.documentType)}
+                                </Badge>
+                              ) : (
+                                <Select
+                                  value={file.documentType}
+                                  onValueChange={(value) => handleDocumentTypeChange(file.globalIndex, value)}
+                                >
+                                  <SelectTrigger className="w-[180px]">
+                                    <SelectValue placeholder="Select Document Type" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="paye_acknowledgment">PAYE Acknowledgment</SelectItem>
+                                    <SelectItem value="paye_slip">PAYE Slip</SelectItem>
+                                    <SelectItem value="housing_levy_slip">Housing Levy Slip</SelectItem>
+                                    <SelectItem value="nita_slip">NITA Slip</SelectItem>
+                                    <SelectItem value="shif_slip">SHIF Slip</SelectItem>
+                                    <SelectItem value="nssf_slip">NSSF Slip</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              {file.status === 'pending' ? (
+                                <Badge className="bg-green-100 text-green-800 border-green-300">
+                                  Ready
+                                </Badge>
+                              ) : (
+                                <Badge variant="destructive">
+                                  Error
+                                </Badge>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex justify-end space-x-1">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => previewDocument(file.file, file.globalIndex)}
+                                  className="h-6 w-6"
+                                  title="Preview document"
+                                >
+                                  <Eye className="h-3 w-3" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => removeFile(file.globalIndex)}
+                                  className="h-6 w-6"
+                                  title="Remove document"
+                                >
+                                  <X className="h-3 w-3" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      ))}
+                    </TableBody>
                   </Table>
                 </Card>
               )}
@@ -401,7 +659,7 @@ const BulkDocumentUpload = ({ isOpen, onClose, onUpload, payrollRecords }) => {
               )}
 
               <div className="flex justify-end gap-2 mt-auto">
-                <Button variant="outline" onClick={onClose} disabled={isUploading} size="sm">
+                <Button variant="outline" onClick={handleCancel} disabled={isUploading} size="sm">
                   Cancel
                 </Button>
                 <Button
@@ -456,6 +714,25 @@ const BulkDocumentUpload = ({ isOpen, onClose, onUpload, payrollRecords }) => {
               </div>
             )}
           </div>
+        </div>
+        
+        {/* Bottom buttons fixed at the bottom of the dialog */}
+        <div className="border-t p-3 bg-gray-50 flex justify-end gap-2">
+          <Button variant="outline" onClick={handleCancel} disabled={isUploading}>
+            Cancel
+          </Button>
+          <Button
+            onClick={handleUpload}
+            disabled={isUploading || mappedFiles.length === 0 || !mappedFiles.some(f => f.status === 'pending')}
+            className="bg-blue-600 hover:bg-blue-700"
+          >
+            {isUploading ? (
+              <div className="flex items-center">
+                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                Uploading...
+              </div>
+            ) : 'Upload Documents'}
+          </Button>
         </div>
       </DialogContent>
     </Dialog>

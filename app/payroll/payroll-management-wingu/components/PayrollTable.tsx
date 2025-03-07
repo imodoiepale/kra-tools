@@ -284,7 +284,7 @@ export function PayrollTable({
                                         <Button
                                             size="sm"
                                             className="h-6 text-xs px-2 bg-red-500 hover:bg-red-600 text-white"
-                                            onClick={() => updateState({ finalizeDialog: { isOpen: true, recordId: record.id } })}
+                                            onClick={() => updateState({ finalizeDialog: { isOpen: true, recordId: record.id, finalizationDate: record.status.finalization_date } })}
                                         >
                                             Finalize
                                         </Button>
@@ -477,7 +477,9 @@ export function PayrollTable({
                         }
                     }));
                 }}
-                onConfirm={handleFinalize}
+                onConfirm={(recordId, isNil, assignedTo, finalizationDate) => 
+                    handleFinalize(recordId, isNil, assignedTo, finalizationDate)
+                }
                 onFilingConfirm={handleFilingConfirm}
                 onRevert={handleRevertFinalize}
                 recordId={state.finalizeDialog.recordId}

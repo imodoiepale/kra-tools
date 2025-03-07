@@ -57,7 +57,7 @@ export const usePayrollState = (
         },
     });
 
-    const handleFinalize = async (recordId: string, isNil: boolean, assignedTo: string) => {
+    const handleFinalize = async (recordId: string, isNil: boolean, assignedTo: string, finalizationDate?: Date) => {
         try {
             // First, check if this is a temporary record
             const record = records.find(r => r.id === recordId);
@@ -108,8 +108,9 @@ export const usePayrollState = (
                 }
             }
 
-            // Now update the finalization status using the real record ID
-            const currentDate = new Date().toISOString();
+            // Use the provided finalization date or create a new one
+            const currentDate = finalizationDate ? finalizationDate.toISOString() : new Date().toISOString();
+            
             const { error } = await supabase
                 .from('company_payroll_records')
                 .update({
@@ -289,15 +290,34 @@ export const usePayrollState = (
                 }
             }
 
-            // Now update the filing status
+            // Fetch the latest status from the database to ensure we have the current finalization_date
+            const { data: currentRecord, error: fetchError } = await supabase
+                .from('company_payroll_records')
+                .select('status')
+                .eq('id', realRecordId)
+                .single();
+            
+            if (fetchError) {
+                console.error('Error fetching current record status:', fetchError);
+                // Continue with the record we have, but log the error
+            }
+
+            // Use the current database status if available, otherwise use the record from state
+            const currentStatus = currentRecord?.status || record.status || {};
+            
+            // Now update the filing status while preserving other status fields
             const { error } = await supabase
                 .from('company_payroll_records')
                 .update({
                     status: {
-                        ...record.status,
+                        // Explicitly check if the finalization_date is 'NIL' and preserve it
+                        finalization_date: currentStatus.finalization_date === 'NIL' 
+                            ? 'NIL' 
+                            : (currentStatus.finalization_date || record.status?.finalization_date),
+                        assigned_to: currentStatus.assigned_to || record.status?.assigned_to,
                         filing: {
                             filingDate: date.toISOString(),
-                            filedBy: record.status?.assigned_to || 'Unknown'
+                            filedBy: currentStatus.assigned_to || record.status?.assigned_to || 'Unknown'
                         }
                     }
                 })
@@ -314,7 +334,11 @@ export const usePayrollState = (
                             id: realRecordId, // Update ID if it was temporary
                             is_temporary: false,
                             status: {
-                                ...r.status,
+                                // Preserve the 'NIL' value in the state update as well
+                                finalization_date: r.status?.finalization_date === 'NIL' 
+                                    ? 'NIL' 
+                                    : r.status?.finalization_date,
+                                assigned_to: r.status?.assigned_to,
                                 filing: {
                                     filingDate: date.toISOString(),
                                     filedBy: r.status?.assigned_to || 'Unknown'

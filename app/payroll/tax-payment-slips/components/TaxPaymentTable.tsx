@@ -368,8 +368,8 @@ export function TaxPaymentTable({
 
             if (updateError) throw updateError;
 
-            // Update local state
-            const updatedRecords: CompanyPayrollRecord[] = records.map(r => {
+            // Update local state with a new array to trigger re-render
+            const updatedRecords = records.map(r => {
                 if (r.id === record.id) {
                     return {
                         ...r,
@@ -385,6 +385,9 @@ export function TaxPaymentTable({
                 }
                 return r;
             });
+
+            // Close the dialog
+            setDeleteAllDialog({ isOpen: false, record: null });
 
             toast({
                 title: 'Success',
@@ -594,18 +597,73 @@ export function TaxPaymentTable({
 
     const handleBulkUpload = async (files: File[], mappedFiles: any[]) => {
         try {
+            // Filter out only valid files
+            const validMappedFiles = mappedFiles.filter(file => file.recordId && file.documentType);
+            
+            if (validMappedFiles.length === 0) {
+                toast({
+                    title: 'Error',
+                    description: 'No valid files to upload',
+                    variant: 'destructive'
+                });
+                return Promise.reject(new Error('No valid files to upload'));
+            }
+            
             // Process each file sequentially
-            for (let i = 0; i < mappedFiles.length; i++) {
-                const { file, recordId, documentType, companyName } = mappedFiles[i];
+            const uploadResults = [];
+            for (let i = 0; i < validMappedFiles.length; i++) {
+                const { file, recordId, documentType, companyName } = validMappedFiles[i];
                 const record = records.find(r => r.id === recordId);
                 
                 if (record && documentType) {
-                    await onDocumentUpload(recordId, file, documentType, 'payment-slips');
+                    try {
+                        await onDocumentUpload(recordId, file, documentType, 'payment-slips');
+                        uploadResults.push({
+                            success: true,
+                            fileName: file.name,
+                            companyName
+                        });
+                    } catch (error) {
+                        console.error(`Error uploading file ${file.name}:`, error);
+                        uploadResults.push({
+                            success: false,
+                            fileName: file.name,
+                            companyName,
+                            error: error.message || 'Upload failed'
+                        });
+                    }
                 }
             }
-            return Promise.resolve();
+            
+            // Show summary toast
+            const successCount = uploadResults.filter(r => r.success).length;
+            const failCount = uploadResults.length - successCount;
+            
+            if (successCount > 0) {
+                toast({
+                    title: 'Upload Complete',
+                    description: `Successfully uploaded ${successCount} documents${failCount > 0 ? `, ${failCount} failed` : ''}`,
+                    variant: 'default'
+                });
+            } else if (failCount > 0) {
+                toast({
+                    title: 'Upload Failed',
+                    description: `Failed to upload ${failCount} documents`,
+                    variant: 'destructive'
+                });
+            }
+            
+            // Close the bulk upload dialog
+            setBulkUploadDialogOpen(false);
+            
+            return Promise.resolve(uploadResults);
         } catch (error) {
             console.error("Bulk upload error:", error);
+            toast({
+                title: 'Error',
+                description: 'An unexpected error occurred during bulk upload',
+                variant: 'destructive'
+            });
             return Promise.reject(error);
         }
     };
@@ -1202,7 +1260,7 @@ export function TaxPaymentTable({
             </AlertDialog>
 
             <BulkDocumentUpload
-                isOpen={bulkUploadDialogOpen}
+                open={bulkUploadDialogOpen}
                 onClose={() => setBulkUploadDialogOpen(false)}
                 onUpload={handleBulkUpload}
                 payrollRecords={records}
