@@ -54,7 +54,7 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { DocumentUploadDialog } from './DocumentUploadDialog'
-import { BulkDocumentUpload } from './BulkDocumentUpload';
+import BulkDocumentUpload from './BulkDocumentUpload';
 import {
     CompanyPayrollRecord,
     DocumentType,

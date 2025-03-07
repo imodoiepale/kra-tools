@@ -450,8 +450,27 @@ const handleDownload = async (path: string): Promise<void> => {
 
 const handleDownloadAll = async (record: CompanyPayrollRecord) => {
     try {
-        const documentsToDownload = Object.entries(record.payment_receipts_documents || {})
+        // Add null check for payment_receipts_documents
+        if (!record.payment_receipts_documents) {
+            toast({
+                title: 'Warning',
+                description: 'No documents available to download',
+                variant: 'default'
+            });
+            return;
+        }
+        
+        const documentsToDownload = Object.entries(record.payment_receipts_documents)
             .filter(([key, value]) => key !== 'all_csv' && value !== null);
+
+        if (documentsToDownload.length === 0) {
+            toast({
+                title: 'Warning',
+                description: 'No documents available to download',
+                variant: 'default'
+            });
+            return;
+        }
 
         for (const [_, path] of documentsToDownload) {
             if (path) await handleDownload(path);
@@ -477,9 +496,11 @@ const handleDocumentUpload = async (recordId: string, file: File, documentType: 
             throw new Error('Record not found');
         }
 
-        if (!record.company || !record.company.company_name) {
+        if (!record.company) {
             throw new Error('Company information is missing');
         }
+
+        const companyName = record.company.company_name || 'Unknown';
 
         // First, fetch the current record to get latest document paths
         const { data: currentRecord, error: fetchError } = await supabase
@@ -491,8 +512,13 @@ const handleDocumentUpload = async (recordId: string, file: File, documentType: 
         if (fetchError) throw fetchError;
         if (!currentRecord) throw new Error('Failed to fetch current record');
 
-        const fileName = `${documentType} - ${record.company?.company_name || 'Unknown'} - ${format(new Date(), 'yyyy-MM-dd')}${file.name.substring(file.name.lastIndexOf('.'))}`;
-        const filePath = `${selectedMonthYear}/PAYMENT RECEIPTS/${record.company?.company_name || 'Unknown'}/${fileName}`;
+        // Ensure we have a valid file name extension
+        const fileExtension = file.name.lastIndexOf('.') > -1 
+            ? file.name.substring(file.name.lastIndexOf('.')) 
+            : '.pdf';
+            
+        const fileName = `${documentType} - ${companyName} - ${format(new Date(), 'yyyy-MM-dd')}${fileExtension}`;
+        const filePath = `${selectedMonthYear}/PAYMENT RECEIPTS/${companyName}/${fileName}`;
         
         // Upload file to storage
         const { data: uploadData, error: uploadError } = await supabase.storage
@@ -504,9 +530,12 @@ const handleDocumentUpload = async (recordId: string, file: File, documentType: 
 
         if (uploadError) throw uploadError;
 
+        // Initialize payment_receipts_documents if it doesn't exist
+        const currentDocuments = currentRecord.payment_receipts_documents || {};
+
         // Preserve existing document paths and update the new one
         const updatedDocuments = {
-            ...currentRecord.payment_receipts_documents,
+            ...currentDocuments,
             [documentType]: uploadData.path
         };
 
@@ -556,10 +585,34 @@ const handleDocumentUpload = async (recordId: string, file: File, documentType: 
 const handleDocumentDelete = async (recordId: string, documentType: DocumentType) => {
     try {
         const record = records.find(r => r.id === recordId);
-        if (!record) return;
+        if (!record) {
+            toast({
+                title: 'Error',
+                description: 'Record not found',
+                variant: 'destructive'
+            });
+            return;
+        }
 
-        const documentPath = record.payment_receipts_documents?.[documentType];
-        if (!documentPath) return;
+        // Add null check for payment_receipts_documents
+        if (!record.payment_receipts_documents) {
+            toast({
+                title: 'Error',
+                description: 'No document information available',
+                variant: 'destructive'
+            });
+            return;
+        }
+
+        const documentPath = record.payment_receipts_documents[documentType];
+        if (!documentPath) {
+            toast({
+                title: 'Warning',
+                description: 'No document to delete',
+                variant: 'default'
+            });
+            return;
+        }
 
         const { error: deleteError } = await supabase.storage
             .from('Payroll-Cycle')
@@ -692,28 +745,21 @@ export function PayslipPaymentReceiptsTable({
         record: CompanyPayrollRecord | null;
     }>({ isOpen: false, record: null });
 
-    const getDocumentCount = (record: CompanyPayrollRecord) => {
-        if (!record.status || record.status.finalization_date === 'NIL') {
-            return 'N/A';
-        }
-        // Check if payment_receipts_documents exists
-        if (!record.payment_receipts_documents) {
-            return '0/5';
-        }
-        // Count all document types
-        const requiredDocs = ['paye_receipt', 'housing_levy_receipt', 'shif_receipt', 'nssf_receipt', 'nita_receipt'];
-        const totalDocs = requiredDocs.length;
-        const uploadedDocs = requiredDocs.filter(docType =>
-            record.payment_receipts_documents?.[docType as DocumentType] !== null &&
-            record.payment_receipts_documents?.[docType as DocumentType] !== undefined
-        ).length;
-        return `${uploadedDocs}/${totalDocs}`;
+    const getDocumentCount = (record: CompanyPayrollRecord): number => {
+        if (!record.payment_receipts_documents) return 0;
+        
+        return Object.entries(record.payment_receipts_documents)
+            .filter(([key, value]) => key !== 'all_csv' && value !== null)
+            .length;
     };
 
-    const allDocumentsUploaded = (record: CompanyPayrollRecord | undefined): boolean => {
-        if (!record) return false;
-        const requiredDocs = ['paye_receipt', 'housing_levy_receipt', 'shif_receipt', 'nssf_receipt', 'nita_receipt'];
-        return requiredDocs.every(docType => record.payment_receipts_documents?.[docType as DocumentType] !== null);
+    const allDocumentsUploaded = (record: CompanyPayrollRecord): boolean => {
+        if (!record.payment_receipts_documents) return false;
+        
+        // Check if all document types (except all_csv) have values
+        return Object.entries(DOCUMENT_LABELS)
+            .filter(([key]) => key !== 'all_csv')
+            .every(([key]) => record.payment_receipts_documents?.[key as DocumentType] !== null);
     };
 
     // Memoize sorted records for performance

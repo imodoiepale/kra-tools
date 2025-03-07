@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useToast } from '@/hooks/use-toast'
 import { ObligationFilters } from '../components/ObligationFilters'
-import { Settings2, Download } from 'lucide-react'
+import { Settings2, Download, Upload } from 'lucide-react'
 import {
     DropdownMenu,
     DropdownMenuCheckboxItem,
@@ -19,8 +19,9 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { BulkDocumentUpload } from './components/BulkDocumentUpload'
 
-interface TaxPaymentSlipsProps {
+interface PayslipPaymentReceiptsProps {
     payrollRecords: CompanyPayrollRecord[]
     selectedYear: number
     selectedMonth: number
@@ -48,9 +49,11 @@ export default function PayslipPaymentReceipts({
     handleDocumentDelete,
     handleStatusUpdate,
     setPayrollRecords
-}: TaxPaymentSlipsProps) {
+}: PayslipPaymentReceiptsProps) {
     const [selectedCategories, setSelectedCategories] = useState<string[]>(['acc']);
     const [selectedObligations, setSelectedObligations] = useState<string[]>(['active']);
+    const [bulkUploadDialogOpen, setBulkUploadDialogOpen] = useState(false);
+    const { toast } = useToast();
 
     // Column definitions for visibility toggle
     const columnDefinitions = [
@@ -98,9 +101,9 @@ export default function PayslipPaymentReceipts({
         setSelectedObligations(obligations);
     }, []);
 
-    const handleDocumentUploadWithFolder = (recordId: string, file: File, documentType: DocumentType) => {
-        return handleDocumentUpload(recordId, file, documentType, 'PAYMENT RECEIPTS')
-    }
+    const handleDocumentUploadWithFolder = useCallback((recordId: string, file: File, documentType: DocumentType) => {
+        return handleDocumentUpload(recordId, file, documentType, 'PAYMENT RECEIPTS');
+    }, [handleDocumentUpload]);
 
     const isDateInRange = (date: Date, from?: string | null, to?: string | null): boolean => {
         if (!from || !to) return false;
@@ -113,6 +116,104 @@ export default function PayslipPaymentReceipts({
             return false;
         }
     }
+
+    const handleBulkUpload = () => {
+        setBulkUploadDialogOpen(true);
+    };
+
+    const handleBulkExport = async () => {
+        try {
+            // Count how many records have documents
+            const recordsWithDocuments = filteredRecords.filter(record => 
+                record.payment_receipts_documents && 
+                Object.values(record.payment_receipts_documents).some(doc => doc !== null)
+            );
+
+            if (recordsWithDocuments.length === 0) {
+                toast({
+                    title: 'No documents',
+                    description: 'There are no documents to export',
+                    variant: 'default'
+                });
+                return;
+            }
+
+            // Create a ZIP file with all documents
+            const JSZip = (await import('jszip')).default;
+            const zip = new JSZip();
+            
+            let documentCount = 0;
+            
+            // Add each document to the ZIP file
+            for (const record of recordsWithDocuments) {
+                if (!record.payment_receipts_documents) continue;
+                
+                const companyName = record.company?.company_name || 'Unknown';
+                const companyFolder = zip.folder(companyName);
+                
+                for (const [docType, path] of Object.entries(record.payment_receipts_documents)) {
+                    if (!path) continue;
+                    
+                    try {
+                        // Get the document from storage
+                        const { data, error } = await supabase.storage
+                            .from('Payroll-Cycle')
+                            .download(path);
+                            
+                        if (error) throw error;
+                        
+                        // Get filename from path
+                        const fileName = path.split('/').pop() || `${docType}.pdf`;
+                        
+                        // Add to ZIP
+                        companyFolder?.file(fileName, data);
+                        documentCount++;
+                    } catch (error) {
+                        console.error(`Error downloading ${docType} for ${companyName}:`, error);
+                    }
+                }
+            }
+            
+            if (documentCount === 0) {
+                toast({
+                    title: 'Export failed',
+                    description: 'Could not retrieve any documents to export',
+                    variant: 'destructive'
+                });
+                return;
+            }
+            
+            // Generate the ZIP file
+            const content = await zip.generateAsync({ type: 'blob' });
+            
+            // Create download link
+            const url = URL.createObjectURL(content);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `Payment_Receipts_${format(new Date(), 'yyyy-MM-dd')}.zip`;
+            document.body.appendChild(a);
+            a.click();
+            
+            // Cleanup
+            setTimeout(() => {
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            }, 0);
+            
+            toast({
+                title: 'Export successful',
+                description: `Exported ${documentCount} documents from ${recordsWithDocuments.length} companies`,
+                variant: 'default'
+            });
+        } catch (error) {
+            console.error('Export error:', error);
+            toast({
+                title: 'Export failed',
+                description: 'An error occurred while exporting documents',
+                variant: 'destructive'
+            });
+        }
+    };
 
     // Filter records based on search term and selected categories
     const filteredRecords = useMemo(() => {
@@ -228,17 +329,18 @@ export default function PayslipPaymentReceipts({
                         </DropdownMenuContent>
                     </DropdownMenu>
                     <Button
-                        // onClick={handleExtractAll}
-                        className="h-8 px-2 bg-green-500 text-white hover:bg-green-600"
+                        onClick={handleBulkUpload}
+                        className="h-8 px-2 bg-green-500 text-white hover:bg-green-600 flex items-center gap-1"
                     >
-                        Extract All
+                        <Upload className="h-4 w-4" />
+                        Bulk Upload
                     </Button>
                     <Button
-                        // onClick={handleExportAll}
+                        onClick={handleBulkExport}
                         className="h-8 px-2 bg-blue-500 text-white hover:bg-blue-600 flex items-center gap-1"
                     >
                         <Download className="h-4 w-4" />
-                        Export
+                        Export All
                     </Button>
                 </div>
             </div>
@@ -252,6 +354,23 @@ export default function PayslipPaymentReceipts({
                 setPayrollRecords={setPayrollRecords}
                 columnVisibility={columnVisibility}
             />
+
+            {bulkUploadDialogOpen && (
+                <BulkDocumentUpload
+                    open={bulkUploadDialogOpen}
+                    onClose={() => setBulkUploadDialogOpen(false)}
+                    records={filteredRecords}
+                    onDocumentUpload={handleDocumentUploadWithFolder}
+                    setPayrollRecords={setPayrollRecords}
+                    documentTypes={[
+                        { value: 'paye_receipt', label: 'PAYE Receipt' },
+                        { value: 'housing_levy_receipt', label: 'Housing Levy Receipt' },
+                        { value: 'nita_receipt', label: 'NITA Receipt' },
+                        { value: 'shif_receipt', label: 'SHIF Receipt' },
+                        { value: 'nssf_receipt', label: 'NSSF Receipt' }
+                    ]}
+                />
+            )}
         </div>
     )
 }

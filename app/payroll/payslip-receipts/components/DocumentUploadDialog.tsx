@@ -113,6 +113,9 @@ export function DocumentUploadDialog({
             // Create a new canvas element
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
+            if (!ctx) {
+                throw new Error('Failed to get canvas context');
+            }
 
             // Create an image element
             const img = new Image();
@@ -130,7 +133,7 @@ export function DocumentUploadDialog({
             canvas.height = img.height;
 
             // Draw image on canvas
-            ctx?.drawImage(img, 0, 0);
+            ctx.drawImage(img, 0, 0);
 
             // Convert canvas to PDF using jsPDF
             const { jsPDF } = await import('jspdf');
@@ -164,11 +167,30 @@ export function DocumentUploadDialog({
 
     const handleFileSelect = async (file: File, docType?: DocumentType) => {
         try {
+            if (!file) {
+                toast({
+                    title: "Error",
+                    description: "No file selected",
+                    variant: "destructive"
+                });
+                return;
+            }
+
             let processedFile = file;
 
             if (file.type.startsWith('image/')) {
                 setIsConverting(true);
-                processedFile = await convertImageToPdf(file);
+                try {
+                    processedFile = await convertImageToPdf(file);
+                } catch (error) {
+                    toast({
+                        title: "Error",
+                        description: "Failed to convert image to PDF",
+                        variant: "destructive"
+                    });
+                    setIsConverting(false);
+                    return;
+                }
                 setIsConverting(false);
             }
 
@@ -202,12 +224,31 @@ export function DocumentUploadDialog({
 
     const handleBulkFileSelect = async (file: File, docType: DocumentType, label: string) => {
         try {
+            if (!file) {
+                toast({
+                    title: "Error",
+                    description: "No file selected",
+                    variant: "destructive"
+                });
+                return;
+            }
+
             let processedFile = file;
 
             // Check if file is an image
             if (file.type.startsWith('image/')) {
                 setIsConverting(true);
-                processedFile = await convertImageToPdf(file);
+                try {
+                    processedFile = await convertImageToPdf(file);
+                } catch (error) {
+                    toast({
+                        title: "Error",
+                        description: "Failed to convert image to PDF",
+                        variant: "destructive"
+                    });
+                    setIsConverting(false);
+                    return;
+                }
                 setIsConverting(false);
             }
 
@@ -228,25 +269,32 @@ export function DocumentUploadDialog({
     };
 
     const handleConfirmUpload = async () => {
-        if (!selectedFile) return;
-
-        try {
-            setIsSubmitting(true);
-            await onUpload(selectedFile, selectedDocType);
-            setPreviewDialog(true);
-            setSelectedFile(null);
-            setSelectedDocType(undefined);
-            setConfirmUploadDialog(false);
-            setUploadDialog(false);
-
-            toast({
-                title: "Success",
-                description: "Document uploaded successfully"
-            });
-        } catch (error) {
+        if (!selectedFile) {
             toast({
                 title: "Error",
-                description: "Failed to upload document",
+                description: "No file selected",
+                variant: "destructive"
+            });
+            return;
+        }
+
+        setIsSubmitting(true);
+        try {
+            await onUpload(selectedFile, selectedDocType);
+            setConfirmUploadDialog(false);
+            setUploadDialog(false);
+            setSelectedFile(null);
+            setSelectedDocType(undefined);
+            
+            toast({
+                title: "Success",
+                description: "Document uploaded successfully",
+            });
+        } catch (error) {
+            console.error("Upload error:", error);
+            toast({
+                title: "Error",
+                description: error instanceof Error ? error.message : "Failed to upload document",
                 variant: "destructive"
             });
         } finally {
@@ -336,7 +384,17 @@ export function DocumentUploadDialog({
                         // Convert image to PDF if needed
                         if (file.type.startsWith('image/')) {
                             setIsConverting(true);
-                            processedFile = await convertImageToPdf(file);
+                            try {
+                                processedFile = await convertImageToPdf(file);
+                            } catch (error) {
+                                toast({
+                                    title: "Error",
+                                    description: "Failed to convert image to PDF",
+                                    variant: "destructive"
+                                });
+                                setIsConverting(false);
+                                return;
+                            }
                             setIsConverting(false);
                         }
 
@@ -619,6 +677,15 @@ export function DocumentUploadDialog({
 
     const handleDownload = async (path: string) => {
         try {
+            if (!path) {
+                toast({
+                    title: "Error",
+                    description: "No document available to download",
+                    variant: "destructive"
+                });
+                return;
+            }
+            
             const { data, error } = await supabase.storage
                 .from('Payroll-Cycle')
                 .download(path);
@@ -651,6 +718,15 @@ export function DocumentUploadDialog({
 
     const handleView = async (path: string) => {
         try {
+            if (!path) {
+                toast({
+                    title: "Error",
+                    description: "No document available to view",
+                    variant: "destructive"
+                });
+                return;
+            }
+            
             setViewerOpen(true)
         } catch (error) {
             console.error('Error viewing document:', error)

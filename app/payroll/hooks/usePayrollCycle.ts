@@ -876,6 +876,7 @@ export const usePayrollCycle = () => {
 
     return {
         payrollRecords,
+        setPayrollRecords,
         loading,
         selectedYear,
         setSelectedYear,
