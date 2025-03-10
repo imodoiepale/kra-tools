@@ -473,66 +473,6 @@ const getUploadedDocCount = (record: any): number => {
     return record.payment_receipts_documents ? Object.keys(record.payment_receipts_documents).length : 0;
 };
 
-const handleDeleteAllDocuments = async (recordId: string) => {
-    try {
-        const record = records.find(r => r.id === recordId);
-        if (!record) {
-            toast({
-                title: 'Error',
-                description: 'Record not found',
-                variant: 'destructive'
-            });
-            return;
-        }
-
-        // Add null check for payment_receipts_documents
-        if (!record.payment_receipts_documents) {
-            toast({
-                title: 'Error',
-                description: 'No document information available',
-                variant: 'destructive'
-            });
-            return;
-        }
-
-        const documentTypes = Object.keys(record.payment_receipts_documents)
-            .filter(key => record.payment_receipts_documents[key] !== null) as DocumentType[];
-
-        if (documentTypes.length === 0) {
-            toast({
-                title: 'Warning',
-                description: 'No documents to delete',
-                variant: 'default'
-            });
-            return;
-        }
-
-        setIsDeleting(true);
-        
-        // Delete each document one by one
-        for (const docType of documentTypes) {
-            try {
-                await onDocumentDelete(recordId, docType);
-            } catch (error) {
-                console.error(`Error deleting ${docType}:`, error);
-            }
-        }
-
-        toast({
-            title: 'Success',
-            description: 'All documents deleted successfully'
-        });
-    } catch (error) {
-        toast({
-            title: 'Error',
-            description: 'Failed to delete documents',
-            variant: 'destructive'
-        });
-    } finally {
-        setIsDeleting(false);
-    }
-};
-
 export function PayslipPaymentReceiptsTable({
     records,
     onDocumentUpload,
@@ -549,6 +489,66 @@ export function PayslipPaymentReceiptsTable({
     const { toast } = useToast();
 
     const [isDeleting, setIsDeleting] = useState(false);
+
+    const handleDeleteAllDocuments = async (recordId: string) => {
+        try {
+            const record = records.find(r => r.id === recordId);
+            if (!record) {
+                toast({
+                    title: 'Error',
+                    description: 'Record not found',
+                    variant: 'destructive'
+                });
+                return;
+            }
+
+            // Add null check for payment_receipts_documents
+            if (!record.payment_receipts_documents) {
+                toast({
+                    title: 'Error',
+                    description: 'No document information available',
+                    variant: 'destructive'
+                });
+                return;
+            }
+
+            const documentTypes = Object.keys(record.payment_receipts_documents)
+                .filter(key => record.payment_receipts_documents[key] !== null) as DocumentType[];
+
+            if (documentTypes.length === 0) {
+                toast({
+                    title: 'Warning',
+                    description: 'No documents to delete',
+                    variant: 'default'
+                });
+                return;
+            }
+
+            setIsDeleting(true);
+            
+            // Delete each document one by one
+            for (const docType of documentTypes) {
+                try {
+                    await onDocumentDelete(recordId, docType);
+                } catch (error) {
+                    console.error(`Error deleting ${docType}:`, error);
+                }
+            }
+
+            toast({
+                title: 'Success',
+                description: 'All documents deleted successfully'
+            });
+        } catch (error) {
+            toast({
+                title: 'Error',
+                description: 'Failed to delete documents',
+                variant: 'destructive'
+            });
+        } finally {
+            setIsDeleting(false);
+        }
+    };
 
     const handleDeleteAll = async (record: CompanyPayrollRecord) => {
         if (!record) return;
