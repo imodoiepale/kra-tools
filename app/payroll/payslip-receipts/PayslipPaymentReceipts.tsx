@@ -57,8 +57,8 @@ export default function PayslipPaymentReceipts({
     setPayrollRecords,
     setLoading
 }: PayslipPaymentReceiptsProps) {
-    const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
-    const [selectedObligations, setSelectedObligations] = useState<string[]>([]);
+    const [selectedCategories, setSelectedCategories] = useState<string[]>(['acc']);
+    const [selectedObligations, setSelectedObligations] = useState<string[]>(['active']);
     const [bulkUploadDialogOpen, setBulkUploadDialogOpen] = useState(false);
     const { toast } = useToast();
 

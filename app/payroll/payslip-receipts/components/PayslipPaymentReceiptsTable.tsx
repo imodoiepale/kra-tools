@@ -3,14 +3,21 @@ import { useState, useMemo } from "react"
 import { format } from 'date-fns'
 import {
     MoreHorizontal,
-    FileCheck,
-    Download,
-    Trash2,
-    Eye,
-    CheckCircle,
-    AlertCircle,
     Mail,
-    MessageSquare
+    MessageSquare,
+    Eye,
+    Download,
+    FileText,
+    Trash2,
+    Calendar,
+    CheckCircle,
+    XCircle,
+    AlertCircle,
+    User,
+    UserCheck,
+    FileCheck,
+    FileX,
+    FileQuestion
 } from 'lucide-react'
 import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
@@ -466,6 +473,66 @@ const getUploadedDocCount = (record: any): number => {
     return record.payment_receipts_documents ? Object.keys(record.payment_receipts_documents).length : 0;
 };
 
+const handleDeleteAllDocuments = async (recordId: string) => {
+    try {
+        const record = records.find(r => r.id === recordId);
+        if (!record) {
+            toast({
+                title: 'Error',
+                description: 'Record not found',
+                variant: 'destructive'
+            });
+            return;
+        }
+
+        // Add null check for payment_receipts_documents
+        if (!record.payment_receipts_documents) {
+            toast({
+                title: 'Error',
+                description: 'No document information available',
+                variant: 'destructive'
+            });
+            return;
+        }
+
+        const documentTypes = Object.keys(record.payment_receipts_documents)
+            .filter(key => record.payment_receipts_documents[key] !== null) as DocumentType[];
+
+        if (documentTypes.length === 0) {
+            toast({
+                title: 'Warning',
+                description: 'No documents to delete',
+                variant: 'default'
+            });
+            return;
+        }
+
+        setIsDeleting(true);
+        
+        // Delete each document one by one
+        for (const docType of documentTypes) {
+            try {
+                await onDocumentDelete(recordId, docType);
+            } catch (error) {
+                console.error(`Error deleting ${docType}:`, error);
+            }
+        }
+
+        toast({
+            title: 'Success',
+            description: 'All documents deleted successfully'
+        });
+    } catch (error) {
+        toast({
+            title: 'Error',
+            description: 'Failed to delete documents',
+            variant: 'destructive'
+        });
+    } finally {
+        setIsDeleting(false);
+    }
+};
+
 export function PayslipPaymentReceiptsTable({
     records,
     onDocumentUpload,
@@ -481,74 +548,15 @@ export function PayslipPaymentReceiptsTable({
     const [selectedDocument, setSelectedDocument] = useState<{ url: string; title: string; companyName: string } | null>(null);
     const { toast } = useToast();
 
-    const handleDeleteAll = async (recordId: string) => {
-        try {
-            setIsSubmitting(true);
-            const record = records.find(r => r.id === recordId);
-            if (!record) return;
+    const [isDeleting, setIsDeleting] = useState(false);
 
-            const documents = getDocumentsForUpload(record);
-            const documentPaths = documents
-                .filter(doc => doc.uploaded)
-                .map(doc => doc.path)
-                .filter(Boolean) as string[];
-
-            if (documentPaths.length === 0) {
-                toast({
-                    title: 'No documents',
-                    description: 'There are no documents to delete',
-                    variant: 'default'
-                });
-                return;
-            }
-
-            // Delete files from storage
-            for (const path of documentPaths) {
-                const { error } = await supabase.storage
-                    .from('Payroll-Cycle')
-                    .remove([path]);
-
-                if (error) {
-                    console.error('Error deleting file:', error);
-                }
-            }
-
-            // Update database record
-            const { error } = await supabase
-                .from('company_payroll_records')
-                .update({
-                    payment_receipts_documents: {}
-                })
-                .eq('id', recordId);
-
-            if (error) throw error;
-
-            // Update local state
-            const updatedRecords = records.map(r => {
-                if (r.id === recordId) {
-                    return {
-                        ...r,
-                        payment_receipts_documents: {}
-                    };
-                }
-                return r;
-            });
-            setPayrollRecords(updatedRecords);
-
-            toast({
-                title: 'Success',
-                description: 'All documents deleted successfully'
-            });
-        } catch (error) {
-            console.error('Error deleting all documents:', error);
-            toast({
-                title: 'Error',
-                description: 'Failed to delete all documents',
-                variant: 'destructive'
-            });
-        } finally {
-            setIsSubmitting(false);
-        }
+    const handleDeleteAll = async (record: CompanyPayrollRecord) => {
+        if (!record) return;
+        
+        setDeleteAllDialog({
+            isOpen: true,
+            record
+        });
     };
 
     const handleLocalDocumentUpload = async (recordId: string, file: File, documentType: DocumentType): Promise<void> => {
@@ -975,13 +983,23 @@ export function PayslipPaymentReceiptsTable({
                             {columnVisibility?.payeReceipt !== false && (
                                 <TableCell className="text-center">
                                     {getDocumentsForUpload(record).find(doc => doc.type === 'paye_receipt')?.status === 'uploaded' ? (
-                                        <Button 
-                                            size="sm"
-                                            className="bg-green-500 hover:bg-green-600 h-6 text-xs px-2"
-                                            onClick={() => openDocumentViewer(record, 'paye_receipt')}
-                                        >
-                                            View
-                                        </Button>
+                                        <div className="flex justify-center items-center space-x-1">
+                                            <Button 
+                                                size="sm"
+                                                className="bg-green-500 hover:bg-green-600 h-6 text-xs px-2"
+                                                onClick={() => openDocumentViewer(record, 'paye_receipt')}
+                                            >
+                                                View
+                                            </Button>
+                                            <Button
+                                                size="sm"
+                                                variant="ghost"
+                                                className="h-6 w-6 p-0 text-red-500 hover:text-red-700"
+                                                onClick={() => handleDocumentDelete(record.id, 'paye_receipt')}
+                                            >
+                                                <Trash2 className="h-4 w-4" />
+                                            </Button>
+                                        </div>
                                     ) : (
                                         <div className="flex justify-center">
                                             <DocumentUploadDialog
@@ -1002,13 +1020,23 @@ export function PayslipPaymentReceiptsTable({
                             {columnVisibility?.housingLevyReceipt !== false && (
                                 <TableCell className="text-center">
                                     {getDocumentsForUpload(record).find(doc => doc.type === 'housing_levy_receipt')?.status === 'uploaded' ? (
-                                        <Button 
-                                            size="sm"
-                                            className="bg-green-500 hover:bg-green-600 h-6 text-xs px-2"
-                                            onClick={() => openDocumentViewer(record, 'housing_levy_receipt')}
-                                        >
-                                            View
-                                        </Button>
+                                        <div className="flex justify-center items-center space-x-1">
+                                            <Button 
+                                                size="sm"
+                                                className="bg-green-500 hover:bg-green-600 h-6 text-xs px-2"
+                                                onClick={() => openDocumentViewer(record, 'housing_levy_receipt')}
+                                            >
+                                                View
+                                            </Button>
+                                            <Button
+                                                size="sm"
+                                                variant="ghost"
+                                                className="h-6 w-6 p-0 text-red-500 hover:text-red-700"
+                                                onClick={() => handleDocumentDelete(record.id, 'housing_levy_receipt')}
+                                            >
+                                                <Trash2 className="h-4 w-4" />
+                                            </Button>
+                                        </div>
                                     ) : (
                                         <div className="flex justify-center">
                                             <DocumentUploadDialog
@@ -1029,13 +1057,23 @@ export function PayslipPaymentReceiptsTable({
                             {columnVisibility?.nitaReceipt !== false && (
                                 <TableCell className="text-center">
                                     {getDocumentsForUpload(record).find(doc => doc.type === 'nita_receipt')?.status === 'uploaded' ? (
-                                        <Button 
-                                            size="sm"
-                                            className="bg-green-500 hover:bg-green-600 h-6 text-xs px-2"
-                                            onClick={() => openDocumentViewer(record, 'nita_receipt')}
-                                        >
-                                            View
-                                        </Button>
+                                        <div className="flex justify-center items-center space-x-1">
+                                            <Button 
+                                                size="sm"
+                                                className="bg-green-500 hover:bg-green-600 h-6 text-xs px-2"
+                                                onClick={() => openDocumentViewer(record, 'nita_receipt')}
+                                            >
+                                                View
+                                            </Button>
+                                            <Button
+                                                size="sm"
+                                                variant="ghost"
+                                                className="h-6 w-6 p-0 text-red-500 hover:text-red-700"
+                                                onClick={() => handleDocumentDelete(record.id, 'nita_receipt')}
+                                            >
+                                                <Trash2 className="h-4 w-4" />
+                                            </Button>
+                                        </div>
                                     ) : (
                                         <div className="flex justify-center">
                                             <DocumentUploadDialog
@@ -1056,13 +1094,23 @@ export function PayslipPaymentReceiptsTable({
                             {columnVisibility?.shifReceipt !== false && (
                                 <TableCell className="text-center">
                                     {getDocumentsForUpload(record).find(doc => doc.type === 'shif_receipt')?.status === 'uploaded' ? (
-                                        <Button 
-                                            size="sm"
-                                            className="bg-green-500 hover:bg-green-600 h-6 text-xs px-2"
-                                            onClick={() => openDocumentViewer(record, 'shif_receipt')}
-                                        >
-                                            View
-                                        </Button>
+                                        <div className="flex justify-center items-center space-x-1">
+                                            <Button 
+                                                size="sm"
+                                                className="bg-green-500 hover:bg-green-600 h-6 text-xs px-2"
+                                                onClick={() => openDocumentViewer(record, 'shif_receipt')}
+                                            >
+                                                View
+                                            </Button>
+                                            <Button
+                                                size="sm"
+                                                variant="ghost"
+                                                className="h-6 w-6 p-0 text-red-500 hover:text-red-700"
+                                                onClick={() => handleDocumentDelete(record.id, 'shif_receipt')}
+                                            >
+                                                <Trash2 className="h-4 w-4" />
+                                            </Button>
+                                        </div>
                                     ) : (
                                         <div className="flex justify-center">
                                             <DocumentUploadDialog
@@ -1083,13 +1131,23 @@ export function PayslipPaymentReceiptsTable({
                             {columnVisibility?.nssfReceipt !== false && (
                                 <TableCell className="text-center">
                                     {getDocumentsForUpload(record).find(doc => doc.type === 'nssf_receipt')?.status === 'uploaded' ? (
-                                        <Button 
-                                            size="sm"
-                                            className="bg-green-500 hover:bg-green-600 h-6 text-xs px-2"
-                                            onClick={() => openDocumentViewer(record, 'nssf_receipt')}
-                                        >
-                                            View
-                                        </Button>
+                                        <div className="flex justify-center items-center space-x-1">
+                                            <Button 
+                                                size="sm"
+                                                className="bg-green-500 hover:bg-green-600 h-6 text-xs px-2"
+                                                onClick={() => openDocumentViewer(record, 'nssf_receipt')}
+                                            >
+                                                View
+                                            </Button>
+                                            <Button
+                                                size="sm"
+                                                variant="ghost"
+                                                className="h-6 w-6 p-0 text-red-500 hover:text-red-700"
+                                                onClick={() => handleDocumentDelete(record.id, 'nssf_receipt')}
+                                            >
+                                                <Trash2 className="h-4 w-4" />
+                                            </Button>
+                                        </div>
                                     ) : (
                                         <div className="flex justify-center">
                                             <DocumentUploadDialog
@@ -1107,10 +1165,47 @@ export function PayslipPaymentReceiptsTable({
                                     )}
                                 </TableCell>
                             )}
+                            {/* {columnVisibility?.nhifReceipt !== false && (
+                                <TableCell className="text-center">
+                                    {getDocumentsForUpload(record).find(doc => doc.type === 'nhif_receipt')?.status === 'uploaded' ? (
+                                        <div className="flex justify-center items-center space-x-1">
+                                            <Button 
+                                                size="sm"
+                                                className="bg-green-500 hover:bg-green-600 h-6 text-xs px-2"
+                                                onClick={() => openDocumentViewer(record, 'nhif_receipt')}
+                                            >
+                                                View
+                                            </Button>
+                                            <Button
+                                                size="sm"
+                                                variant="ghost"
+                                                className="h-6 w-6 p-0 text-red-500 hover:text-red-700"
+                                                onClick={() => handleDocumentDelete(record.id, 'nhif_receipt')}
+                                            >
+                                                <Trash2 className="h-4 w-4" />
+                                            </Button>
+                                        </div>
+                                    ) : (
+                                        <div className="flex justify-center">
+                                            <DocumentUploadDialog
+                                                documentType="nhif_receipt"
+                                                recordId={record.id}
+                                                onUpload={(file) => handleLocalDocumentUpload(record.id, file, 'nhif_receipt')}
+                                                onDelete={() => handleDocumentDelete(record.id, 'nhif_receipt')}
+                                                existingDocument={record.payment_receipts_documents?.nhif_receipt || null}
+                                                label={DOCUMENT_LABELS['nhif_receipt']}
+                                                isNilFiling={record.status?.finalization_date === 'NIL'}
+                                                allDocuments={getDocumentsForUpload(record)}
+                                                companyName={record.company?.company_name || 'Unknown'}
+                                            />
+                                        </div>
+                                    )}
+                                </TableCell>
+                            )} */}
                             {columnVisibility?.allDocuments !== false && (
                                 <TableCell className="text-center">
                                     <Badge className={record.status?.finalization_date === 'NIL' ? 'bg-purple-500' : 'bg-blue-500'}>
-                                        {record.status?.finalization_date === 'NIL' ? 'N/A' : `${getUploadedDocCount(record)}/5`}
+                                        {record.status?.finalization_date === 'NIL' ? 'N/A' : `${getUploadedDocCount(record)}/6`}
                                     </Badge>
                                 </TableCell>
                             )}
@@ -1140,10 +1235,10 @@ export function PayslipPaymentReceiptsTable({
                                             </DropdownMenuItem>
                                             <DropdownMenuItem
                                                 className="flex items-center gap-2 text-red-600"
-                                                onClick={() => setDeleteAllDialog({ isOpen: true, record })}
+                                                onClick={() => handleDeleteAll(record)}
                                             >
                                                 <Trash2 className="h-4 w-4" />
-                                                Delete All
+                                                Delete All Documents
                                             </DropdownMenuItem>
                                         </DropdownMenuContent>
                                     </DropdownMenu>
@@ -1455,7 +1550,7 @@ export function PayslipPaymentReceiptsTable({
                             className="bg-red-500 hover:bg-red-600"
                             onClick={() => {
                                 if (deleteAllDialog.record) {
-                                    handleDeleteAll(deleteAllDialog.record);
+                                    handleDeleteAllDocuments(deleteAllDialog.record.id);
                                     setDeleteAllDialog({ isOpen: false, record: null });
                                 }
                             }}
