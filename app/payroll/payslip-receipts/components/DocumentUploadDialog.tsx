@@ -110,6 +110,15 @@ export function DocumentUploadDialog({
 
     const convertImageToPdf = async (imageFile: File): Promise<File> => {
         try {
+            // Validate input file
+            if (!imageFile) {
+                throw new Error('No image file provided');
+            }
+            
+            if (!imageFile.type.startsWith('image/')) {
+                throw new Error('File is not an image');
+            }
+            
             // Create a new canvas element
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
@@ -121,47 +130,96 @@ export function DocumentUploadDialog({
             const img = new Image();
             const imageUrl = URL.createObjectURL(imageFile);
 
-            // Wait for image to load
+            // Wait for image to load with timeout
             await new Promise((resolve, reject) => {
-                img.onload = resolve;
-                img.onerror = reject;
+                const timeout = setTimeout(() => {
+                    reject(new Error('Image loading timed out'));
+                }, 30000); // 30 second timeout
+                
+                img.onload = () => {
+                    clearTimeout(timeout);
+                    resolve(null);
+                };
+                
+                img.onerror = () => {
+                    clearTimeout(timeout);
+                    URL.revokeObjectURL(imageUrl);
+                    reject(new Error('Failed to load image'));
+                };
+                
                 img.src = imageUrl;
             });
 
-            // Set canvas dimensions to match image
-            canvas.width = img.width;
-            canvas.height = img.height;
+            // Check image dimensions
+            if (img.width === 0 || img.height === 0) {
+                URL.revokeObjectURL(imageUrl);
+                throw new Error('Image has invalid dimensions');
+            }
+
+            // Set canvas dimensions to match image (with reasonable limits)
+            const MAX_DIMENSION = 4000; // Prevent memory issues with very large images
+            let width = img.width;
+            let height = img.height;
+            
+            // Scale down if image is too large
+            if (width > MAX_DIMENSION || height > MAX_DIMENSION) {
+                const aspectRatio = width / height;
+                if (width > height) {
+                    width = MAX_DIMENSION;
+                    height = Math.round(width / aspectRatio);
+                } else {
+                    height = MAX_DIMENSION;
+                    width = Math.round(height * aspectRatio);
+                }
+            }
+            
+            canvas.width = width;
+            canvas.height = height;
 
             // Draw image on canvas
-            ctx.drawImage(img, 0, 0);
+            ctx.drawImage(img, 0, 0, width, height);
 
-            // Convert canvas to PDF using jsPDF
-            const { jsPDF } = await import('jspdf');
-            const pdf = new jsPDF({
-                orientation: img.width > img.height ? 'l' : 'p',
-                unit: 'px',
-                format: [img.width, img.height]
-            });
+            try {
+                // Convert canvas to PDF using jsPDF
+                const { jsPDF } = await import('jspdf');
+                
+                // Determine orientation based on dimensions
+                const orientation = width > height ? 'l' : 'p';
+                
+                // Create PDF with appropriate dimensions
+                const pdf = new jsPDF({
+                    orientation: orientation,
+                    unit: 'px',
+                    format: [width, height]
+                });
 
-            // Add the image to PDF
-            pdf.addImage(canvas.toDataURL('image/jpeg'), 'JPEG', 0, 0, img.width, img.height);
+                // Add the image to PDF with compression
+                const imgData = canvas.toDataURL('image/jpeg', 0.8); // 80% quality for better file size
+                pdf.addImage(imgData, 'JPEG', 0, 0, width, height);
 
-            // Generate PDF blob
-            const pdfBlob = pdf.output('blob');
+                // Generate PDF blob
+                const pdfBlob = pdf.output('blob');
 
-            // Create a new File from the blob
-            const pdfFile = new File([pdfBlob], `${imageFile.name.split('.')[0]}.pdf`, {
-                type: 'application/pdf',
-                lastModified: Date.now()
-            });
+                // Create a new File from the blob with a meaningful name
+                const originalName = imageFile.name.split('.')[0] || 'image';
+                const timestamp = new Date().getTime();
+                const pdfFile = new File([pdfBlob], `${originalName}_${timestamp}.pdf`, {
+                    type: 'application/pdf',
+                    lastModified: Date.now()
+                });
 
-            // Cleanup
-            URL.revokeObjectURL(imageUrl);
+                // Cleanup
+                URL.revokeObjectURL(imageUrl);
 
-            return pdfFile;
+                return pdfFile;
+            } catch (pdfError) {
+                console.error('Error generating PDF:', pdfError);
+                URL.revokeObjectURL(imageUrl);
+                throw new Error('Failed to generate PDF from image');
+            }
         } catch (error) {
             console.error('Error converting image to PDF:', error);
-            throw new Error('Failed to convert image to PDF');
+            throw new Error(error instanceof Error ? error.message : 'Failed to convert image to PDF');
         }
     };
 
@@ -176,6 +234,28 @@ export function DocumentUploadDialog({
                 return;
             }
 
+            // Validate file size (10MB limit)
+            const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+            if (file.size > MAX_FILE_SIZE) {
+                toast({
+                    title: "Error",
+                    description: "File size exceeds 10MB limit",
+                    variant: "destructive"
+                });
+                return;
+            }
+
+            // Validate file type (PDF or images only)
+            const allowedTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/jpg'];
+            if (!allowedTypes.includes(file.type)) {
+                toast({
+                    title: "Error",
+                    description: "Only PDF and image files are allowed",
+                    variant: "destructive"
+                });
+                return;
+            }
+
             let processedFile = file;
 
             if (file.type.startsWith('image/')) {
@@ -183,6 +263,7 @@ export function DocumentUploadDialog({
                 try {
                     processedFile = await convertImageToPdf(file);
                 } catch (error) {
+                    console.error('Image conversion error:', error);
                     toast({
                         title: "Error",
                         description: "Failed to convert image to PDF",
@@ -214,6 +295,7 @@ export function DocumentUploadDialog({
 
             setConfirmUploadDialog(true);
         } catch (error) {
+            console.error('File selection error:', error);
             toast({
                 title: "Error",
                 description: error instanceof Error ? error.message : "Failed to process file",
@@ -233,6 +315,28 @@ export function DocumentUploadDialog({
                 return;
             }
 
+            // Validate file size (10MB limit)
+            const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+            if (file.size > MAX_FILE_SIZE) {
+                toast({
+                    title: "Error",
+                    description: "File size exceeds 10MB limit",
+                    variant: "destructive"
+                });
+                return;
+            }
+
+            // Validate file type (PDF or images only)
+            const allowedTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/jpg'];
+            if (!allowedTypes.includes(file.type)) {
+                toast({
+                    title: "Error",
+                    description: "Only PDF and image files are allowed",
+                    variant: "destructive"
+                });
+                return;
+            }
+
             let processedFile = file;
 
             // Check if file is an image
@@ -241,6 +345,7 @@ export function DocumentUploadDialog({
                 try {
                     processedFile = await convertImageToPdf(file);
                 } catch (error) {
+                    console.error('Image conversion error:', error);
                     toast({
                         title: "Error",
                         description: "Failed to convert image to PDF",
@@ -252,6 +357,7 @@ export function DocumentUploadDialog({
                 setIsConverting(false);
             }
 
+            // Update the bulk files map with the new file
             setBulkFiles(new Map(bulkFiles.set(docType, { file: processedFile, label })));
 
             // Clear any MPESA message for this type
@@ -259,7 +365,12 @@ export function DocumentUploadDialog({
             newMessages.delete(docType);
             setMpesaMessages(newMessages);
             
+            toast({
+                title: "File Ready",
+                description: `${label} file prepared for upload`,
+            });
         } catch (error) {
+            console.error('Bulk file selection error:', error);
             toast({
                 title: "Error",
                 description: error instanceof Error ? error.message : "Failed to process file",
@@ -280,7 +391,16 @@ export function DocumentUploadDialog({
 
         setIsSubmitting(true);
         try {
+            // Show upload in progress toast
+            toast({
+                title: "Uploading",
+                description: "Document upload in progress..."
+            });
+            
+            // Attempt to upload the file
             await onUpload(selectedFile, selectedDocType);
+            
+            // Clear the state after successful upload
             setConfirmUploadDialog(false);
             setUploadDialog(false);
             setSelectedFile(null);
@@ -329,12 +449,25 @@ export function DocumentUploadDialog({
             };
         }> = [];
 
+        // Show initial progress toast
+        toast({
+            title: "Processing Documents",
+            description: `Starting to process ${totalItems} document${totalItems > 1 ? 's' : ''}...`,
+        });
+
         try {
             // Process MPESA messages first
             if (mpesaMessages.size > 0) {
                 setIsConverting(true);
                 for (const [docType, { message, label }] of mpesaMessages.entries()) {
                     try {
+                        // Validate MPESA message
+                        if (!message.trim()) {
+                            errorCount++;
+                            errors.push(`${docType}: MPESA message is empty`);
+                            continue;
+                        }
+
                         const fileName = `MPESA-RECEIPT-${docType}-${new Date().getTime()}.pdf`;
                         const pdfData = await mpesaMessageToPdf({
                             message,
@@ -349,6 +482,12 @@ export function DocumentUploadDialog({
                         const file = new File([pdfData], fileName, {
                             type: 'application/pdf',
                             lastModified: new Date().getTime()
+                        });
+
+                        // Update progress toast
+                        toast({
+                            title: "Processing",
+                            description: `Uploading ${label} document (${successCount + 1}/${totalItems})...`,
                         });
 
                         await onUpload(file, docType);
@@ -368,6 +507,7 @@ export function DocumentUploadDialog({
                             }
                         });
                     } catch (error) {
+                        console.error(`Error processing MPESA message for ${docType}:`, error);
                         errorCount++;
                         errors.push(`${docType}: ${error instanceof Error ? error.message : 'Unknown error'}`);
                     }
@@ -387,16 +527,25 @@ export function DocumentUploadDialog({
                             try {
                                 processedFile = await convertImageToPdf(file);
                             } catch (error) {
+                                console.error(`Error converting image for ${docType}:`, error);
                                 toast({
                                     title: "Error",
                                     description: "Failed to convert image to PDF",
                                     variant: "destructive"
                                 });
                                 setIsConverting(false);
-                                return;
+                                errorCount++;
+                                errors.push(`${docType}: Failed to convert image to PDF`);
+                                continue;
                             }
                             setIsConverting(false);
                         }
+
+                        // Update progress toast
+                        toast({
+                            title: "Processing",
+                            description: `Uploading ${label} document (${successCount + 1}/${totalItems})...`,
+                        });
 
                         await onUpload(processedFile, docType);
                         successCount++;
@@ -415,6 +564,7 @@ export function DocumentUploadDialog({
                             }
                         });
                     } catch (error) {
+                        console.error(`Error processing file for ${docType}:`, error);
                         errorCount++;
                         errors.push(`${docType}: ${error instanceof Error ? error.message : 'Unknown error'}`);
                     }
@@ -437,6 +587,14 @@ export function DocumentUploadDialog({
                         setProcessedDocs(processedDocuments);
                         setPreviewDialog(true);
                     }
+                } else {
+                    // If there were errors, show them
+                    console.error('Upload errors:', errors);
+                    toast({
+                        title: "Warning",
+                        description: `Some documents failed to upload. Check console for details.`,
+                        variant: "destructive"
+                    });
                 }
             } else {
                 toast({

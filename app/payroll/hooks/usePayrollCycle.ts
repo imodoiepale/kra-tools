@@ -108,6 +108,7 @@ export const usePayrollCycle = () => {
                     // Use existing data or set defaults
                     documents: existingRecord?.documents || {},
                     payment_slips_documents: existingRecord?.payment_slips_documents || {},
+                    payment_receipts_documents: existingRecord?.payment_receipts_documents || {},
                     status: existingRecord?.status || {
                         finalization_date: null,
                         assigned_to: null,
@@ -211,13 +212,14 @@ export const usePayrollCycle = () => {
                         nssf_exl: null,
                     },
                     payment_slips_documents: record?.payment_slips_documents || {},
+                    payment_receipts_documents: record?.payment_receipts_documents || {},
                     status: record?.status || {
                         finalization_date: null,
                         assigned_to: null,
                         filing: null
                     },
                     number_of_employees: record?.number_of_employees || 0,
-                    // Include full objects
+                    // Include the full company object and pin details
                     company: company,
                     pin_details: pinDetails,
                     // Flag to know if this is a real record or just for display
@@ -261,6 +263,8 @@ export const usePayrollCycle = () => {
                             company_id: record.company_id,
                             payroll_cycle_id: record.payroll_cycle_id,
                             documents: {},
+                            payment_slips_documents: {},
+                            payment_receipts_documents: {},
                             status: {
                                 finalization_date: null,
                                 assigned_to: null,
@@ -546,6 +550,8 @@ export const usePayrollCycle = () => {
             // Ensure we're using the correct month-year format for the file path
             const fileExtension = file.name.substring(file.name.lastIndexOf('.'))
             const fileName = `${documentType} - ${record.company.company_name} - ${format(new Date(), 'yyyy-MM-dd')}${fileExtension}`
+            
+            // Create storage path using month-year format like payment slips
             const filePath = `${selectedMonthYear}/${subFolder}/${record.company.company_name}/${fileName}`
 
             // Upload file to storage
@@ -702,6 +708,343 @@ export const usePayrollCycle = () => {
             })
         }
     }
+
+    const handlePaymentReceiptsDocumentUpload = async (
+        recordId: string,
+        file: File,
+        documentType: DocumentType,
+        subFolder: string
+    ) => {
+        try {
+            console.log('Attempting to upload document for record ID:', recordId);
+            console.log('Available record IDs in payrollRecords:', payrollRecords.map(r => r.id));
+            
+            // Find the record in our state
+            const record = payrollRecords.find(r => r.id === recordId);
+            if (!record) {
+                console.error('Record not found in payrollRecords state. Record ID:', recordId);
+                
+                // Attempt to fetch the record directly from the database as a fallback
+                // Include company information in the query
+                const { data: fetchedRecord, error: fetchError } = await supabase
+                    .from('company_payroll_records')
+                    .select('*, company:company_id(*)')
+                    .eq('id', recordId)
+                    .single();
+                
+                if (fetchError || !fetchedRecord) {
+                    console.error('Could not fetch record from database:', fetchError);
+                    throw new Error('Record not found');
+                }
+                
+                console.log('Record fetched directly from database:', fetchedRecord);
+                
+                // Add the fetched record to our state to prevent future lookups
+                setPayrollRecords(prev => {
+                    // Check if record already exists in state
+                    if (prev.some(r => r.id === fetchedRecord.id)) {
+                        return prev;
+                    }
+                    return [...prev, fetchedRecord];
+                });
+                
+                // Continue with the fetched record
+                return handlePaymentReceiptsDocumentUploadWithRecord(fetchedRecord, file, documentType, subFolder);
+            }
+            
+            return handlePaymentReceiptsDocumentUploadWithRecord(record, file, documentType, subFolder);
+        } catch (error) {
+            console.error('Payment receipts document upload error:', error);
+            toast({
+                title: 'Upload Failed',
+                description: error instanceof Error ? error.message : 'An unknown error occurred',
+                variant: 'destructive'
+            });
+            throw error;
+        }
+    };
+    
+    // Helper function to handle the actual upload with a valid record
+    const handlePaymentReceiptsDocumentUploadWithRecord = async (
+        record: CompanyPayrollRecord,
+        file: File,
+        documentType: DocumentType,
+        subFolder: string
+    ) => {
+        try {
+            // If this is a temporary record, we need to create a real record first
+            let realRecordId = record.id;
+
+            if (record.is_temporary) {
+                // Create a new record in the database
+                const { data: newRecord, error: insertError } = await supabase
+                    .from('company_payroll_records')
+                    .insert([
+                        {
+                            company_id: record.company_id,
+                            payroll_cycle_id: record.payroll_cycle_id,
+                            payment_receipts_documents: {},
+                            documents: {},
+                            status: {
+                                finalization_date: null,
+                                assigned_to: null,
+                                filing: null
+                            },
+                            number_of_employees: 0
+                        }
+                    ])
+                    .select()
+                    .single();
+
+                if (insertError) throw insertError;
+                realRecordId = newRecord.id;
+
+                // Update our record with the real ID
+                record.id = realRecordId;
+                record.is_temporary = false;
+            }
+
+            // Ensure company information is available
+            if (!record.company?.company_name) {
+                console.error('Company information missing from record:', record);
+                throw new Error('Company information is missing');
+            }
+
+            // Get current record to ensure we have the latest state
+            const { data: currentRecord, error: fetchError } = await supabase
+                .from('company_payroll_records')
+                .select('payment_receipts_documents, payroll_cycle_id')
+                .eq('id', realRecordId)
+                .single();
+
+            if (fetchError) throw fetchError;
+            if (!currentRecord) throw new Error('Failed to fetch current record');
+
+            // Get the payroll cycle to ensure we're using the correct month-year
+            const { data: payrollCycle, error: cycleError } = await supabase
+                .from('payroll_cycles')
+                .select('month_year')
+                .eq('id', currentRecord.payroll_cycle_id)
+                .single();
+
+            if (cycleError) throw cycleError;
+            if (!payrollCycle) throw new Error('Failed to fetch payroll cycle');
+
+            // Use the month-year from the payroll cycle instead of the selected month-year
+            const cycleMonthYear = payrollCycle.month_year;
+            console.log('Using month-year from payroll cycle:', cycleMonthYear);
+
+            // Ensure we're using the correct month-year format for the file path
+            const fileExtension = file.name.substring(file.name.lastIndexOf('.'));
+            
+            // Sanitize company name for file path to avoid special characters
+            const sanitizedCompanyName = record.company.company_name.replace(/[^a-zA-Z0-9 ]/g, '');
+            
+            // Create a more concise filename to avoid path length issues
+            const fileName = `${documentType}${fileExtension}`;
+            
+            // Create storage path using month-year format like payment slips
+            // Use a shorter path structure to avoid database timeout issues
+            const filePath = `${cycleMonthYear}/${subFolder}/${sanitizedCompanyName}/${fileName}`;
+
+            console.log('Uploading file to path:', filePath);
+
+            // Upload file to storage with timeout handling
+            try {
+                const { data: uploadData, error: uploadError } = await supabase.storage
+                    .from('Payroll-Cycle')
+                    .upload(filePath, file, {
+                        cacheControl: '0',
+                        upsert: true
+                    });
+
+                if (uploadError) throw uploadError;
+
+                // Get the current payment_receipts_documents or create an empty object if it doesn't exist
+                const currentDocuments = currentRecord.payment_receipts_documents || {};
+
+                // Update the document path in the database
+                const updatedDocuments = {
+                    ...currentDocuments,
+                    [documentType]: uploadData.path
+                };
+
+                const { error: updateError } = await supabase
+                    .from('company_payroll_records')
+                    .update({
+                        payment_receipts_documents: updatedDocuments
+                    })
+                    .eq('id', realRecordId);
+
+                if (updateError) {
+                    // If database update fails, clean up the uploaded file
+                    await supabase.storage
+                        .from('Payroll-Cycle')
+                        .remove([uploadData.path]);
+                    throw updateError;
+                }
+
+                // Update our local state
+                const updatedRecords = payrollRecords.map(r => {
+                    if (r.id === realRecordId) {
+                        return {
+                            ...r,
+                            payment_receipts_documents: updatedDocuments
+                        };
+                    }
+                    return r;
+                });
+
+                setPayrollRecords(updatedRecords);
+
+                toast({
+                    title: 'Success',
+                    description: 'Document uploaded successfully'
+                });
+
+                return uploadData.path;
+            } catch (error) {
+                // Check for timeout error and provide a more helpful message
+                if (error.statusCode === '544' || error.code === 'DatabaseTimeout') {
+                    console.error('Database timeout during upload. File path may be too long or database is under load.');
+                    throw new Error('Upload timed out. Try using a smaller file or try again later.');
+                }
+                throw error;
+            }
+        } catch (error) {
+            console.error('Payment receipts document upload error:', error);
+            toast({
+                title: 'Upload Failed',
+                description: error instanceof Error ? error.message : 'An unknown error occurred',
+                variant: 'destructive'
+            });
+            throw error;
+        }
+    };
+
+    const handlePaymentReceiptsDocumentDelete = async (recordId: string, documentType: DocumentType) => {
+        try {
+            console.log('Attempting to delete document for record ID:', recordId);
+            console.log('Available record IDs in payrollRecords:', payrollRecords.map(r => r.id));
+            
+            // Find the record in our state
+            const record = payrollRecords.find(r => r.id === recordId);
+            if (!record) {
+                console.error('Record not found in payrollRecords state. Record ID:', recordId);
+                
+                // Attempt to fetch the record directly from the database as a fallback
+                // Include company information in the query
+                const { data: fetchedRecord, error: fetchError } = await supabase
+                    .from('company_payroll_records')
+                    .select('*, company:company_id(*)')
+                    .eq('id', recordId)
+                    .single();
+                
+                if (fetchError || !fetchedRecord) {
+                    console.error('Could not fetch record from database:', fetchError);
+                    throw new Error('Record not found');
+                }
+                
+                console.log('Record fetched directly from database:', fetchedRecord);
+                
+                // Continue with the fetched record
+                return handlePaymentReceiptsDocumentDeleteWithRecord(fetchedRecord, documentType);
+            }
+            
+            return handlePaymentReceiptsDocumentDeleteWithRecord(record, documentType);
+        } catch (error) {
+            console.error('Payment receipts document delete error:', error);
+            toast({
+                title: 'Delete Failed',
+                description: error instanceof Error ? error.message : 'An unknown error occurred',
+                variant: 'destructive'
+            });
+            throw error;
+        }
+    };
+    
+    // Helper function to handle the actual delete with a valid record
+    const handlePaymentReceiptsDocumentDeleteWithRecord = async (
+        record: CompanyPayrollRecord,
+        documentType: DocumentType
+    ) => {
+        try {
+            // Get current record to ensure we have the latest state
+            const { data: currentRecord, error: fetchError } = await supabase
+                .from('company_payroll_records')
+                .select('payment_receipts_documents, payroll_cycle_id')
+                .eq('id', record.id)
+                .single();
+
+            if (fetchError) throw fetchError;
+            if (!currentRecord) throw new Error('Failed to fetch current record');
+            
+            // Check if document exists
+            const currentDocuments = currentRecord.payment_receipts_documents || {};
+            const documentPath = currentDocuments[documentType];
+            
+            if (!documentPath) {
+                throw new Error('Document does not exist');
+            }
+            
+            console.log('Deleting document from path:', documentPath);
+            
+            try {
+                // Delete file from storage
+                const { error: deleteError } = await supabase.storage
+                    .from('Payroll-Cycle')
+                    .remove([documentPath]);
+                
+                if (deleteError) throw deleteError;
+                
+                // Update database record
+                const updatedDocuments = { ...currentDocuments };
+                delete updatedDocuments[documentType];
+                
+                const { error: updateError } = await supabase
+                    .from('company_payroll_records')
+                    .update({
+                        payment_receipts_documents: updatedDocuments
+                    })
+                    .eq('id', record.id);
+                
+                if (updateError) throw updateError;
+                
+                // Update local state
+                const updatedRecords = payrollRecords.map(r => {
+                    if (r.id === record.id) {
+                        return {
+                            ...r,
+                            payment_receipts_documents: updatedDocuments
+                        };
+                    }
+                    return r;
+                });
+                
+                setPayrollRecords(updatedRecords);
+                
+                toast({
+                    title: 'Success',
+                    description: 'Document deleted successfully'
+                });
+            } catch (error) {
+                // Check for timeout error and provide a more helpful message
+                if (error.statusCode === '544' || error.code === 'DatabaseTimeout') {
+                    console.error('Database timeout during delete operation.');
+                    throw new Error('Delete operation timed out. Please try again later.');
+                }
+                throw error;
+            }
+        } catch (error) {
+            console.error('Payment receipts document delete error:', error);
+            toast({
+                title: 'Delete Failed',
+                description: error instanceof Error ? error.message : 'An unknown error occurred',
+                variant: 'destructive'
+            });
+            throw error;
+        }
+    };
 
     const handleBulkExport = async (records: CompanyPayrollRecord[]) => {
         try {
@@ -890,6 +1233,8 @@ export const usePayrollCycle = () => {
         handleStatusUpdate,
         handlePaymentSlipsDocumentUpload,
         handlePaymentSlipsDocumentDelete,
+        handlePaymentReceiptsDocumentUpload,
+        handlePaymentReceiptsDocumentDelete,
         handleBulkExport,
         updateExistingEmployeeCounts
     }

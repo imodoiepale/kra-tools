@@ -3,14 +3,11 @@ import { useEffect, useState, useMemo, useCallback } from 'react'
 import { format } from 'date-fns'
 import { supabase } from '@/lib/supabase'
 import { CompanyPayrollRecord, DocumentType } from '../types'
-import { PayslipPaymentReceiptsTable } from './components/PayslipPaymentReceiptsTable'
-import { MonthYearSelector } from '../components/MonthYearSelector'
-import { CategoryFilters } from '../components/CategoryFilters'
+import { useToast } from '@/hooks/use-toast'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { useToast } from '@/hooks/use-toast'
-import { ObligationFilters } from '../components/ObligationFilters'
-import { Settings2, Download, Upload } from 'lucide-react'
+import { Download, Upload, Filter } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
 import {
     DropdownMenu,
     DropdownMenuCheckboxItem,
@@ -18,8 +15,16 @@ import {
     DropdownMenuLabel,
     DropdownMenuSeparator,
     DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
+} from '@/components/ui/dropdown-menu'
+import { PayslipPaymentReceiptsTable } from './components/PayslipPaymentReceiptsTable'
 import { BulkDocumentUpload } from './components/BulkDocumentUpload'
+import { CategoryFilter } from './components/CategoryFilter'
+import { ObligationFilter } from './components/ObligationFilter'
+import { usePayrollCycle } from '../hooks/usePayrollCycle'
+import { MonthYearSelector } from '../components/MonthYearSelector'
+import { CategoryFilters } from '../components/CategoryFilters'
+import { Settings2 } from 'lucide-react'
+import { ObligationFilters } from '../components/ObligationFilters'
 
 interface PayslipPaymentReceiptsProps {
     payrollRecords: CompanyPayrollRecord[]
@@ -34,6 +39,7 @@ interface PayslipPaymentReceiptsProps {
     handleDocumentDelete: (recordId: string, documentType: DocumentType) => Promise<void>
     handleStatusUpdate: (recordId: string, statusUpdate: Partial<CompanyPayrollRecord['status']>) => Promise<void>
     setPayrollRecords: React.Dispatch<React.SetStateAction<CompanyPayrollRecord[]>>
+    setLoading: React.Dispatch<React.SetStateAction<boolean>>
 }
 
 export default function PayslipPaymentReceipts({
@@ -48,12 +54,26 @@ export default function PayslipPaymentReceipts({
     handleDocumentUpload,
     handleDocumentDelete,
     handleStatusUpdate,
-    setPayrollRecords
+    setPayrollRecords,
+    setLoading
 }: PayslipPaymentReceiptsProps) {
-    const [selectedCategories, setSelectedCategories] = useState<string[]>(['acc']);
-    const [selectedObligations, setSelectedObligations] = useState<string[]>(['active']);
+    const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+    const [selectedObligations, setSelectedObligations] = useState<string[]>([]);
     const [bulkUploadDialogOpen, setBulkUploadDialogOpen] = useState(false);
     const { toast } = useToast();
+
+    // Get the payment receipts document upload and delete functions from the hook
+    const { 
+        handlePaymentReceiptsDocumentUpload,
+        handlePaymentReceiptsDocumentDelete,
+        selectedMonthYear,
+        setPayrollRecords: setHookPayrollRecords
+    } = usePayrollCycle();
+
+    // Update the hook's payroll records whenever our props change
+    useEffect(() => {
+        setHookPayrollRecords(payrollRecords);
+    }, [payrollRecords, setHookPayrollRecords]);
 
     // Column definitions for visibility toggle
     const columnDefinitions = [
@@ -102,8 +122,16 @@ export default function PayslipPaymentReceipts({
     }, []);
 
     const handleDocumentUploadWithFolder = useCallback((recordId: string, file: File, documentType: DocumentType) => {
-        return handleDocumentUpload(recordId, file, documentType, 'PAYMENT RECEIPTS');
-    }, [handleDocumentUpload]);
+        console.log('handleDocumentUploadWithFolder called with recordId:', recordId);
+        console.log('Current payroll records in component:', payrollRecords.map(r => r.id));
+        return handlePaymentReceiptsDocumentUpload(recordId, file, documentType, 'PAYMENT RECEIPTS');
+    }, [handlePaymentReceiptsDocumentUpload, payrollRecords]);
+
+    const handleDocumentDeleteWithType = useCallback((recordId: string, documentType: DocumentType) => {
+        console.log('handleDocumentDeleteWithType called with recordId:', recordId);
+        console.log('Current payroll records in component:', payrollRecords.map(r => r.id));
+        return handlePaymentReceiptsDocumentDelete(recordId, documentType);
+    }, [handlePaymentReceiptsDocumentDelete, payrollRecords]);
 
     const isDateInRange = (date: Date, from?: string | null, to?: string | null): boolean => {
         if (!from || !to) return false;
@@ -215,6 +243,118 @@ export default function PayslipPaymentReceipts({
         }
     };
 
+    const handleDocumentUploadWithFolderAndRefresh = useCallback(async (recordId: string, file: File, documentType: DocumentType) => {
+        try {
+            // Upload the document and get the path
+            const path = await handleDocumentUpload(recordId, file, documentType, 'PAYMENT RECEIPTS');
+            
+            if (!path) {
+                throw new Error('Failed to upload document - no path returned');
+            }
+            
+            // Update local state directly instead of refetching
+            setPayrollRecords(prevRecords => prevRecords.map(record => {
+                if (record.id === recordId) {
+                    // Create updated payment_receipts_documents object
+                    const updatedDocuments = {
+                        ...(record.payment_receipts_documents || {}),
+                        [documentType]: path
+                    };
+                    
+                    // Return updated record
+                    return {
+                        ...record,
+                        payment_receipts_documents: updatedDocuments
+                    };
+                }
+                return record;
+            }));
+            
+            toast({
+                title: 'Success',
+                description: `${documentType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())} uploaded successfully`,
+            });
+        } catch (error) {
+            console.error('Error in document upload:', error);
+            toast({
+                title: 'Error',
+                description: 'Failed to upload document',
+                variant: 'destructive'
+            });
+        }
+    }, [handleDocumentUpload, setPayrollRecords, toast]);
+
+    // Handle document delete with local state update
+    const handleDocumentDeleteWithLocalUpdate = useCallback(async (recordId: string, documentType: DocumentType) => {
+        try {
+            // Call the API to delete the document
+            await handleDocumentDelete(recordId, documentType);
+            
+            // Update local state directly instead of refetching
+            setPayrollRecords(prevRecords => prevRecords.map(record => {
+                if (record.id === recordId && record.payment_receipts_documents) {
+                    // Create a copy of the documents object
+                    const updatedDocuments = { ...record.payment_receipts_documents };
+                    // Set the specific document type to null
+                    updatedDocuments[documentType] = null;
+                    
+                    // Return updated record
+                    return {
+                        ...record,
+                        payment_receipts_documents: updatedDocuments
+                    };
+                }
+                return record;
+            }));
+            
+            toast({
+                title: 'Success',
+                description: `${documentType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())} deleted successfully`,
+            });
+        } catch (error) {
+            console.error('Error deleting document:', error);
+            toast({
+                title: 'Error',
+                description: 'Failed to delete document',
+                variant: 'destructive'
+            });
+        }
+    }, [handleDocumentDelete, setPayrollRecords, toast]);
+
+    // Handle status update with local state update
+    const handleStatusUpdateWithLocalUpdate = useCallback(async (recordId: string, statusUpdate: Partial<CompanyPayrollRecord['status']>) => {
+        try {
+            // Call the API to update the status
+            await handleStatusUpdate(recordId, statusUpdate);
+            
+            // Update local state directly instead of refetching
+            setPayrollRecords(prevRecords => prevRecords.map(record => {
+                if (record.id === recordId) {
+                    return {
+                        ...record,
+                        status: {
+                            ...(record.status || {}),
+                            ...statusUpdate
+                        }
+                    };
+                }
+                return record;
+            }));
+            
+            toast({
+                title: 'Success',
+                description: 'Status updated successfully',
+            });
+        } catch (error) {
+            console.error('Error updating status:', error);
+            toast({
+                title: 'Error',
+                description: 'Failed to update status',
+                variant: 'destructive'
+            });
+        }
+    }, [handleStatusUpdate, setPayrollRecords, toast]);
+
     // Filter records based on search term and selected categories
     const filteredRecords = useMemo(() => {
         return payrollRecords.filter(record => {
@@ -275,6 +415,12 @@ export default function PayslipPaymentReceipts({
             return matchesSearch && matchesCategory && matchesObligation;
         });
     }, [payrollRecords, searchTerm, selectedCategories, selectedObligations]);
+
+    // Initial data load is handled by the parent component using usePayrollCycle
+    useEffect(() => {
+        // No need to fetch data here as it's provided by props from the parent
+        // The parent component should call fetchOrCreatePayrollCycle from usePayrollCycle
+    }, []);
 
     return (
         <div className="space-y-4">
@@ -348,7 +494,7 @@ export default function PayslipPaymentReceipts({
             <PayslipPaymentReceiptsTable
                 records={filteredRecords}
                 onDocumentUpload={handleDocumentUploadWithFolder}
-                onDocumentDelete={handleDocumentDelete}
+                onDocumentDelete={handleDocumentDeleteWithType}
                 onStatusUpdate={handleStatusUpdate}
                 loading={loading}
                 setPayrollRecords={setPayrollRecords}
