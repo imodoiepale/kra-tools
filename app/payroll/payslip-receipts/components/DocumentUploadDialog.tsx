@@ -1170,8 +1170,9 @@ ${readyDocs.length > 0 ? readyDocs.join('\n') : 'No documents are ready to send.
                                             {/* Document type header row */}
                                             <div className="grid grid-cols-12 gap-2 mb-2 pb-2 border-b">
                                                 <div className="col-span-3 font-medium text-sm text-gray-700">Document Type</div>
+                                                <div className="col-span-1 font-medium text-sm text-gray-700"> Status</div>
                                                 <div className="col-span-4 font-medium text-sm text-gray-700">File Upload</div>
-                                                <div className="col-span-5 font-medium text-sm text-gray-700">MPESA Message</div>
+                                                <div className="col-span-4 font-medium text-sm text-gray-700">MPESA Message</div>
                                             </div>
                                             
                                             <div className="divide-y">
@@ -1180,13 +1181,13 @@ ${readyDocs.length > 0 ? readyDocs.join('\n') : 'No documents are ready to send.
                                                         {/* Document type and status */}
                                                         <div className="grid grid-cols-12 gap-2 items-center">
                                                             <div className="col-span-3">
-                                                                <div className="flex items-center gap-1">
+                                                                {/* <div className="flex items-center gap-1">
                                                                     {doc.status === 'uploaded' ? (
                                                                         <Badge className="bg-green-500">Uploaded</Badge>
                                                                     ) : (
                                                                         <Badge className="bg-yellow-500">Pending</Badge>
                                                                     )}
-                                                                </div>
+                                                                </div> */}
                                                                 <h4 className="font-medium text-sm mt-1">{DOCUMENT_LABELS[doc.type] || doc.label}</h4>
                                                                 {(bulkFiles.has(doc.type) || mpesaMessages.has(doc.type)) && (
                                                                     <p className="text-xs text-blue-500 mt-1">
@@ -1195,6 +1196,16 @@ ${readyDocs.length > 0 ? readyDocs.join('\n') : 'No documents are ready to send.
                                                                 )}
                                                             </div>
                                                             
+                                                            {/* File Status */}
+                                                            <div className="col-span-1">
+                                                                <div className="flex items-center gap-0.5 text-[10px]">
+                                                                    {doc.status === 'uploaded' ? (
+                                                                        <Badge size="xs" className="bg-green-500 text-[10px]">Uploaded</Badge>
+                                                                    ) : (
+                                                                        <Badge size="xs" className="bg-yellow-500 text-[10px]">Pending</Badge>
+                                                                    )}
+                                                                </div>
+                                                            </div>
                                                             {/* File upload */}
                                                             <div className="col-span-4">
                                                                 <Input
@@ -1216,7 +1227,7 @@ ${readyDocs.length > 0 ? readyDocs.join('\n') : 'No documents are ready to send.
                                                             </div>
                                                             
                                                             {/* MPESA message */}
-                                                            <div className="col-span-5">
+                                                            <div className="col-span-4">
                                                                 <div className="flex gap-2 items-center">
                                                                     <Textarea
                                                                         placeholder="Paste MPESA message..."
