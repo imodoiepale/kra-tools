@@ -1,5 +1,5 @@
 // @ts-nocheck
-import React, { useState, useMemo } from "react"
+import React, { useState, useMemo, useEffect } from "react"
 import { format } from 'date-fns'
 import {
     MoreHorizontal,
@@ -299,8 +299,45 @@ export function PayslipPaymentReceiptsTable({
                 payment_receipts_extractions: {}
             };
         }
-        return record;
+        
+        // Ensure each document type has an extraction object
+        const documentTypes = ['paye_receipt', 'housing_levy_receipt', 'nita_receipt', 'shif_receipt', 'nssf_receipt'];
+        const updatedExtractions = { ...record.payment_receipts_extractions };
+        
+        documentTypes.forEach(docType => {
+            if (!updatedExtractions[docType]) {
+                updatedExtractions[docType] = {
+                    amount: null,
+                    payment_date: null,
+                    payment_mode: null,
+                    bank_name: null
+                };
+            }
+        });
+        
+        return {
+            ...record,
+            payment_receipts_extractions: updatedExtractions
+        };
     };
+
+    const logExtractionData = (record: CompanyPayrollRecord) => {
+        console.log('Record ID:', record.id);
+        console.log('Company:', record.company?.company_name);
+        console.log('Extractions:', record.payment_receipts_extractions);
+    };
+
+    useEffect(() => {
+        if (records && records.length > 0) {
+            console.log('Total records:', records.length);
+            records.forEach(record => {
+                if (record.payment_receipts_extractions && 
+                    Object.keys(record.payment_receipts_extractions).length > 0) {
+                    logExtractionData(record);
+                }
+            });
+        }
+    }, [records]);
 
     const renderStatusBadge = (extractedData: any) => {
         if (!extractedData || Object.keys(extractedData).length === 0) {
@@ -393,7 +430,19 @@ export function PayslipPaymentReceiptsTable({
         
         // Make sure record has properly initialized extractions
         const recordWithExtractions = ensureExtractionsExist(record);
-        const extractedData = recordWithExtractions.payment_receipts_extractions?.[receiptType] || {};
+        
+        // Get extraction data for this document type, with proper fallback
+        const extractedData = recordWithExtractions.payment_receipts_extractions?.[receiptType] || {
+            amount: null,
+            payment_date: null,
+            payment_mode: null,
+            bank_name: null
+        };
+        
+        // For debugging
+        if (columnType === 'status' && record.id) {
+            console.log(`Rendering ${docType} for record ${record.id.substring(0,8)}...`, extractedData);
+        }
         
         switch (columnType) {
             case 'status':
@@ -485,7 +534,7 @@ export function PayslipPaymentReceiptsTable({
                 [documentType]: updatedExtractions
             };
             
-            // Update in database
+            // Update database record with merged document paths
             const { error: updateError } = await supabase
                 .from('company_payroll_records')
                 .update({

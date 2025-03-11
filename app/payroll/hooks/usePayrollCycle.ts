@@ -109,6 +109,14 @@ export const usePayrollCycle = () => {
                     documents: existingRecord?.documents || {},
                     payment_slips_documents: existingRecord?.payment_slips_documents || {},
                     payment_receipts_documents: existingRecord?.payment_receipts_documents || {},
+                    payment_slips_extractions: existingRecord?.payment_slips_extractions || {},
+                    payment_receipts_extractions: existingRecord?.payment_receipts_extractions || {
+                        paye_receipt: { amount: null, payment_date: null, payment_mode: null, bank_name: null },
+                        housing_levy_receipt: { amount: null, payment_date: null, payment_mode: null, bank_name: null },
+                        nita_receipt: { amount: null, payment_date: null, payment_mode: null, bank_name: null },
+                        shif_receipt: { amount: null, payment_date: null, payment_mode: null, bank_name: null },
+                        nssf_receipt: { amount: null, payment_date: null, payment_mode: null, bank_name: null }
+                    },
                     status: existingRecord?.status || {
                         finalization_date: null,
                         assigned_to: null,
@@ -213,6 +221,14 @@ export const usePayrollCycle = () => {
                     },
                     payment_slips_documents: record?.payment_slips_documents || {},
                     payment_receipts_documents: record?.payment_receipts_documents || {},
+                    payment_slips_extractions: record?.payment_slips_extractions || {},
+                    payment_receipts_extractions: record?.payment_receipts_extractions || {
+                        paye_receipt: { amount: null, payment_date: null, payment_mode: null, bank_name: null },
+                        housing_levy_receipt: { amount: null, payment_date: null, payment_mode: null, bank_name: null },
+                        nita_receipt: { amount: null, payment_date: null, payment_mode: null, bank_name: null },
+                        shif_receipt: { amount: null, payment_date: null, payment_mode: null, bank_name: null },
+                        nssf_receipt: { amount: null, payment_date: null, payment_mode: null, bank_name: null }
+                    },
                     status: record?.status || {
                         finalization_date: null,
                         assigned_to: null,
