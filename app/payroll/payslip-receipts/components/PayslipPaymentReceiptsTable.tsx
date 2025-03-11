@@ -165,6 +165,7 @@ export function PayslipPaymentReceiptsTable({
                 return;
             }
 
+            // Get all document types that have a non-null path
             const documentTypes = Object.keys(record.payment_receipts_documents)
                 .filter(key => record.payment_receipts_documents[key] !== null) as DocumentType[];
 
@@ -185,18 +186,21 @@ export function PayslipPaymentReceiptsTable({
                 description: `Deleting ${documentTypes.length} documents...`
             });
             
-            // Process deletions in batches
-            for (let i = 0; i < documentTypes.length; i += BATCH_SIZE) {
-                const batch = documentTypes.slice(i, i + BATCH_SIZE);
-                
-                await Promise.all(batch.map(async (docType) => {
-                    try {
-                        await onDocumentDelete(recordId, docType);
-                        progressRef.current.completed++;
-                    } catch (error) {
-                        console.error(`Error deleting ${docType}:`, error);
-                    }
-                }));
+            // Log the documents being deleted for debugging
+            console.log('Deleting document types:', documentTypes);
+            
+            // Process deletions SEQUENTIALLY instead of in parallel batches
+            for (const docType of documentTypes) {
+                try {
+                    console.log(`Deleting document type: ${docType}`);
+                    await onDocumentDelete(recordId, docType);
+                    progressRef.current.completed++;
+                    
+                    // Add a small delay between deletions
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                } catch (error) {
+                    console.error(`Error deleting ${docType}:`, error);
+                }
             }
             
             // Manually update the local state after successful deletion
@@ -227,7 +231,7 @@ export function PayslipPaymentReceiptsTable({
         } finally {
             setIsDeleting(false);
         }
-    }, [onDocumentDelete, records, setPayrollRecords, toast]);
+    }, [records, onDocumentDelete, toast, setPayrollRecords]);
 
     const handleDeleteAll = useCallback(async (record: CompanyPayrollRecord) => {
         if (!record) return;
@@ -811,7 +815,7 @@ export function PayslipPaymentReceiptsTable({
 
             toast({
                 title: "Success",
-                description: "Filing status removed successfully",
+                description: "Filing status removed successfully"
             });
 
             // Update local state
@@ -1321,7 +1325,7 @@ export function PayslipPaymentReceiptsTable({
                                                 <MoreHorizontal className="h-4 w-4" />
                                             </Button>
                                         </DropdownMenuTrigger>
-                                        <DropdownMenuContent align="end" className="w-48">
+                                        <DropdownMenuContent align="end" className="w-auto">
                                             <DropdownMenuItem
                                                 onClick={() => setDocumentDetailsDialog({ isOpen: true, record })}
                                                 className="flex items-center gap-2"
@@ -1467,7 +1471,9 @@ export function PayslipPaymentReceiptsTable({
             {/* Filing Dialog */}
             <Dialog
                 open={filingDialog.isOpen}
-                onOpenChange={(isOpen) => !isOpen && setFilingDialog(prev => ({ ...prev, isOpen }))}
+                onOpenChange={(isOpen) => {
+                    if (!isOpen) setFilingDialog(prev => ({ ...prev, isOpen }));
+                }}
             >
                 <DialogContent className="max-w-2xl">
                     <DialogHeader>

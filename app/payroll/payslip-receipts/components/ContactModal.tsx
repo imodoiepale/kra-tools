@@ -46,11 +46,11 @@ interface ContactModalProps {
 }
 
 const DOCUMENT_LABELS: Record<string, string> = {
-  paye_receipt: "PAYE Payment",
-  housing_levy_receipt: "Housing Levy",
-  nita_receipt: "NITA",
-  shif_receipt: "SHIF",
-  nssf_receipt: "NSSF",
+  paye_receipt: "PAYE PAYMENT RECEIPT",
+  housing_levy_receipt: "HOUSING PAYMENT LEVY RECEIPT",
+  nita_receipt: "NITA PAYMENT RECEIPT",
+  shif_receipt: "SHIF PAYMENT RECEIPT",
+  nssf_receipt: "NSSF PAYMENT RECEIPT",
   all_csv: "All CSV Files"
 };
 

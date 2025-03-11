@@ -49,7 +49,7 @@ interface DocumentUploadDialogProps {
         path?: string;
     }[];
     companyName: string;
-    onBatchDocumentUpload?: (recordId: string, documents: Array<{file: File, documentType: DocumentType}>, folderName: string) => Promise<any>;
+    onBatchDocumentUpload?: (documents: Array<{file: File, documentType: DocumentType}>) => Promise<any>;
 }
 
 // Batch size for processing multiple documents
@@ -66,11 +66,11 @@ const debounce = (fn: Function, ms = 300) => {
 
 // Document type labels
 const DOCUMENT_LABELS: Record<string, string> = {
-    paye_receipt: "PAYE Payment",
-    housing_levy_receipt: "Housing Levy",
-    nita_receipt: "NITA",
-    shif_receipt: "SHIF",
-    nssf_receipt: "NSSF",
+    paye_receipt: "PAYE RECEIPT",
+    housing_levy_receipt: "HOUSING LEVY RECEIPT",
+    nita_receipt: "NITA RECEIPT",
+    shif_receipt: "SHIF RECEIPT",
+    nssf_receipt: "NSSF RECEIPT",
     // all_csv: "All CSV Files"
 };
 
@@ -454,7 +454,7 @@ export function DocumentUploadDialog({
                 // Create file object
                 const file = new File([pdfData], fileName, {
                     type: 'application/pdf',
-                    lastModified: new Date().getTime()
+                    lastModified: Date.now()
                 });
                 
                 // CRITICAL FIX: Use the documentType from props for consistency
@@ -545,6 +545,12 @@ export function DocumentUploadDialog({
 
             // Add regular files
             for (const [docType, { file }] of bulkFiles.entries()) {
+                // Ensure docType is valid
+                if (!docType) {
+                    console.error('Invalid document type detected in bulk files');
+                    continue;
+                }
+                
                 documentsToUpload.push({
                     file,
                     documentType: docType as DocumentType
@@ -554,18 +560,43 @@ export function DocumentUploadDialog({
             // Process MPESA messages to PDF files
             for (const [docType, { message, label }] of mpesaMessages.entries()) {
                 try {
+                    // Skip empty messages
+                    if (!message.trim()) {
+                        continue;
+                    }
+                    
+                    // Ensure docType is valid
+                    if (!docType) {
+                        console.error('Invalid document type detected in MPESA messages');
+                        continue;
+                    }
+                    
+                    // Get the correct label for this document type
+                    const docLabel = label || DOCUMENT_LABELS[docType] || docType;
+                    
                     // Generate filename with document type
-                    const fileName = `MPESA-RECEIPT-${docType}-${new Date().getTime()}.pdf`;
+                    const fileName = `MPESA-RECEIPT-${docType}-${new Date().getTime()}.pdf`
+                    
+                    // Log for debugging
+                    if (process.env.NODE_ENV !== 'production') {
+                        console.log(`Generating PDF for document type: ${docType}, label: ${docLabel}`);
+                    }
                     
                     const pdfData = await mpesaMessageToPdf({
                         message,
                         fileName,
-                        receiptName: `${label} - ${companyName}`
+                        receiptName: `${companyName} - ${docLabel}`
                     });
                     
                     if (pdfData) {
+                        // Create a File object from the Uint8Array
+                        const file = new File([pdfData], fileName, {
+                            type: 'application/pdf',
+                            lastModified: new Date().getTime()
+                        });
+                        
                         documentsToUpload.push({
-                            file: pdfData,
+                            file: file,
                             documentType: docType as DocumentType
                         });
                     }
@@ -588,7 +619,8 @@ export function DocumentUploadDialog({
                 console.log('Uploading documents:', documentsToUpload.map(d => `${d.documentType}: ${d.file.name}`));
             }
 
-            // Call the batch upload function
+            // Call the batch upload function - IMPORTANT: Only pass the documents array
+            // The parent component already has the recordId and will add it
             const result = await onBatchDocumentUpload(documentsToUpload);
             
             if (result && result.success) {
@@ -616,30 +648,45 @@ export function DocumentUploadDialog({
         }
     };
 
-    const handleMpesaMessageChange = (message: string, docType: DocumentType, label: string) => {
+    const handleMpesaMessageChange = (message: string, docType?: DocumentType, label?: string) => {
         try {
             if (!message.trim()) {
-                // If message is empty, remove it from the map
-                const newMessages = new Map(mpesaMessages);
-                newMessages.delete(docType);
-                setMpesaMessages(newMessages);
+                // If message is empty, clear it or remove it from the map
+                if (docType) {
+                    // Bulk upload mode - remove from map
+                    const newMessages = new Map(mpesaMessages);
+                    newMessages.delete(docType);
+                    setMpesaMessages(newMessages);
+                } else {
+                    // Single upload mode - just clear the message
+                    setMpesaMessage('');
+                    setMpesaPreview('');
+                }
                 return;
             }
 
-            // Store the message with its document type
-            const newMessages = new Map(mpesaMessages);
-            newMessages.set(docType, { message, label });
-            setMpesaMessages(newMessages);
+            if (docType && label) {
+                // Bulk upload mode
+                // Store the message with its document type
+                const newMessages = new Map(mpesaMessages);
+                newMessages.set(docType, { message, label });
+                setMpesaMessages(newMessages);
 
-            // Clear any file for this document type
-            const newFiles = new Map(bulkFiles);
-            newFiles.delete(docType);
-            setBulkFiles(newFiles);
+                // Clear any file for this document type
+                const newFiles = new Map(bulkFiles);
+                newFiles.delete(docType);
+                setBulkFiles(newFiles);
 
-            toast({
-                title: "MPESA Message Ready",
-                description: `${label} message prepared for upload (${docType})`,
-            });
+                toast({
+                    title: "MPESA Message Ready",
+                    description: `${label} message prepared for upload (${docType})`,
+                });
+            } else {
+                // Single upload mode
+                setMpesaMessage(message);
+                // Optionally set a preview if needed
+                // setMpesaPreview(formatMpesaMessage(message).formatted);
+            }
         } catch (error) {
             console.error('Error handling MPESA message:', error);
             toast({
@@ -651,11 +698,10 @@ export function DocumentUploadDialog({
     };
 
     const handleMpesaUpload = async () => {
-        const error = validateMpesaMessage(mpesaMessage)
-        if (error) {
+        if (!mpesaMessage.trim()) {
             toast({
                 title: "Validation Error",
-                description: error,
+                description: "Please enter an MPESA message",
                 variant: "destructive"
             })
             return
@@ -666,10 +712,19 @@ export function DocumentUploadDialog({
         try {
             // Step 1: Convert MPESA message to PDF using pdfme
             const fileName = `mpesa-receipt-${new Date().getTime()}.pdf`
+            
+            // Ensure we're using the correct document type and label
+            const docType = selectedDocType || documentType;
+            
+            // Log for debugging
+            if (process.env.NODE_ENV !== 'production') {
+                console.log(`Generating PDF for document type: ${docType}, label: ${label}`);
+            }
+            
             const pdfData = await mpesaMessageToPdf({
                 message: mpesaMessage,
                 fileName,
-                receiptName: `${label} - ${companyName}`
+                receiptName: `${companyName} - ${label}`
             })
 
             if (!pdfData) {
@@ -683,7 +738,7 @@ export function DocumentUploadDialog({
             })
 
             // Step 3: Upload the PDF file
-            await onUpload(file, selectedDocType)
+            await onUpload(file, docType)
 
             // Step 4: Clear form and show success message
             setMpesaMessage('')
@@ -716,24 +771,6 @@ export function DocumentUploadDialog({
             return
         }
 
-        // Validate all messages first
-        const errors: string[] = []
-        for (const [docType, { message }] of mpesaMessages.entries()) {
-            const error = validateMpesaMessage(message)
-            if (error) {
-                errors.push(`${docType}: ${error}`)
-            }
-        }
-
-        if (errors.length > 0) {
-            toast({
-                title: "Validation Errors",
-                description: "Please fix the following errors:\n" + errors.join('\n'),
-                variant: "destructive"
-            })
-            return
-        }
-
         setIsSubmitting(true)
         setIsConverting(true)
         let successCount = 0
@@ -744,11 +781,30 @@ export function DocumentUploadDialog({
         try {
             for (const [docType, { message, label }] of mpesaMessages.entries()) {
                 try {
+                    if (!message.trim()) {
+                        continue; // Skip empty messages
+                    }
+                    
+                    // Ensure docType is valid
+                    if (!docType) {
+                        throw new Error('Invalid document type');
+                    }
+                    
+                    // Get the correct label for this document type
+                    const docLabel = label || DOCUMENT_LABELS[docType] || docType;
+                    
+                    // Generate a meaningful filename
                     const fileName = `MPESA-RECEIPT-${docType}-${new Date().getTime()}.pdf`
+                    
+                    // Log for debugging
+                    if (process.env.NODE_ENV !== 'production') {
+                        console.log(`Generating PDF for document type: ${docType}, label: ${docLabel}`);
+                    }
+                    
                     const pdfData = await mpesaMessageToPdf({
                         message,
                         fileName,
-                        receiptName: `${label} - ${companyName}`
+                        receiptName: `${companyName} - ${docLabel}`
                     })
 
                     if (!pdfData) {
@@ -768,7 +824,6 @@ export function DocumentUploadDialog({
                     processingErrors.push(`${docType}: ${error instanceof Error ? error.message : 'Unknown error'}`)
                 }
             }
-
             if (successCount > 0) {
                 toast({
                     title: "Upload Complete",
@@ -979,7 +1034,7 @@ ${readyDocs.length > 0 ? readyDocs.join('\n') : 'No documents are ready to send.
             )}
 
             <Dialog open={uploadDialog} onOpenChange={setUploadDialog}>
-                <DialogContent className="max-w-2xl">
+                <DialogContent className="max-w-4xl">
                     <DialogHeader className="pb-2 border-b">
                         <div className="flex justify-between items-end">
                             <DialogTitle className="text-lg font-semibold text-blue-600">
