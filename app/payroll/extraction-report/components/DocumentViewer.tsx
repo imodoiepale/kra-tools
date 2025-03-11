@@ -366,10 +366,30 @@ export function DocumentViewer({
                 ...currentExtractions,
                 [documentType]: {
                     ...localExtractions,
+                    // Ensure date format is consistent
+                    payment_date: localExtractions.payment_date && !/^\d{2}\/\d{2}\/\d{4}$/.test(localExtractions.payment_date)
+                        ? (() => {
+                            try {
+                                const date = new Date(localExtractions.payment_date);
+                                if (!isNaN(date.getTime())) {
+                                    const day = date.getDate().toString().padStart(2, '0');
+                                    const month = (date.getMonth() + 1).toString().padStart(2, '0');
+                                    const year = date.getFullYear();
+                                    return `${day}/${month}/${year}`;
+                                }
+                                return localExtractions.payment_date;
+                            } catch (error) {
+                                console.error('Error formatting date during save:', error);
+                                return localExtractions.payment_date;
+                            }
+                        })()
+                        : localExtractions.payment_date,
+                    // Ensure amount is properly formatted
+                    amount: localExtractions.amount ? String(localExtractions.amount).replace(/,/g, '') : null,
                     // Ensure bank_name is properly saved
                     bank_name: localExtractions.payment_mode === PAYMENT_MODES.MPESA 
-                        ? 'N/A for Mpesa' 
-                        : localExtractions.bank_name || ''
+                        ? 'N/A' 
+                        : (localExtractions.bank_name || '')
                 }
             }
 
@@ -390,8 +410,8 @@ export function DocumentViewer({
                 const updatedData = {
                     ...localExtractions,
                     bank_name: localExtractions.payment_mode === PAYMENT_MODES.MPESA 
-                        ? 'N/A for Mpesa' 
-                        : localExtractions.bank_name || ''
+                        ? 'N/A' 
+                        : (localExtractions.bank_name || '')
                 }
                 onExtractionsUpdate(updatedData)
             }
