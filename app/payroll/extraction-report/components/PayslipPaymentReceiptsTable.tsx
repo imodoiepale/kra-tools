@@ -356,16 +356,27 @@ export function PayslipPaymentReceiptsTable({
         }
     };
 
-    const formatAmount = (amount: string | null | undefined): JSX.Element => {
+    const formatAmount = (amount: string | number | null | undefined) => {
         if (!amount) return <span className="text-red-600 font-bold">MISSING</span>;
         
-        // Convert to number and format with commas, no decimals
-        const numAmount = parseFloat(amount.replace(/,/g, ''));
-        if (isNaN(numAmount)) return <span>{amount}</span>;
+        // Remove any commas first, then parse the number
+        const numericAmount = typeof amount === 'string' 
+            ? parseFloat(amount.replace(/,/g, '')) 
+            : Number(amount);
         
-        return <span className="text-right font-mono">{Math.round(numAmount).toLocaleString('en-US')}</span>;
+        if (isNaN(numericAmount)) return <span className="text-red-600 font-bold">INVALID</span>;
+        
+        // Format with commas and no decimal places
+        return (
+            <span className="text-right font-medium">
+                {new Intl.NumberFormat('en-US', { 
+                    maximumFractionDigits: 0,
+                    minimumFractionDigits: 0
+                }).format(numericAmount)}
+            </span>
+        );
     };
-    
+
     const formatDate = (date: string | null | undefined): JSX.Element => {
         if (!date) return <span className="text-red-600 font-bold">MISSING</span>;
         
@@ -428,50 +439,49 @@ export function PayslipPaymentReceiptsTable({
     const renderColumnContent = (record: CompanyPayrollRecord, docType: string, columnType: string) => {
         const receiptType = `${docType}_receipt` as DocumentType;
         
-        // Make sure record has properly initialized extractions
-        const recordWithExtractions = ensureExtractionsExist(record);
+        // Get extraction data safely with an empty object fallback to prevent nulls
+        const extractionData = record.payment_receipts_extractions?.[receiptType] || {};
         
-        // Get extraction data for this document type, with proper fallback
-        const extractedData = recordWithExtractions.payment_receipts_extractions?.[receiptType] || {
-            amount: null,
-            payment_date: null,
-            payment_mode: null,
-            bank_name: null
-        };
+        // If document exists but no extraction data available
+        if (Object.keys(extractionData).length === 0 && record.payment_receipts_documents?.[receiptType]) {
+            return <span className="text-orange-500 font-medium">NOT EXTRACTED</span>;
+        }
         
-        // For debugging
-        if (columnType === 'status' && record.id) {
-            console.log(`Rendering ${docType} for record ${record.id.substring(0,8)}...`, extractedData);
+        // If neither document nor extraction exists
+        if (Object.keys(extractionData).length === 0 && !record.payment_receipts_documents?.[receiptType]) {
+            return <span className="text-gray-400 italic">-</span>;
         }
         
         switch (columnType) {
             case 'status':
-                return renderStatusBadge(extractedData);
+                return renderStatusBadge(extractionData);
+                
             case 'amount':
-                if (!extractedData.amount) {
-                    return <span className="text-red-600 font-bold">MISSING</span>;
-                }
-                return formatAmount(extractedData.amount);
+                return formatAmount(extractionData.amount);
+                
             case 'payment_mode':
-                if (!extractedData.payment_mode) {
+                if (!extractionData.payment_mode) {
                     return <span className="text-red-600 font-bold">MISSING</span>;
                 }
-                return <span className="text-center">{extractedData.payment_mode}</span>;
+                return <span className="text-center font-medium">{extractionData.payment_mode}</span>;
+                
             case 'payment_date':
-                if (!extractedData.payment_date) {
+                if (!extractionData.payment_date) {
                     return <span className="text-red-600 font-bold">MISSING</span>;
                 }
-                return formatDate(extractedData.payment_date);
+                return formatDate(extractionData.payment_date);
+                
             case 'bank_name':
-                if (extractedData.payment_mode === 'Mpesa') {
-                    return <span className="text-center font-bold text-blue-600">N/A</span>;
+                if (extractionData.payment_mode === 'Mpesa') {
+                    return <span className="text-center font-medium text-blue-600">N/A</span>;
                 }
-                if (!extractedData.bank_name) {
+                if (!extractionData.bank_name) {
                     return <span className="text-red-600 font-bold">MISSING</span>;
                 }
-                return <span className="text-center">{extractedData.bank_name}</span>;
+                return <span className="text-center font-medium">{extractionData.bank_name}</span>;
+                
             default:
-                return null;
+                return <span>-</span>;
         }
     };
 
