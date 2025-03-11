@@ -228,6 +228,7 @@ export default function PayslipPaymentReceipts({
             await handleStatusUpdate(recordId, statusUpdate);
             
             // Update local state directly instead of refetching
+            // (The hook should already update its internal state)
             setPayrollRecords(prevRecords => prevRecords.map(record => {
                 if (record.id === recordId) {
                     return {
@@ -396,24 +397,24 @@ export default function PayslipPaymentReceipts({
             // Check obligation filters
             let matchesObligation = true;
             if (selectedObligations.length > 0) {
-                const obligationStatus = record.pin_details?.paye_status?.toLowerCase();
-                const effectiveFrom = record.pin_details?.paye_effective_from;
+                const obligationStatus = record.pin_details?.paye_status?.toLowerCase() || '';
+                const effectiveFrom = record.pin_details?.paye_effective_from || '';
 
                 // Determine specific status types
                 const isCancelled = obligationStatus === 'cancelled';
                 const isDormant = obligationStatus === 'dormant';
-                const isNoObligation = effectiveFrom && effectiveFrom.toLowerCase() === 'no obligation';
-                const isMissing = !effectiveFrom || effectiveFrom === 'Missing';
+                const isNoObligation = effectiveFrom.toLowerCase().includes('no obligation');
+                const isMissing = !effectiveFrom || effectiveFrom.toLowerCase().includes('missing');
 
                 // Explicitly check if it has an active date (not any of the special cases)
                 const hasActiveDate = effectiveFrom &&
-                    effectiveFrom !== 'No Obligation' &&
-                    effectiveFrom !== 'Missing' &&
+                    !isNoObligation &&
+                    !isMissing &&
                     !isCancelled &&
                     !isDormant;
 
                 // Match against selected filters
-                matchesObligation = (
+                matchesObligation = selectedObligations.length === 0 || (
                     (selectedObligations.includes('active') && hasActiveDate) ||
                     (selectedObligations.includes('cancelled') && isCancelled) ||
                     (selectedObligations.includes('dormant') && isDormant) ||
