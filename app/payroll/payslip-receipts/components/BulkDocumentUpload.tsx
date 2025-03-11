@@ -20,6 +20,7 @@ import {
 import { Label } from '@/components/ui/label'
 import { useToast } from '@/hooks/use-toast'
 import { CompanyPayrollRecord, DocumentType } from '../../types'
+import { supabase } from '@/lib/supabase';
 
 interface DocumentTypeOption {
     value: DocumentType;
@@ -133,44 +134,192 @@ export function BulkDocumentUpload({
         setUploadProgress(0);
         setUploadResults({ success: 0, failed: 0, total: filesToUpload.length });
         
+        // Show initial progress toast
+        toast({
+            title: "Processing Documents",
+            description: `Starting to process ${filesToUpload.length} document${filesToUpload.length > 1 ? 's' : ''}...`,
+        });
+
         let successCount = 0;
-        let failedCount = 0;
+        let errorCount = 0;
         
-        for (let i = 0; i < filesToUpload.length; i++) {
-            const { file, companyId, documentType } = filesToUpload[i];
+        try {
+            // Group files by company for more efficient processing
+            const filesByCompany = filesToUpload.reduce((acc, fileInfo) => {
+                if (!acc[fileInfo.companyId]) {
+                    acc[fileInfo.companyId] = [];
+                }
+                acc[fileInfo.companyId].push(fileInfo);
+                return acc;
+            }, {} as Record<string, FileWithCompany[]>);
             
-            try {
-                await onDocumentUpload(companyId, file, documentType);
-                successCount++;
-            } catch (error) {
-                console.error('Error uploading file:', error);
-                failedCount++;
+            // Create upload tasks for each file
+            const uploadTasks = [];
+            
+            // Process each company's files
+            for (const [companyId, companyFiles] of Object.entries(filesByCompany)) {
+                // First, fetch the current record to get existing document paths
+                const { data: currentRecord, error: fetchError } = await supabase
+                    .from('company_payroll_records')
+                    .select('payment_receipts_documents')
+                    .eq('id', companyId)
+                    .single();
+                
+                if (fetchError) {
+                    console.error(`Error fetching record for company ${companyId}:`, fetchError);
+                    // Continue with other companies even if one fails
+                    continue;
+                }
+                
+                // Get current document paths or initialize empty object
+                const currentDocuments = currentRecord?.payment_receipts_documents || {};
+                
+                // Create upload tasks for each file for this company
+                for (const fileInfo of companyFiles) {
+                    uploadTasks.push(async () => {
+                        try {
+                            // Upload the file and get the path
+                            const filePath = await onDocumentUpload(
+                                fileInfo.companyId,
+                                fileInfo.file,
+                                fileInfo.documentType
+                            );
+                            
+                            if (filePath) {
+                                return { 
+                                    success: true, 
+                                    companyId: fileInfo.companyId,
+                                    documentType: fileInfo.documentType,
+                                    filePath
+                                };
+                            }
+                            return { 
+                                success: false, 
+                                companyId: fileInfo.companyId,
+                                documentType: fileInfo.documentType
+                            };
+                        } catch (error) {
+                            console.error(`Error uploading file for company ${fileInfo.companyName}:`, error);
+                            return { 
+                                success: false, 
+                                companyId: fileInfo.companyId,
+                                documentType: fileInfo.documentType
+                            };
+                        }
+                    });
+                }
             }
             
-            // Update progress
-            const progress = Math.round(((i + 1) / filesToUpload.length) * 100);
-            setUploadProgress(progress);
+            // Execute all upload tasks with progress tracking
+            const results = [];
+            for (let i = 0; i < uploadTasks.length; i++) {
+                try {
+                    const result = await uploadTasks[i]();
+                    results.push(result);
+                    
+                    // Update progress
+                    const progress = Math.round(((i + 1) / uploadTasks.length) * 100);
+                    setUploadProgress(progress);
+                    
+                    if (result.success) {
+                        successCount++;
+                    } else {
+                        errorCount++;
+                    }
+                    
+                    // Update progress toast periodically
+                    if ((i + 1) % 5 === 0 || i === uploadTasks.length - 1) {
+                        toast({
+                            title: "Processing",
+                            description: `Processed ${i + 1} of ${uploadTasks.length} documents...`,
+                        });
+                    }
+                } catch (error) {
+                    console.error("Task execution error:", error);
+                    errorCount++;
+                }
+            }
+            
+            // After all uploads are complete, update the UI state
+            if (results.length > 0) {
+                // Group successful results by company ID
+                const successfulUploads = results.filter(r => r.success);
+                
+                if (successfulUploads.length > 0) {
+                    // Get the latest records to ensure we have the most up-to-date data
+                    const updatedRecords = [...records];
+                    
+                    // Update our local state with the uploaded documents
+                    for (const record of updatedRecords) {
+                        const companyUploads = successfulUploads.filter(r => r.companyId === record.id);
+                        
+                        if (companyUploads.length > 0) {
+                            // Get current document paths or initialize empty object
+                            const currentDocuments = record.payment_receipts_documents || {};
+                            
+                            // Add each new document path
+                            for (const upload of companyUploads) {
+                                currentDocuments[upload.documentType] = upload.filePath;
+                            }
+                            
+                            // Update the record with new document paths
+                            record.payment_receipts_documents = currentDocuments;
+                        }
+                    }
+                    
+                    // Update the state with all changes
+                    setPayrollRecords(updatedRecords);
+                }
+            }
+            
+            // Final status
             setUploadResults({
                 success: successCount,
-                failed: failedCount,
+                failed: errorCount,
                 total: filesToUpload.length
             });
-        }
-        
-        setIsUploading(false);
-        
-        toast({
-            title: 'Upload complete',
-            description: `Successfully uploaded ${successCount} of ${filesToUpload.length} files`,
-            variant: successCount === filesToUpload.length ? 'default' : 'destructive'
-        });
-        
-        // Clear files if all successful
-        if (successCount === filesToUpload.length) {
-            setFiles([]);
-        } else {
-            // Keep only failed files
-            setFiles(prev => prev.filter((_, i) => i >= successCount));
+            
+            if (successCount > 0) {
+                toast({
+                    title: "Upload Complete",
+                    description: `Successfully uploaded ${successCount} document${successCount > 1 ? 's' : ''}${errorCount > 0 ? `. Failed to upload ${errorCount} document${errorCount > 1 ? 's' : ''}.` : ''}`
+                });
+                
+                // Clear files if all successful
+                if (errorCount === 0) {
+                    setFiles([]);
+                } else {
+                    // Keep only failed files
+                    const successfulFileIds = new Set();
+                    results.forEach(result => {
+                        if (result.success) {
+                            const fileIndex = filesToUpload.findIndex(
+                                f => f.companyId === result.companyId && f.documentType === result.documentType
+                            );
+                            if (fileIndex !== -1) {
+                                successfulFileIds.add(filesToUpload[fileIndex].file.name);
+                            }
+                        }
+                    });
+                    
+                    setFiles(prev => prev.filter(file => !successfulFileIds.has(file.file.name)));
+                }
+            } else {
+                toast({
+                    title: "Upload Failed",
+                    description: "Failed to upload any documents. Please try again.",
+                    variant: "destructive"
+                });
+            }
+        } catch (error) {
+            console.error('Error during bulk upload:', error);
+            toast({
+                title: 'Upload failed',
+                description: 'An error occurred during the upload process',
+                variant: 'destructive'
+            });
+        } finally {
+            setIsUploading(false);
         }
     };
 

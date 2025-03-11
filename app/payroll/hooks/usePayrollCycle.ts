@@ -550,7 +550,7 @@ export const usePayrollCycle = () => {
             // Ensure we're using the correct month-year format for the file path
             const fileExtension = file.name.substring(file.name.lastIndexOf('.'))
             const fileName = `${documentType} - ${record.company.company_name} - ${format(new Date(), 'yyyy-MM-dd')}${fileExtension}`
-            
+
             // Create storage path using month-year format like payment slips
             const filePath = `${selectedMonthYear}/${subFolder}/${record.company.company_name}/${fileName}`
 
@@ -717,53 +717,166 @@ export const usePayrollCycle = () => {
     ) => {
         try {
             console.log('Attempting to upload document for record ID:', recordId);
-            console.log('Available record IDs in payrollRecords:', payrollRecords.map(r => r.id));
-            
-            // Find the record in our state
-            const record = payrollRecords.find(r => r.id === recordId);
+
+            // Find the record in our state or fetch it if needed
+            let record = payrollRecords.find(r => r.id === recordId);
+
             if (!record) {
-                console.error('Record not found in payrollRecords state. Record ID:', recordId);
-                
-                // Attempt to fetch the record directly from the database as a fallback
-                // Include company information in the query
+                console.log('Record not found in local state, fetching from database');
+
+                // Fetch record from database
                 const { data: fetchedRecord, error: fetchError } = await supabase
                     .from('company_payroll_records')
                     .select('*, company:company_id(*)')
                     .eq('id', recordId)
                     .single();
-                
+
                 if (fetchError || !fetchedRecord) {
                     console.error('Could not fetch record from database:', fetchError);
                     throw new Error('Record not found');
                 }
-                
-                console.log('Record fetched directly from database:', fetchedRecord);
-                
-                // Add the fetched record to our state to prevent future lookups
+
+                record = fetchedRecord;
+
+                // Add to local state to prevent future lookups
                 setPayrollRecords(prev => {
-                    // Check if record already exists in state
                     if (prev.some(r => r.id === fetchedRecord.id)) {
                         return prev;
                     }
                     return [...prev, fetchedRecord];
                 });
-                
-                // Continue with the fetched record
-                return handlePaymentReceiptsDocumentUploadWithRecord(fetchedRecord, file, documentType, subFolder);
             }
-            
-            return handlePaymentReceiptsDocumentUploadWithRecord(record, file, documentType, subFolder);
+
+            // If this is a temporary record, create a real one first
+            let realRecordId = record.id;
+            if (record.is_temporary) {
+                const { data: newRecord, error: insertError } = await supabase
+                    .from('company_payroll_records')
+                    .insert([{
+                        company_id: record.company_id,
+                        payroll_cycle_id: record.payroll_cycle_id,
+                        payment_receipts_documents: {},
+                        documents: {},
+                        status: {
+                            finalization_date: null,
+                            assigned_to: null,
+                            filing: null
+                        },
+                        number_of_employees: 0
+                    }])
+                    .select()
+                    .single();
+
+                if (insertError) throw insertError;
+                realRecordId = newRecord.id;
+                record.id = realRecordId;
+                record.is_temporary = false;
+            }
+
+            // Validate company information
+            if (!record.company?.company_name) {
+                throw new Error('Company information is missing');
+            }
+
+            // Get current record data and cycle information
+            const { data: currentRecord, error: fetchError } = await supabase
+                .from('company_payroll_records')
+                .select('payment_receipts_documents, payroll_cycle_id')
+                .eq('id', realRecordId)
+                .single();
+
+            if (fetchError || !currentRecord) {
+                throw new Error('Failed to fetch current record data');
+            }
+
+            const { data: payrollCycle, error: cycleError } = await supabase
+                .from('payroll_cycles')
+                .select('month_year')
+                .eq('id', currentRecord.payroll_cycle_id)
+                .single();
+
+            if (cycleError || !payrollCycle) {
+                throw new Error('Failed to fetch payroll cycle information');
+            }
+
+            // Create storage path
+            const cycleMonthYear = payrollCycle.month_year;
+            const sanitizedCompanyName = record.company.company_name.replace(/[^a-zA-Z0-9 ]/g, '');
+            const fileExtension = file.name.substring(file.name.lastIndexOf('.'));
+            const fileName = `${documentType}_${Date.now()}${fileExtension}`;
+            const filePath = `${cycleMonthYear}/${subFolder}/${sanitizedCompanyName}/${fileName}`;
+
+            // Upload file to storage
+            const { data: uploadData, error: uploadError } = await supabase.storage
+                .from('Payroll-Cycle')
+                .upload(filePath, file, {
+                    cacheControl: '0',
+                    upsert: true
+                });
+
+            if (uploadError) {
+                throw uploadError;
+            }
+
+            // Get current documents and prepare update
+            const currentDocuments = currentRecord.payment_receipts_documents || {};
+            const updatedDocuments = {
+                ...currentDocuments,
+                [documentType]: uploadData.path
+            };
+
+            // Update database record
+            const { error: updateError } = await supabase
+                .from('company_payroll_records')
+                .update({
+                    payment_receipts_documents: updatedDocuments
+                })
+                .eq('id', realRecordId);
+
+            if (updateError) {
+                // Clean up uploaded file if database update fails
+                await supabase.storage
+                    .from('Payroll-Cycle')
+                    .remove([uploadData.path]);
+                throw updateError;
+            }
+
+            // Update local state with atomic operation
+            setPayrollRecords(prevRecords =>
+                prevRecords.map(r =>
+                    r.id === realRecordId
+                        ? {
+                            ...r,
+                            payment_receipts_documents: updatedDocuments
+                        }
+                        : r
+                )
+            );
+
+            toast({
+                title: 'Success',
+                description: 'Document uploaded successfully'
+            });
+
+            return uploadData.path;
         } catch (error) {
-            console.error('Payment receipts document upload error:', error);
+            console.error('Document upload error:', error);
+
+            // Provide specific error message for timeout issues
+            const errorMessage = error.statusCode === '544' || error.code === 'DatabaseTimeout'
+                ? 'Upload timed out. Try using a smaller file or try again later.'
+                : error instanceof Error ? error.message : 'An unknown error occurred';
+
             toast({
                 title: 'Upload Failed',
-                description: error instanceof Error ? error.message : 'An unknown error occurred',
+                description: errorMessage,
                 variant: 'destructive'
             });
+
             throw error;
         }
     };
-    
+
     // Helper function to handle the actual upload with a valid record
     const handlePaymentReceiptsDocumentUploadWithRecord = async (
         record: CompanyPayrollRecord,
@@ -836,13 +949,13 @@ export const usePayrollCycle = () => {
 
             // Ensure we're using the correct month-year format for the file path
             const fileExtension = file.name.substring(file.name.lastIndexOf('.'));
-            
+
             // Sanitize company name for file path to avoid special characters
             const sanitizedCompanyName = record.company.company_name.replace(/[^a-zA-Z0-9 ]/g, '');
-            
+
             // Create a more concise filename to avoid path length issues
             const fileName = `${documentType}${fileExtension}`;
-            
+
             // Create storage path using month-year format like payment slips
             // Use a shorter path structure to avoid database timeout issues
             const filePath = `${cycleMonthYear}/${subFolder}/${sanitizedCompanyName}/${fileName}`;
@@ -925,44 +1038,116 @@ export const usePayrollCycle = () => {
     const handlePaymentReceiptsDocumentDelete = async (recordId: string, documentType: DocumentType) => {
         try {
             console.log('Attempting to delete document for record ID:', recordId);
-            console.log('Available record IDs in payrollRecords:', payrollRecords.map(r => r.id));
-            
-            // Find the record in our state
-            const record = payrollRecords.find(r => r.id === recordId);
+
+            // Find the record in our state or fetch it if needed
+            let record = payrollRecords.find(r => r.id === recordId);
+
             if (!record) {
-                console.error('Record not found in payrollRecords state. Record ID:', recordId);
-                
-                // Attempt to fetch the record directly from the database as a fallback
-                // Include company information in the query
+                console.log('Record not found in local state, fetching from database');
+
+                // Fetch record from database
                 const { data: fetchedRecord, error: fetchError } = await supabase
                     .from('company_payroll_records')
-                    .select('*, company:company_id(*)')
+                    .select('*, company:company_id(*), payment_receipts_documents')
                     .eq('id', recordId)
                     .single();
-                
+
                 if (fetchError || !fetchedRecord) {
                     console.error('Could not fetch record from database:', fetchError);
                     throw new Error('Record not found');
                 }
-                
-                console.log('Record fetched directly from database:', fetchedRecord);
-                
-                // Continue with the fetched record
-                return handlePaymentReceiptsDocumentDeleteWithRecord(fetchedRecord, documentType);
+
+                record = fetchedRecord;
+
+                // Add to local state to prevent future lookups
+                setPayrollRecords(prev => {
+                    if (prev.some(r => r.id === fetchedRecord.id)) {
+                        return prev;
+                    }
+                    return [...prev, fetchedRecord];
+                });
             }
-            
-            return handlePaymentReceiptsDocumentDeleteWithRecord(record, documentType);
+
+            // Get current record data to ensure we have the latest
+            const { data: currentRecord, error: fetchError } = await supabase
+                .from('company_payroll_records')
+                .select('payment_receipts_documents')
+                .eq('id', recordId)
+                .single();
+
+            if (fetchError || !currentRecord) {
+                throw new Error('Failed to fetch current record data');
+            }
+
+            // Check if document exists
+            const currentDocuments = currentRecord.payment_receipts_documents || {};
+            const documentPath = currentDocuments[documentType];
+
+            if (!documentPath) {
+                throw new Error('Document does not exist');
+            }
+
+            // Delete file from storage
+            const { error: deleteError } = await supabase.storage
+                .from('Payroll-Cycle')
+                .remove([documentPath]);
+
+            if (deleteError) {
+                throw deleteError;
+            }
+
+            // Create updated documents object (removing the specified document)
+            const updatedDocuments = { ...currentDocuments };
+            delete updatedDocuments[documentType];
+
+            // Update database record
+            const { error: updateError } = await supabase
+                .from('company_payroll_records')
+                .update({
+                    payment_receipts_documents: updatedDocuments
+                })
+                .eq('id', recordId);
+
+            if (updateError) {
+                throw updateError;
+            }
+
+            // Update local state with atomic operation
+            setPayrollRecords(prevRecords =>
+                prevRecords.map(r =>
+                    r.id === recordId
+                        ? {
+                            ...r,
+                            payment_receipts_documents: updatedDocuments
+                        }
+                        : r
+                )
+            );
+
+            toast({
+                title: 'Success',
+                description: 'Document deleted successfully'
+            });
+
+            return true;
         } catch (error) {
-            console.error('Payment receipts document delete error:', error);
+            console.error('Document delete error:', error);
+
+            // Provide specific error message for timeout issues
+            const errorMessage = error.statusCode === '544' || error.code === 'DatabaseTimeout'
+                ? 'Delete operation timed out. Please try again later.'
+                : error instanceof Error ? error.message : 'An unknown error occurred';
+
             toast({
                 title: 'Delete Failed',
-                description: error instanceof Error ? error.message : 'An unknown error occurred',
+                description: errorMessage,
                 variant: 'destructive'
             });
+
             throw error;
         }
     };
-    
+
     // Helper function to handle the actual delete with a valid record
     const handlePaymentReceiptsDocumentDeleteWithRecord = async (
         record: CompanyPayrollRecord,
@@ -978,38 +1163,38 @@ export const usePayrollCycle = () => {
 
             if (fetchError) throw fetchError;
             if (!currentRecord) throw new Error('Failed to fetch current record');
-            
+
             // Check if document exists
             const currentDocuments = currentRecord.payment_receipts_documents || {};
             const documentPath = currentDocuments[documentType];
-            
+
             if (!documentPath) {
                 throw new Error('Document does not exist');
             }
-            
+
             console.log('Deleting document from path:', documentPath);
-            
+
             try {
                 // Delete file from storage
                 const { error: deleteError } = await supabase.storage
                     .from('Payroll-Cycle')
                     .remove([documentPath]);
-                
+
                 if (deleteError) throw deleteError;
-                
+
                 // Update database record
                 const updatedDocuments = { ...currentDocuments };
                 delete updatedDocuments[documentType];
-                
+
                 const { error: updateError } = await supabase
                     .from('company_payroll_records')
                     .update({
                         payment_receipts_documents: updatedDocuments
                     })
                     .eq('id', record.id);
-                
+
                 if (updateError) throw updateError;
-                
+
                 // Update local state
                 const updatedRecords = payrollRecords.map(r => {
                     if (r.id === record.id) {
@@ -1020,9 +1205,9 @@ export const usePayrollCycle = () => {
                     }
                     return r;
                 });
-                
+
                 setPayrollRecords(updatedRecords);
-                
+
                 toast({
                     title: 'Success',
                     description: 'Document deleted successfully'
@@ -1046,32 +1231,229 @@ export const usePayrollCycle = () => {
         }
     };
 
+    const handleBatchPaymentReceiptsDocumentUpload = async (
+        recordId: string,
+        documents: Array<{ file: File, documentType: DocumentType }>,
+        subFolder: string
+    ) => {
+        try {
+            console.log('Attempting batch upload of documents for record ID:', recordId, 'Document count:', documents.length);
+
+            if (documents.length === 0) {
+                console.log('No documents to upload');
+                return { success: true, paths: {} };
+            }
+
+            // Find the record in our state or fetch it if needed
+            let record = payrollRecords.find(r => r.id === recordId);
+
+            if (!record) {
+                console.log('Record not found in local state, fetching from database');
+
+                // Fetch record from database
+                const { data: fetchedRecord, error: fetchError } = await supabase
+                    .from('company_payroll_records')
+                    .select('*, company:company_id(*)')
+                    .eq('id', recordId)
+                    .single();
+
+                if (fetchError || !fetchedRecord) {
+                    console.error('Could not fetch record from database:', fetchError);
+                    throw new Error('Record not found');
+                }
+
+                record = fetchedRecord;
+            }
+
+            // If this is a temporary record, create a real one first
+            let realRecordId = record.id;
+            if (record.is_temporary) {
+                const { data: newRecord, error: insertError } = await supabase
+                    .from('company_payroll_records')
+                    .insert([{
+                        company_id: record.company_id,
+                        payroll_cycle_id: record.payroll_cycle_id,
+                        payment_receipts_documents: {},
+                        documents: {},
+                        status: {
+                            finalization_date: null,
+                            assigned_to: null,
+                            filing: null
+                        },
+                        number_of_employees: 0
+                    }])
+                    .select()
+                    .single();
+
+                if (insertError) throw insertError;
+                realRecordId = newRecord.id;
+                record.id = realRecordId;
+                record.is_temporary = false;
+            }
+
+            // Validate company information
+            if (!record.company?.company_name) {
+                throw new Error('Company information is missing');
+            }
+
+            // Get current record data and cycle information
+            const { data: currentRecord, error: fetchError } = await supabase
+                .from('company_payroll_records')
+                .select('payment_receipts_documents, payroll_cycle_id')
+                .eq('id', realRecordId)
+                .single();
+
+            if (fetchError || !currentRecord) {
+                throw new Error('Failed to fetch current record data');
+            }
+
+            const { data: payrollCycle, error: cycleError } = await supabase
+                .from('payroll_cycles')
+                .select('month_year')
+                .eq('id', currentRecord.payroll_cycle_id)
+                .single();
+
+            if (cycleError || !payrollCycle) {
+                throw new Error('Failed to fetch payroll cycle information');
+            }
+
+            // Create storage paths and prepare upload promises
+            const cycleMonthYear = payrollCycle.month_year;
+            const sanitizedCompanyName = record.company?.company_name?.replace(/[^a-zA-Z0-9 ]/g, '') || 'Unknown';
+
+            // Prepare upload promises
+            const uploadPromises = documents.map(({ file, documentType }) => {
+                // Safely extract file extension with null checks
+                let fileExtension = '.pdf'; // Default extension
+                if (file && file.name) {
+                    const lastDotIndex = file.name.lastIndexOf('.');
+                    if (lastDotIndex !== -1) {
+                        fileExtension = file.name.substring(lastDotIndex);
+                    }
+                }
+                
+                const fileName = `${documentType}_${Date.now()}${fileExtension}`;
+                const filePath = `${cycleMonthYear}/${subFolder}/${sanitizedCompanyName}/${fileName}`;
+
+                return supabase.storage
+                    .from('Payroll-Cycle')
+                    .upload(filePath, file, {
+                        cacheControl: '0',
+                        upsert: true
+                    })
+                    .then(result => {
+                        if (result.error) throw result.error;
+                        return { documentType, path: result.data.path };
+                    });
+            });
+
+            // Execute all uploads in parallel
+            const uploadResults = await Promise.all(uploadPromises);
+
+            // Get current documents and prepare update with all new paths
+            const currentDocuments = currentRecord.payment_receipts_documents || {};
+            const updatedDocuments = { ...currentDocuments };
+
+            // Add all new document paths
+            uploadResults.forEach(({ documentType, path }) => {
+                updatedDocuments[documentType] = path;
+            });
+
+            // Update database record with all document paths at once
+            const { error: updateError } = await supabase
+                .from('company_payroll_records')
+                .update({
+                    payment_receipts_documents: updatedDocuments
+                })
+                .eq('id', realRecordId);
+
+            if (updateError) {
+                // Clean up uploaded files if database update fails
+                const pathsToRemove = uploadResults.map(r => r.path);
+                await supabase.storage
+                    .from('Payroll-Cycle')
+                    .remove(pathsToRemove);
+                throw updateError;
+            }
+
+            // Update local state with atomic operation
+            setPayrollRecords(prevRecords => {
+                // Create a new array to trigger React's state update
+                const newRecords = prevRecords.map(r => {
+                    if (r.id === realRecordId) {
+                        // Create a new object for the updated record to ensure React detects the change
+                        return {
+                            ...r,
+                            payment_receipts_documents: { ...updatedDocuments }
+                        };
+                    }
+                    return r;
+                });
+
+                console.log('Updated local state for record:', realRecordId, 'New document count:',
+                    Object.keys(updatedDocuments).filter(key => updatedDocuments[key]).length);
+
+                return newRecords;
+            });
+
+            // Return all paths for confirmation
+            const resultPaths = uploadResults.reduce((acc, { documentType, path }) => {
+                acc[documentType] = path;
+                return acc;
+            }, {} as Record<DocumentType, string>);
+
+            return {
+                success: true,
+                paths: resultPaths,
+                recordId: realRecordId
+            };
+        } catch (error) {
+            console.error('Batch document upload error:', error);
+
+            // Provide specific error message
+            const errorMessage = error.statusCode === '544' || error.code === 'DatabaseTimeout'
+                ? 'Upload timed out. Try using smaller files or try again later.'
+                : error instanceof Error ? error.message : 'An unknown error occurred';
+
+            toast({
+                title: 'Upload Failed',
+                description: errorMessage,
+                variant: 'destructive'
+            });
+
+            return {
+                success: false,
+                error: errorMessage
+            };
+        }
+    };
+
     const handleBulkExport = async (records: CompanyPayrollRecord[]) => {
         try {
             // Create CSV content
             let csvContent = "Company Name,PIN,Document Type,Document URL\n";
-            
+
             for (const record of records) {
                 if (!record.payment_slips_documents) continue;
-                
+
                 const companyName = record.company?.company_name || 'Unknown';
                 const pin = record.pin_details?.pin || 'Unknown';
-                
+
                 for (const [docType, path] of Object.entries(record.payment_slips_documents)) {
                     if (!path) continue;
-                    
+
                     // Get public URL for the document
                     const { data: publicUrl } = await supabase.storage
                         .from('Payroll-Cycle')
                         .getPublicUrl(path);
-                    
+
                     if (publicUrl) {
                         const documentTypeLabel = DOCUMENT_LABELS[docType as DocumentType] || docType;
                         csvContent += `"${companyName}","${pin}","${documentTypeLabel}","${publicUrl.publicUrl}"\n`;
                     }
                 }
             }
-            
+
             // Create and download the CSV file
             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
             const url = URL.createObjectURL(blob);
@@ -1081,7 +1463,7 @@ export const usePayrollCycle = () => {
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
-            
+
             toast({
                 title: 'Export Successful',
                 description: 'Document links have been exported to CSV'
@@ -1235,6 +1617,7 @@ export const usePayrollCycle = () => {
         handlePaymentSlipsDocumentDelete,
         handlePaymentReceiptsDocumentUpload,
         handlePaymentReceiptsDocumentDelete,
+        handleBatchPaymentReceiptsDocumentUpload,
         handleBulkExport,
         updateExistingEmployeeCounts
     }

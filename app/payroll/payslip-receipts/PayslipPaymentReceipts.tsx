@@ -6,7 +6,7 @@ import { CompanyPayrollRecord, DocumentType } from '../types'
 import { useToast } from '@/hooks/use-toast'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Download, Upload, Filter } from 'lucide-react'
+import { Download, Upload, Filter, Settings2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import {
     DropdownMenu,
@@ -23,7 +23,6 @@ import { ObligationFilter } from './components/ObligationFilter'
 import { usePayrollCycle } from '../hooks/usePayrollCycle'
 import { MonthYearSelector } from '../components/MonthYearSelector'
 import { CategoryFilters } from '../components/CategoryFilters'
-import { Settings2 } from 'lucide-react'
 import { ObligationFilters } from '../components/ObligationFilters'
 
 interface PayslipPaymentReceiptsProps {
@@ -66,6 +65,8 @@ export default function PayslipPaymentReceipts({
     const { 
         handlePaymentReceiptsDocumentUpload,
         handlePaymentReceiptsDocumentDelete,
+        handlePaymentReceiptsDocumentDeleteWithRecord,
+        handleBatchPaymentReceiptsDocumentUpload,
         selectedMonthYear,
         setPayrollRecords: setHookPayrollRecords
     } = usePayrollCycle();
@@ -121,17 +122,138 @@ export default function PayslipPaymentReceipts({
         setSelectedObligations(obligations);
     }, []);
 
-    const handleDocumentUploadWithFolder = useCallback((recordId: string, file: File, documentType: DocumentType) => {
-        console.log('handleDocumentUploadWithFolder called with recordId:', recordId);
-        console.log('Current payroll records in component:', payrollRecords.map(r => r.id));
-        return handlePaymentReceiptsDocumentUpload(recordId, file, documentType, 'PAYMENT RECEIPTS');
-    }, [handlePaymentReceiptsDocumentUpload, payrollRecords]);
+    // Unified document upload handler that uses the hook's function and updates local state
+    const handleDocumentUploadWithFolder = useCallback(async (recordId: string, file: File, documentType: DocumentType) => {
+        try {
+            // Log the upload request (helpful for debugging)
+            console.log('Uploading document:', { recordId, documentType, fileName: file.name });
+            
+            // Upload the document using the hook's function
+            const path = await handlePaymentReceiptsDocumentUpload(recordId, file, documentType, 'PAYMENT RECEIPTS');
+            
+            if (!path) {
+                throw new Error('Failed to upload document - no path returned');
+            }
+            
+            // Successfully uploaded - update local state if needed
+            // (The hook should already update its internal state)
+            toast({
+                title: 'Success',
+                description: `${documentType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())} uploaded successfully`,
+            });
+            
+            return path;
+        } catch (error) {
+            console.error('Error in document upload:', error);
+            toast({
+                title: 'Error',
+                description: error instanceof Error ? error.message : 'Failed to upload document',
+                variant: 'destructive'
+            });
+            
+            throw error;
+        }
+    }, [handlePaymentReceiptsDocumentUpload]);
 
-    const handleDocumentDeleteWithType = useCallback((recordId: string, documentType: DocumentType) => {
-        console.log('handleDocumentDeleteWithType called with recordId:', recordId);
-        console.log('Current payroll records in component:', payrollRecords.map(r => r.id));
-        return handlePaymentReceiptsDocumentDelete(recordId, documentType);
-    }, [handlePaymentReceiptsDocumentDelete, payrollRecords]);
+    // Batch document upload handler for multiple documents at once
+    const handleBatchDocumentUploadWithFolder = useCallback(async (
+        recordId: string, 
+        documents: Array<{file: File, documentType: DocumentType}>
+    ) => {
+        try {
+            // Log the batch upload request
+            console.log('Batch uploading documents:', { 
+                recordId, 
+                documentCount: documents.length, 
+                types: documents.map(d => d.documentType).join(', ')
+            });
+            
+            // Use the batch upload function from the hook
+            const result = await handleBatchPaymentReceiptsDocumentUpload(
+                recordId, 
+                documents, 
+                'PAYMENT RECEIPTS'
+            );
+            
+            if (result.success && Object.keys(result.paths).length > 0) {
+                // Successfully uploaded - show success message
+                const count = Object.keys(result.paths).length;
+                toast({
+                    title: 'Success',
+                    description: `${count} document${count !== 1 ? 's' : ''} uploaded successfully`,
+                });
+                
+                return result;
+            } else {
+                throw new Error(result.error || 'Failed to upload documents - no paths returned');
+            }
+        } catch (error) {
+            console.error('Error in batch document upload:', error);
+            toast({
+                title: 'Error',
+                description: error instanceof Error ? error.message : 'Failed to upload documents',
+                variant: 'destructive'
+            });
+            
+            return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+        }
+    }, [handleBatchPaymentReceiptsDocumentUpload]);
+
+    // Unified document delete handler
+    const handleDocumentDeleteWithType = useCallback(async (recordId: string, documentType: DocumentType) => {
+        try {
+            // Log the delete request (helpful for debugging)
+            console.log('Deleting document:', { recordId, documentType });
+            
+            // Delete the document using the hook's function
+            await handlePaymentReceiptsDocumentDelete(recordId, documentType);
+            
+            // Successfully deleted - toast notification is handled in the hook
+            return true;
+        } catch (error) {
+            console.error('Error deleting document:', error);
+            toast({
+                title: 'Error',
+                description: error instanceof Error ? error.message : 'Failed to delete document',
+                variant: 'destructive'
+            });
+            throw error;
+        }
+    }, [handlePaymentReceiptsDocumentDelete, toast]);
+
+    // Handle status update with proper error handling
+    const handleStatusUpdateWithLocalUpdate = useCallback(async (recordId: string, statusUpdate: Partial<CompanyPayrollRecord['status']>) => {
+        try {
+            // Call the API to update the status
+            await handleStatusUpdate(recordId, statusUpdate);
+            
+            // Update local state directly instead of refetching
+            setPayrollRecords(prevRecords => prevRecords.map(record => {
+                if (record.id === recordId) {
+                    return {
+                        ...record,
+                        status: {
+                            ...(record.status || {}),
+                            ...statusUpdate
+                        }
+                    };
+                }
+                return record;
+            }));
+            
+            toast({
+                title: 'Success',
+                description: 'Status updated successfully',
+            });
+        } catch (error) {
+            console.error('Error updating status:', error);
+            toast({
+                title: 'Error',
+                description: error instanceof Error ? error.message : 'Failed to update status',
+                variant: 'destructive'
+            });
+        }
+    }, [handleStatusUpdate, setPayrollRecords, toast]);
 
     const isDateInRange = (date: Date, from?: string | null, to?: string | null): boolean => {
         if (!from || !to) return false;
@@ -237,123 +359,11 @@ export default function PayslipPaymentReceipts({
             console.error('Export error:', error);
             toast({
                 title: 'Export failed',
-                description: 'An error occurred while exporting documents',
+                description: error instanceof Error ? error.message : 'An error occurred while exporting documents',
                 variant: 'destructive'
             });
         }
     };
-
-    const handleDocumentUploadWithFolderAndRefresh = useCallback(async (recordId: string, file: File, documentType: DocumentType) => {
-        try {
-            // Upload the document and get the path
-            const path = await handleDocumentUpload(recordId, file, documentType, 'PAYMENT RECEIPTS');
-            
-            if (!path) {
-                throw new Error('Failed to upload document - no path returned');
-            }
-            
-            // Update local state directly instead of refetching
-            setPayrollRecords(prevRecords => prevRecords.map(record => {
-                if (record.id === recordId) {
-                    // Create updated payment_receipts_documents object
-                    const updatedDocuments = {
-                        ...(record.payment_receipts_documents || {}),
-                        [documentType]: path
-                    };
-                    
-                    // Return updated record
-                    return {
-                        ...record,
-                        payment_receipts_documents: updatedDocuments
-                    };
-                }
-                return record;
-            }));
-            
-            toast({
-                title: 'Success',
-                description: `${documentType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())} uploaded successfully`,
-            });
-        } catch (error) {
-            console.error('Error in document upload:', error);
-            toast({
-                title: 'Error',
-                description: 'Failed to upload document',
-                variant: 'destructive'
-            });
-        }
-    }, [handleDocumentUpload, setPayrollRecords, toast]);
-
-    // Handle document delete with local state update
-    const handleDocumentDeleteWithLocalUpdate = useCallback(async (recordId: string, documentType: DocumentType) => {
-        try {
-            // Call the API to delete the document
-            await handleDocumentDelete(recordId, documentType);
-            
-            // Update local state directly instead of refetching
-            setPayrollRecords(prevRecords => prevRecords.map(record => {
-                if (record.id === recordId && record.payment_receipts_documents) {
-                    // Create a copy of the documents object
-                    const updatedDocuments = { ...record.payment_receipts_documents };
-                    // Set the specific document type to null
-                    updatedDocuments[documentType] = null;
-                    
-                    // Return updated record
-                    return {
-                        ...record,
-                        payment_receipts_documents: updatedDocuments
-                    };
-                }
-                return record;
-            }));
-            
-            toast({
-                title: 'Success',
-                description: `${documentType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())} deleted successfully`,
-            });
-        } catch (error) {
-            console.error('Error deleting document:', error);
-            toast({
-                title: 'Error',
-                description: 'Failed to delete document',
-                variant: 'destructive'
-            });
-        }
-    }, [handleDocumentDelete, setPayrollRecords, toast]);
-
-    // Handle status update with local state update
-    const handleStatusUpdateWithLocalUpdate = useCallback(async (recordId: string, statusUpdate: Partial<CompanyPayrollRecord['status']>) => {
-        try {
-            // Call the API to update the status
-            await handleStatusUpdate(recordId, statusUpdate);
-            
-            // Update local state directly instead of refetching
-            setPayrollRecords(prevRecords => prevRecords.map(record => {
-                if (record.id === recordId) {
-                    return {
-                        ...record,
-                        status: {
-                            ...(record.status || {}),
-                            ...statusUpdate
-                        }
-                    };
-                }
-                return record;
-            }));
-            
-            toast({
-                title: 'Success',
-                description: 'Status updated successfully',
-            });
-        } catch (error) {
-            console.error('Error updating status:', error);
-            toast({
-                title: 'Error',
-                description: 'Failed to update status',
-                variant: 'destructive'
-            });
-        }
-    }, [handleStatusUpdate, setPayrollRecords, toast]);
 
     // Filter records based on search term and selected categories
     const filteredRecords = useMemo(() => {
@@ -415,12 +425,6 @@ export default function PayslipPaymentReceipts({
             return matchesSearch && matchesCategory && matchesObligation;
         });
     }, [payrollRecords, searchTerm, selectedCategories, selectedObligations]);
-
-    // Initial data load is handled by the parent component using usePayrollCycle
-    useEffect(() => {
-        // No need to fetch data here as it's provided by props from the parent
-        // The parent component should call fetchOrCreatePayrollCycle from usePayrollCycle
-    }, []);
 
     return (
         <div className="space-y-4">
@@ -495,7 +499,8 @@ export default function PayslipPaymentReceipts({
                 records={filteredRecords}
                 onDocumentUpload={handleDocumentUploadWithFolder}
                 onDocumentDelete={handleDocumentDeleteWithType}
-                onStatusUpdate={handleStatusUpdate}
+                onStatusUpdate={handleStatusUpdateWithLocalUpdate}
+                onBatchDocumentUpload={handleBatchDocumentUploadWithFolder}
                 loading={loading}
                 setPayrollRecords={setPayrollRecords}
                 columnVisibility={columnVisibility}
@@ -507,6 +512,7 @@ export default function PayslipPaymentReceipts({
                     onClose={() => setBulkUploadDialogOpen(false)}
                     records={filteredRecords}
                     onDocumentUpload={handleDocumentUploadWithFolder}
+                    onBatchDocumentUpload={handleBatchDocumentUploadWithFolder}
                     setPayrollRecords={setPayrollRecords}
                     documentTypes={[
                         { value: 'paye_receipt', label: 'PAYE Receipt' },

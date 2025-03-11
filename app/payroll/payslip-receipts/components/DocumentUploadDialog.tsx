@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { useState } from 'react'
+import { useState, useCallback, useMemo, useRef } from 'react'
 import { Trash2, Upload, Loader2, Download, Eye, Image as ImageIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -38,35 +38,59 @@ import { PreviewExtractionDialog } from './PreviewExtractionDialog'
 interface DocumentUploadDialogProps {
     documentType: DocumentType;
     recordId: string;
-    onUpload: (file: File, docType?: DocumentType) => Promise<string | void>;
-    onDelete: (docType?: DocumentType) => Promise<void>;
+    onUpload: (file: File, documentType?: DocumentType) => Promise<string>;
+    onDelete: () => Promise<void>;
     existingDocument: string | null;
     label: string;
-    isNilFiling: boolean;
-    allDocuments?: {
+    isNilFiling?: boolean;
+    allDocuments: {
         type: DocumentType;
-        label: string;
-        status: 'missing' | 'uploaded';
-        path: string | null;
+        status: 'pending' | 'uploaded';
+        path?: string;
     }[];
     companyName: string;
+    onBatchDocumentUpload?: (recordId: string, documents: Array<{file: File, documentType: DocumentType}>, folderName: string) => Promise<any>;
 }
+
+// Batch size for processing multiple documents
+const BATCH_SIZE = 5;
+
+// Debounce function for performance optimization
+const debounce = (fn: Function, ms = 300) => {
+    let timeoutId: ReturnType<typeof setTimeout>;
+    return function (...args: any[]) {
+        clearTimeout(timeoutId);
+        timeoutId = setTimeout(() => fn(...args), ms);
+    };
+};
+
+// Document type labels
+const DOCUMENT_LABELS: Record<string, string> = {
+    paye_receipt: "PAYE Payment",
+    housing_levy_receipt: "Housing Levy",
+    nita_receipt: "NITA",
+    shif_receipt: "SHIF",
+    nssf_receipt: "NSSF",
+    // all_csv: "All CSV Files"
+};
+
 export function DocumentUploadDialog({
     documentType,
-    recordId, // Make sure this prop is here
+    recordId, 
     onUpload,
     onDelete,
     existingDocument,
     label,
     isNilFiling,
     allDocuments,
-    companyName
+    companyName,
+    onBatchDocumentUpload
 }: DocumentUploadDialogProps) {
     const [uploadDialog, setUploadDialog] = useState(false)
     const [confirmUploadDialog, setConfirmUploadDialog] = useState(false)
     const [confirmDeleteDialog, setConfirmDeleteDialog] = useState(false)
     const [selectedFile, setSelectedFile] = useState<File | null>(null)
-    const [selectedDocType, setSelectedDocType] = useState<DocumentType | undefined>()
+    const [selectedDocType, setSelectedDocType] = useState<DocumentType | undefined>(documentType as DocumentType)
     const [activeTab, setActiveTab] = useState("single")
     const [bulkFiles, setBulkFiles] = useState<Map<DocumentType, { file: File; label: string }>>(new Map());
     const [mpesaMessages, setMpesaMessages] = useState<Map<DocumentType, { message: string; label: string }>>(new Map())
@@ -94,7 +118,6 @@ export function DocumentUploadDialog({
 
     const { toast } = useToast()
 
-
     const [extractions, setExtractions] = useState<{
         amount: string | null;
         payment_date: string | null;
@@ -107,18 +130,17 @@ export function DocumentUploadDialog({
         bank_name: null
     });
 
-
     const convertImageToPdf = async (imageFile: File): Promise<File> => {
         try {
             // Validate input file
             if (!imageFile) {
                 throw new Error('No image file provided');
             }
-            
+
             if (!imageFile.type.startsWith('image/')) {
                 throw new Error('File is not an image');
             }
-            
+
             // Create a new canvas element
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
@@ -135,18 +157,18 @@ export function DocumentUploadDialog({
                 const timeout = setTimeout(() => {
                     reject(new Error('Image loading timed out'));
                 }, 30000); // 30 second timeout
-                
+
                 img.onload = () => {
                     clearTimeout(timeout);
                     resolve(null);
                 };
-                
+
                 img.onerror = () => {
                     clearTimeout(timeout);
                     URL.revokeObjectURL(imageUrl);
                     reject(new Error('Failed to load image'));
                 };
-                
+
                 img.src = imageUrl;
             });
 
@@ -160,7 +182,7 @@ export function DocumentUploadDialog({
             const MAX_DIMENSION = 4000; // Prevent memory issues with very large images
             let width = img.width;
             let height = img.height;
-            
+
             // Scale down if image is too large
             if (width > MAX_DIMENSION || height > MAX_DIMENSION) {
                 const aspectRatio = width / height;
@@ -172,7 +194,7 @@ export function DocumentUploadDialog({
                     width = Math.round(height * aspectRatio);
                 }
             }
-            
+
             canvas.width = width;
             canvas.height = height;
 
@@ -182,10 +204,10 @@ export function DocumentUploadDialog({
             try {
                 // Convert canvas to PDF using jsPDF
                 const { jsPDF } = await import('jspdf');
-                
+
                 // Determine orientation based on dimensions
                 const orientation = width > height ? 'l' : 'p';
-                
+
                 // Create PDF with appropriate dimensions
                 const pdf = new jsPDF({
                     orientation: orientation,
@@ -339,38 +361,32 @@ export function DocumentUploadDialog({
 
             let processedFile = file;
 
-            // Check if file is an image
-            if (file.type.startsWith('image/')) {
-                setIsConverting(true);
-                try {
-                    processedFile = await convertImageToPdf(file);
-                } catch (error) {
-                    console.error('Image conversion error:', error);
-                    toast({
-                        title: "Error",
-                        description: "Failed to convert image to PDF",
-                        variant: "destructive"
-                    });
-                    setIsConverting(false);
-                    return;
-                }
-                setIsConverting(false);
-            }
+            // Log exactly what document type we're associating
+            console.log(`Setting file for document type: ${docType} with label: ${label}`);
 
-            // Update the bulk files map with the new file
-            setBulkFiles(new Map(bulkFiles.set(docType, { file: processedFile, label })));
+            // Create a new Map to avoid reference issues
+            const newBulkFiles = new Map(bulkFiles);
+            newBulkFiles.set(docType, { file: processedFile, label });
+            setBulkFiles(newBulkFiles);
+
+            // Log the updated map for debugging
+            console.log('Updated bulk files map:',
+                Array.from(newBulkFiles.entries()).map(([key, value]) => {
+                    return { type: key, label: value.label, fileName: value.file.name };
+                })
+            );
 
             // Clear any MPESA message for this type
             const newMessages = new Map(mpesaMessages);
             newMessages.delete(docType);
             setMpesaMessages(newMessages);
-            
+
             toast({
                 title: "File Ready",
-                description: `${label} file prepared for upload`,
+                description: `${label} file prepared for upload (${docType})`,
             });
         } catch (error) {
-            console.error('Bulk file selection error:', error);
+            console.error('Error handling bulk file select:', error);
             toast({
                 title: "Error",
                 description: error instanceof Error ? error.message : "Failed to process file",
@@ -379,287 +395,260 @@ export function DocumentUploadDialog({
         }
     };
 
-    const handleConfirmUpload = async () => {
+    const handleUpload = async () => {
         if (!selectedFile) {
             toast({
-                title: "Error",
-                description: "No file selected",
-                variant: "destructive"
+                title: 'Error',
+                description: 'Please select a file to upload',
+                variant: 'destructive'
             });
             return;
         }
 
         setIsSubmitting(true);
-        try {
-            // Show upload in progress toast
-            toast({
-                title: "Uploading",
-                description: "Document upload in progress..."
-            });
-            
-            // Attempt to upload the file
-            await onUpload(selectedFile, selectedDocType);
-            
-            // Clear the state after successful upload
-            setConfirmUploadDialog(false);
-            setUploadDialog(false);
-            setSelectedFile(null);
-            setSelectedDocType(undefined);
-            
-            toast({
-                title: "Success",
-                description: "Document uploaded successfully",
-            });
-        } catch (error) {
-            console.error("Upload error:", error);
-            toast({
-                title: "Error",
-                description: error instanceof Error ? error.message : "Failed to upload document",
-                variant: "destructive"
-            });
-        } finally {
-            setIsSubmitting(false);
-        }
-    };
-
-    const handleBulkSubmit = async () => {
-        if (bulkFiles.size === 0 && mpesaMessages.size === 0) {
-            toast({
-                title: "No items to process",
-                description: "Please select files or enter MPESA messages to upload",
-                variant: "destructive"
-            });
-            return;
-        }
-
-        setIsSubmitting(true);
-        let successCount = 0;
-        let errorCount = 0;
-        const errors: string[] = [];
-        const totalItems = bulkFiles.size + mpesaMessages.size;
-        const processedDocuments: Array<{
-            file: File;
-            type: DocumentType;
-            label: string;
-            extractions: {
-                amount: string | null;
-                payment_date: string | null;
-                payment_mode: string | null;
-                bank_name: string | null;
-            };
-        }> = [];
-
-        // Show initial progress toast
-        toast({
-            title: "Processing Documents",
-            description: `Starting to process ${totalItems} document${totalItems > 1 ? 's' : ''}...`,
-        });
 
         try {
-            // Process MPESA messages first
-            if (mpesaMessages.size > 0) {
-                setIsConverting(true);
-                for (const [docType, { message, label }] of mpesaMessages.entries()) {
-                    try {
-                        // Validate MPESA message
-                        if (!message.trim()) {
-                            errorCount++;
-                            errors.push(`${docType}: MPESA message is empty`);
-                            continue;
-                        }
-
-                        const fileName = `MPESA-RECEIPT-${docType}-${new Date().getTime()}.pdf`;
-                        const pdfData = await mpesaMessageToPdf({
-                            message,
-                            fileName,
-                            receiptName: `${label} - ${companyName}`
-                        });
-
-                        if (!pdfData) {
-                            throw new Error('Failed to generate PDF');
-                        }
-
-                        const file = new File([pdfData], fileName, {
-                            type: 'application/pdf',
-                            lastModified: new Date().getTime()
-                        });
-
-                        // Update progress toast
-                        toast({
-                            title: "Processing",
-                            description: `Uploading ${label} document (${successCount + 1}/${totalItems})...`,
-                        });
-
-                        await onUpload(file, docType);
-                        successCount++;
-                        setBulkUploadProgress((successCount / totalItems) * 100);
-
-                        // Add to processed documents
-                        processedDocuments.push({
-                            file,
-                            type: docType,
-                            label,
-                            extractions: {
-                                amount: null,
-                                payment_date: null,
-                                payment_mode: null,
-                                bank_name: null
-                            }
-                        });
-                    } catch (error) {
-                        console.error(`Error processing MPESA message for ${docType}:`, error);
-                        errorCount++;
-                        errors.push(`${docType}: ${error instanceof Error ? error.message : 'Unknown error'}`);
-                    }
+            if (uploadType === 'file' && selectedFile) {
+                // CRITICAL FIX: Always use the documentType from props to ensure consistency
+                // This fixes the document type mismatch issue
+                if (process.env.NODE_ENV !== 'production') {
+                    console.log(`Uploading file with document type: ${documentType}`, selectedFile.name);
                 }
-                setIsConverting(false);
-            }
-
-            // Process files next
-            if (bulkFiles.size > 0) {
-                for (const [docType, { file, label }] of bulkFiles.entries()) {
-                    try {
-                        let processedFile = file;
-
-                        // Convert image to PDF if needed
-                        if (file.type.startsWith('image/')) {
-                            setIsConverting(true);
-                            try {
-                                processedFile = await convertImageToPdf(file);
-                            } catch (error) {
-                                console.error(`Error converting image for ${docType}:`, error);
-                                toast({
-                                    title: "Error",
-                                    description: "Failed to convert image to PDF",
-                                    variant: "destructive"
-                                });
-                                setIsConverting(false);
-                                errorCount++;
-                                errors.push(`${docType}: Failed to convert image to PDF`);
-                                continue;
-                            }
-                            setIsConverting(false);
-                        }
-
-                        // Update progress toast
-                        toast({
-                            title: "Processing",
-                            description: `Uploading ${label} document (${successCount + 1}/${totalItems})...`,
-                        });
-
-                        await onUpload(processedFile, docType);
-                        successCount++;
-                        setBulkUploadProgress((successCount / totalItems) * 100);
-
-                        // Add to processed documents
-                        processedDocuments.push({
-                            file: processedFile,
-                            type: docType,
-                            label,
-                            extractions: {
-                                amount: null,
-                                payment_date: null,
-                                payment_mode: null,
-                                bank_name: null
-                            }
-                        });
-                    } catch (error) {
-                        console.error(`Error processing file for ${docType}:`, error);
-                        errorCount++;
-                        errors.push(`${docType}: ${error instanceof Error ? error.message : 'Unknown error'}`);
-                    }
-                }
-            }
-
-            if (successCount > 0) {
-                toast({
-                    title: "Upload Complete",
-                    description: `Successfully processed ${successCount} item${successCount > 1 ? 's' : ''}${errorCount > 0 ? `. Failed to process ${errorCount} item${errorCount > 1 ? 's' : ''}.` : ''}`
-                });
-
-                if (errorCount === 0) {
-                    setBulkFiles(new Map());
-                    setMpesaMessages(new Map());
-                    setUploadDialog(false);
-
-                    // Show preview dialog with all processed documents
-                    if (processedDocuments.length > 0) {
-                        setProcessedDocs(processedDocuments);
-                        setPreviewDialog(true);
-                    }
-                } else {
-                    // If there were errors, show them
-                    console.error('Upload errors:', errors);
+                const result = await onUpload(selectedFile, documentType);
+                
+                if (result) {
                     toast({
-                        title: "Warning",
-                        description: `Some documents failed to upload. Check console for details.`,
-                        variant: "destructive"
+                        title: 'Success',
+                        description: 'Document uploaded successfully'
+                    });
+                    
+                    // Force refresh of component state
+                    setSelectedFile(null);
+                    setMpesaMessage('');
+                    setMpesaPreview('');
+                    setUploadDialog(false);
+                } else {
+                    toast({
+                        title: 'Error',
+                        description: 'Failed to upload document',
+                        variant: 'destructive'
                     });
                 }
-            } else {
-                toast({
-                    title: "Upload Failed",
-                    description: "Failed to process any items. Please try again.",
-                    variant: "destructive"
+            } else if (uploadType === 'mpesa' && mpesaMessage) {
+                // Process MPESA message to PDF
+                setIsConverting(true);
+                
+                // Generate filename with document type
+                const fileName = `MPESA-RECEIPT-${documentType}-${new Date().getTime()}.pdf`;
+                
+                const pdfData = await mpesaMessageToPdf({
+                    message: mpesaMessage,
+                    fileName: fileName,
+                    receiptName: `${label} - ${companyName}`
                 });
-            }
-
-            if (errors.length > 0) {
-                console.error('Processing errors:', errors);
+                
+                if (!pdfData) {
+                    throw new Error('Failed to generate PDF from MPESA message');
+                }
+                
+                // Create file object
+                const file = new File([pdfData], fileName, {
+                    type: 'application/pdf',
+                    lastModified: new Date().getTime()
+                });
+                
+                // CRITICAL FIX: Use the documentType from props for consistency
+                if (process.env.NODE_ENV !== 'production') {
+                    console.log(`Uploading MPESA PDF with document type: ${documentType}`, fileName);
+                }
+                const result = await onUpload(file, documentType);
+                
+                if (result) {
+                    toast({
+                        title: 'Success',
+                        description: 'Document uploaded successfully'
+                    });
+                    
+                    // Force refresh of component state
+                    setSelectedFile(null);
+                    setMpesaMessage('');
+                    setMpesaPreview('');
+                    setUploadDialog(false);
+                } else {
+                    toast({
+                        title: 'Error',
+                        description: 'Failed to upload document',
+                        variant: 'destructive'
+                    });
+                }
+                
+                setIsConverting(false);
             }
         } catch (error) {
-            console.error('Bulk processing error:', error);
+            console.error('Document upload error:', error);
+            
             toast({
-                title: "Error",
-                description: "Failed to complete the process",
-                variant: "destructive"
+                title: 'Error',
+                description: error instanceof Error ? error.message : 'Failed to upload document',
+                variant: 'destructive'
             });
         } finally {
             setIsSubmitting(false);
             setIsConverting(false);
-            setBulkUploadProgress(0);
         }
     };
 
-    const validateMpesaMessage = (message: string) => {
-        if (!message.trim()) {
-            return 'Please enter an MPESA message'
+    const getDocumentsForUpload = () => {
+        // Filter out only the documents that have files
+        const documents: Array<{file: File, documentType: DocumentType}> = [];
+        
+        // Add files from bulkFiles
+        for (const [docType, file] of bulkFiles.entries()) {
+            if (file) {
+                documents.push({
+                    file,
+                    documentType: docType as DocumentType
+                });
+            }
         }
-        return ''
-    }
+        
+        // Add files from MPESA messages (convert to PDF first)
+        for (const [docType, message] of mpesaMessages.entries()) {
+            if (message && message.trim()) {
+                try {
+                    // This will be handled separately in the bulk upload function
+                    // as we need to convert the message to PDF asynchronously
+                } catch (error) {
+                    console.error(`Error preparing MPESA message for ${docType}:`, error);
+                }
+            }
+        }
+        
+        return documents;
+    };
 
-    const handleMpesaMessageChange = (message: string, docType?: DocumentType) => {
-        const error = validateMpesaMessage(message)
-        setMpesaValidationError(error)
+    const handleBulkUpload = async () => {
+        if (bulkFiles.size === 0 && mpesaMessages.size === 0) {
+            toast({
+                title: 'No files selected',
+                description: 'Please select at least one file to upload',
+                variant: 'destructive'
+            });
+            return;
+        }
 
-        if (docType) {
-            if (message.trim()) {
-                setMpesaMessages(new Map(mpesaMessages.set(docType, {
-                    message,
-                    label: allDocuments?.find(d => d.type === docType)?.label || ''
-                })))
+        setIsSubmitting(true);
+
+        try {
+            // Process files
+            const documentsToUpload: Array<{file: File, documentType: DocumentType}> = [];
+
+            // Add regular files
+            for (const [docType, { file }] of bulkFiles.entries()) {
+                documentsToUpload.push({
+                    file,
+                    documentType: docType as DocumentType
+                });
+            }
+
+            // Process MPESA messages to PDF files
+            for (const [docType, { message, label }] of mpesaMessages.entries()) {
+                try {
+                    // Generate filename with document type
+                    const fileName = `MPESA-RECEIPT-${docType}-${new Date().getTime()}.pdf`;
+                    
+                    const pdfData = await mpesaMessageToPdf({
+                        message,
+                        fileName,
+                        receiptName: `${label} - ${companyName}`
+                    });
+                    
+                    if (pdfData) {
+                        documentsToUpload.push({
+                            file: pdfData,
+                            documentType: docType as DocumentType
+                        });
+                    }
+                } catch (error) {
+                    console.error(`Error converting MPESA message for ${docType}:`, error);
+                    toast({
+                        title: 'Error',
+                        description: `Failed to convert MPESA message for ${label}: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                        variant: 'destructive'
+                    });
+                }
+            }
+
+            if (documentsToUpload.length === 0) {
+                throw new Error('No valid documents to upload');
+            }
+
+            // Log the documents being uploaded for debugging
+            if (process.env.NODE_ENV !== 'production') {
+                console.log('Uploading documents:', documentsToUpload.map(d => `${d.documentType}: ${d.file.name}`));
+            }
+
+            // Call the batch upload function
+            const result = await onBatchDocumentUpload(documentsToUpload);
+            
+            if (result && result.success) {
+                toast({
+                    title: 'Success',
+                    description: `${documentsToUpload.length} document(s) uploaded successfully`
+                });
+                
+                // Clear state and close dialog
+                setBulkFiles(new Map());
+                setMpesaMessages(new Map());
+                setUploadDialog(false);
             } else {
-                const newMessages = new Map(mpesaMessages)
-                newMessages.delete(docType)
-                setMpesaMessages(newMessages)
+                throw new Error(result?.error || 'Failed to upload documents');
             }
-        } else {
-            setMpesaMessage(message)
+        } catch (error) {
+            console.error('Bulk upload error:', error);
+            toast({
+                title: 'Upload Failed',
+                description: error instanceof Error ? error.message : 'An unknown error occurred',
+                variant: 'destructive'
+            });
+        } finally {
+            setIsSubmitting(false);
         }
+    };
 
-        // Generate preview
-        if (message.trim()) {
-            try {
-                const { formatted } = formatMpesaMessage(message)
-                setMpesaPreview(formatted)
-            } catch (error) {
-                console.error('Error formatting MPESA message:', error)
-                setMpesaPreview(message) // Fallback to original message if formatting fails
+    const handleMpesaMessageChange = (message: string, docType: DocumentType, label: string) => {
+        try {
+            if (!message.trim()) {
+                // If message is empty, remove it from the map
+                const newMessages = new Map(mpesaMessages);
+                newMessages.delete(docType);
+                setMpesaMessages(newMessages);
+                return;
             }
-        } else {
-            setMpesaPreview('')
+
+            // Store the message with its document type
+            const newMessages = new Map(mpesaMessages);
+            newMessages.set(docType, { message, label });
+            setMpesaMessages(newMessages);
+
+            // Clear any file for this document type
+            const newFiles = new Map(bulkFiles);
+            newFiles.delete(docType);
+            setBulkFiles(newFiles);
+
+            toast({
+                title: "MPESA Message Ready",
+                description: `${label} message prepared for upload (${docType})`,
+            });
+        } catch (error) {
+            console.error('Error handling MPESA message:', error);
+            toast({
+                title: "Error",
+                description: error instanceof Error ? error.message : "Failed to process MPESA message",
+                variant: "destructive"
+            });
         }
-    }
+    };
 
     const handleMpesaUpload = async () => {
         const error = validateMpesaMessage(mpesaMessage)
@@ -818,7 +807,7 @@ export function DocumentUploadDialog({
 
     const handleDelete = async () => {
         try {
-            await onDelete(selectedDocType)
+            await onDelete()
             setConfirmDeleteDialog(false)
             toast({
                 title: "Success",
@@ -843,7 +832,7 @@ export function DocumentUploadDialog({
                 });
                 return;
             }
-            
+
             const { data, error } = await supabase.storage
                 .from('Payroll-Cycle')
                 .download(path);
@@ -884,7 +873,7 @@ export function DocumentUploadDialog({
                 });
                 return;
             }
-            
+
             setViewerOpen(true)
         } catch (error) {
             console.error('Error viewing document:', error)
@@ -895,6 +884,53 @@ export function DocumentUploadDialog({
             })
         }
     }
+
+    // Use refs for tracking progress to avoid unnecessary re-renders
+    const progressRef = useRef(0);
+    const processedCountRef = useRef(0);
+    const totalItemsRef = useRef(0);
+
+    // Create a debounced function for updating progress
+    const updateProgressDebounced = useCallback(
+        debounce((progress: number) => {
+            setBulkUploadProgress(progress);
+        }, 100),
+        [setBulkUploadProgress]
+    );
+
+    // Memoize document filtering for performance
+    const missingDocuments = useMemo(() => {
+        if (!allDocuments) return [];
+        
+        // Filter for documents that are pending (not uploaded)
+        const pendingDocs = allDocuments.filter(doc => doc.status === 'pending');
+        
+        // Add labels to the documents for display
+        return pendingDocs.map(doc => ({
+            ...doc,
+            label: DOCUMENT_LABELS[doc.type] || 'Unknown Document'
+        }));
+    }, [allDocuments]);
+    
+    // Get the count of uploaded documents
+    const uploadedDocumentCount = useMemo(() => {
+        if (!allDocuments) return 0;
+        return allDocuments.filter(doc => doc.status === 'uploaded').length;
+    }, [allDocuments]);
+
+    // Generate email content with document list
+    const emailContent = useMemo(() => {
+        // Get list of ready documents
+        const readyDocs = allDocuments
+            .filter(doc => doc.status === 'uploaded')
+            .map(doc => DOCUMENT_LABELS[doc.type] || 'Unknown Document')
+            .filter(Boolean); // Filter out any undefined values
+        
+        return `Payment Receipts for ${companyName}
+The following documents are attached:
+
+${readyDocs.length > 0 ? readyDocs.join('\n') : 'No documents are ready to send.'}`;
+    }, [allDocuments, companyName]);
 
     if (isNilFiling) {
         return (
@@ -1075,71 +1111,86 @@ export function DocumentUploadDialog({
                                                 </svg>
                                                 Document Management
                                             </h4>
+                                            
+                                            {/* Document type header row */}
+                                            <div className="grid grid-cols-12 gap-2 mb-2 pb-2 border-b">
+                                                <div className="col-span-3 font-medium text-sm text-gray-700">Document Type</div>
+                                                <div className="col-span-4 font-medium text-sm text-gray-700">File Upload</div>
+                                                <div className="col-span-5 font-medium text-sm text-gray-700">MPESA Message</div>
+                                            </div>
+                                            
                                             <div className="divide-y">
                                                 {allDocuments.map((doc) => (
                                                     <div key={doc.type} className="py-3 first:pt-0 last:pb-0">
-                                                        <div className="flex items-center justify-between gap-4">
-                                                            <div className="min-w-[150px]">
-                                                                <h4 className="font-medium text-sm">{doc.label}</h4>
-                                                                <p className="text-sm text-muted-foreground">
-                                                                    <span className={doc.status === 'missing' ? 'text-yellow-500' : 'text-green-500'}>
-                                                                        {doc.status === 'missing' ? 'Missing' : 'Uploaded'}
-                                                                    </span>
-                                                                    {(bulkFiles.has(doc.type) || mpesaMessages.has(doc.type)) && (
-                                                                        <span className="ml-2 text-blue-500">
-                                                                            (New {bulkFiles.has(doc.type) ? 'file' : 'message'} selected)
-                                                                        </span>
+                                                        {/* Document type and status */}
+                                                        <div className="grid grid-cols-12 gap-2 items-center">
+                                                            <div className="col-span-3">
+                                                                <div className="flex items-center gap-1">
+                                                                    {doc.status === 'uploaded' ? (
+                                                                        <Badge className="bg-green-500">Uploaded</Badge>
+                                                                    ) : (
+                                                                        <Badge className="bg-yellow-500">Pending</Badge>
                                                                     )}
-                                                                </p>
+                                                                </div>
+                                                                <h4 className="font-medium text-sm mt-1">{DOCUMENT_LABELS[doc.type] || doc.label}</h4>
+                                                                {(bulkFiles.has(doc.type) || mpesaMessages.has(doc.type)) && (
+                                                                    <p className="text-xs text-blue-500 mt-1">
+                                                                        New {bulkFiles.has(doc.type) ? 'file' : 'message'} selected
+                                                                    </p>
+                                                                )}
                                                             </div>
-                                                            <div className="flex gap-2 items-center flex-1">
-                                                                <div className="flex gap-2 flex-1">
-                                                                    <Input
-                                                                        type="file"
-                                                                        className="flex-1"
-                                                                        accept={doc.type.includes('pdf') ? '.pdf' : '.pdf,.zip,.jpg,.jpeg,.png'}
-                                                                        onChange={(e) => {
-                                                                            const file = e.target.files?.[0];
-                                                                            if (file) {
-                                                                                handleBulkFileSelect(file, doc.type, doc.label);
-                                                                                // Clear any MPESA message for this type
-                                                                                const newMessages = new Map(mpesaMessages);
-                                                                                newMessages.delete(doc.type);
-                                                                                setMpesaMessages(newMessages);
-                                                                            }
-                                                                        }}
-                                                                    />
+                                                            
+                                                            {/* File upload */}
+                                                            <div className="col-span-4">
+                                                                <Input
+                                                                    type="file"
+                                                                    className="flex-1"
+                                                                    accept={doc.type.includes('pdf') ? '.pdf' : '.pdf,.zip,.jpg,.jpeg,.png'}
+                                                                    onChange={(e) => {
+                                                                        const file = e.target.files?.[0];
+                                                                        if (file) {
+                                                                            console.log(`File selected for ${doc.label} with type ${doc.type}:`, file.name);
+                                                                            handleBulkFileSelect(file, doc.type, doc.label);
+                                                                            // Clear any MPESA message for this type
+                                                                            const newMessages = new Map(mpesaMessages);
+                                                                            newMessages.delete(doc.type);
+                                                                            setMpesaMessages(newMessages);
+                                                                        }
+                                                                    }}
+                                                                />
+                                                            </div>
+                                                            
+                                                            {/* MPESA message */}
+                                                            <div className="col-span-5">
+                                                                <div className="flex gap-2 items-center">
                                                                     <Textarea
                                                                         placeholder="Paste MPESA message..."
                                                                         className="flex-1 h-[38px] min-h-[38px]"
                                                                         value={mpesaMessages.get(doc.type)?.message || ''}
-                                                                        onChange={(e) => handleMpesaMessageChange(e.target.value, doc.type)}
+                                                                        onChange={(e) => {
+                                                                            const message = e.target.value;
+                                                                            const newMessages = new Map(mpesaMessages);
+                                                                            
+                                                                            if (message.trim()) {
+                                                                                newMessages.set(doc.type, {
+                                                                                    message,
+                                                                                    label: doc.label
+                                                                                });
+                                                                            } else {
+                                                                                newMessages.delete(doc.type);
+                                                                            }
+                                                                            
+                                                                            setMpesaMessages(newMessages);
+                                                                            
+                                                                            // Clear any file for this type
+                                                                            if (message.trim()) {
+                                                                                const newFiles = new Map(bulkFiles);
+                                                                                newFiles.delete(doc.type);
+                                                                                setBulkFiles(newFiles);
+                                                                            }
+                                                                        }}
                                                                     />
                                                                 </div>
-                                                                {doc.path && (
-                                                                    <div className="flex gap-2">
-                                                                        <Button
-                                                                            size="sm"
-                                                                            variant="outline"
-                                                                            className="h-7 px-2 gap-1"
-                                                                            onClick={() => handleDownload(doc.path!)}
-                                                                        >
-                                                                            <Download className="h-3 w-3" />
-                                                                            <span className="text-xs">Download</span>
-                                                                        </Button>
-                                                                        <Button
-                                                                            size="sm"
-                                                                            variant="destructive"
-                                                                            className="h-7 px-2"
-                                                                            onClick={() => {
-                                                                                setSelectedDocType(doc.type);
-                                                                                setConfirmDeleteDialog(true);
-                                                                            }}
-                                                                        >
-                                                                            <Trash2 className="h-3 w-3" />
-                                                                        </Button>
-                                                                    </div>
-                                                                )}
                                                             </div>
                                                         </div>
                                                     </div>
@@ -1149,7 +1200,7 @@ export function DocumentUploadDialog({
                                         <div className="flex justify-end gap-2">
                                             {(mpesaMessages.size > 0 || bulkFiles.size > 0) && (
                                                 <Button
-                                                    onClick={handleBulkSubmit}
+                                                    onClick={handleBulkUpload}
                                                     disabled={isSubmitting || isConverting}
                                                     className="bg-blue-500 hover:bg-blue-600"
                                                 >
@@ -1221,7 +1272,7 @@ export function DocumentUploadDialog({
                         <AlertDialogCancel onClick={() => setSelectedFile(null)}>
                             Cancel
                         </AlertDialogCancel>
-                        <AlertDialogAction onClick={handleConfirmUpload}>
+                        <AlertDialogAction onClick={handleUpload}>
                             Upload
                         </AlertDialogAction>
                     </AlertDialogFooter>
