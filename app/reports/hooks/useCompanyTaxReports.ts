@@ -101,10 +101,10 @@ const fetchCompanies = async (searchQuery: string) => {
       company_name,
       acc_client_effective_from,
       acc_client_effective_to,
-      audit_tax_client_effective_from,
-      audit_tax_client_effective_to,
-      cps_sheria_client_effective_from,
-      cps_sheria_client_effective_to,
+      audit_client_effective_from,
+      audit_client_effective_to,
+      sheria_client_effective_from,
+      sheria_client_effective_to,
       imm_client_effective_from,
       imm_client_effective_to
     `)
@@ -123,10 +123,10 @@ const fetchCompanies = async (searchQuery: string) => {
     name: company.company_name,
     acc_client_effective_from: company.acc_client_effective_from,
     acc_client_effective_to: company.acc_client_effective_to,
-    audit_tax_client_effective_from: company.audit_tax_client_effective_from,
-    audit_tax_client_effective_to: company.audit_tax_client_effective_to,
-    cps_sheria_client_effective_from: company.cps_sheria_client_effective_from,
-    cps_sheria_client_effective_to: company.cps_sheria_client_effective_to,
+    audit_tax_client_effective_from: company.audit_client_effective_from,
+    audit_tax_client_effective_to: company.audit_client_effective_to,
+    cps_sheria_client_effective_from: company.sheria_client_effective_from,
+    cps_sheria_client_effective_to: company.sheria_client_effective_to,
     imm_client_effective_from: company.imm_client_effective_from,
     imm_client_effective_to: company.imm_client_effective_to
   })) || [];

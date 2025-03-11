@@ -124,6 +124,7 @@ export function useCompanyFilters(companies: Company[]) {
     setSelectedFilters,
     filteredCompanies,
     getFilters,
-    handleFilterChange
+    handleFilterChange,
+    isDateInRange
   };
 }
