@@ -1,13 +1,18 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
     DropdownMenu,
     DropdownMenuContent,
     DropdownMenuLabel,
     DropdownMenuSeparator,
     DropdownMenuTrigger,
+    DropdownMenuGroup,
+    DropdownMenuSub,
+    DropdownMenuSubTrigger,
+    DropdownMenuSubContent,
+    DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
-import { Filter } from "lucide-react";
+import { Filter, ChevronRight } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 
@@ -16,6 +21,15 @@ export type ServiceCategory = {
     key: string;
     selected: boolean;
     isActive: boolean;
+};
+
+// Define the structure for category status
+export type CategoryStatus = 'all' | 'active' | 'inactive';
+
+// Define the structure for the selected categories with status
+export type SelectedCategoryWithStatus = {
+    category: string;
+    status: CategoryStatus;
 };
 
 const isDateInRange = (currentDate: Date, fromDate?: string | null, toDate?: string | null): boolean => {
@@ -59,6 +73,14 @@ interface CategoryFiltersProps {
 
 export function CategoryFilters({ companyDates = {}, onFilterChange, selectedCategories }: CategoryFiltersProps) {
     const currentDate = new Date();
+    
+    // Keep track of selected status for each category
+    const [categoryStatuses, setCategoryStatuses] = useState<Record<string, CategoryStatus>>({
+        acc: 'active',
+        audit_tax: 'active',
+        cps_sheria: 'active',
+        imm: 'active'
+    });
     
     const getFilters = useCallback((): ServiceCategory[] => {
         const categories = [
@@ -113,6 +135,7 @@ export function CategoryFilters({ companyDates = {}, onFilterChange, selectedCat
         return categories;
     }, [companyDates, currentDate, selectedCategories]);
 
+    // Handle main category selection
     const handleFilterChange = (key: string) => {
         if (key === 'all') {
             // If All is selected, clear all filters
@@ -132,8 +155,35 @@ export function CategoryFilters({ companyDates = {}, onFilterChange, selectedCat
         onFilterChange(newSelectedCategories);
     };
 
+    // Handle status selection for a category
+    const handleStatusChange = (category: string, status: CategoryStatus) => {
+        setCategoryStatuses(prev => ({
+            ...prev,
+            [category]: status
+        }));
+        
+        // Update the selected categories based on the new status
+        let newSelectedCategories = [...selectedCategories];
+        
+        // First remove the category if it exists
+        newSelectedCategories = newSelectedCategories.filter(cat => cat !== category);
+        
+        // Then add it back if the status isn't 'none'
+        if (status !== 'all') {
+            newSelectedCategories.push(category);
+        }
+        
+        onFilterChange(newSelectedCategories);
+    };
+
     const filters = getFilters();
     const selectedCount = selectedCategories.length;
+
+    // Get status badge text
+    const getStatusBadgeText = (category: string): string => {
+        const status = categoryStatuses[category];
+        return status.charAt(0).toUpperCase() + status.slice(1);
+    };
 
     return (
         <DropdownMenu>
@@ -148,32 +198,97 @@ export function CategoryFilters({ companyDates = {}, onFilterChange, selectedCat
                     )}
                 </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
+            <DropdownMenuContent align="end" className="w-64">
                 <DropdownMenuLabel className="text-xs font-medium">Service Categories</DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <div className="p-2">
-                    {filters.map((filter) => (
-                        <label
-                            key={filter.key}
-                            className="flex items-center space-x-2 mb-2 last:mb-0 cursor-pointer"
-                        >
-                            <Checkbox
-                                checked={filter.key === 'all' ? selectedCategories.length === 0 : filter.selected}
-                                disabled={!filter.isActive && filter.key !== 'all'}
-                                onCheckedChange={() => handleFilterChange(filter.key)}
-                                className="h-4 w-4"
-                            />
-                            <div className="flex flex-col">
-                                <div className="flex items-center gap-2">
-                                    <span className="text-sm">{filter.label}</span>
-                                    {!filter.isActive && filter.key !== 'all' && (
-                                        <Badge variant="outline" className="text-xs">
-                                            Inactive
-                                        </Badge>
-                                    )}
-                                </div>
-                            </div>
-                        </label>
+                    {/* All option */}
+                    <label
+                        className="flex items-center space-x-2 mb-3 cursor-pointer"
+                    >
+                        <Checkbox
+                            checked={selectedCategories.length === 0}
+                            onCheckedChange={() => handleFilterChange('all')}
+                            className="h-4 w-4"
+                        />
+                        <span className="text-sm font-medium">All Categories</span>
+                    </label>
+                    
+                    <DropdownMenuSeparator className="my-2" />
+                    
+                    {/* Category options with nested status filters */}
+                    {filters.filter(f => f.key !== 'all').map((filter) => (
+                        <DropdownMenuGroup key={filter.key}>
+                            <DropdownMenuSub>
+                                <DropdownMenuSubTrigger className="px-0 py-1.5 cursor-pointer">
+                                    <div className="flex items-center space-x-2 w-full">
+                                        <Checkbox
+                                            checked={selectedCategories.includes(filter.key)}
+                                            disabled={!filter.isActive}
+                                            onCheckedChange={(checked) => {
+                                                if (checked) {
+                                                    handleFilterChange(filter.key);
+                                                } else {
+                                                    handleFilterChange(filter.key);
+                                                }
+                                            }}
+                                            className="h-4 w-4"
+                                            onClick={(e) => e.stopPropagation()}
+                                        />
+                                        <div className="flex flex-1 items-center justify-between">
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-sm">{filter.label}</span>
+                                                {!filter.isActive && (
+                                                    <Badge variant="outline" className="text-xs">
+                                                        Inactive
+                                                    </Badge>
+                                                )}
+                                            </div>
+                                            {selectedCategories.includes(filter.key) && (
+                                                <Badge variant="secondary" className="text-xs mr-2">
+                                                    {getStatusBadgeText(filter.key)}
+                                                </Badge>
+                                            )}
+                                        </div>
+                                    </div>
+                                </DropdownMenuSubTrigger>
+                                <DropdownMenuSubContent className="w-36">
+                                    <DropdownMenuItem 
+                                        className="cursor-pointer"
+                                        onClick={() => handleStatusChange(filter.key, 'all')}
+                                    >
+                                        <Checkbox
+                                            checked={categoryStatuses[filter.key] === 'all'}
+                                            className="h-4 w-4 mr-2"
+                                            onClick={(e) => e.stopPropagation()}
+                                        />
+                                        <span>All</span>
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem 
+                                        className="cursor-pointer"
+                                        onClick={() => handleStatusChange(filter.key, 'active')}
+                                    >
+                                        <Checkbox
+                                            checked={categoryStatuses[filter.key] === 'active'}
+                                            className="h-4 w-4 mr-2"
+                                            onClick={(e) => e.stopPropagation()}
+                                        />
+                                        <span>Active Only</span>
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem 
+                                        className="cursor-pointer"
+                                        onClick={() => handleStatusChange(filter.key, 'inactive')}
+                                    >
+                                        <Checkbox
+                                            checked={categoryStatuses[filter.key] === 'inactive'}
+                                            className="h-4 w-4 mr-2"
+                                            onClick={(e) => e.stopPropagation()}
+                                        />
+                                        <span>Inactive Only</span>
+                                    </DropdownMenuItem>
+                                </DropdownMenuSubContent>
+                            </DropdownMenuSub>
+                        </DropdownMenuGroup>
                     ))}
                 </div>
             </DropdownMenuContent>

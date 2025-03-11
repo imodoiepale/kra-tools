@@ -154,7 +154,8 @@ export function PayrollTable({
                         <TableHead className="text-white font-semibold border-b" scope="col">#</TableHead>
                         <TableHead className="text-white font-semibold" scope="col">Company Name</TableHead>
                         <TableHead className="text-white font-semibold" scope="col">Obligation Date</TableHead>
-                        <TableHead className="text-white font-semibold" scope="col">No. of Emp</TableHead>
+                        <TableHead className="text-white font-semibold" scope="col">No. of Emp(Wingu)</TableHead>
+                        <TableHead className="text-white font-semibold" scope="col">No. of Emp(BCL)</TableHead>
                         <TableHead className="text-white font-semibold" scope="col">Finalization Date</TableHead>
                         <TableHead className="text-white font-semibold" scope="col">PAYE (CSV)</TableHead>
                         <TableHead className="text-white font-semibold" scope="col">HSLEVY (CSV)</TableHead>

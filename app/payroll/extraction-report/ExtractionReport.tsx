@@ -8,6 +8,7 @@ import { CompanyPayrollRecord, DocumentType } from '../types'
 import { ExtractionReportTable } from './components/ExtractionReportTable'
 import { MonthYearSelector } from '../components/MonthYearSelector'
 import { CategoryFilters } from '../components/CategoryFilters'
+import { ObligationFilters } from '../components/ObligationFilters'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useToast } from '@/hooks/use-toast'
@@ -77,6 +78,11 @@ const COLUMN_TYPES = [
         label: 'Payment Date',
         width: 'min-w-[80px]'
     },
+    {
+        id: 'bank_name',
+        label: 'Bank Name',
+        width: 'min-w-[80px]'
+    }
 ];
 
 interface ExtractionReportProps {
@@ -112,9 +118,14 @@ export default function ExtractionReport({
     const [selectedDocTypes, setSelectedDocTypes] = useState<string[]>(DOCUMENT_TYPES.map(doc => doc.id));
     const [selectedColumns, setSelectedColumns] = useState<string[]>(COLUMN_TYPES.map(col => col.id));
     const [selectedCategories, setSelectedCategories] = useState<string[]>(['acc']);
+    const [selectedObligations, setSelectedObligations] = useState<string[]>(['active']);
 
     const handleFilterChange = useCallback((categories: string[]) => {
         setSelectedCategories(categories);
+    }, []);
+
+    const handleObligationFilterChange = useCallback((obligations: string[]) => {
+        setSelectedObligations(obligations);
     }, []);
 
     const handleDocumentUploadWithFolder = (recordId: string, file: File, documentType: DocumentType) => {
@@ -141,29 +152,84 @@ export default function ExtractionReport({
 
             const matchesSearch = record.company.company_name?.toLowerCase().includes(searchTerm.toLowerCase()) ?? false;
             
-            // If no categories are selected (All is selected), show all records
-            if (selectedCategories.length === 0) return matchesSearch;
-            
-            // Check if record matches any of the selected categories
-            const matchesCategory = selectedCategories.some(category => {
-                const currentDate = new Date();
-                switch (category) {
-                    case 'acc':
-                        return isDateInRange(currentDate, record.company.acc_client_effective_from, record.company.acc_client_effective_to);
-                    case 'audit_tax':
-                        return isDateInRange(currentDate, record.company.audit_tax_client_effective_from, record.company.audit_tax_client_effective_to);
-                    case 'cps_sheria':
-                        return isDateInRange(currentDate, record.company.cps_sheria_client_effective_from, record.company.cps_sheria_client_effective_to);
-                    case 'imm':
-                        return isDateInRange(currentDate, record.company.imm_client_effective_from, record.company.imm_client_effective_to);
-                    default:
-                        return false;
-                }
-            });
+            // Check category filters
+            let matchesCategory = true;
+            if (selectedCategories.length > 0) {
+                matchesCategory = selectedCategories.some(category => {
+                    const currentDate = new Date();
+                    
+                    // Extract the base category without status suffix
+                    const baseCategory = category.split('_status_')[0];
+                    const status = category.includes('_status_') 
+                        ? category.split('_status_')[1] as 'active' | 'inactive'
+                        : 'active'; // Default to active status if not specified
+                    
+                    let isInCategory = false;
+                    let isActive = false;
+                    
+                    switch (baseCategory) {
+                        case 'acc':
+                            isInCategory = true;
+                            isActive = isDateInRange(currentDate, record.company.acc_client_effective_from, record.company.acc_client_effective_to);
+                            break;
+                        case 'audit_tax':
+                            isInCategory = true;
+                            isActive = isDateInRange(currentDate, record.company.audit_tax_client_effective_from, record.company.audit_tax_client_effective_to);
+                            break;
+                        case 'cps_sheria':
+                            isInCategory = true;
+                            isActive = isDateInRange(currentDate, record.company.cps_sheria_client_effective_from, record.company.cps_sheria_client_effective_to);
+                            break;
+                        case 'imm':
+                            isInCategory = true;
+                            isActive = isDateInRange(currentDate, record.company.imm_client_effective_from, record.company.imm_client_effective_to);
+                            break;
+                        default:
+                            return false;
+                    }
+                    
+                    // If status is 'all', return whether it's in the category
+                    if (status === 'all') {
+                        return isInCategory;
+                    }
+                    
+                    // Otherwise, check if the active status matches the requested status
+                    return isInCategory && ((status === 'active' && isActive) || (status === 'inactive' && !isActive));
+                });
+            }
 
-            return matchesSearch && matchesCategory;
+            // Check obligation filters
+            let matchesObligation = true;
+            if (selectedObligations.length > 0) {
+                const obligationStatus = record.pin_details?.paye_status?.toLowerCase() || '';
+                const effectiveFrom = record.pin_details?.paye_effective_from || '';
+
+                // Determine specific status types
+                const isCancelled = obligationStatus === 'cancelled';
+                const isDormant = obligationStatus === 'dormant';
+                const isNoObligation = effectiveFrom.toLowerCase().includes('no obligation');
+                const isMissing = !effectiveFrom || effectiveFrom.toLowerCase().includes('missing');
+
+                // Explicitly check if it has an active date (not any of the special cases)
+                const hasActiveDate = effectiveFrom &&
+                    !isNoObligation &&
+                    !isMissing &&
+                    !isCancelled &&
+                    !isDormant;
+
+                // Match against selected filters
+                matchesObligation = selectedObligations.length === 0 || (
+                    (selectedObligations.includes('active') && hasActiveDate) ||
+                    (selectedObligations.includes('cancelled') && isCancelled) ||
+                    (selectedObligations.includes('dormant') && isDormant) ||
+                    (selectedObligations.includes('no_obligation') && isNoObligation) ||
+                    (selectedObligations.includes('missing') && isMissing)
+                );
+            }
+
+            return matchesSearch && matchesCategory && matchesObligation;
         });
-    }, [payrollRecords, searchTerm, selectedCategories]);
+    }, [payrollRecords, searchTerm, selectedCategories, selectedObligations]);
 
     const [extractAllDialog, setExtractAllDialog] = useState(false)
 
@@ -176,19 +242,24 @@ export default function ExtractionReport({
                     onYearChange={setSelectedYear}
                     onMonthChange={setSelectedMonth}
                 />
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2">
                     <Input
                         placeholder="Search companies..."
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                         className="max-w-sm"
                     />
+                    <ObligationFilters
+                        payrollRecords={payrollRecords}
+                        onFilterChange={handleObligationFilterChange}
+                        selectedObligations={selectedObligations}
+                    />
                     <CategoryFilters
                         companyDates={filteredRecords[0]?.company}
                         onFilterChange={handleFilterChange}
                         selectedCategories={selectedCategories}
                     />
-                    <div className="flex gap-4">
+                    <div className="flex gap-2">
                         <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                                 <Button variant="outline">Select TAX</Button>

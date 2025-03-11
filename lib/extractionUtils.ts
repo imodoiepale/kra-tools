@@ -528,7 +528,7 @@ export const performExtraction = async (
         Extract the following information from this ${documentType}:
         ${fieldPrompts}
 
-         sTRICTLY Date in format of DD/MM/YYYY
+        Strictly Date in format of DD/MM/YYYY
 
         Mpesa patterns:${MPESA_PATTERNS.join(', ')}
 
@@ -790,6 +790,8 @@ export const performBatchExtraction = async (
       const prompt = `
         Extract information from multiple documents. For each document, identify the type and extract:
         ${fieldPrompts}
+
+        Strictly Date in format of DD/MM/YYYY
 
         Mpesa patterns: ${MPESA_PATTERNS.join(', ')}
         Bank Transfer Patterns: ${BANK_PATTERNS.join(', ')}

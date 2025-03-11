@@ -137,6 +137,17 @@ export function DocumentViewer({
         errors: []
     })
 
+    // Helper to format amount without decimals
+    const formatDisplayAmount = (amount: string | null | undefined): string => {
+        if (!amount) return '';
+        
+        // Convert to number and format with commas, no decimals
+        const numAmount = parseFloat(amount.replace(/,/g, ''));
+        if (isNaN(numAmount)) return amount;
+        
+        return Math.round(numAmount).toLocaleString('en-US');
+    };
+
     // Fetch existing extractions
     useEffect(() => {
         const fetchExistingExtractions = async () => {
@@ -245,34 +256,103 @@ export function DocumentViewer({
     }
 
     const handleExtractionUpdate = (field: keyof Extraction, value: string) => {
+        let formattedValue = value;
+        
+        // Format date to DD/MM/YYYY if it's a payment_date field
+        if (field === 'payment_date' && value) {
+            try {
+                const date = new Date(value);
+                if (!isNaN(date.getTime())) {
+                    const day = date.getDate().toString().padStart(2, '0');
+                    const month = (date.getMonth() + 1).toString().padStart(2, '0');
+                    const year = date.getFullYear();
+                    formattedValue = `${day}/${month}/${year}`;
+                }
+            } catch (error) {
+                console.error('Error formatting date:', error);
+            }
+        }
+        
+        // Automatically update bank_name when payment_mode changes to/from Mpesa
+        if (field === 'payment_mode') {
+            const updatedExtractions = {
+                ...localExtractions,
+                [field]: formattedValue
+            };
+            
+            // If payment mode is set to Mpesa, set bank_name to N/A
+            if (formattedValue === PAYMENT_MODES.MPESA) {
+                updatedExtractions.bank_name = 'N/A';
+            } else if (localExtractions.bank_name === 'N/A' && localExtractions.payment_mode === PAYMENT_MODES.MPESA) {
+                // If changing from Mpesa to something else, clear the N/A bank name
+                updatedExtractions.bank_name = '';
+            }
+            
+            setLocalExtractions(updatedExtractions);
+            setValidation(validateExtraction(updatedExtractions));
+            onExtractionsUpdate?.(updatedExtractions);
+            return;
+        }
+        
+        // For other fields, proceed as normal
         const updatedExtractions = {
             ...localExtractions,
-            [field]: value
-        }
-
-        if (field === 'payment_mode' && value === 'Pay Bill') {
-            updatedExtractions.payment_mode = PAYMENT_MODES.MPESA
-        }
-
-        setLocalExtractions(updatedExtractions)
-        setValidation(validateExtraction(updatedExtractions))
-        onExtractionsUpdate?.(updatedExtractions)
+            [field]: formattedValue
+        };
+        
+        setLocalExtractions(updatedExtractions);
+        setValidation(validateExtraction(updatedExtractions));
+        onExtractionsUpdate?.(updatedExtractions);
     }
 
-    const handleSave = async () => {
-        if (!localExtractions.amount) {
-            toast.error('Amount is required')
-            return
+    const completeExtraction = async () => {
+        if (!validation.isValid) {
+            if (!window.confirm('There are validation issues. Continue anyway?')) {
+                return;
+            }
+        }
+        
+        // Format date in DD/MM/YYYY format if needed
+        let finalExtractions = { ...localExtractions };
+        
+        if (finalExtractions.payment_date && !/^\d{2}\/\d{2}\/\d{4}$/.test(finalExtractions.payment_date)) {
+            try {
+                const date = new Date(finalExtractions.payment_date);
+                if (!isNaN(date.getTime())) {
+                    const day = date.getDate().toString().padStart(2, '0');
+                    const month = (date.getMonth() + 1).toString().padStart(2, '0');
+                    const year = date.getFullYear();
+                    finalExtractions.payment_date = `${day}/${month}/${year}`;
+                }
+            } catch (error) {
+                console.error('Error formatting date during save:', error);
+            }
+        }
+        
+        // Ensure bank_name is N/A for Mpesa
+        if (finalExtractions.payment_mode === PAYMENT_MODES.MPESA) {
+            finalExtractions.bank_name = 'N/A';
+        }
+        
+        // Call the update callback
+        onExtractionsUpdate?.(finalExtractions);
+        
+        // Show success message
+        toast.success('Extraction data updated');
+    };
+
+    const saveExtractions = async () => {
+        if (!validation.isValid) {
+            if (!window.confirm(`There are validation issues with the extractions. Continue anyway?`)) {
+                return
+            }
         }
 
+        setIsSaving(true)
+
         try {
-            setIsSaving(true)
-
-            if (!documentType || !recordId) {
-                throw new Error('Missing required parameters')
-            }
-
-            const { data: existingRecord, error: fetchError } = await supabase
+            // Fetch current record
+            const { data: record, error: fetchError } = await supabase
                 .from('company_payroll_records')
                 .select('payment_receipts_extractions')
                 .eq('id', recordId)
@@ -280,23 +360,22 @@ export function DocumentViewer({
 
             if (fetchError) throw fetchError
 
-            const docType = documentType.endsWith('_receipt') ? documentType : `${documentType}_receipt`
-
-            const existingExtractions = existingRecord?.payment_receipts_extractions?.[docType]
-            if (JSON.stringify(existingExtractions) === JSON.stringify(localExtractions)) {
-                toast.info('No changes detected')
-                return
-            }
-
+            // Prepare the updated extractions
+            const currentExtractions = record?.payment_receipts_extractions || {}
             const updatedExtractions = {
-                ...(existingRecord?.payment_receipts_extractions || {}),
-                [docType]: {
+                ...currentExtractions,
+                [documentType]: {
                     ...localExtractions,
-                    payment_mode: localExtractions.payment_mode === 'Pay Bill' ?
-                        PAYMENT_MODES.MPESA : localExtractions.payment_mode
+                    // Ensure bank_name is properly saved
+                    bank_name: localExtractions.payment_mode === PAYMENT_MODES.MPESA 
+                        ? 'N/A for Mpesa' 
+                        : localExtractions.bank_name || ''
                 }
             }
 
+            console.log('Saving extractions:', updatedExtractions)
+
+            // Update in Supabase
             const { error: updateError } = await supabase
                 .from('company_payroll_records')
                 .update({
@@ -305,6 +384,17 @@ export function DocumentViewer({
                 .eq('id', recordId)
 
             if (updateError) throw updateError
+
+            // Call the update callback to update local state in the parent component
+            if (onExtractionsUpdate) {
+                const updatedData = {
+                    ...localExtractions,
+                    bank_name: localExtractions.payment_mode === PAYMENT_MODES.MPESA 
+                        ? 'N/A for Mpesa' 
+                        : localExtractions.bank_name || ''
+                }
+                onExtractionsUpdate(updatedData)
+            }
 
             toast.success('Extractions saved successfully')
             onClose()
@@ -316,36 +406,24 @@ export function DocumentViewer({
         }
     }
 
-    const renderExtractionField = (field: keyof Extraction, label: string, placeholder: string) => {
-        const value = localExtractions[field]
-        const hasValue = value !== null && value !== ''
-        const isValid = !validation.errors.some(error => error.toLowerCase().includes(field))
-
+    // Helper to render extraction field
+    const renderExtractionField = (field: keyof Extraction, label: string, placeholder: string, className = '') => {
         return (
             <div className="space-y-1">
-                <Label htmlFor={field} className="text-xs">
-                    {label}
-                    {field === 'bank_name' && localExtractions.payment_mode === PAYMENT_MODES.MPESA && (
-                        <span className="text-gray-400 ml-1">(N/A for Mpesa)</span>
-                    )}
-                </Label>
+                <Label htmlFor={field} className="text-xs">{label}</Label>
                 <Input
                     id={field}
-                    value={value || ''}
-                    onChange={(e) => handleExtractionUpdate(field, e.target.value)}
                     placeholder={placeholder}
                     className={cn(
-                        "text-sm",
-                        hasValue && isValid ? "border-green-500 focus:border-green-500" :
-                            hasValue ? "border-red-500 focus:border-red-500" :
-                                "border-gray-200"
+                        className,
+                        localExtractions[field] ? "border-green-500 focus:border-green-500" : "border-gray-200"
                     )}
-                    disabled={field === 'bank_name' && localExtractions.payment_mode === PAYMENT_MODES.MPESA}
-                    aria-label={label}
+                    value={localExtractions[field] || ''}
+                    onChange={(e) => handleExtractionUpdate(field, e.target.value)}
                 />
             </div>
-        )
-    }
+        );
+    };
 
     return (
         <Dialog open={isOpen} onOpenChange={onClose}>
@@ -401,18 +479,22 @@ export function DocumentViewer({
                                         )}
                                     </Button>
                                     <Button
-                                        size="sm"
-                                        onClick={handleSave}
-                                        disabled={isSaving || isFetching}
+                                        type="button"
+                                        variant="outline"
+                                        onClick={completeExtraction}
+                                        className="gap-1"
                                     >
-                                        {isSaving ? (
-                                            <Loader2 className="h-4 w-4 animate-spin" />
-                                        ) : (
-                                            <>
-                                                <Save className="h-4 w-4 mr-1" />
-                                                Save
-                                            </>
-                                        )}
+                                        <Save className="h-4 w-4" />
+                                        Update
+                                    </Button>
+                                    <Button
+                                        type="button"
+                                        onClick={saveExtractions}
+                                        disabled={isSaving}
+                                        className="gap-1"
+                                    >
+                                        {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                                        {isSaving ? 'Saving...' : 'Save & Close'}
                                     </Button>
                                 </div>
                             </div>
@@ -423,10 +505,62 @@ export function DocumentViewer({
                                 </div>
                             ) : (
                                 <div className="space-y-3 flex-grow">
-                                    {renderExtractionField('amount', 'Amount', 'Enter amount...')}
-                                    {renderExtractionField('payment_date', 'Payment Date', 'DD/MM/YYYY')}
-                                    {renderExtractionField('payment_mode', 'Payment Mode', 'Enter payment mode...')}
-                                    {renderExtractionField('bank_name', 'Bank Name', 'Enter bank name...')}
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="space-y-1">
+                                            <Label htmlFor="amount" className="text-xs">Amount</Label>
+                                            <Input
+                                                id="amount"
+                                                placeholder="Enter amount"
+                                                className={cn(
+                                                    "h-8 text-sm",
+                                                    localExtractions.amount ? "border-green-500 focus:border-green-500" : "border-gray-200"
+                                                )}
+                                                value={localExtractions.amount || ''}
+                                                onChange={(e) => {
+                                                    // Allow only numbers and commas
+                                                    const value = e.target.value.replace(/[^0-9,]/g, '');
+                                                    handleExtractionUpdate('amount', value);
+                                                }}
+                                            />
+                                            {localExtractions.amount && (
+                                                <p className="text-xs text-gray-500 mt-1">
+                                                    Formatted: {formatDisplayAmount(localExtractions.amount)}
+                                                </p>
+                                            )}
+                                        </div>
+                                        {renderExtractionField('payment_date', 'Payment Date (DD/MM/YYYY)', 'DD/MM/YYYY', 'h-8 text-sm')}
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="space-y-1">
+                                            <Label htmlFor="payment_mode" className="text-xs">Payment Mode</Label>
+                                            <select
+                                                id="payment_mode"
+                                                className={cn(
+                                                    "w-full h-8 px-3 py-1 text-sm rounded-md border",
+                                                    localExtractions.payment_mode ? "border-green-500 focus:border-green-500" : "border-gray-200"
+                                                )}
+                                                value={localExtractions.payment_mode || ''}
+                                                onChange={(e) => handleExtractionUpdate('payment_mode', e.target.value)}
+                                            >
+                                                <option value="">Select Payment Mode</option>
+                                                {Object.values(PAYMENT_MODES).map(mode => (
+                                                    <option key={mode} value={mode}>{mode}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        {localExtractions.payment_mode === PAYMENT_MODES.MPESA ? (
+                                            <div className="space-y-1">
+                                                <Label htmlFor="bank_name" className="text-xs">Bank Name</Label>
+                                                <Input
+                                                    id="bank_name"
+                                                    placeholder="N/A for Mpesa"
+                                                    className="h-8 text-sm bg-gray-100"
+                                                    value="N/A"
+                                                    disabled
+                                                />
+                                            </div>
+                                        ) : renderExtractionField('bank_name', 'Bank Name', 'Enter bank name', 'h-8 text-sm')}
+                                    </div>
                                 </div>
                             )}
                         </div>

@@ -24,7 +24,53 @@ import {
 } from '../../utils/documentUtils'
 
 const MAX_RETRIES = 3;
-const RETRY_DELAY = 4000; // 2 seconds
+const RETRY_DELAY = 4000; // 4 seconds
+
+// Helper function to format date to DD/MM/YYYY
+const formatDateToDDMMYYYY = (dateString: string | null): string | null => {
+    if (!dateString) return null;
+    
+    // Try to parse the date string
+    const date = new Date(dateString);
+    
+    // Check if date is valid
+    if (isNaN(date.getTime())) {
+        // Try to handle common formats like MM/DD/YYYY or YYYY-MM-DD
+        const parts = dateString.split(/[-\/\.]/);
+        
+        if (parts.length === 3) {
+            // If it looks like YYYY-MM-DD or YYYY/MM/DD
+            if (parts[0].length === 4) {
+                const year = parseInt(parts[0]);
+                const month = parseInt(parts[1]);
+                const day = parseInt(parts[2]);
+                
+                // Create new date with proper order: day, month, year
+                return `${day.toString().padStart(2, '0')}/${month.toString().padStart(2, '0')}/${year}`;
+            }
+            
+            // If it's MM/DD/YYYY format (common in extraction APIs)
+            if (parts[0].length <= 2 && parts[1].length <= 2 && parts[2].length === 4) {
+                // Assuming month/day/year, convert to day/month/year
+                const month = parseInt(parts[0]);
+                const day = parseInt(parts[1]);
+                const year = parseInt(parts[2]);
+                
+                return `${day.toString().padStart(2, '0')}/${month.toString().padStart(2, '0')}/${year}`;
+            }
+        }
+        
+        // If we can't parse it, return original
+        return dateString;
+    }
+    
+    // Format as DD/MM/YYYY
+    const day = date.getDate().toString().padStart(2, '0');
+    const month = (date.getMonth() + 1).toString().padStart(2, '0');
+    const year = date.getFullYear();
+    
+    return `${day}/${month}/${year}`;
+};
 
 interface Extraction {
     amount: string | null
@@ -127,6 +173,12 @@ export function ExtractAllPreviewExtractionDialog({
     ]
 
     const handleExtractionUpdate = (companyName: string, field: keyof Extraction, value: string) => {
+        // For payment_date field, ensure the format is DD/MM/YYYY when user inputs it manually
+        let formattedValue = value;
+        if (field === 'payment_date' && value) {
+            formattedValue = formatDateToDDMMYYYY(value) || value;
+        }
+        
         setLocalDocs(docs =>
             docs.map(doc =>
                 doc.companyName === companyName ? {
@@ -137,7 +189,7 @@ export function ExtractAllPreviewExtractionDialog({
                                 ...d,
                                 extractions: {
                                     ...d.extractions,
-                                    [field]: value
+                                    [field]: formattedValue
                                 }
                             }
                             : d
@@ -180,9 +232,14 @@ export function ExtractAllPreviewExtractionDialog({
                         // Enhance extracted data
                         const extractedContent = result.extractedData?.raw_text || '';
                         const detectedPaymentMode = determinePaymentMode(extractedContent);
+                        
+                        // Format date to DD/MM/YYYY
+                        const formattedDate = formatDateToDDMMYYYY(result.extractedData?.payment_date);
+                        
                         const enhancedData = {
                             ...result.extractedData,
-                            payment_mode: detectedPaymentMode || result.extractedData?.payment_mode
+                            payment_mode: detectedPaymentMode || result.extractedData?.payment_mode,
+                            payment_date: formattedDate
                         };
 
                         // Validate the extraction
@@ -371,16 +428,24 @@ export function ExtractAllPreviewExtractionDialog({
         const company = localDocs.find(c => c.companyName === companyName);
         if (!company || !company.documents[activeDoc]) return null;
 
+        // Get field value
+        const value = company.documents[activeDoc].extractions[field] || '';
+        
         return (
             <div className="space-y-1">
                 <Label htmlFor={`${companyName}-${field}`} className="text-xs">{label}</Label>
                 <Input
                     id={`${companyName}-${field}`}
-                    value={company.documents[activeDoc].extractions[field] || ''}
+                    value={value}
                     onChange={(e) => handleExtractionUpdate(companyName, field, e.target.value)}
                     placeholder={placeholder}
-                    className="text-sm"
+                    className="text-sm h-8"
                 />
+                {field === 'payment_date' && value && (
+                    <p className="text-xs text-gray-500 mt-1">
+                        Format: DD/MM/YYYY
+                    </p>
+                )}
             </div>
         );
     };

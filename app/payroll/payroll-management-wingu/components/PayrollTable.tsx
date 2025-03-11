@@ -182,7 +182,8 @@ export function PayrollTable({
                         {columnVisibility.companyName && <TableHead className="text-white font-semibold" scope="col">Company Name</TableHead>}
                         {columnVisibility.kraPin && <TableHead className="text-white font-semibold" scope="col">KRA PIN</TableHead>}
                         {columnVisibility.obligationDate && <TableHead className="text-white font-semibold" scope="col">PAYE Obligation Date</TableHead>}
-                        {columnVisibility.numberOfEmployees && <TableHead className="text-white font-semibold" scope="col">No. of Emp</TableHead>}
+                        {columnVisibility.numberOfEmployees && <TableHead className=" text-white text-center font-semibold" scope="col">No. of Emp (Wingu)</TableHead>}
+                        {columnVisibility.numberOfEmployeesBcl && <TableHead className=" text-white text-center font-semibold" scope="col">No. of Emp (BCL)</TableHead>}
                         {columnVisibility.finalizationDate && <TableHead className="text-white font-semibold" scope="col">Finalization Date</TableHead>}
                         {columnVisibility.payeCsv && <TableHead className="text-white font-semibold" scope="col">PAYE (CSV)</TableHead>}
                         {columnVisibility.hslevyCsv && <TableHead className="text-white font-semibold" scope="col">HSLEVY (CSV)</TableHead>}
@@ -272,6 +273,18 @@ export function PayrollTable({
                                     ) : (
                                             <span className="flex text-red-600 font-bold text-xs justify-center italic">N/A</span>
                                     )}
+                                </TableCell>
+                            )}
+                            {columnVisibility.numberOfEmployeesBcl && (
+                                <TableCell>
+                                    {/* {record.number_of_employees ? (
+                                        <div className="flex justify-center font-bold">
+                                            {record.number_of_employees}
+
+                                        </div>
+                                    ) : (
+                                            <span className="flex text-red-600 font-bold text-xs justify-center italic">N/A</span>
+                                    )} */}
                                 </TableCell>
                             )}
                             {columnVisibility.finalizationDate && (

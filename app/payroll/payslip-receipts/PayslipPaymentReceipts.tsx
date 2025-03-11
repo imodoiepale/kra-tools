@@ -379,18 +379,44 @@ export default function PayslipPaymentReceipts({
             if (selectedCategories.length > 0) {
                 matchesCategory = selectedCategories.some(category => {
                     const currentDate = new Date();
-                    switch (category) {
+                    
+                    // Extract the base category without status suffix
+                    const baseCategory = category.split('_status_')[0];
+                    const status = category.includes('_status_') 
+                        ? category.split('_status_')[1] as 'active' | 'inactive'
+                        : 'active'; // Default to active status if not specified
+                    
+                    let isInCategory = false;
+                    let isActive = false;
+                    
+                    switch (baseCategory) {
                         case 'acc':
-                            return isDateInRange(currentDate, record.company.acc_client_effective_from, record.company.acc_client_effective_to);
+                            isInCategory = true;
+                            isActive = isDateInRange(currentDate, record.company.acc_client_effective_from, record.company.acc_client_effective_to);
+                            break;
                         case 'audit_tax':
-                            return isDateInRange(currentDate, record.company.audit_tax_client_effective_from, record.company.audit_tax_client_effective_to);
+                            isInCategory = true;
+                            isActive = isDateInRange(currentDate, record.company.audit_tax_client_effective_from, record.company.audit_tax_client_effective_to);
+                            break;
                         case 'cps_sheria':
-                            return isDateInRange(currentDate, record.company.cps_sheria_client_effective_from, record.company.cps_sheria_client_effective_to);
+                            isInCategory = true;
+                            isActive = isDateInRange(currentDate, record.company.cps_sheria_client_effective_from, record.company.cps_sheria_client_effective_to);
+                            break;
                         case 'imm':
-                            return isDateInRange(currentDate, record.company.imm_client_effective_from, record.company.imm_client_effective_to);
+                            isInCategory = true;
+                            isActive = isDateInRange(currentDate, record.company.imm_client_effective_from, record.company.imm_client_effective_to);
+                            break;
                         default:
                             return false;
                     }
+                    
+                    // If status is 'all', return whether it's in the category
+                    if (status === 'all') {
+                        return isInCategory;
+                    }
+                    
+                    // Otherwise, check if the active status matches the requested status
+                    return isInCategory && ((status === 'active' && isActive) || (status === 'inactive' && !isActive));
                 });
             }
 

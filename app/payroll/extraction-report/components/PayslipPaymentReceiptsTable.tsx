@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { useState, useMemo } from "react"
+import React, { useState, useMemo } from "react"
 import { format } from 'date-fns'
 import {
     MoreHorizontal,
@@ -51,6 +51,7 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { DocumentUploadDialog } from './DocumentUploadDialog'
+import { DocumentViewer } from './DocumentViewer'
 import {
     CompanyPayrollRecord,
     DocumentType,
@@ -137,6 +138,11 @@ const COLUMN_TYPES = [
         label: 'Pay Date',
         width: 'min-w-[40px]'
     },
+    {
+        id: 'bank_name',
+        label: 'Bank',
+        width: 'min-w-[40px]'
+    }
 ];
 
 
@@ -213,6 +219,24 @@ export function PayslipPaymentReceiptsTable({
         record: CompanyPayrollRecord | null;
     }>({ isOpen: false, record: null });
 
+    const [documentViewerDialog, setDocumentViewerDialog] = useState<{
+        isOpen: boolean;
+        documentPath: string;
+        documentType: string;
+        recordId: string;
+        companyName: string;
+        title: string;
+        extractions: any | null;
+    }>({
+        isOpen: false,
+        documentPath: '',
+        documentType: '',
+        recordId: '',
+        companyName: '',
+        title: '',
+        extractions: null
+    });
+
     const getDocumentCount = (record: CompanyPayrollRecord) => {
         if (record.status.finalization_date === 'NIL') {
             return 'N/A';
@@ -268,45 +292,225 @@ export function PayslipPaymentReceiptsTable({
         }
     };
 
-
-    const renderColumnContent = (
-        columnType: string,
-        extractedData: any,
-        record: CompanyPayrollRecord,
-        docType: string,
-        onDocumentUpload: (recordId: string, file: File, documentType: DocumentType) => Promise<void>,
-        onDocumentDelete: (recordId: string, documentType: DocumentType) => Promise<void>
-    ) => {
-        if (!extractedData) {
-            return <span className="text-red-600 font-bold">Missing</span>;
+    const ensureExtractionsExist = (record: CompanyPayrollRecord) => {
+        if (!record.payment_receipts_extractions) {
+            return {
+                ...record,
+                payment_receipts_extractions: {}
+            };
         }
+        return record;
+    };
 
+    const renderStatusBadge = (extractedData: any) => {
+        if (!extractedData || Object.keys(extractedData).length === 0) {
+            return <Badge variant="outline" className="bg-gray-100 text-gray-500">Not Extracted</Badge>;
+        }
+        
+        // Check if essential fields are extracted
+        const hasAmount = !!extractedData.amount;
+        const hasPaymentDate = !!extractedData.payment_date;
+        const hasPaymentMode = !!extractedData.payment_mode;
+        
+        if (hasAmount && hasPaymentDate && hasPaymentMode) {
+            return <Badge variant="outline" className="bg-green-100 text-green-700">Extracted</Badge>;
+        } else {
+            return <Badge variant="outline" className="bg-yellow-100 text-yellow-700">Partial</Badge>;
+        }
+    };
+
+    const formatAmount = (amount: string | null | undefined): JSX.Element => {
+        if (!amount) return <span className="text-red-600 font-bold">MISSING</span>;
+        
+        // Convert to number and format with commas, no decimals
+        const numAmount = parseFloat(amount.replace(/,/g, ''));
+        if (isNaN(numAmount)) return <span>{amount}</span>;
+        
+        return <span className="text-right font-mono">{Math.round(numAmount).toLocaleString('en-US')}</span>;
+    };
+    
+    const formatDate = (date: string | null | undefined): JSX.Element => {
+        if (!date) return <span className="text-red-600 font-bold">MISSING</span>;
+        
+        // Check if it's already in DD/MM/YYYY format
+        if (/^\d{2}\/\d{2}\/\d{4}$/.test(date)) return <span>{date}</span>;
+        
+        // Try to parse the date
+        const parsed = new Date(date);
+        if (isNaN(parsed.getTime())) return <span>{date}</span>;
+        
+        // Format as DD/MM/YYYY
+        const day = parsed.getDate().toString().padStart(2, '0');
+        const month = (parsed.getMonth() + 1).toString().padStart(2, '0');
+        const year = parsed.getFullYear();
+        
+        return <span className="text-center">{`${day}/${month}/${year}`}</span>;
+    };
+
+    const renderDocumentCell = (record: CompanyPayrollRecord, docType: string) => {
+        const receiptType = `${docType}_receipt` as DocumentType;
+        const documentPath = record.payment_receipts_documents?.[receiptType];
+        const extractions = record.payment_receipts_extractions?.[receiptType];
+        const docLabel = DOCUMENT_LABELS[receiptType] || docType.toUpperCase();
+        
+        return (
+            <div className="flex gap-2 items-center">
+                <DocumentUploadDialog
+                    documentType={receiptType}
+                    recordId={record.id}
+                    onUpload={(file) => onDocumentUpload(record.id, file, receiptType)}
+                    onDelete={() => onDocumentDelete(record.id, receiptType)}
+                    existingDocument={documentPath}
+                    label={docLabel}
+                    isNilFiling={false}
+                    allDocuments={[]}
+                    companyName={record.company.company_name}
+                />
+                
+                {documentPath && (
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 text-green-600 hover:text-green-700 px-2"
+                        onClick={() => handleOpenDocument(
+                            documentPath,
+                            receiptType,
+                            record.id,
+                            record.company.company_name,
+                            docLabel,
+                            extractions
+                        )}
+                    >
+                        <Eye className="h-4 w-4 mr-1" /> View
+                    </Button>
+                )}
+            </div>
+        );
+    };
+
+    const renderColumnContent = (record: CompanyPayrollRecord, docType: string, columnType: string) => {
+        const receiptType = `${docType}_receipt` as DocumentType;
+        
+        // Make sure record has properly initialized extractions
+        const recordWithExtractions = ensureExtractionsExist(record);
+        const extractedData = recordWithExtractions.payment_receipts_extractions?.[receiptType] || {};
+        
         switch (columnType) {
             case 'status':
-                return (
-                    <DocumentUploadDialog
-                        documentType={`${docType}_receipt`}
-                        recordId={record.id}
-                        onUpload={(file) => onDocumentUpload(record.id, file, `${docType}_receipt`)}
-                        onDelete={() => onDocumentDelete(record.id, `${docType}_receipt`)}
-                        existingDocument={record.payment_receipts_documents[`${docType}_receipt`]}
-                        label={DOCUMENT_TYPES.find(d => d.id === docType)?.label || ''}
-                        isNilFiling={record.status.finalization_date === 'NIL'}
-                        allDocuments={getDocumentsForUpload(record)}
-                        companyName={record.company.company_name}
-                    />
-                );
+                return renderStatusBadge(extractedData);
             case 'amount':
-                return <span className="text-right font-mono">{extractedData.amount}</span>;
+                if (!extractedData.amount) {
+                    return <span className="text-red-600 font-bold">MISSING</span>;
+                }
+                return formatAmount(extractedData.amount);
             case 'payment_mode':
+                if (!extractedData.payment_mode) {
+                    return <span className="text-red-600 font-bold">MISSING</span>;
+                }
                 return <span className="text-center">{extractedData.payment_mode}</span>;
             case 'payment_date':
-                return <span className="text-center">{extractedData.payment_date}</span>;
+                if (!extractedData.payment_date) {
+                    return <span className="text-red-600 font-bold">MISSING</span>;
+                }
+                return formatDate(extractedData.payment_date);
+            case 'bank_name':
+                if (extractedData.payment_mode === 'Mpesa') {
+                    return <span className="text-center font-bold text-blue-600">N/A</span>;
+                }
+                if (!extractedData.bank_name) {
+                    return <span className="text-red-600 font-bold">MISSING</span>;
+                }
+                return <span className="text-center">{extractedData.bank_name}</span>;
             default:
                 return null;
         }
     };
 
+    const handleOpenDocument = (documentPath: string, docType: DocumentType, recordId: string, companyName: string, title: string, extractions: any) => {
+        console.log('Opening document with extractions:', extractions);
+        setDocumentViewerDialog({
+            isOpen: true,
+            documentPath,
+            documentType: docType,
+            recordId,
+            companyName,
+            title,
+            extractions: extractions || {}
+        });
+    };
+
+    const handleExtractionsUpdate = (recordId: string, documentType: string, updatedExtractions: any) => {
+        console.log('Updating extractions in PayslipPaymentReceiptsTable:', recordId, documentType, updatedExtractions);
+
+        // Update local state
+        const updatedRecords = records.map(record => {
+            if (record.id === recordId) {
+                // Make sure payment_receipts_extractions exists
+                const recordWithExtractions = ensureExtractionsExist(record);
+                
+                return {
+                    ...recordWithExtractions,
+                    payment_receipts_extractions: {
+                        ...recordWithExtractions.payment_receipts_extractions,
+                        [documentType]: updatedExtractions
+                    }
+                };
+            }
+            return record;
+        });
+        
+        setPayrollRecords(updatedRecords);
+        
+        // Also update in Supabase
+        updateExtractionsInDatabase(recordId, documentType, updatedExtractions);
+    };
+
+    const updateExtractionsInDatabase = async (recordId: string, documentType: string, updatedExtractions: any) => {
+        try {
+            // First get the current record to ensure we have the latest data
+            const { data: currentRecord, error: fetchError } = await supabase
+                .from('company_payroll_records')
+                .select('payment_receipts_extractions')
+                .eq('id', recordId);
+                
+            if (fetchError) {
+                console.error('Error fetching current record:', fetchError);
+                return;
+            }
+            
+            // Prepare the updated extractions object
+            const currentExtractions = currentRecord?.payment_receipts_extractions || {};
+            const newExtractions = {
+                ...currentExtractions,
+                [documentType]: updatedExtractions
+            };
+            
+            // Update in database
+            const { error: updateError } = await supabase
+                .from('company_payroll_records')
+                .update({
+                    payment_receipts_extractions: newExtractions
+                })
+                .eq('id', recordId);
+                
+            if (updateError) {
+                console.error('Error updating extractions:', updateError);
+                toast({
+                    title: "Error",
+                    description: "Failed to save extraction data to database",
+                    variant: "destructive"
+                });
+            } else {
+                toast({
+                    title: "Success",
+                    description: "Extraction data saved successfully",
+                    variant: "default"
+                });
+            }
+        } catch (error) {
+            console.error('Error in updateExtractionsInDatabase:', error);
+        }
+    };
 
     const handleFinalize = (recordId: string) => {
         onStatusUpdate(recordId, {
@@ -717,20 +921,19 @@ export function PayslipPaymentReceiptsTable({
     };
 
     return (
-
         <div className="rounded-md border h-[calc(100vh-220px)] overflow-auto">
-            <Table>
+            <Table className="w-full text-sm">
                 <TableHeader className="sticky top-0 z-10">
                     <TableRow className="hover:bg-transparent">
                         <TableHead
                             rowSpan={2}
-                            className="border-r border-b border-gray-200 bg-blue-600 text-white font-semibold min-w-[20px] whitespace-nowrap"
+                            className="border-r border-b border-gray-200 bg-blue-600 text-white font-medium text-xs min-w-[20px] whitespace-nowrap h-8 py-1 px-2"
                         >
                             #
                         </TableHead>
                         <TableHead
                             rowSpan={2}
-                            className="border-r border-b border-gray-200 bg-blue-600 text-white font-semibold min-w-[200px] whitespace-nowrap"
+                            className="border-r border-b border-gray-200 bg-blue-600 text-white font-medium text-xs min-w-[180px] whitespace-nowrap h-8 py-1 px-2"
                         >
                             Company
                         </TableHead>
@@ -739,8 +942,8 @@ export function PayslipPaymentReceiptsTable({
                             return (
                                 <TableHead
                                     key={docType}
-                                    colSpan={selectedColumns.length}
-                                    className={`text-center text-white font-semibold ${doc?.color} border-r border-b`}
+                                    colSpan={selectedColumns.length + 1} // +1 for document column
+                                    className={`text-center text-white font-medium text-xs ${doc?.color} border-r border-b h-8 py-1 px-2`}
                                 >
                                     {doc?.label}
                                 </TableHead>
@@ -748,59 +951,64 @@ export function PayslipPaymentReceiptsTable({
                         })}
                         <TableHead
                             rowSpan={2}
-                            className="border-r border-b border-gray-200 bg-blue-600 text-white font-semibold"
+                            className="border-r border-b border-gray-200 bg-blue-600 text-white font-medium text-xs h-8 py-1 px-2"
                         >
                             Actions
                         </TableHead>
                     </TableRow>
                     <TableRow className="hover:bg-transparent">
-                        {selectedDocTypes.map(docType =>
-                            COLUMN_TYPES.filter(col => selectedColumns.includes(col.id)).map(col => (
+                        {selectedDocTypes.map(docType => (
+                            <React.Fragment key={`header-cols-${docType}`}>
                                 <TableHead
-                                    key={`${docType}-${col.id}`}
-                                    className="border-r bg-gray-100 text-gray-900 font-medium whitespace-nowrap min-w-[120px]"
+                                    className="border-r bg-gray-100 text-gray-900 font-medium text-xs whitespace-nowrap h-7 py-1 px-2"
                                 >
-                                    {col.label}
+                                    Document
                                 </TableHead>
-                            ))
-                        )}
+                                {COLUMN_TYPES.filter(col => selectedColumns.includes(col.id)).map(col => (
+                                    <TableHead
+                                        key={`${docType}-${col.id}`}
+                                        className="border-r bg-gray-100 text-gray-900 font-medium text-xs whitespace-nowrap h-7 py-1 px-2"
+                                    >
+                                        {col.label}
+                                    </TableHead>
+                                ))}
+                            </React.Fragment>
+                        ))}
                     </TableRow>
                 </TableHeader>
 
-                <TableBody>
+                <TableBody className="text-xs font-medium">
                     {sortedRecords.map((record, index) => (
                         <TableRow
                             key={record.id}
-                            className={`
-                                ${index % 2 === 0 ? 'bg-blue-50 hover:bg-blue-100' : 'bg-white hover:bg-gray-50'}
-                                [&>td]:border-r [&>td]:border-gray-200 last:[&>td]:border-r-0
-                            `}
+                            className={record.status?.is_completed ? 'bg-green-50' : undefined}
                         >
-                            <TableCell className="font-medium">{index + 1}</TableCell>
-                            <TableCell className="font-medium">
+                            <TableCell className="border-r font-medium py-1 px-2 h-10">{index + 1}</TableCell>
+                            <TableCell className="border-r py-1 px-2 h-10">
                                 <TooltipProvider>
                                     <Tooltip>
-                                        <TooltipTrigger>
-                                            {record.company.company_name.split(" ").slice(0, 1).join(" ")}
+                                        <TooltipTrigger asChild>
+                                            <div className="max-w-[180px] truncate">
+                                                {record.company.company_name}
+                                            </div>
                                         </TooltipTrigger>
                                         <TooltipContent>{record.company.company_name}</TooltipContent>
                                     </Tooltip>
                                 </TooltipProvider>
                             </TableCell>
 
-                            {selectedDocTypes.map(docType => {
-                                const receiptType = `${docType}_receipt`;
-                                const extractedData = record.payment_receipts_extractions?.[receiptType];
-
-                                return COLUMN_TYPES
-                                    .filter(col => selectedColumns.includes(col.id))
-                                    .map(col => (
-                                        <TableCell key={`${docType}-${col.id}`}>
-                                            {renderColumnContent(col.id, extractedData, record, docType)}
+                            {selectedDocTypes.map(docType => (
+                                <React.Fragment key={`${record.id}-${docType}`}>
+                                    <TableCell className="border-x py-1 px-2 h-10">
+                                        {renderDocumentCell(record, docType)}
+                                    </TableCell>
+                                    {selectedColumns.map(columnType => (
+                                        <TableCell key={`${record.id}-${docType}-${columnType}`} className="border-r py-1 px-2 h-10">
+                                            {renderColumnContent(record, docType, columnType)}
                                         </TableCell>
-                                    ));
-                            })}
-
+                                    ))}
+                                </React.Fragment>
+                            ))}
                             <TableCell className="text-center">
                                 <DropdownMenu>
                                     <DropdownMenuTrigger asChild>
@@ -1061,6 +1269,24 @@ export function PayslipPaymentReceiptsTable({
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>
+
+            <DocumentViewer
+                url={documentViewerDialog.documentPath}
+                isOpen={documentViewerDialog.isOpen}
+                onClose={() => setDocumentViewerDialog(prev => ({ ...prev, isOpen: false }))}
+                title={documentViewerDialog.title}
+                companyName={documentViewerDialog.companyName}
+                documentType={documentViewerDialog.documentType}
+                recordId={documentViewerDialog.recordId}
+                extractions={documentViewerDialog.extractions}
+                onExtractionsUpdate={(updatedExtractions) => 
+                    handleExtractionsUpdate(
+                        documentViewerDialog.recordId, 
+                        documentViewerDialog.documentType, 
+                        updatedExtractions
+                    )
+                }
+            />
         </div>
     );
 }
