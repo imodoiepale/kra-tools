@@ -1,16 +1,23 @@
 // @ts-nocheck
-import { useState, useMemo } from "react"
+import { useState, useMemo, useCallback, useRef } from "react"
 import { format } from 'date-fns'
 import {
     MoreHorizontal,
-    FileCheck,
-    Download,
-    Trash2,
-    Eye,
-    CheckCircle,
-    AlertCircle,
     Mail,
-    MessageSquare
+    MessageSquare,
+    Eye,
+    Download,
+    FileText,
+    Trash2,
+    Calendar,
+    CheckCircle,
+    XCircle,
+    AlertCircle,
+    User,
+    UserCheck,
+    FileCheck,
+    FileX,
+    FileQuestion
 } from 'lucide-react'
 import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
@@ -61,6 +68,7 @@ import { supabase } from '@/lib/supabase'
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip";
 import { ContactModal } from "./ContactModal"
 import { WhatsAppModal } from "./WhatsappModal";
+import { DocumentViewer } from "./DocumentViewer";
 
 interface EmailHistory {
     date: string;
@@ -80,7 +88,7 @@ interface PayrollRecord {
 }
 
 const DOCUMENT_LABELS: Record<string, string> = {
-    paye_receipt: "PAYE Payment",
+    paye_receipt: "PAYE",
     housing_levy_receipt: "Housing Levy",
     nita_receipt: "NITA",
     shif_receipt: "SHIF",
@@ -88,589 +96,316 @@ const DOCUMENT_LABELS: Record<string, string> = {
     all_csv: "All CSV Files"
 };
 
-interface PayrollTableProps {
+interface PayslipPaymentReceiptsTableProps {
     records: CompanyPayrollRecord[]
-    onDocumentUpload: (recordId: string, file: File, documentType: DocumentType) => Promise<void>
+    onDocumentUpload: (recordId: string, file: File, documentType: DocumentType, subFolder: string) => Promise<{success: boolean, path: string | null, error?: string}>
     onDocumentDelete: (recordId: string, documentType: DocumentType) => Promise<void>
     onStatusUpdate: (recordId: string, statusUpdate: any) => Promise<void>
+    onBatchDocumentUpload: (recordId: string, documents: Array<{file: File, documentType: DocumentType}>, subFolder: string) => Promise<{success: boolean, paths: Record<DocumentType, string | null>, error?: string}>
     loading: boolean
     setPayrollRecords: (records: CompanyPayrollRecord[]) => void
     columnVisibility?: Record<string, boolean>
 }
 
+const BATCH_SIZE = 5;
+
 const formatDate = (date: string | null | undefined): string => {
-    if (!date) return 'NIL';
-    if (date === 'NIL') return `${format(new Date(), 'dd/MM/yyyy')}`;
+    if (!date) return 'N/A';
     try {
-        const parsedDate = new Date(date);
-        if (isNaN(parsedDate.getTime())) return 'Invalid Date';
-        return format(parsedDate, 'dd/MM/yyyy');
+        return format(new Date(date), 'dd/MM/yyyy');
     } catch {
-        return 'Invalid Date';
-    }
-};
-
-const getDocumentsForUpload = (record: CompanyPayrollRecord) => {
-    // Return empty array if payment_receipts_documents is undefined
-    if (!record.payment_receipts_documents) {
-        return Object.entries(DOCUMENT_LABELS)
-            .filter(([key]) => key !== 'all_csv')
-            .map(([type, label]) => ({
-                type: type as DocumentType,
-                label,
-                status: 'missing' as const,
-                path: null
-            }));
-    }
-    
-    return Object.entries(DOCUMENT_LABELS)
-        .filter(([key]) => key !== 'all_csv')
-        .map(([type, label]) => ({
-            type: type as DocumentType,
-            label,
-            status: record.payment_receipts_documents[type as DocumentType] ? 'uploaded' as const : 'missing' as const,
-            path: record.payment_receipts_documents[type as DocumentType]
-        }));
-};
-
-const handleEmailDateUpdate = async (recordId: string) => {
-    try {
-        const { error: updateError } = await supabase
-            .from('company_payroll_records')
-            .update({
-                receipts_status: {
-                    ...record.receipts_status,
-                    email_date: new Date().toISOString()
-                }
-            })
-            .eq('id', recordId);
-
-        if (updateError) throw updateError;
-
-        toast({
-            title: 'Success',
-            description: 'Email date updated successfully'
-        });
-    } catch (error) {
-        toast({
-            title: 'Error',
-            description: 'Failed to update email date',
-            variant: 'destructive'
-        });
-    }
-};
-
-const handleEmailSent = async (recordId: string, emailData: { date: string; recipients: string[] }) => {
-    try {
-        const record = records.find(r => r.id === recordId);
-        if (!record) return;
-
-        // Fetch current record to get latest email history and status
-        const { data: currentRecord, error: fetchError } = await supabase
-            .from('company_payroll_records')
-            .select('email_history, receipts_status')
-            .eq('id', recordId)
-            .single();
-
-        if (fetchError) throw fetchError;
-
-        const emailHistory = currentRecord.email_history || [];
-        const updatedHistory = [...emailHistory, emailData];
-
-        // Update both email history and email date
-        const { error: updateError } = await supabase
-            .from('company_payroll_records')
-            .update({
-                email_history: updatedHistory,
-                receipts_status: {
-                    ...currentRecord.receipts_status,
-                    email_date: emailData.date
-                }
-            })
-            .eq('id', recordId);
-
-        if (updateError) throw updateError;
-
-        // Update local state
-        setPayrollRecords(records.map(r => {
-            if (r.id === recordId) {
-                return {
-                    ...r,
-                    email_history: updatedHistory,
-                    receipts_status: {
-                        ...r.receipts_status,
-                        email_date: emailData.date
-                    }
-                };
-            }
-            return r;
-        }));
-
-        toast({
-            title: "Success",
-            description: "Email sent and history updated successfully"
-        });
-    } catch (error) {
-        console.error('Email history update error:', error);
-        toast({
-            title: "Error",
-            description: "Failed to update email history",
-            variant: "destructive"
-        });
-    }
-};
-
-const handleFinalize = (recordId: string) => {
-    onStatusUpdate(recordId, {
-        verification_date: finalizeDialog.isNil ? 'NIL' : new Date().toISOString(),
-        status: 'completed',
-        assigned_to: finalizeDialog.assignedTo
-    });
-    setFinalizeDialog({ isOpen: false, recordId: null, assignedTo: 'Tushar', isNil: false });
-};
-
-const handleFilingConfirm = async (recordId: string) => {
-    try {
-        const record = records.find(r => r.id === recordId);
-        if (!record) return;
-
-        // Fetch current record to get latest status
-        const { data: currentRecord, error: fetchError } = await supabase
-            .from('company_payroll_records')
-            .select('status')
-            .eq('id', recordId)
-            .single();
-
-        if (fetchError) throw fetchError;
-
-        const currentDate = filingDialog.isNil ? 'NIL' : new Date().toISOString();
-
-        // Create the updated status object
-        const updatedStatus = {
-            ...currentRecord.status, // Preserve existing status fields
-            filing: {
-                isReady: true,
-                filingDate: currentDate,
-                isNil: filingDialog.isNil,
-                filedBy: record.status.assigned_to || 'Unassigned'
-            }
-        };
-
-        // Update the record in Supabase
-        const { error: updateError } = await supabase
-            .from('company_payroll_records')
-            .update({
-                status: updatedStatus
-            })
-            .eq('id', recordId);
-
-        if (updateError) throw updateError;
-
-        // Update local state
-        const updatedRecords = records.map(r => {
-            if (r.id === recordId) {
-                return {
-                    ...r,
-                    status: updatedStatus
-                };
-            }
-            return r;
-        });
-
-        setPayrollRecords(updatedRecords);
-
-        toast({
-            title: "Success",
-            description: "Filing status updated successfully"
-        });
-
-        setFilingDialog({ isOpen: false, recordId: null, isNil: false, confirmOpen: false });
-    } catch (error) {
-        console.error('Filing update error:', error);
-        toast({
-            title: "Error",
-            description: "Failed to update filing status",
-            variant: "destructive"
-        });
-    }
-};
-
-const handleRemoveFiling = async (recordId: string) => {
-    try {
-        const record = records.find(r => r.id === recordId);
-        if (!record) return;
-
-        // Fetch current record to get latest status
-        const { data: currentRecord, error: fetchError } = await supabase
-            .from('company_payroll_records')
-            .select('status')
-            .eq('id', recordId)
-            .single();
-
-        if (fetchError) throw fetchError;
-
-        // Create the updated status object without the filing property
-        const { filing, ...restStatus } = currentRecord.status;
-        const updatedStatus = { ...restStatus };
-
-        // Update the record in Supabase
-        const { error: updateError } = await supabase
-            .from('company_payroll_records')
-            .update({
-                status: updatedStatus
-            })
-            .eq('id', recordId);
-
-        if (updateError) throw updateError;
-
-        // Update local state
-        setPayrollRecords(records.map(r =>
-            r.id === recordId
-                ? { ...r, status: updatedStatus }
-                : r
-        ));
-
-        // Close the dialog and show success message
-        setFilingDialog(prev => ({ ...prev, isOpen: false }));
-        toast({
-            title: "Success",
-            description: "Filing status has been removed successfully.",
-            variant: "default",
-        });
-    } catch (error) {
-        console.error('Error removing filing status:', error);
-        toast({
-            title: "Error",
-            description: "Failed to remove filing status. Please try again.",
-            variant: "destructive",
-        });
-    }
-};
-
-const handleDeleteAll = async (record: CompanyPayrollRecord) => {
-    try {
-        setIsSubmitting(true);
-
-        // Filter out null values before using the paths
-        const documentsToDelete = Object.entries(record.payment_receipts_documents || {}).filter(([_, path]) => path !== null) as [DocumentType, string][];
-
-        if (documentsToDelete.length === 0) {
-            toast({
-                title: 'No documents',
-                description: 'No documents to delete'
-            });
-            return;
-        }
-
-        // Delete all files from storage
-        await Promise.all(
-            documentsToDelete.map(async ([_, path]) => {
-                const { error: deleteError } = await supabase.storage
-                    .from('Payroll-Cycle')
-                    .remove([path]);
-                if (deleteError) throw deleteError;
-            })
-        );
-
-        // Update record to clear all documents
-        const { error: updateError } = await supabase
-            .from('company_payroll_records')
-            .update({
-                payment_receipts_documents: {
-                    paye_receipt: null,
-                    housing_levy_receipt: null,
-                    shif_receipt: null,
-                    nssf_receipt: null,
-                    nita_receipt: null
-                }
-            })
-            .eq('id', record.id);
-
-        if (updateError) throw updateError;
-
-        // Update local state
-        const updatedRecords: CompanyPayrollRecord[] = records.map(r => {
-            if (r.id === record.id) {
-                return {
-                    ...r,
-                    payment_receipts_documents: {
-                        paye_receipt: null,
-                        housing_levy_receipt: null,
-                        shif_receipt: null,
-                        nssf_receipt: null,
-                        nita_receipt: null
-                    }
-                };
-            }
-            return r;
-        });
-        setPayrollRecords(updatedRecords);
-
-        toast({
-            title: 'Success',
-            description: `Successfully deleted ${documentsToDelete.length} documents`
-        });
-    } catch (error) {
-        console.error('Delete all error:', error);
-        toast({
-            title: 'Error',
-            description: 'Failed to delete documents',
-            variant: 'destructive'
-        });
-    } finally {
-        setIsSubmitting(false);
-    }
-};
-
-const handleDownload = async (path: string): Promise<void> => {
-    try {
-        const { data, error } = await supabase.storage
-            .from('Payroll-Cycle')
-            .download(path);
-
-        if (error) throw error;
-
-        // Create download link
-        const url = URL.createObjectURL(data);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = path.split('/').pop() || 'document';
-        document.body.appendChild(a);
-        a.click();
-        URL.revokeObjectURL(url);
-        document.body.removeChild(a);
-    } catch (error) {
-        toast({
-            title: 'Error',
-            description: 'Failed to download document',
-            variant: 'destructive'
-        });
-    }
-};
-
-const handleDownloadAll = async (record: CompanyPayrollRecord) => {
-    try {
-        const documentsToDownload = Object.entries(record.payment_receipts_documents || {})
-            .filter(([key, value]) => key !== 'all_csv' && value !== null);
-
-        for (const [_, path] of documentsToDownload) {
-            if (path) await handleDownload(path);
-        }
-
-        toast({
-            title: 'Success',
-            description: 'All documents downloaded successfully'
-        });
-    } catch (error) {
-        toast({
-            title: 'Error',
-            description: 'Failed to download all documents',
-            variant: 'destructive'
-        });
-    }
-};
-
-const handleDocumentUpload = async (recordId: string, file: File, documentType: DocumentType): Promise<void> => {
-    try {
-        const record = records.find(r => r.id === recordId);
-        if (!record) {
-            throw new Error('Record not found');
-        }
-
-        if (!record.company || !record.company.company_name) {
-            throw new Error('Company information is missing');
-        }
-
-        // First, fetch the current record to get latest document paths
-        const { data: currentRecord, error: fetchError } = await supabase
-            .from('company_payroll_records')
-            .select('payment_receipts_documents')
-            .eq('id', recordId)
-            .single();
-
-        if (fetchError) throw fetchError;
-        if (!currentRecord) throw new Error('Failed to fetch current record');
-
-        const fileName = `${documentType} - ${record.company?.company_name || 'Unknown'} - ${format(new Date(), 'yyyy-MM-dd')}${file.name.substring(file.name.lastIndexOf('.'))}`;
-        const filePath = `${selectedMonthYear}/PAYMENT RECEIPTS/${record.company?.company_name || 'Unknown'}/${fileName}`;
-        
-        // Upload file to storage
-        const { data: uploadData, error: uploadError } = await supabase.storage
-            .from('Payroll-Cycle')
-            .upload(filePath, file, {
-                cacheControl: '0',
-                upsert: true
-            });
-
-        if (uploadError) throw uploadError;
-
-        // Preserve existing document paths and update the new one
-        const updatedDocuments = {
-            ...currentRecord.payment_receipts_documents,
-            [documentType]: uploadData.path
-        };
-
-        // Update database record with merged document paths
-        const { error: updateError } = await supabase
-            .from('company_payroll_records')
-            .update({
-                payment_receipts_documents: updatedDocuments
-            })
-            .eq('id', recordId);
-
-        if (updateError) {
-            // If database update fails, clean up the uploaded file
-            await supabase.storage
-                .from('Payroll-Cycle')
-                .remove([uploadData.path]);
-            throw updateError;
-        }
-
-        // Update local state
-        const updatedRecords: CompanyPayrollRecord[] = records.map(r => {
-            if (r.id === recordId) {
-                return {
-                    ...r,
-                    payment_receipts_documents: updatedDocuments
-                };
-            }
-            return r;
-        });
-        setPayrollRecords(updatedRecords);
-
-        toast({
-            title: 'Success',
-            description: 'Document uploaded successfully'
-        });
-    } catch (error) {
-        console.error('Document upload error:', error);
-        toast({
-            title: 'Error',
-            description: error instanceof Error ? error.message : 'Failed to upload document',
-            variant: 'destructive'
-        });
-        throw error;
-    }
-};
-
-const handleDocumentDelete = async (recordId: string, documentType: DocumentType) => {
-    try {
-        const record = records.find(r => r.id === recordId);
-        if (!record) return;
-
-        const documentPath = record.payment_receipts_documents?.[documentType];
-        if (!documentPath) return;
-
-        const { error: deleteError } = await supabase.storage
-            .from('Payroll-Cycle')
-            .remove([documentPath]);
-
-        if (deleteError) throw deleteError;
-
-        const { error: updateError } = await supabase
-            .from('company_payroll_records')
-            .update({
-                payment_receipts_documents: {
-                    ...record.payment_receipts_documents,
-                    [documentType]: null
-                }
-            })
-            .eq('id', recordId);
-
-        if (updateError) throw updateError;
-
-        // Update local state
-        const updatedRecords: CompanyPayrollRecord[] = records.map(r => {
-            if (r.id === recordId) {
-                return {
-                    ...r,
-                    payment_receipts_documents: {
-                        ...r.payment_receipts_documents,
-                        [documentType]: null
-                    }
-                };
-            }
-            return r;
-        });
-        setPayrollRecords(updatedRecords);
-
-        toast({
-            title: 'Success',
-            description: 'Document deleted successfully'
-        });
-    } catch (error) {
-        toast({
-            title: 'Error',
-            description: 'Failed to delete document',
-            variant: 'destructive'
-        });
-    }
-};
-
-const handleMessageSent = async (recordId: string, messageData: { date: string; recipients: string[] }) => {
-    try {
-        const record = records.find(r => r.id === recordId);
-        if (!record) return;
-
-        // Fetch current record to get latest message history
-        const { data: currentRecord, error: fetchError } = await supabase
-            .from('company_payroll_records')
-            .select('whatsapp_history')
-            .eq('id', recordId)
-            .single();
-
-        if (fetchError) throw fetchError;
-
-        const messageHistory = currentRecord.whatsapp_history || [];
-        const updatedHistory = [...messageHistory, messageData];
-
-        // Update the message history
-        const { error: updateError } = await supabase
-            .from('company_payroll_records')
-            .update({
-                whatsapp_history: updatedHistory
-            })
-            .eq('id', recordId);
-
-        if (updateError) throw updateError;
-
-        // Update local state
-        setPayrollRecords(records.map(r => {
-            if (r.id === recordId) {
-                return {
-                    ...r,
-                    whatsapp_history: updatedHistory
-                };
-            }
-            return r;
-        }));
-
-        toast({
-            title: "Success",
-            description: "WhatsApp message history updated"
-        });
-    } catch (error) {
-        console.error('WhatsApp history update error:', error);
-        toast({
-            title: "Error",
-            description: "Failed to update WhatsApp history",
-            variant: "destructive"
-        });
+        return 'Invalid date';
     }
 };
 
 export function PayslipPaymentReceiptsTable({
     records,
     onDocumentUpload,
-    onStatusUpdate,
     onDocumentDelete,
+    onStatusUpdate,
+    onBatchDocumentUpload,
     loading,
     setPayrollRecords,
-    columnVisibility
-}: PayrollTableProps) {
-    const { toast } = useToast()
-
+    columnVisibility = {}
+}: PayslipPaymentReceiptsTableProps) {
+    const [selectedDocumentType, setSelectedDocumentType] = useState<DocumentType | null>(null);
+    const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [selectedDocument, setSelectedDocument] = useState<{ url: string; title: string; companyName: string } | null>(null);
+    const { toast } = useToast();
+
+    const [isDeleting, setIsDeleting] = useState(false);
+    const progressRef = useRef({ total: 0, completed: 0 });
+
+    // Memoize expensive calculations
+    const documentTypes = useMemo(() => 
+        Object.keys(DOCUMENT_LABELS).filter(key => key !== 'all_csv') as DocumentType[], 
+    []);
+
+    // Optimized function to delete all documents with batched processing
+    const handleDeleteAllDocuments = useCallback(async (recordId: string) => {
+        try {
+            const record = records.find(r => r.id === recordId);
+            if (!record) {
+                toast({
+                    title: 'Error',
+                    description: 'Record not found',
+                    variant: 'destructive'
+                });
+                return;
+            }
+
+            // Add null check for payment_receipts_documents
+            if (!record.payment_receipts_documents) {
+                toast({
+                    title: 'Error',
+                    description: 'No document information available',
+                    variant: 'destructive'
+                });
+                return;
+            }
+
+            // Get all document types that have a non-null path
+            const documentTypes = Object.keys(record.payment_receipts_documents)
+                .filter(key => record.payment_receipts_documents[key] !== null) as DocumentType[];
+
+            if (documentTypes.length === 0) {
+                toast({
+                    title: 'Warning',
+                    description: 'No documents to delete',
+                    variant: 'default'
+                });
+                return;
+            }
+
+            setIsDeleting(true);
+            progressRef.current = { total: documentTypes.length, completed: 0 };
+            
+            toast({
+                title: 'Processing',
+                description: `Deleting ${documentTypes.length} documents...`
+            });
+            
+            // Log the documents being deleted for debugging
+            console.log('Deleting document types:', documentTypes);
+            
+            // Process deletions SEQUENTIALLY instead of in parallel batches
+            for (const docType of documentTypes) {
+                try {
+                    console.log(`Deleting document type: ${docType}`);
+                    await onDocumentDelete(recordId, docType);
+                    progressRef.current.completed++;
+                    
+                    // Add a small delay between deletions
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                } catch (error) {
+                    console.error(`Error deleting ${docType}:`, error);
+                }
+            }
+            
+            // Manually update the local state after successful deletion
+            const updatedRecords = records.map(r => {
+                if (r.id === recordId) {
+                    return {
+                        ...r,
+                        payment_receipts_documents: {}
+                    };
+                }
+                return r;
+            });
+            
+            // Update the records state
+            setPayrollRecords(updatedRecords);
+            
+            toast({
+                title: 'Success',
+                description: `Successfully deleted ${progressRef.current.completed} documents`
+            });
+        } catch (error) {
+            console.error('Error deleting all documents:', error);
+            toast({
+                title: 'Error',
+                description: 'Failed to delete all documents',
+                variant: 'destructive'
+            });
+        } finally {
+            setIsDeleting(false);
+        }
+    }, [records, onDocumentDelete, toast, setPayrollRecords]);
+
+    const handleDeleteAll = useCallback(async (record: CompanyPayrollRecord) => {
+        if (!record) return;
+        
+        setDeleteAllDialog({
+            isOpen: true,
+            record
+        });
+    }, []);
+
+    const handleLocalDocumentUpload = async (recordId: string, file: File, documentType: DocumentType): Promise<void> => {
+        try {
+            setIsSubmitting(true);
+            const result = await onDocumentUpload(recordId, file, documentType, 'payment-receipts');
+            
+            if (result.success) {
+                toast({
+                    title: 'Success',
+                    description: 'Document uploaded successfully'
+                });
+                
+                // Force refresh by updating records
+                setPayrollRecords(prevRecords => {
+                    return prevRecords.map(record => {
+                        if (record.id === recordId) {
+                            const updatedDocuments = {
+                                ...record.payment_receipts_documents,
+                                [documentType]: result.path
+                            };
+                            
+                            return {
+                                ...record,
+                                payment_receipts_documents: updatedDocuments
+                            };
+                        }
+                        return record;
+                    });
+                });
+            } else {
+                toast({
+                    title: 'Error',
+                    description: result.error || 'Failed to upload document',
+                    variant: 'destructive'
+                });
+            }
+        } catch (error) {
+            console.error('Document upload error:', error);
+            toast({
+                title: 'Error',
+                description: error instanceof Error ? error.message : 'An unknown error occurred',
+                variant: 'destructive'
+            });
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    const handleDocumentDelete = async (recordId: string, documentType: DocumentType) => {
+        try {
+            const record = records.find(r => r.id === recordId);
+            if (!record) {
+                toast({
+                    title: 'Error',
+                    description: 'Record not found',
+                    variant: 'destructive'
+                });
+                return;
+            }
+
+            // Add null check for payment_receipts_documents
+            if (!record.payment_receipts_documents) {
+                toast({
+                    title: 'Error',
+                    description: 'No document information available',
+                    variant: 'destructive'
+                });
+                return;
+            }
+
+            const documentPath = record.payment_receipts_documents[documentType];
+            if (!documentPath) {
+                toast({
+                    title: 'Warning',
+                    description: 'No document to delete',
+                    variant: 'default'
+                });
+                return;
+            }
+
+            // Use the onDocumentDelete function passed from props
+            await onDocumentDelete(recordId, documentType);
+            
+            // Manually update the local state after successful deletion
+            const updatedRecords = records.map(r => {
+                if (r.id === recordId) {
+                    const updatedDocuments = { ...r.payment_receipts_documents };
+                    delete updatedDocuments[documentType];
+                    
+                    return {
+                        ...r,
+                        payment_receipts_documents: updatedDocuments
+                    };
+                }
+                return r;
+            });
+            
+            // Update the records state
+            setPayrollRecords(updatedRecords);
+
+            toast({
+                title: 'Success',
+                description: 'Document deleted successfully'
+            });
+        } catch (error) {
+            toast({
+                title: 'Error',
+                description: 'Failed to delete document',
+                variant: 'destructive'
+            });
+        }
+    };
+
+    const handleMessageSent = async (recordId: string, messageData: { date: string; recipients: string[] }) => {
+        try {
+            const record = records.find(r => r.id === recordId);
+            if (!record) return;
+
+            // Fetch current record to get latest message history
+            const { data: currentRecord, error: fetchError } = await supabase
+                .from('company_payroll_records')
+                .select('whatsapp_history')
+                .eq('id', recordId)
+                .single();
+
+            if (fetchError) throw fetchError;
+
+            const messageHistory = currentRecord.whatsapp_history || [];
+            const updatedHistory = [...messageHistory, messageData];
+
+            // Update the message history
+            const { error: updateError } = await supabase
+                .from('company_payroll_records')
+                .update({
+                    whatsapp_history: updatedHistory
+                })
+                .eq('id', recordId);
+
+            if (updateError) throw updateError;
+
+            // Update local state
+            setPayrollRecords(records.map(r => {
+                if (r.id === recordId) {
+                    return {
+                        ...r,
+                        whatsapp_history: updatedHistory
+                    };
+                }
+                return r;
+            }));
+
+            toast({
+                title: "Success",
+                description: "WhatsApp message history updated"
+            });
+        } catch (error) {
+            console.error('WhatsApp history update error:', error);
+            toast({
+                title: "Error",
+                description: "Failed to update WhatsApp history",
+                variant: "destructive"
+            });
+        }
+    };
+
     const [finalizeDialog, setFinalizeDialog] = useState<{
         isOpen: boolean;
         recordId: string | null;
@@ -692,29 +427,97 @@ export function PayslipPaymentReceiptsTable({
         record: CompanyPayrollRecord | null;
     }>({ isOpen: false, record: null });
 
-    const getDocumentCount = (record: CompanyPayrollRecord) => {
-        if (!record.status || record.status.finalization_date === 'NIL') {
-            return 'N/A';
-        }
-        // Check if payment_receipts_documents exists
-        if (!record.payment_receipts_documents) {
-            return '0/5';
-        }
-        // Count all document types
-        const requiredDocs = ['paye_receipt', 'housing_levy_receipt', 'shif_receipt', 'nssf_receipt', 'nita_receipt'];
-        const totalDocs = requiredDocs.length;
-        const uploadedDocs = requiredDocs.filter(docType =>
-            record.payment_receipts_documents?.[docType as DocumentType] !== null &&
-            record.payment_receipts_documents?.[docType as DocumentType] !== undefined
-        ).length;
-        return `${uploadedDocs}/${totalDocs}`;
+    const [deleteAllDialog, setDeleteAllDialog] = useState<{
+        isOpen: boolean;
+        record: CompanyPayrollRecord | null;
+    }>({ isOpen: false, record: null });
+
+    const [documentViewerState, setDocumentViewerState] = useState<{
+        isOpen: boolean;
+        url: string;
+        title: string;
+        companyName: string;
+        documentType: DocumentType | null;
+        recordId: string | null;
+    }>({
+        isOpen: false,
+        url: '',
+        title: '',
+        companyName: '',
+        documentType: null,
+        recordId: null
+    });
+
+    const openDocumentViewer = (record: CompanyPayrollRecord, documentType: DocumentType) => {
+        if (!record.payment_receipts_documents?.[documentType]) return;
+        
+        const url = record.payment_receipts_documents[documentType] || '';
+        const title = DOCUMENT_LABELS[documentType] || '';
+        const companyName = record.company?.company_name || 'Unknown';
+        
+        setDocumentViewerState({
+            isOpen: true,
+            url,
+            title,
+            companyName,
+            documentType,
+            recordId: record.id
+        });
     };
 
-    const allDocumentsUploaded = (record: CompanyPayrollRecord | undefined): boolean => {
-        if (!record) return false;
-        const requiredDocs = ['paye_receipt', 'housing_levy_receipt', 'shif_receipt', 'nssf_receipt', 'nita_receipt'];
-        return requiredDocs.every(docType => record.payment_receipts_documents?.[docType as DocumentType] !== null);
-    };
+    const getDocumentCount = useCallback((record: CompanyPayrollRecord): number => {
+        if (!record || !record.payment_receipts_documents) {
+            return 0;
+        }
+        
+        return Object.values(record.payment_receipts_documents).filter(Boolean).length;
+    }, []);
+
+    const allDocumentsUploaded = useCallback((record: CompanyPayrollRecord): boolean => {
+        if (!record || !record.payment_receipts_documents) {
+            return false;
+        }
+        
+        const uploadedCount = getDocumentCount(record);
+        return uploadedCount === Object.keys(DOCUMENT_LABELS).length - 1; // Subtract 1 for 'all_csv'
+    }, [getDocumentCount]);
+
+    const getDocumentsForUpload = useCallback((record: CompanyPayrollRecord) => {
+        if (!record || !record.payment_receipts_documents) {
+            return [];
+        }
+
+        const documents: Array<{
+            type: DocumentType;
+            status: 'pending' | 'uploaded';
+            path?: string;
+        }> = [];
+
+        // Add all document types
+        for (const docType of Object.keys(DOCUMENT_LABELS) as DocumentType[]) {
+            if (docType !== 'all_csv') { // Skip all_csv as it's not a document type
+                const path = record.payment_receipts_documents[docType];
+                documents.push({
+                    type: docType,
+                    status: path ? 'uploaded' : 'pending',
+                    path: path || undefined
+                });
+            }
+        }
+
+        return documents;
+    }, []);
+
+    const getUploadedDocCount = useCallback((record: any): number => {
+        if (!record || !record.payment_receipts_documents) {
+            return 0;
+        }
+        
+        // Count only non-null document paths
+        return Object.values(record.payment_receipts_documents)
+            .filter(Boolean)
+            .length;
+    }, []);
 
     // Memoize sorted records for performance
     const sortedRecords = useMemo(() => {
@@ -731,10 +534,392 @@ export function PayslipPaymentReceiptsTable({
         });
     }, [records]);
 
-    const [deleteAllDialog, setDeleteAllDialog] = useState<{
-        isOpen: boolean;
-        record: CompanyPayrollRecord | null;
-    }>({ isOpen: false, record: null });
+    const handleBatchDocumentUpload = useCallback(async (recordId: string, documents: Array<{file: File, documentType: DocumentType}>) => {
+        try {
+            setIsSubmitting(true);
+            const result = await onBatchDocumentUpload(recordId, documents, 'payment-receipts');
+            
+            if (result && result.success) {
+                toast({
+                    title: 'Success',
+                    description: `Successfully uploaded ${documents.length} documents`
+                });
+                
+                // Force refresh by updating records
+                setPayrollRecords(prevRecords => {
+                    return prevRecords.map(record => {
+                        if (record.id === recordId) {
+                            const updatedDocuments = {
+                                ...record.payment_receipts_documents,
+                                ...result.paths
+                            };
+                            
+                            return {
+                                ...record,
+                                payment_receipts_documents: updatedDocuments
+                            };
+                        }
+                        return record;
+                    });
+                });
+            } else {
+                toast({
+                    title: 'Error',
+                    description: result && result.error ? result.error : 'Failed to upload documents',
+                    variant: 'destructive'
+                });
+            }
+        } catch (error) {
+            console.error('Batch document upload error:', error);
+            toast({
+                title: 'Error',
+                description: error instanceof Error ? error.message : 'An unknown error occurred',
+                variant: 'destructive'
+            });
+        } finally {
+            setIsSubmitting(false);
+        }
+    }, [onBatchDocumentUpload, toast, setPayrollRecords]);
+
+    const handleEmailDateUpdate = useCallback(async (recordId: string) => {
+        try {
+            const record = records.find(r => r.id === recordId);
+            if (!record) return;
+            
+            const { error: updateError } = await supabase
+                .from('company_payroll_records')
+                .update({
+                    receipts_status: {
+                        ...record.receipts_status,
+                        email_date: new Date().toISOString()
+                    }
+                })
+                .eq('id', recordId);
+
+            if (updateError) throw updateError;
+
+            toast({
+                title: 'Success',
+                description: 'Email date updated successfully'
+            });
+        } catch (error) {
+            toast({
+                title: 'Error',
+                description: 'Failed to update email date',
+                variant: 'destructive'
+            });
+        }
+    }, [records, toast]);
+
+    const handleEmailSent = useCallback(async (recordId: string, emailData: { date: string; recipients: string[] }) => {
+        try {
+            const record = records.find(r => r.id === recordId);
+            if (!record) return;
+
+            // Fetch current record to get latest email history and status
+            const { data: currentRecord, error: fetchError } = await supabase
+                .from('company_payroll_records')
+                .select('email_history, receipts_status')
+                .eq('id', recordId)
+                .single();
+
+            if (fetchError) throw fetchError;
+
+            const emailHistory = currentRecord.email_history || [];
+            const updatedHistory = [...emailHistory, emailData];
+
+            // Update both email history and email date
+            const { error: updateError } = await supabase
+                .from('company_payroll_records')
+                .update({
+                    email_history: updatedHistory,
+                    receipts_status: {
+                        ...currentRecord.receipts_status,
+                        email_date: emailData.date
+                    }
+                })
+                .eq('id', recordId);
+
+            if (updateError) throw updateError;
+
+            // Update local state
+            setPayrollRecords(records.map(r => {
+                if (r.id === recordId) {
+                    return {
+                        ...r,
+                        email_history: updatedHistory,
+                        receipts_status: {
+                            ...r.receipts_status,
+                            email_date: emailData.date
+                        }
+                    };
+                }
+                return r;
+            }));
+
+            toast({
+                title: "Success",
+                description: "Email sent and history updated successfully"
+            });
+        } catch (error) {
+            console.error('Email history update error:', error);
+            toast({
+                title: "Error",
+                description: "Failed to update email history",
+                variant: "destructive"
+            });
+        }
+    }, [records, setPayrollRecords, toast]);
+
+    const handleFinalize = useCallback((recordId: string) => {
+        onStatusUpdate(recordId, {
+            verification_date: finalizeDialog.isNil ? 'NIL' : new Date().toISOString(),
+            status: 'completed',
+            assigned_to: finalizeDialog.assignedTo
+        });
+        setFinalizeDialog({ isOpen: false, recordId: null, assignedTo: 'Tushar', isNil: false });
+    }, [finalizeDialog, onStatusUpdate]);
+
+    const handleFilingConfirm = useCallback(async (recordId: string) => {
+        try {
+            const record = records.find(r => r.id === recordId);
+            if (!record) return;
+
+            // Fetch current record to get latest status
+            const { data: currentRecord, error: fetchError } = await supabase
+                .from('company_payroll_records')
+                .select('status')
+                .eq('id', recordId)
+                .single();
+
+            if (fetchError) throw fetchError;
+
+            const currentDate = filingDialog.isNil ? 'NIL' : new Date().toISOString();
+
+            // Create the updated status object
+            const updatedStatus = {
+                ...currentRecord.status, // Preserve existing status fields
+                filing: {
+                    isReady: true,
+                    filingDate: currentDate,
+                    isNil: filingDialog.isNil,
+                    filedBy: record.status?.assigned_to || 'Unassigned'
+                }
+            };
+
+            // Update the record in Supabase
+            const { error: updateError } = await supabase
+                .from('company_payroll_records')
+                .update({
+                    status: updatedStatus
+                })
+                .eq('id', recordId);
+
+            if (updateError) throw updateError;
+
+            // Update local state
+            const updatedRecords = records.map(r => {
+                if (r.id === recordId) {
+                    return {
+                        ...r,
+                        status: updatedStatus
+                    };
+                }
+                return r;
+            });
+
+            setPayrollRecords(updatedRecords);
+
+            toast({
+                title: "Success",
+                description: "Filing status updated successfully"
+            });
+
+            setFilingDialog({ isOpen: false, recordId: null, isNil: false, confirmOpen: false });
+        } catch (error) {
+            console.error('Filing update error:', error);
+            toast({
+                title: "Error",
+                description: "Failed to update filing status",
+                variant: "destructive"
+            });
+        }
+    }, [filingDialog, records, setFilingDialog, setPayrollRecords, toast]);
+
+    const handleRemoveFiling = useCallback(async (recordId: string) => {
+        try {
+            const record = records.find(r => r.id === recordId);
+            if (!record) return;
+
+            // Fetch current record to get latest status
+            const { data: currentRecord, error: fetchError } = await supabase
+                .from('company_payroll_records')
+                .select('status')
+                .eq('id', recordId)
+                .single();
+
+            if (fetchError) throw fetchError;
+
+            // Create the updated status object without the filing property
+            const { filing, ...restStatus } = currentRecord.status;
+            const updatedStatus = { ...restStatus };
+
+            // Update the record in Supabase
+            const { error: updateError } = await supabase
+                .from('company_payroll_records')
+                .update({
+                    status: updatedStatus
+                })
+                .eq('id', recordId);
+
+            if (updateError) throw updateError;
+
+            // Update local state
+            setPayrollRecords(records.map(r =>
+                r.id === recordId
+                    ? { ...r, status: updatedStatus }
+                    : r
+            ));
+
+            // Close the dialog and show success message
+            setFilingDialog(prev => ({ ...prev, isOpen: false }));
+            toast({
+                title: "Success",
+                description: "Filing status has been removed successfully.",
+                variant: "default",
+            });
+        } catch (error) {
+            console.error('Error removing filing status:', error);
+            toast({
+                title: "Error",
+                description: "Failed to remove filing status. Please try again.",
+                variant: "destructive",
+            });
+        }
+    }, [records, setFilingDialog, setPayrollRecords, toast]);
+
+    const handleRemoveFilingStatus = useCallback(async (recordId: string) => {
+        try {
+            const { error } = await supabase
+                .from('company_payroll_records')
+                .update({
+                    status: {
+                        finalization_date: null,
+                        assigned_to: null,
+                        is_nil_filing: false
+                    }
+                })
+                .eq('id', recordId);
+
+            if (error) throw error;
+
+            toast({
+                title: "Success",
+                description: "Filing status removed successfully"
+            });
+
+            // Update local state
+            const updatedRecords = records.map(record => {
+                if (record.id === recordId) {
+                    return {
+                        ...record,
+                        status: {
+                            ...record.status,
+                            finalization_date: null,
+                            assigned_to: null,
+                            is_nil_filing: false
+                        }
+                    };
+                }
+                return record;
+            });
+
+            setPayrollRecords(updatedRecords);
+        } catch (error) {
+            console.error('Error removing filing status:', error);
+            toast({
+                title: "Error",
+                description: "Failed to remove filing status. Please try again.",
+                variant: "destructive",
+            });
+        }
+    }, [records, setPayrollRecords, toast]);
+
+    const handleDownload = useCallback(async (path: string): Promise<void> => {
+        try {
+            const { data, error } = await supabase.storage
+                .from('Payroll-Cycle')
+                .download(path);
+
+            if (error) throw error;
+
+            // Create download link
+            const url = URL.createObjectURL(data);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = path.split('/').pop() || 'document';
+            document.body.appendChild(a);
+            a.click();
+            URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+        } catch (error) {
+            toast({
+                title: 'Error',
+                description: 'Failed to download document',
+                variant: 'destructive'
+            });
+        }
+    }, [toast]);
+
+    const handleDownloadAll = useCallback(async (record: CompanyPayrollRecord) => {
+        try {
+            // Add null check for payment_receipts_documents
+            if (!record.payment_receipts_documents) {
+                toast({
+                    title: 'Warning',
+                    description: 'No documents available to download',
+                    variant: 'default'
+                });
+                return;
+            }
+            
+            const documentsToDownload = Object.entries(record.payment_receipts_documents)
+                .filter(([key, value]) => key !== 'all_csv' && value !== null);
+
+            if (documentsToDownload.length === 0) {
+                toast({
+                    title: 'Warning',
+                    description: 'No documents available to download',
+                    variant: 'default'
+                });
+                return;
+            }
+
+            toast({
+                title: 'Downloading',
+                description: `Downloading ${documentsToDownload.length} documents...`
+            });
+
+            // Process downloads in batches for better performance
+            for (let i = 0; i < documentsToDownload.length; i += BATCH_SIZE) {
+                const batch = documentsToDownload.slice(i, i + BATCH_SIZE);
+                await Promise.all(batch.map(async ([_, path]) => {
+                    if (path) await handleDownload(path);
+                }));
+            }
+
+            toast({
+                title: 'Success',
+                description: 'All documents downloaded successfully'
+            });
+        } catch (error) {
+            toast({
+                title: 'Error',
+                description: 'Failed to download all documents',
+                variant: 'destructive'
+            });
+        }
+    }, [handleDownload, toast]);
 
     return (
         <div className="rounded-md border h-[calc(100vh-220px)] overflow-auto">
@@ -865,7 +1050,7 @@ export function PayslipPaymentReceiptsTable({
                                             <TooltipContent>
                                                 {record.email_history?.length > 0 ? (
                                                     <div className="space-y-2">
-                                                        <p className="font-semibold">Latest Email: {format(new Date(record.email_history[record.email_history.length - 1].date), 'dd/MM/yyyy HH:mm')}</p>
+                                                        <p className="font-medium">Latest Email: {format(new Date(record.email_history[record.email_history.length - 1].date), 'dd/MM/yyyy HH:mm')}</p>
                                                         <p className="text-sm text-gray-500">Click to view full history</p>
                                                     </div>
                                                 ) : (
@@ -901,72 +1086,234 @@ export function PayslipPaymentReceiptsTable({
                             {columnVisibility?.payeReceipt !== false && (
                                 <TableCell className="text-center">
                                     {getDocumentsForUpload(record).find(doc => doc.type === 'paye_receipt')?.status === 'uploaded' ? (
-                                        <Badge className="bg-green-500">
-                                            Uploaded
-                                        </Badge>
+                                        <div className="flex justify-center items-center space-x-1">
+                                            <Button 
+                                                size="sm"
+                                                className="bg-green-500 hover:bg-green-600 h-6 text-xs px-2"
+                                                onClick={() => openDocumentViewer(record, 'paye_receipt')}
+                                            >
+                                                View
+                                            </Button>
+                                            <Button
+                                                size="sm"
+                                                variant="ghost"
+                                                className="h-6 w-6 p-0 text-red-500 hover:text-red-700"
+                                                onClick={() => handleDocumentDelete(record.id, 'paye_receipt')}
+                                            >
+                                                <Trash2 className="h-4 w-4" />
+                                            </Button>
+                                        </div>
                                     ) : (
-                                        <Badge className="bg-yellow-500">
-                                            Missing
-                                        </Badge>
+                                        <div className="flex justify-center">
+                                            <DocumentUploadDialog
+                                                documentType="paye_receipt"
+                                                recordId={record.id}
+                                                onUpload={(file, docType) => handleLocalDocumentUpload(record.id, file, docType || 'paye_receipt')}
+                                                onDelete={() => handleDocumentDelete(record.id, 'paye_receipt')}
+                                                existingDocument={record.payment_receipts_documents?.paye_receipt || null}
+                                                label={DOCUMENT_LABELS['paye_receipt']}
+                                                isNilFiling={record.status?.finalization_date === 'NIL'}
+                                                allDocuments={getDocumentsForUpload(record)}
+                                                companyName={record.company?.company_name || 'Unknown'}
+                                                onBatchDocumentUpload={(documents) => handleBatchDocumentUpload(record.id, documents)}
+                                            />
+                                        </div>
                                     )}
                                 </TableCell>
                             )}
                             {columnVisibility?.housingLevyReceipt !== false && (
                                 <TableCell className="text-center">
                                     {getDocumentsForUpload(record).find(doc => doc.type === 'housing_levy_receipt')?.status === 'uploaded' ? (
-                                        <Badge className="bg-green-500">
-                                            Uploaded
-                                        </Badge>
+                                        <div className="flex justify-center items-center space-x-1">
+                                            <Button 
+                                                size="sm"
+                                                className="bg-green-500 hover:bg-green-600 h-6 text-xs px-2"
+                                                onClick={() => openDocumentViewer(record, 'housing_levy_receipt')}
+                                            >
+                                                View
+                                            </Button>
+                                            <Button
+                                                size="sm"
+                                                variant="ghost"
+                                                className="h-6 w-6 p-0 text-red-500 hover:text-red-700"
+                                                onClick={() => handleDocumentDelete(record.id, 'housing_levy_receipt')}
+                                            >
+                                                <Trash2 className="h-4 w-4" />
+                                            </Button>
+                                        </div>
                                     ) : (
-                                        <Badge className="bg-yellow-500">
-                                            Missing
-                                        </Badge>
+                                        <div className="flex justify-center">
+                                            <DocumentUploadDialog
+                                                documentType="housing_levy_receipt"
+                                                recordId={record.id}
+                                                onUpload={(file, docType) => handleLocalDocumentUpload(record.id, file, docType || 'housing_levy_receipt')}
+                                                onDelete={() => handleDocumentDelete(record.id, 'housing_levy_receipt')}
+                                                existingDocument={record.payment_receipts_documents?.housing_levy_receipt || null}
+                                                label={DOCUMENT_LABELS['housing_levy_receipt']}
+                                                isNilFiling={record.status?.finalization_date === 'NIL'}
+                                                allDocuments={getDocumentsForUpload(record)}
+                                                companyName={record.company?.company_name || 'Unknown'}
+                                                onBatchDocumentUpload={(documents) => handleBatchDocumentUpload(record.id, documents)}
+                                            />
+                                        </div>
                                     )}
                                 </TableCell>
                             )}
                             {columnVisibility?.nitaReceipt !== false && (
                                 <TableCell className="text-center">
                                     {getDocumentsForUpload(record).find(doc => doc.type === 'nita_receipt')?.status === 'uploaded' ? (
-                                        <Badge className="bg-green-500">
-                                            Uploaded
-                                        </Badge>
+                                        <div className="flex justify-center items-center space-x-1">
+                                            <Button 
+                                                size="sm"
+                                                className="bg-green-500 hover:bg-green-600 h-6 text-xs px-2"
+                                                onClick={() => openDocumentViewer(record, 'nita_receipt')}
+                                            >
+                                                View
+                                            </Button>
+                                            <Button
+                                                size="sm"
+                                                variant="ghost"
+                                                className="h-6 w-6 p-0 text-red-500 hover:text-red-700"
+                                                onClick={() => handleDocumentDelete(record.id, 'nita_receipt')}
+                                            >
+                                                <Trash2 className="h-4 w-4" />
+                                            </Button>
+                                        </div>
                                     ) : (
-                                        <Badge className="bg-yellow-500">
-                                            Missing
-                                        </Badge>
+                                        <div className="flex justify-center">
+                                            <DocumentUploadDialog
+                                                documentType="nita_receipt"
+                                                recordId={record.id}
+                                                onUpload={(file, docType) => handleLocalDocumentUpload(record.id, file, docType || 'nita_receipt')}
+                                                onDelete={() => handleDocumentDelete(record.id, 'nita_receipt')}
+                                                existingDocument={record.payment_receipts_documents?.nita_receipt || null}
+                                                label={DOCUMENT_LABELS['nita_receipt']}
+                                                isNilFiling={record.status?.finalization_date === 'NIL'}
+                                                allDocuments={getDocumentsForUpload(record)}
+                                                companyName={record.company?.company_name || 'Unknown'}
+                                                onBatchDocumentUpload={(documents) => handleBatchDocumentUpload(record.id, documents)}
+                                            />
+                                        </div>
                                     )}
                                 </TableCell>
                             )}
                             {columnVisibility?.shifReceipt !== false && (
                                 <TableCell className="text-center">
                                     {getDocumentsForUpload(record).find(doc => doc.type === 'shif_receipt')?.status === 'uploaded' ? (
-                                        <Badge className="bg-green-500">
-                                            Uploaded
-                                        </Badge>
+                                        <div className="flex justify-center items-center space-x-1">
+                                            <Button 
+                                                size="sm"
+                                                className="bg-green-500 hover:bg-green-600 h-6 text-xs px-2"
+                                                onClick={() => openDocumentViewer(record, 'shif_receipt')}
+                                            >
+                                                View
+                                            </Button>
+                                            <Button
+                                                size="sm"
+                                                variant="ghost"
+                                                className="h-6 w-6 p-0 text-red-500 hover:text-red-700"
+                                                onClick={() => handleDocumentDelete(record.id, 'shif_receipt')}
+                                            >
+                                                <Trash2 className="h-4 w-4" />
+                                            </Button>
+                                        </div>
                                     ) : (
-                                        <Badge className="bg-yellow-500">
-                                            Missing
-                                        </Badge>
+                                        <div className="flex justify-center">
+                                            <DocumentUploadDialog
+                                                documentType="shif_receipt"
+                                                recordId={record.id}
+                                                onUpload={(file, docType) => handleLocalDocumentUpload(record.id, file, docType || 'shif_receipt')}
+                                                onDelete={() => handleDocumentDelete(record.id, 'shif_receipt')}
+                                                existingDocument={record.payment_receipts_documents?.shif_receipt || null}
+                                                label={DOCUMENT_LABELS['shif_receipt']}
+                                                isNilFiling={record.status?.finalization_date === 'NIL'}
+                                                allDocuments={getDocumentsForUpload(record)}
+                                                companyName={record.company?.company_name || 'Unknown'}
+                                                onBatchDocumentUpload={(documents) => handleBatchDocumentUpload(record.id, documents)}
+                                            />
+                                        </div>
                                     )}
                                 </TableCell>
                             )}
                             {columnVisibility?.nssfReceipt !== false && (
                                 <TableCell className="text-center">
                                     {getDocumentsForUpload(record).find(doc => doc.type === 'nssf_receipt')?.status === 'uploaded' ? (
-                                        <Badge className="bg-green-500">
-                                            Uploaded
-                                        </Badge>
+                                        <div className="flex justify-center items-center space-x-1">
+                                            <Button 
+                                                size="sm"
+                                                className="bg-green-500 hover:bg-green-600 h-6 text-xs px-2"
+                                                onClick={() => openDocumentViewer(record, 'nssf_receipt')}
+                                            >
+                                                View
+                                            </Button>
+                                            <Button
+                                                size="sm"
+                                                variant="ghost"
+                                                className="h-6 w-6 p-0 text-red-500 hover:text-red-700"
+                                                onClick={() => handleDocumentDelete(record.id, 'nssf_receipt')}
+                                            >
+                                                <Trash2 className="h-4 w-4" />
+                                            </Button>
+                                        </div>
                                     ) : (
-                                        <Badge className="bg-yellow-500">
-                                            Missing
-                                        </Badge>
+                                        <div className="flex justify-center">
+                                            <DocumentUploadDialog
+                                                documentType="nssf_receipt"
+                                                recordId={record.id}
+                                                onUpload={(file, docType) => handleLocalDocumentUpload(record.id, file, docType || 'nssf_receipt')}
+                                                onDelete={() => handleDocumentDelete(record.id, 'nssf_receipt')}
+                                                existingDocument={record.payment_receipts_documents?.nssf_receipt || null}
+                                                label={DOCUMENT_LABELS['nssf_receipt']}
+                                                isNilFiling={record.status?.finalization_date === 'NIL'}
+                                                allDocuments={getDocumentsForUpload(record)}
+                                                companyName={record.company?.company_name || 'Unknown'}
+                                                onBatchDocumentUpload={(documents) => handleBatchDocumentUpload(record.id, documents)}
+                                            />
+                                        </div>
                                     )}
                                 </TableCell>
                             )}
+                            {/* {columnVisibility?.nhifReceipt !== false && (
+                                <TableCell className="text-center">
+                                    {getDocumentsForUpload(record).find(doc => doc.type === 'nhif_receipt')?.status === 'uploaded' ? (
+                                        <div className="flex justify-center items-center space-x-1">
+                                            <Button 
+                                                size="sm"
+                                                className="bg-green-500 hover:bg-green-600 h-6 text-xs px-2"
+                                                onClick={() => openDocumentViewer(record, 'nhif_receipt')}
+                                            >
+                                                View
+                                            </Button>
+                                            <Button
+                                                size="sm"
+                                                variant="ghost"
+                                                className="h-6 w-6 p-0 text-red-500 hover:text-red-700"
+                                                onClick={() => handleDocumentDelete(record.id, 'nhif_receipt')}
+                                            >
+                                                <Trash2 className="h-4 w-4" />
+                                            </Button>
+                                        </div>
+                                    ) : (
+                                        <div className="flex justify-center">
+                                            <DocumentUploadDialog
+                                                documentType="nhif_receipt"
+                                                recordId={record.id}
+                                                onUpload={(file) => handleLocalDocumentUpload(record.id, file, 'nhif_receipt')}
+                                                onDelete={() => handleDocumentDelete(record.id, 'nhif_receipt')}
+                                                existingDocument={record.payment_receipts_documents?.nhif_receipt || null}
+                                                label={DOCUMENT_LABELS['nhif_receipt']}
+                                                isNilFiling={record.status?.finalization_date === 'NIL'}
+                                                allDocuments={getDocumentsForUpload(record)}
+                                                companyName={record.company?.company_name || 'Unknown'}
+                                            />
+                                        </div>
+                                    )}
+                                </TableCell>
+                            )} */}
                             {columnVisibility?.allDocuments !== false && (
                                 <TableCell className="text-center">
                                     <Badge className={record.status?.finalization_date === 'NIL' ? 'bg-purple-500' : 'bg-blue-500'}>
-                                        {getDocumentCount(record)}
+                                        {record.status?.finalization_date === 'NIL' ? 'N/A' : `${getUploadedDocCount(record)}/${Object.keys(DOCUMENT_LABELS).length - 1}`}
                                     </Badge>
                                 </TableCell>
                             )}
@@ -978,7 +1325,7 @@ export function PayslipPaymentReceiptsTable({
                                                 <MoreHorizontal className="h-4 w-4" />
                                             </Button>
                                         </DropdownMenuTrigger>
-                                        <DropdownMenuContent align="end" className="w-48">
+                                        <DropdownMenuContent align="end" className="w-auto">
                                             <DropdownMenuItem
                                                 onClick={() => setDocumentDetailsDialog({ isOpen: true, record })}
                                                 className="flex items-center gap-2"
@@ -996,10 +1343,10 @@ export function PayslipPaymentReceiptsTable({
                                             </DropdownMenuItem>
                                             <DropdownMenuItem
                                                 className="flex items-center gap-2 text-red-600"
-                                                onClick={() => setDeleteAllDialog({ isOpen: true, record })}
+                                                onClick={() => handleDeleteAll(record)}
                                             >
                                                 <Trash2 className="h-4 w-4" />
-                                                Delete All
+                                                Delete All Documents
                                             </DropdownMenuItem>
                                         </DropdownMenuContent>
                                     </DropdownMenu>
@@ -1037,7 +1384,7 @@ export function PayslipPaymentReceiptsTable({
                                                         onEmailSent={(data) => handleEmailSent(record.id, data)}
                                                     />
                                                 </TooltipTrigger>
-                                                <TooltipContent side="left" align="center" className="w-72">
+                                                <TooltipContent>
                                                     {record.email_history?.length > 0 ? (
                                                         <div className="space-y-2">
                                                             <div className="flex items-center justify-between">
@@ -1124,7 +1471,9 @@ export function PayslipPaymentReceiptsTable({
             {/* Filing Dialog */}
             <Dialog
                 open={filingDialog.isOpen}
-                onOpenChange={(isOpen) => !isOpen && setFilingDialog(prev => ({ ...prev, isOpen }))}
+                onOpenChange={(isOpen) => {
+                    if (!isOpen) setFilingDialog(prev => ({ ...prev, isOpen }));
+                }}
             >
                 <DialogContent className="max-w-2xl">
                     <DialogHeader>
@@ -1292,22 +1641,26 @@ export function PayslipPaymentReceiptsTable({
 
             <AlertDialog
                 open={deleteAllDialog.isOpen}
-                onOpenChange={(isOpen) => setDeleteAllDialog(prev => ({ ...prev, isOpen }))}
+                onOpenChange={(isOpen) => {
+                    if (!isOpen) setDeleteAllDialog({ isOpen: false, record: null });
+                }}
             >
                 <AlertDialogContent>
                     <AlertDialogHeader>
-                        <AlertDialogTitle>Delete All Documents</AlertDialogTitle>
+                        <AlertDialogTitle>Are you sure?</AlertDialogTitle>
                         <AlertDialogDescription>
-                            Are you sure you want to delete all documents for this company? This action cannot be undone.
+                            This will delete all documents for this record. This action cannot be undone.
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogCancel>
+                            Cancel
+                        </AlertDialogCancel>
                         <AlertDialogAction
                             className="bg-red-500 hover:bg-red-600"
                             onClick={() => {
                                 if (deleteAllDialog.record) {
-                                    handleDeleteAll(deleteAllDialog.record);
+                                    handleDeleteAllDocuments(deleteAllDialog.record.id);
                                     setDeleteAllDialog({ isOpen: false, record: null });
                                 }
                             }}
@@ -1317,6 +1670,22 @@ export function PayslipPaymentReceiptsTable({
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>
+
+            {documentViewerState.isOpen && (
+                <DocumentViewer
+                    url={documentViewerState.url}
+                    isOpen={documentViewerState.isOpen}
+                    onClose={() => setDocumentViewerState(prev => ({ ...prev, isOpen: false }))}
+                    title={documentViewerState.title}
+                    companyName={documentViewerState.companyName}
+                    documentType={documentViewerState.documentType || ''}
+                    recordId={documentViewerState.recordId || ''}
+                    onExtractionsUpdate={(extractions) => {
+                        console.log('Extractions updated:', extractions);
+                        // Handle extractions update if needed
+                    }}
+                />
+            )}
         </div>
     )
 }

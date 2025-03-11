@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { useState, useMemo } from "react"
+import { useState, useMemo, useCallback } from "react"
 import { format } from 'date-fns'
 import {
     MoreHorizontal,
@@ -10,7 +10,8 @@ import {
     CheckCircle,
     AlertCircle,
     Mail,
-    MessageSquare
+    MessageSquare,
+    Upload
 } from 'lucide-react'
 import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
@@ -53,6 +54,7 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { DocumentUploadDialog } from './DocumentUploadDialog'
+import BulkDocumentUpload from './BulkDocumentUpload';
 import {
     CompanyPayrollRecord,
     DocumentType,
@@ -67,14 +69,16 @@ interface EmailHistory {
     recipients: string[];
 }
 
-interface PayrollTableProps {
+interface TaxPaymentTableProps {
     records: CompanyPayrollRecord[]
-    onDocumentUpload: (recordId: string, file: File, documentType: DocumentType) => Promise<void>
+    onDocumentUpload: (recordId: string, file: File, documentType: DocumentType, subFolder: string) => Promise<string | undefined>
     onDocumentDelete: (recordId: string, documentType: DocumentType) => Promise<void>
-    onStatusUpdate: (recordId: string, statusUpdate: any) => Promise<void>
+    onStatusUpdate: (recordId: string, statusUpdate: Partial<CompanyPayrollRecord['status']>) => Promise<void>
     loading: boolean
-    setPayrollRecords: (records: CompanyPayrollRecord[]) => void
     columnVisibility?: Record<string, boolean>
+    onExportCsv: (records: CompanyPayrollRecord[]) => Promise<void>
+    bulkUploadDialogOpen: boolean
+    setBulkUploadDialogOpen: (open: boolean) => void
 }
 
 const DOCUMENT_LABELS: Record<string, string> = {
@@ -129,12 +133,14 @@ const getDocumentsForUpload = (record: CompanyPayrollRecord) => {
 export function TaxPaymentTable({
     records,
     onDocumentUpload,
+    onDocumentDelete,
     onStatusUpdate,
-    onDocumentDelete,   
     loading,
-    setPayrollRecords,
-    columnVisibility
-}: PayrollTableProps) {
+    columnVisibility,
+    onExportCsv,
+    bulkUploadDialogOpen,
+    setBulkUploadDialogOpen
+}: TaxPaymentTableProps) {
     const { toast } = useToast()
 
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -254,8 +260,6 @@ export function TaxPaymentTable({
                 return r;
             });
 
-            setPayrollRecords(updatedRecords);
-
             toast({
                 title: "Success",
                 description: "Filing status updated successfully"
@@ -301,13 +305,6 @@ export function TaxPaymentTable({
             if (updateError) throw updateError;
 
             // Update local state
-            setPayrollRecords(records.map(r =>
-                r.id === recordId
-                    ? { ...r, status: updatedStatus }
-                    : r
-            ));
-
-            // Close the dialog and show success message
             setFilingDialog(prev => ({ ...prev, isOpen: false }));
             toast({
                 title: "Success",
@@ -371,8 +368,8 @@ export function TaxPaymentTable({
 
             if (updateError) throw updateError;
 
-            // Update local state
-            const updatedRecords: CompanyPayrollRecord[] = records.map(r => {
+            // Update local state with a new array to trigger re-render
+            const updatedRecords = records.map(r => {
                 if (r.id === record.id) {
                     return {
                         ...r,
@@ -388,7 +385,9 @@ export function TaxPaymentTable({
                 }
                 return r;
             });
-            setPayrollRecords(updatedRecords);
+
+            // Close the dialog
+            setDeleteAllDialog({ isOpen: false, record: null });
 
             toast({
                 title: 'Success',
@@ -466,7 +465,7 @@ export function TaxPaymentTable({
             }
 
             // Call the onDocumentUpload function passed from parent
-            await onDocumentUpload(recordId, file, documentType);
+            await onDocumentUpload(recordId, file, documentType, 'payment-slips');
 
             toast({
                 title: 'Success',
@@ -540,16 +539,6 @@ export function TaxPaymentTable({
             if (updateError) throw updateError;
 
             // Update local state
-            setPayrollRecords(records.map(r => {
-                if (r.id === recordId) {
-                    return {
-                        ...r,
-                        email_history: updatedHistory
-                    };
-                }
-                return r;
-            }));
-
             toast({
                 title: "Success",
                 description: "Email history updated successfully"
@@ -592,16 +581,6 @@ export function TaxPaymentTable({
             if (updateError) throw updateError;
 
             // Update local state
-            setPayrollRecords(records.map(r => {
-                if (r.id === recordId) {
-                    return {
-                        ...r,
-                        whatsapp_history: updatedHistory
-                    };
-                }
-                return r;
-            }));
-
             toast({
                 title: "Success",
                 description: "WhatsApp message history updated"
@@ -614,6 +593,90 @@ export function TaxPaymentTable({
                 variant: "destructive"
             });
         }
+    };
+
+    const handleBulkUpload = async (files: File[], mappedFiles: any[]) => {
+        try {
+            // Filter out only valid files
+            const validMappedFiles = mappedFiles.filter(file => file.recordId && file.documentType);
+            
+            if (validMappedFiles.length === 0) {
+                toast({
+                    title: 'Error',
+                    description: 'No valid files to upload',
+                    variant: 'destructive'
+                });
+                return Promise.reject(new Error('No valid files to upload'));
+            }
+            
+            // Process each file sequentially
+            const uploadResults = [];
+            for (let i = 0; i < validMappedFiles.length; i++) {
+                const { file, recordId, documentType, companyName } = validMappedFiles[i];
+                const record = records.find(r => r.id === recordId);
+                
+                if (record && documentType) {
+                    try {
+                        await onDocumentUpload(recordId, file, documentType, 'payment-slips');
+                        uploadResults.push({
+                            success: true,
+                            fileName: file.name,
+                            companyName
+                        });
+                    } catch (error) {
+                        console.error(`Error uploading file ${file.name}:`, error);
+                        uploadResults.push({
+                            success: false,
+                            fileName: file.name,
+                            companyName,
+                            error: error.message || 'Upload failed'
+                        });
+                    }
+                }
+            }
+            
+            // Show summary toast
+            const successCount = uploadResults.filter(r => r.success).length;
+            const failCount = uploadResults.length - successCount;
+            
+            if (successCount > 0) {
+                toast({
+                    title: 'Upload Complete',
+                    description: `Successfully uploaded ${successCount} documents${failCount > 0 ? `, ${failCount} failed` : ''}`,
+                    variant: 'default'
+                });
+            } else if (failCount > 0) {
+                toast({
+                    title: 'Upload Failed',
+                    description: `Failed to upload ${failCount} documents`,
+                    variant: 'destructive'
+                });
+            }
+            
+            // Close the bulk upload dialog
+            setBulkUploadDialogOpen(false);
+            
+            return Promise.resolve(uploadResults);
+        } catch (error) {
+            console.error("Bulk upload error:", error);
+            toast({
+                title: 'Error',
+                description: 'An unexpected error occurred during bulk upload',
+                variant: 'destructive'
+            });
+            return Promise.reject(error);
+        }
+    };
+
+    const handleBulkExport = () => {
+        // Get all records that have documents
+        const recordsWithDocuments = records.filter(record => 
+            record.payment_slips_documents && 
+            Object.values(record.payment_slips_documents).some(doc => doc)
+        );
+        
+        // Export CSV with document links
+        onExportCsv(recordsWithDocuments);
     };
 
     return (
@@ -1195,6 +1258,13 @@ export function TaxPaymentTable({
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>
+
+            <BulkDocumentUpload
+                open={bulkUploadDialogOpen}
+                onClose={() => setBulkUploadDialogOpen(false)}
+                onUpload={handleBulkUpload}
+                payrollRecords={records}
+            />
         </div>
     )
 }

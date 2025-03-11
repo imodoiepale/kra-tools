@@ -238,14 +238,14 @@ export function DocumentUploadDialog({
 
                         {existingDocument && (
                             <>
-                                <Button
+                                {/* <Button
                                     variant="ghost"
                                     size="sm"
                                     className="h-6 text-xs px-2"
                                     onClick={() => handleViewDocument(existingDocument, label)}
                                 >
                                     <Eye className="h-3 w-3" />
-                                </Button>
+                                </Button> */}
                                 <Button
                                     size="sm"
                                     variant="destructive"

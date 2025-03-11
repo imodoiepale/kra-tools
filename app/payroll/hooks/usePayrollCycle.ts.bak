@@ -1048,7 +1048,7 @@ export const usePayrollCycle = () => {
                 // Fetch record from database
                 const { data: fetchedRecord, error: fetchError } = await supabase
                     .from('company_payroll_records')
-                    .select('*, company:company_id(*)')
+                    .select('*, company:company_id(*), payment_receipts_documents')
                     .eq('id', recordId)
                     .single();
 
@@ -1603,7 +1603,6 @@ export const usePayrollCycle = () => {
         payrollRecords,
         setPayrollRecords,
         loading,
-        setLoading,
         selectedYear,
         setSelectedYear,
         selectedMonth,

@@ -45,6 +45,15 @@ interface ContactModalProps {
   onEmailSent?: (data: { date: string; recipients: string[]; }) => void;
 }
 
+const DOCUMENT_LABELS: Record<string, string> = {
+  paye_receipt: "PAYE PAYMENT RECEIPT",
+  housing_levy_receipt: "HOUSING PAYMENT LEVY RECEIPT",
+  nita_receipt: "NITA PAYMENT RECEIPT",
+  shif_receipt: "SHIF PAYMENT RECEIPT",
+  nssf_receipt: "NSSF PAYMENT RECEIPT",
+  all_csv: "All CSV Files"
+};
+
 export function ContactModal({
   trigger,
   companyName,
@@ -238,7 +247,7 @@ export function ContactModal({
                         <ul style="color: #374151; margin: 0 0 30px; text-align: left;">
                             ${documents
                             .filter((doc) => doc.status === "uploaded")
-                            .map((doc) => `<li style="margin-bottom: 8px;">${doc.label}</li>`)
+                            .map((doc) => `<li style="margin-bottom: 8px;">${DOCUMENT_LABELS[doc.type] || doc.label}</li>`)
                             .join("")}
                         </ul>
                         
@@ -483,7 +492,7 @@ export function ContactModal({
                       className="flex items-center justify-between p-3 rounded-lg bg-gray-50"
                     >
                       <span className="text-sm font-medium text-gray-700">
-                        {doc.label}
+                        {DOCUMENT_LABELS[doc.type] || doc.label}
                       </span>
                       <Badge
                         variant={
@@ -534,7 +543,7 @@ export function ContactModal({
                                                     )
                                                     .map(
                                                       (doc) =>
-                                                        `<li style="margin-bottom: 8px;">${doc.label}</li>`
+                                                        `<li style="margin-bottom: 8px;">${DOCUMENT_LABELS[doc.type] || doc.label}</li>`
                                                     )
                                                     .join("")}
                                               </ul>
