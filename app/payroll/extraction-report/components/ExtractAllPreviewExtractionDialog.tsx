@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { Loader2, Save, RotateCw, ChevronDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -26,49 +26,47 @@ import {
 const MAX_RETRIES = 3;
 const RETRY_DELAY = 4000; // 4 seconds
 
-// Helper function to format date to DD/MM/YYYY
-const formatDateToDDMMYYYY = (dateString: string | null): string | null => {
+// Improved date formatting function
+const formatDateToDDMMYYYY = (dateString) => {
     if (!dateString) return null;
-    
-    // Try to parse the date string
-    const date = new Date(dateString);
-    
-    // Check if date is valid
+
+    // Check if already in DD/MM/YYYY format
+    if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(dateString)) {
+        // Ensure leading zeros
+        const parts = dateString.split('/');
+        const day = parts[0].padStart(2, '0');
+        const month = parts[1].padStart(2, '0');
+        return `${day}/${month}/${parts[2]}`;
+    }
+
+    // Try to parse various date formats
+    let date;
+
+    // Try ISO format (YYYY-MM-DD)
+    if (/^\d{4}-\d{1,2}-\d{1,2}/.test(dateString)) {
+        date = new Date(dateString);
+    }
+    // Try MM/DD/YYYY format
+    else if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(dateString)) {
+        const parts = dateString.split('/');
+        date = new Date(`${parts[2]}-${parts[0]}-${parts[1]}`);
+    }
+    // Try other common formats
+    else {
+        date = new Date(dateString);
+    }
+
+    // Check if date parsing worked
     if (isNaN(date.getTime())) {
-        // Try to handle common formats like MM/DD/YYYY or YYYY-MM-DD
-        const parts = dateString.split(/[-\/\.]/);
-        
-        if (parts.length === 3) {
-            // If it looks like YYYY-MM-DD or YYYY/MM/DD
-            if (parts[0].length === 4) {
-                const year = parseInt(parts[0]);
-                const month = parseInt(parts[1]);
-                const day = parseInt(parts[2]);
-                
-                // Create new date with proper order: day, month, year
-                return `${day.toString().padStart(2, '0')}/${month.toString().padStart(2, '0')}/${year}`;
-            }
-            
-            // If it's MM/DD/YYYY format (common in extraction APIs)
-            if (parts[0].length <= 2 && parts[1].length <= 2 && parts[2].length === 4) {
-                // Assuming month/day/year, convert to day/month/year
-                const month = parseInt(parts[0]);
-                const day = parseInt(parts[1]);
-                const year = parseInt(parts[2]);
-                
-                return `${day.toString().padStart(2, '0')}/${month.toString().padStart(2, '0')}/${year}`;
-            }
-        }
-        
-        // If we can't parse it, return original
+        console.warn("Could not parse date:", dateString);
         return dateString;
     }
-    
-    // Format as DD/MM/YYYY
+
+    // Format as DD/MM/YYYY with padding
     const day = date.getDate().toString().padStart(2, '0');
     const month = (date.getMonth() + 1).toString().padStart(2, '0');
     const year = date.getFullYear();
-    
+
     return `${day}/${month}/${year}`;
 };
 
@@ -99,89 +97,109 @@ interface ExtractAllPreviewExtractionDialog {
     onSave: (recordId: string, extractions: any) => void
 }
 
-
 export function ExtractAllPreviewExtractionDialog({
     isOpen,
     onClose,
     documents,
     onSave
 }: ExtractAllPreviewExtractionDialog) {
-    const { toast } = useToast()
-    const [activeDoc, setActiveDoc] = useState(0)
-    const [loading, setLoading] = useState(false)
-    const [localDocs, setLocalDocs] = useState<Array<{
-        recordId: string,
-        companyName: string,
-        documents: Document[]
-    }>>(documents);
+    const { toast } = useToast();
+    const [activeDoc, setActiveDoc] = useState(0);
+    const [loading, setLoading] = useState(false);
+    const [documentLoaded, setDocumentLoaded] = useState(false);
+    const [documentLoadError, setDocumentLoadError] = useState(false);
 
-    // Update local docs when documents prop changes
+    // Using useRef for localDocs to prevent unnecessary re-renders
+    const localDocsRef = useRef(documents);
+    // Use separate state for UI updates
+    const [localDocsVersion, setLocalDocsVersion] = useState(0);
+
+    // Update ref when documents prop changes
     useEffect(() => {
-        setLocalDocs(documents);
+        localDocsRef.current = JSON.parse(JSON.stringify(documents));
+        setLocalDocsVersion(prev => prev + 1);
     }, [documents]);
 
-    const [previewDoc, setPreviewDoc] = useState<Document | null>(null)
     const iframeRef = useRef<HTMLIFrameElement>(null);
-
-    const [expandedCompany, setExpandedCompany] = useState<string | null>(null)
-    const [savedCompanies, setSavedCompanies] = useState<Set<string>>(new Set())
-
+    const [expandedCompany, setExpandedCompany] = useState<string | null>(null);
+    const [savedCompanies, setSavedCompanies] = useState<Set<string>>(new Set());
     const [documentCache, setDocumentCache] = useState(new Map());
+    const [activeCompanyDocs, setActiveCompanyDocs] = useState<Document[]>([]);
 
+    // Stabilize the companies data with useMemo
+    const documentsByCompany = useMemo(() => {
+        return localDocsRef.current.map(({ recordId, companyName, documents }) => ({
+            recordId,
+            companyName,
+            documents: documents.map(doc => ({
+                ...doc,
+                companyName
+            }))
+        }));
+    }, [localDocsVersion]);
 
-    // Update iframe source only when necessary
+    // Set initial expanded company
     useEffect(() => {
-        if (iframeRef.current && expandedCompany) {
-            const company = localDocs.find(c => c.companyName === expandedCompany);
-            if (company && company.documents[activeDoc]) {
-                const doc = company.documents[activeDoc];
-                const cachedUrl = documentCache.get(`${expandedCompany}-${doc.type}`);
+        if (isOpen && documentsByCompany.length > 0 && !expandedCompany) {
+            setExpandedCompany(documentsByCompany[0].companyName);
+        }
+    }, [isOpen, documentsByCompany, expandedCompany]);
 
-                if (cachedUrl) {
-                    iframeRef.current.src = cachedUrl;
-                } else {
-                    const url = doc.url;
-                    if (url) {
-                        // Cache the URL
-                        setDocumentCache(prev => new Map(prev).set(`${expandedCompany}-${doc.type}`, url));
-                        iframeRef.current.src = url;
-                    }
-                }
+    // Update active company documents when expanded company changes
+    useEffect(() => {
+        if (expandedCompany) {
+            const company = documentsByCompany.find(c => c.companyName === expandedCompany);
+            if (company) {
+                setActiveCompanyDocs(company.documents);
+                preloadDocuments(company.documents);
             }
         }
-    }, [activeDoc, expandedCompany, localDocs, documentCache]);
+    }, [expandedCompany, documentsByCompany]);
 
-    // Memoize the preview URL to prevent unnecessary re-renders
-    const previewUrl = useMemo(() => {
-        const company = localDocs.find(c => c.companyName === expandedCompany);
-        if (!company || !company.documents[activeDoc]) return '';
-        const doc = company.documents[activeDoc];
-        return doc?.url || (doc?.file ? URL.createObjectURL(doc.file) : '');
-    }, [activeDoc, localDocs, expandedCompany]);
+    // Reset document loaded state when active doc changes
+    useEffect(() => {
+        setDocumentLoaded(false);
+        setDocumentLoadError(false);
+    }, [activeDoc, expandedCompany]);
 
-    // useEffect(() => {
-    //     if (isOpen && localDocs.length > 0) {
-    //         handleBulkExtract(localDocs);
-    //     }
-    // }, [isOpen]);
+    // Preload document URLs
+    const preloadDocuments = useCallback(async (documents) => {
+        for (const doc of documents) {
+            if (doc.url && !documentCache.has(doc.url)) {
+                setDocumentCache(prev => new Map(prev).set(doc.url, doc.url));
+            }
+        }
+    }, [documentCache]);
+
+    // Update iframe source when active document changes
+    useEffect(() => {
+        if (iframeRef.current && expandedCompany && activeCompanyDocs.length > 0) {
+            const doc = activeCompanyDocs[activeDoc];
+            if (doc && doc.url) {
+                const cachedUrl = documentCache.get(doc.url) || doc.url;
+                iframeRef.current.src = cachedUrl;
+            }
+        }
+    }, [activeDoc, expandedCompany, activeCompanyDocs, documentCache]);
 
     const extractionFields = [
         { name: 'amount', type: 'string', required: true },
         { name: 'payment_date', type: 'date', required: true },
         { name: 'payment_mode', type: 'string', required: true },
         { name: 'bank_name', type: 'string', required: true }
-    ]
+    ];
 
-    const handleExtractionUpdate = (companyName: string, field: keyof Extraction, value: string) => {
-        // For payment_date field, ensure the format is DD/MM/YYYY when user inputs it manually
-        let formattedValue = value;
-        if (field === 'payment_date' && value) {
-            formattedValue = formatDateToDDMMYYYY(value) || value;
-        }
-        
-        setLocalDocs(docs =>
-            docs.map(doc =>
-                doc.companyName === companyName ? {
+    // Update a specific field without causing the component to collapse
+    const handleExtractionUpdate = useCallback((companyName, field, value) => {
+        // Format date field if necessary
+        const formattedValue = field === 'payment_date' && value
+            ? formatDateToDDMMYYYY(value)
+            : value;
+
+        // Update the ref directly
+        localDocsRef.current = localDocsRef.current.map(doc => {
+            if (doc.companyName === companyName) {
+                return {
                     ...doc,
                     documents: doc.documents.map((d, i) =>
                         i === activeDoc
@@ -194,25 +212,42 @@ export function ExtractAllPreviewExtractionDialog({
                             }
                             : d
                     )
-                } : doc
-            )
-        );
-    }
+                };
+            }
+            return doc;
+        });
 
-    const handleBulkExtract = async (docs: Document[]) => {
+        // Also update the active company docs for immediate UI feedback
+        setActiveCompanyDocs(activeCompanyDocs.map((d, i) =>
+            i === activeDoc
+                ? {
+                    ...d,
+                    extractions: {
+                        ...d.extractions,
+                        [field]: formattedValue
+                    }
+                }
+                : d
+        ));
+
+        // Trigger a version update to refresh memoized values
+        setLocalDocsVersion(prev => prev + 1);
+    }, [activeDoc, activeCompanyDocs]);
+
+    const handleBulkExtract = useCallback(async (docs) => {
         setLoading(true);
-        let retryQueue: Document[] = [];
+        let retryQueue = [];
 
         try {
-            const processDocuments = async (documents: Document[]) => {
-                const extractionPromises = documents.map(async (doc) => {
+            const processDocuments = async (documents) => {
+                return await Promise.all(documents.map(async (doc) => {
                     try {
                         if (!doc.url) {
                             throw new Error('No URL available for document');
                         }
 
                         console.log(`Starting extraction for ${doc.label}...`);
-                        
+
                         const result = await performExtraction(
                             doc.url,
                             extractionFields,
@@ -232,10 +267,10 @@ export function ExtractAllPreviewExtractionDialog({
                         // Enhance extracted data
                         const extractedContent = result.extractedData?.raw_text || '';
                         const detectedPaymentMode = determinePaymentMode(extractedContent);
-                        
+
                         // Format date to DD/MM/YYYY
                         const formattedDate = formatDateToDDMMYYYY(result.extractedData?.payment_date);
-                        
+
                         const enhancedData = {
                             ...result.extractedData,
                             payment_mode: detectedPaymentMode || result.extractedData?.payment_mode,
@@ -244,7 +279,7 @@ export function ExtractAllPreviewExtractionDialog({
 
                         // Validate the extraction
                         const validation = validateExtraction(enhancedData);
-                        
+
                         return {
                             type: doc.type,
                             success: validation.isValid,
@@ -260,14 +295,12 @@ export function ExtractAllPreviewExtractionDialog({
                             shouldRetry: true
                         };
                     }
-                });
-
-                return await Promise.all(extractionPromises);
+                }));
             };
 
             // First attempt
             let results = await processDocuments(docs);
-            
+
             // Handle retries
             for (let attempt = 1; attempt < MAX_RETRIES; attempt++) {
                 // Collect documents that need retry
@@ -279,9 +312,9 @@ export function ExtractAllPreviewExtractionDialog({
 
                 console.log(`Retry attempt ${attempt + 1} for ${retryQueue.length} documents...`);
                 await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
-                
+
                 const retryResults = await processDocuments(retryQueue);
-                
+
                 // Update results with retry outcomes
                 results = results.map(result => {
                     const retryResult = retryResults.find(r => r.type === result.type);
@@ -289,29 +322,44 @@ export function ExtractAllPreviewExtractionDialog({
                 });
             }
 
-            // Update local docs with final results
-            setLocalDocs(prevDocs =>
-                prevDocs.map(doc => {
-                    const result = results.find(r => r.type === doc.documents[activeDoc].type);
+            // Find the active company
+            const companyName = expandedCompany;
+            if (!companyName) return;
+
+            // Update only the active documents
+            const updatedDocs = [...activeCompanyDocs];
+
+            docs.forEach((doc, index) => {
+                const docIndex = updatedDocs.findIndex(d => d.type === doc.type);
+                if (docIndex !== -1) {
+                    const result = results.find(r => r.type === doc.type);
                     if (result?.success && result.data) {
-                        return {
-                            ...doc,
-                            documents: doc.documents.map((d, i) =>
-                                i === activeDoc
-                                    ? {
-                                        ...d,
-                                        extractions: {
-                                            ...d.extractions,
-                                            ...result.data
-                                        }
-                                    }
-                                    : d
-                            )
+                        updatedDocs[docIndex] = {
+                            ...updatedDocs[docIndex],
+                            extractions: {
+                                ...updatedDocs[docIndex].extractions,
+                                ...result.data
+                            }
                         };
                     }
-                    return doc;
-                })
-            );
+                }
+            });
+
+            // Update the active company docs
+            setActiveCompanyDocs(updatedDocs);
+
+            // Also update the main data reference
+            localDocsRef.current = localDocsRef.current.map(company => {
+                if (company.companyName === companyName) {
+                    return {
+                        ...company,
+                        documents: updatedDocs
+                    };
+                }
+                return company;
+            });
+
+            setLocalDocsVersion(prev => prev + 1);
 
             // Show final status
             const successCount = results.filter(r => r.success).length;
@@ -337,34 +385,18 @@ export function ExtractAllPreviewExtractionDialog({
         } finally {
             setLoading(false);
         }
-    };
+    }, [expandedCompany, activeCompanyDocs, toast]);
 
-    const handleManualExtract = () => {
-        const currentDoc = localDocs[0].documents[activeDoc];
-        handleBulkExtract([currentDoc]);
-    };
+    const handleManualExtract = useCallback(() => {
+        if (!activeCompanyDocs[activeDoc]) return;
+        handleBulkExtract([activeCompanyDocs[activeDoc]]);
+    }, [activeCompanyDocs, activeDoc, handleBulkExtract]);
 
-    const documentsByCompany = useMemo(() => {
-        return localDocs.map(({ recordId, companyName, documents }) => ({
-            recordId,
-            companyName,
-            documents: documents.map(doc => ({
-                ...doc,
-                companyName: companyName // Ensure each document has companyName
-            }))
-        }));
-    }, [localDocs]);
-
-    useEffect(() => {
-        if (isOpen && documentsByCompany.length > 0) {
-            setExpandedCompany(documentsByCompany[0].companyName);
-        }
-    }, [isOpen, documentsByCompany]);
-
-    const handleSave = async (companyName: string, companyDocs: Document[]) => {
+    const handleSave = useCallback(async (companyName) => {
         setLoading(true);
         try {
-            const company = localDocs.find(c => c.companyName === companyName);
+            // Find the company data in the ref
+            const company = localDocsRef.current.find(c => c.companyName === companyName);
             if (!company) throw new Error('Company not found');
 
             // Get existing extractions
@@ -382,10 +414,18 @@ export function ExtractAllPreviewExtractionDialog({
             };
 
             // Add each document's extractions
-            companyDocs.forEach(doc => {
+            company.documents.forEach(doc => {
                 const docType = doc.type.endsWith('_receipt') ? doc.type : `${doc.type}_receipt`;
+
+                // Ensure date is properly formatted
+                let paymentDate = doc.extractions.payment_date;
+                if (paymentDate) {
+                    paymentDate = formatDateToDDMMYYYY(paymentDate);
+                }
+
                 updatedExtractions[docType] = {
                     ...doc.extractions,
+                    payment_date: paymentDate,
                     payment_mode: doc.extractions.payment_mode === 'Pay Bill' ?
                         PAYMENT_MODES.MPESA : doc.extractions.payment_mode
                 };
@@ -403,7 +443,6 @@ export function ExtractAllPreviewExtractionDialog({
 
             // Mark company as saved
             setSavedCompanies(prev => new Set([...prev, companyName]));
-            setExpandedCompany(null);
 
             // Notify parent component
             onSave(company.recordId, updatedExtractions);
@@ -422,15 +461,14 @@ export function ExtractAllPreviewExtractionDialog({
         } finally {
             setLoading(false);
         }
-    };
+    }, [onSave, toast]);
 
-    const renderExtractionField = (companyName: string, field: keyof Extraction, label: string, placeholder: string) => {
-        const company = localDocs.find(c => c.companyName === companyName);
-        if (!company || !company.documents[activeDoc]) return null;
+    const renderExtractionField = useCallback((companyName, field, label, placeholder) => {
+        if (!activeCompanyDocs[activeDoc]) return null;
 
-        // Get field value
-        const value = company.documents[activeDoc].extractions[field] || '';
-        
+        // Get field value from active company docs
+        const value = activeCompanyDocs[activeDoc].extractions[field] || '';
+
         return (
             <div className="space-y-1">
                 <Label htmlFor={`${companyName}-${field}`} className="text-xs">{label}</Label>
@@ -448,11 +486,7 @@ export function ExtractAllPreviewExtractionDialog({
                 )}
             </div>
         );
-    };
-
-    const handlePreview = (doc: Document) => {
-        setPreviewDoc(doc)
-    }
+    }, [activeCompanyDocs, activeDoc, handleExtractionUpdate]);
 
     return (
         <Dialog open={isOpen} onOpenChange={onClose}>
@@ -462,11 +496,10 @@ export function ExtractAllPreviewExtractionDialog({
                 </DialogHeader>
 
                 <ScrollArea className="h-[calc(90vh-100px)]">
-                    {documentsByCompany.map(({ companyName, documents }) => (
+                    {documentsByCompany.map(({ companyName, documents, recordId }) => (
                         <div
                             key={companyName}
-                            className={`mb-4 rounded-lg border ${savedCompanies.has(companyName) ? 'bg-gray-50' : 'bg-white'
-                                }`}
+                            className={`mb-4 rounded-lg border ${savedCompanies.has(companyName) ? 'bg-gray-50' : 'bg-white'}`}
                         >
                             <div
                                 className="p-4 flex justify-between items-center cursor-pointer"
@@ -480,8 +513,7 @@ export function ExtractAllPreviewExtractionDialog({
                                         <Badge variant="success">Saved</Badge>
                                     )}
                                 </div>
-                                <ChevronDown className={`h-4 w-4 transition-transform ${expandedCompany === companyName ? 'rotate-180' : ''
-                                    }`} />
+                                <ChevronDown className={`h-4 w-4 transition-transform ${expandedCompany === companyName ? 'rotate-180' : ''}`} />
                             </div>
 
                             {expandedCompany === companyName && (
@@ -489,7 +521,7 @@ export function ExtractAllPreviewExtractionDialog({
                                     <div className="grid grid-cols-7 gap-6">
                                         <div className="col-span-2 flex flex-col gap-4">
                                             <ScrollArea className="h-full border rounded-lg p-2">
-                                                {documents.map((doc, index) => (
+                                                {activeCompanyDocs.map((doc, index) => (
                                                     <div
                                                         key={doc.type}
                                                         className={`p-3 rounded-lg cursor-pointer mb-2 ${activeDoc === index
@@ -520,18 +552,54 @@ export function ExtractAllPreviewExtractionDialog({
                                             </ScrollArea>
                                         </div>
 
-                                        <div className="col-span-3 border rounded bg-white overflow-hidden">
+                                        <div className="col-span-3 border rounded bg-white overflow-hidden relative">
+                                            {!documentLoaded && !documentLoadError && (
+                                                <div className="absolute inset-0 flex items-center justify-center bg-white bg-opacity-80 z-10">
+                                                    <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+                                                </div>
+                                            )}
+                                            {documentLoadError && (
+                                                <div className="absolute inset-0 flex items-center justify-center bg-white bg-opacity-80 z-10">
+                                                    <div className="text-center p-4">
+                                                        <p className="text-red-500 font-medium">Failed to load document</p>
+                                                        <Button
+                                                            variant="outline"
+                                                            size="sm"
+                                                            className="mt-2"
+                                                            onClick={() => {
+                                                                setDocumentLoadError(false);
+                                                                setDocumentLoaded(false);
+                                                                // Force reload iframe
+                                                                if (iframeRef.current) {
+                                                                    const currentSrc = iframeRef.current.src;
+                                                                    iframeRef.current.src = "";
+                                                                    setTimeout(() => {
+                                                                        if (iframeRef.current) iframeRef.current.src = currentSrc;
+                                                                    }, 100);
+                                                                }
+                                                            }}
+                                                        >
+                                                            Try Again
+                                                        </Button>
+                                                    </div>
+                                                </div>
+                                            )}
                                             <iframe
                                                 ref={iframeRef}
                                                 className="w-full h-full"
-                                                title={documents[activeDoc]?.label}
+                                                title={activeCompanyDocs[activeDoc]?.label}
+                                                onLoad={() => setDocumentLoaded(true)}
+                                                onError={() => {
+                                                    setDocumentLoadError(true);
+                                                    setDocumentLoaded(false);
+                                                }}
                                             />
                                         </div>
 
                                         <div className="col-span-2 border rounded-lg p-4 space-y-4 bg-white overflow-y-auto">
                                             <div className="flex justify-between items-center mb-2">
                                                 <h4 className="font-bold uppercase underline text-md">
-                                                    {documents[activeDoc]?.label}
+                                                    {activeCompanyDocs[activeDoc]?.label}
                                                 </h4>
                                                 <div className="flex flex-col gap-2">
                                                     <Button
@@ -564,7 +632,7 @@ export function ExtractAllPreviewExtractionDialog({
 
                                     <div className="flex justify-end mt-4">
                                         <Button
-                                            onClick={() => handleSave(companyName, documents)}
+                                            onClick={() => handleSave(companyName)}
                                             disabled={loading || savedCompanies.has(companyName)}
                                             className="bg-blue-600 hover:bg-blue-700"
                                         >

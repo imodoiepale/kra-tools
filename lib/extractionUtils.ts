@@ -812,7 +812,7 @@ export const performBatchExtraction = async (
           ...
         }
 
-        Only return the JSON data, no other text.
+        Only return the JSON data, no other textand Strictly Dates in format of DD/MM/YYYY
       `.trim();
 
       const model = genAI.getGenerativeModel({

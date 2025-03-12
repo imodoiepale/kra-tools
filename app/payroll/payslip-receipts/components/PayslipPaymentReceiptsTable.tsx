@@ -465,22 +465,22 @@ export function PayslipPaymentReceiptsTable({
         });
     };
 
-    const getDocumentCount = useCallback((record: CompanyPayrollRecord): number => {
-        if (!record || !record.payment_receipts_documents) {
-            return 0;
-        }
+    // const getDocumentCount = useCallback((record: CompanyPayrollRecord): number => {
+    //     if (!record || !record.payment_receipts_documents) {
+    //         return 0;
+    //     }
         
-        return Object.values(record.payment_receipts_documents).filter(Boolean).length;
-    }, []);
+    //     return Object.values(record.payment_receipts_documents).filter(Boolean).length;
+    // }, []);
 
-    const allDocumentsUploaded = useCallback((record: CompanyPayrollRecord): boolean => {
-        if (!record || !record.payment_receipts_documents) {
-            return false;
-        }
+    // const allDocumentsUploaded = useCallback((record: CompanyPayrollRecord): boolean => {
+    //     if (!record || !record.payment_receipts_documents) {
+    //         return false;
+    //     }
         
-        const uploadedCount = getDocumentCount(record);
-        return uploadedCount === Object.keys(DOCUMENT_LABELS).length - 1; // Subtract 1 for 'all_csv'
-    }, [getDocumentCount]);
+    //     const uploadedCount = getDocumentCount(record);
+    //     return uploadedCount === Object.keys(DOCUMENT_LABELS).length - 1; // Subtract 1 for 'all_csv'
+    // }, [getDocumentCount]);
 
     const getDocumentsForUpload = useCallback((record: CompanyPayrollRecord) => {
         if (!record || !record.payment_receipts_documents) {
@@ -921,47 +921,237 @@ export function PayslipPaymentReceiptsTable({
         }
     }, [handleDownload, toast]);
 
+
+    // Helper functions
+    const isNilRecord = useCallback((record: CompanyPayrollRecord): boolean => {
+        if (!record || !record.status) return false;
+
+        return (
+            record.status.verification_date === 'NIL' ||
+            record.status.finalization_date === 'NIL'
+        );
+    }, []);
+
+    const getDocumentCount = useCallback((record: CompanyPayrollRecord): number => {
+        if (!record || !record.payment_receipts_documents) {
+            return 0;
+        }
+
+        // If it's a NIL record, count all document types as effectively "uploaded"
+        if (isNilRecord(record)) {
+            return Object.keys(DOCUMENT_LABELS).length - 1; // Subtract 1 for 'all_csv'
+        }
+
+        return Object.values(record.payment_receipts_documents).filter(Boolean).length;
+    }, [isNilRecord]);
+
+    const allDocumentsUploaded = useCallback((record: CompanyPayrollRecord): boolean => {
+        if (!record || !record.payment_receipts_documents) {
+            return false;
+        }
+
+        // If it's a NIL record, consider all documents as effectively "uploaded"
+        if (isNilRecord(record)) {
+            return true;
+        }
+
+        const uploadedCount = getDocumentCount(record);
+        return uploadedCount === Object.keys(DOCUMENT_LABELS).length - 1; // Subtract 1 for 'all_csv'
+    }, [getDocumentCount, isNilRecord]);
+
+    // Define column definitions to make rendering more maintainable
+    const summaryColumns = [
+        { key: 'index', title: '#' },
+        { key: 'companyName', title: 'Company Name' },
+        { key: 'emailDate', title: 'Email Date' },
+        { key: 'whatsappDate', title: 'WhatsApp Date' },
+        { key: 'payeReceipt', title: 'PAYE Receipt', documentType: 'paye_receipt' },
+        { key: 'housingLevyReceipt', title: 'Housing Levy Receipt', documentType: 'housing_levy_receipt' },
+        { key: 'nitaReceipt', title: 'NITA Receipt', documentType: 'nita_receipt' },
+        { key: 'shifReceipt', title: 'SHIF Receipt', documentType: 'shif_receipt' },
+        { key: 'nssfReceipt', title: 'NSSF Receipt', documentType: 'nssf_receipt' },
+        { key: 'allDocuments', title: 'All Documents' },
+        { key: 'actions', title: 'Actions' },
+        { key: 'emailStatus', title: 'Email Status' }
+    ];
+
+    // Get counts for each document type
+    const getDocumentTypeCounts = useCallback(() => {
+        const counts = {
+            total: sortedRecords.length,
+            complete: sortedRecords.filter(r => r?.status?.status === 'completed' || allDocumentsUploaded(r)).length,
+            nil: sortedRecords.filter(r => isNilRecord(r)).length,
+            documentTypes: {} as Record<string, {
+                total: number,
+                complete: number,
+                pending: number
+            }>
+        };
+
+        // Initialize document type counts
+        summaryColumns
+            .filter(col => col.documentType)
+            .forEach(col => {
+                counts.documentTypes[col.documentType as string] = {
+                    total: 0,
+                    complete: 0,
+                    pending: 0
+                };
+            });
+
+        // Calculate counts for each document type
+        sortedRecords.forEach(record => {
+            summaryColumns
+                .filter(col => col.documentType)
+                .forEach(col => {
+                    const docType = col.documentType as DocumentType;
+                    const isNil = isNilRecord(record);
+                    const isUploaded = record?.payment_receipts_documents?.[docType];
+                    const isComplete = record?.status?.status === 'completed' || allDocumentsUploaded(record);
+
+                    // Total count (including NIL records as "uploaded")
+                    if (isUploaded || isNil) {
+                        counts.documentTypes[docType].total++;
+                    }
+
+                    // Complete count
+                    if (isComplete && (isUploaded || isNil)) {
+                        counts.documentTypes[docType].complete++;
+                    }
+
+                    // Pending count - only for non-NIL records that are not uploaded
+                    if (!isNil && !isUploaded && !isComplete) {
+                        counts.documentTypes[docType].pending++;
+                    }
+                });
+        });
+
+        return counts;
+    }, [sortedRecords, allDocumentsUploaded, isNilRecord]);
+
+    // Memoize the counts to prevent recalculation on each render
+    const counts = useMemo(() => getDocumentTypeCounts(), [getDocumentTypeCounts]);
+
     return (
         <div className="rounded-md border h-[calc(100vh-220px)] overflow-auto">
             <Table aria-label="Payroll Records" className="border border-gray-200">
-                <TableHeader className="bg-blue-500 text-white">
-                    <TableRow>
-                        {columnVisibility?.index !== false && (
-                            <TableHead className="text-white font-semibold" scope="col">#</TableHead>
-                        )}
-                        {columnVisibility?.companyName !== false && (
-                            <TableHead className="text-white font-semibold" scope="col">Company Name</TableHead>
-                        )}
-                        {columnVisibility?.emailDate !== false && (
-                            <TableHead className="text-white font-semibold" scope="col">Email Date</TableHead>
-                        )}
-                        {columnVisibility?.whatsappDate !== false && (
-                            <TableHead className="text-white font-semibold" scope="col">WhatsApp Date</TableHead>
-                        )}
-                        {columnVisibility?.payeReceipt !== false && (
-                            <TableHead className="text-white font-semibold" scope="col">PAYE Receipt</TableHead>
-                        )}
-                        {columnVisibility?.housingLevyReceipt !== false && (
-                            <TableHead className="text-white font-semibold" scope="col">Housing Levy Receipt</TableHead>
-                        )}
-                        {columnVisibility?.nitaReceipt !== false && (
-                            <TableHead className="text-white font-semibold" scope="col">NITA Receipt</TableHead>
-                        )}
-                        {columnVisibility?.shifReceipt !== false && (
-                            <TableHead className="text-white font-semibold" scope="col">SHIF Receipt</TableHead>
-                        )}
-                        {columnVisibility?.nssfReceipt !== false && (
-                            <TableHead className="text-white font-semibold" scope="col">NSSF Receipt</TableHead>
-                        )}
-                        {columnVisibility?.allDocuments !== false && (
-                            <TableHead className="text-white font-semibold" scope="col">All Documents</TableHead>
-                        )}
-                        {columnVisibility?.actions !== false && (
-                            <TableHead className="text-white font-semibold" scope="col">Actions</TableHead>
-                        )}
-                        {columnVisibility?.emailStatus !== false && (
-                            <TableHead className="text-white font-semibold" scope="col">Email Status</TableHead>
-                        )}
+                <TableHeader>
+                    {/* Main column headers */}
+                    <TableRow className="bg-blue-500 text-white">
+                        {summaryColumns.map(column => (
+                            columnVisibility?.[column.key] !== false && (
+                                <TableHead key={column.key} className="text-white font-semibold" scope="col">
+                                    {column.title}
+                                </TableHead>
+                            )
+                        ))}
+                    </TableRow>
+
+                    {/* Total Records Row */}
+                    <TableRow className="bg-gray-100 text-gray-800 border-b border-gray-300 hover:bg-gray-200">
+                        {summaryColumns.map(column => {
+                            if (columnVisibility?.[column.key] === false) return null;
+
+                            if (column.key === 'index') {
+                                return <TableHead key={column.key} className="text-center text-sm font-semibold">Total Records</TableHead>;
+                            }
+                            if (column.key === 'companyName') {
+                                return <TableHead key={column.key} className="text-center text-sm font-semibold">{counts.total}</TableHead>;
+                            }
+                            if (column.documentType) {
+                                return (
+                                    <TableHead key={column.key} className="text-center text-sm font-semibold">
+                                        {counts.documentTypes[column.documentType]?.total || 0}
+                                    </TableHead>
+                                );
+                            }
+                            if (column.key === 'allDocuments') {
+                                return (
+                                    <TableHead key={column.key} className="text-center text-sm font-semibold">
+                                        {sortedRecords.filter(r => allDocumentsUploaded(r)).length}
+                                    </TableHead>
+                                );
+                            }
+
+                            return <TableHead key={column.key} className="text-center text-sm font-semibold">-</TableHead>;
+                        })}
+                    </TableRow>
+
+                    {/* Complete Records Row */}
+                    <TableRow className="bg-emerald-100 text-emerald-800 border-b border-gray-300 hover:bg-emerald-200">
+                        {summaryColumns.map(column => {
+                            if (columnVisibility?.[column.key] === false) return null;
+
+                            if (column.key === 'index') {
+                                return <TableHead key={column.key} className="text-center text-sm font-semibold">Complete</TableHead>;
+                            }
+                            if (column.key === 'companyName') {
+                                return <TableHead key={column.key} className="text-center text-sm font-semibold">{counts.complete}</TableHead>;
+                            }
+                            if (column.documentType) {
+                                return (
+                                    <TableHead key={column.key} className="text-center text-sm font-semibold">
+                                        {counts.documentTypes[column.documentType]?.complete || 0}
+                                    </TableHead>
+                                );
+                            }
+                            if (column.key === 'allDocuments') {
+                                return (
+                                    <TableHead key={column.key} className="text-center text-sm font-semibold">
+                                        {sortedRecords.filter(r => allDocumentsUploaded(r)).length}
+                                    </TableHead>
+                                );
+                            }
+
+                            return <TableHead key={column.key} className="text-center text-sm font-semibold">-</TableHead>;
+                        })}
+                    </TableRow>
+
+                    {/* Pending Records Row */}
+                    <TableRow className="bg-amber-100 text-amber-800 border-b border-gray-300 hover:bg-amber-200">
+                        {summaryColumns.map(column => {
+                            if (columnVisibility?.[column.key] === false) return null;
+
+                            if (column.key === 'index') {
+                                return <TableHead key={column.key} className="text-center text-sm font-semibold">Pending</TableHead>;
+                            }
+                            if (column.key === 'companyName') {
+                                return (
+                                    <TableHead key={column.key} className="text-center text-sm font-semibold">
+                                        {sortedRecords.filter(r =>
+                                            r?.status?.status !== 'completed' &&
+                                            !allDocumentsUploaded(r) &&
+                                            !isNilRecord(r)
+                                        ).length}
+                                    </TableHead>
+                                );
+                            }
+                            if (column.documentType) {
+                                return (
+                                    <TableHead key={column.key} className="text-center text-sm font-semibold">
+                                        {counts.documentTypes[column.documentType]?.pending || 0}
+                                    </TableHead>
+                                );
+                            }
+
+                            return <TableHead key={column.key} className="text-center text-sm font-semibold">-</TableHead>;
+                        })}
+                    </TableRow>
+
+                    {/* NIL Records Row */}
+                    <TableRow className="bg-indigo-100 text-indigo-800 border-b border-gray-300 hover:bg-indigo-200">
+                        {summaryColumns.map(column => {
+                            if (columnVisibility?.[column.key] === false) return null;
+
+                            if (column.key === 'index') {
+                                return <TableHead key={column.key} className="text-center text-sm font-semibold">NIL Records</TableHead>;
+                            }
+                            if (column.key === 'companyName') {
+                                return <TableHead key={column.key} className="text-center text-sm font-semibold">{counts.nil}</TableHead>;
+                            }
+
+                            return <TableHead key={column.key} className="text-center text-sm font-semibold">-</TableHead>;
+                        })}
                     </TableRow>
                 </TableHeader>
                 <TableBody>

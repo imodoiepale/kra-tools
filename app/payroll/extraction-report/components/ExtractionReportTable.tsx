@@ -147,20 +147,21 @@ const ensureExtractionsExist = (record: CompanyPayrollRecord) => {
     return record;
 };
 
+// Updated renderStatusBadge function
 const renderStatusBadge = (extractedData: any) => {
     if (!extractedData || Object.keys(extractedData).length === 0) {
-        return <Badge variant="outline" className="bg-gray-100 text-gray-500">Not Extracted</Badge>;
+        return <Badge variant="outline" className="bg-red-100 text-red-700">Pending</Badge>;
     }
-    
+
     // Check if essential fields are extracted
     const hasAmount = !!extractedData.amount;
     const hasPaymentDate = !!extractedData.payment_date;
     const hasPaymentMode = !!extractedData.payment_mode;
-    
+
     if (hasAmount && hasPaymentDate && hasPaymentMode) {
         return <Badge variant="outline" className="bg-green-100 text-green-700">Extracted</Badge>;
     } else {
-        return <Badge variant="outline" className="bg-yellow-100 text-yellow-700">Partial</Badge>;
+        return <Badge variant="outline" className="bg-red-100 text-red-700">Pending</Badge>;
     }
 };
 

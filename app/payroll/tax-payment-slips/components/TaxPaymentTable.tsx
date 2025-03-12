@@ -682,8 +682,273 @@ export function TaxPaymentTable({
     return (
         <div className="rounded-md border h-[calc(100vh-220px)] overflow-auto">
             <Table aria-label="Payroll Records" className="border border-gray-200">
-                <TableHeader className="bg-blue-500 text-white">
-                    <TableRow>
+                <TableHeader>
+                    {/* Total Records Row */}
+                    <TableRow className="bg-blue-50 text-blue-800 border-b border-gray-300">
+                        {columnVisibility?.index !== false && (
+                            <TableHead className="text-center text-sm font-semibold">Total Records</TableHead>
+                        )}
+                        {columnVisibility?.companyName !== false && (
+                            <TableHead className="text-center text-sm font-semibold">{sortedRecords.length}</TableHead>
+                        )}
+                        {columnVisibility?.readyToFile !== false && (
+                            <TableHead className="text-center text-sm font-semibold">-</TableHead>
+                        )}
+                        {columnVisibility?.payeAcknowledgment !== false && (
+                            <TableHead className="text-center text-sm font-semibold">
+                                {sortedRecords.filter(r => r?.payment_slips_documents?.paye_acknowledgment).length}
+                            </TableHead>
+                        )}
+                        {columnVisibility?.payeSlip !== false && (
+                            <TableHead className="text-center text-sm font-semibold">
+                                {sortedRecords.filter(r => r?.payment_slips_documents?.paye_slip).length}
+                            </TableHead>
+                        )}
+                        {columnVisibility?.housingLevy !== false && (
+                            <TableHead className="text-center text-sm font-semibold">
+                                {sortedRecords.filter(r => r?.payment_slips_documents?.housing_levy_slip).length}
+                            </TableHead>
+                        )}
+                        {columnVisibility?.nita !== false && (
+                            <TableHead className="text-center text-sm font-semibold">
+                                {sortedRecords.filter(r => r?.payment_slips_documents?.nita_slip).length}
+                            </TableHead>
+                        )}
+                        {columnVisibility?.shif !== false && (
+                            <TableHead className="text-center text-sm font-semibold">
+                                {sortedRecords.filter(r => r?.payment_slips_documents?.shif_slip).length}
+                            </TableHead>
+                        )}
+                        {columnVisibility?.nssf !== false && (
+                            <TableHead className="text-center text-sm font-semibold">
+                                {sortedRecords.filter(r => r?.payment_slips_documents?.nssf_slip).length}
+                            </TableHead>
+                        )}
+                        {columnVisibility?.allTaxSlips !== false && (
+                            <TableHead className="text-center text-sm font-semibold">
+                                {sortedRecords.filter(r => allDocumentsUploaded(r)).length}
+                            </TableHead>
+                        )}
+                        {/* {columnVisibility?.emailStatus !== false && (
+                            <TableHead className="text-center text-sm font-semibold">-</TableHead>
+                        )} */}
+                        {columnVisibility?.email !== false && (
+                            <TableHead className="text-center text-sm font-semibold">-</TableHead>
+                        )}
+                        {columnVisibility?.whatsapp !== false && (
+                            <TableHead className="text-center text-sm font-semibold">-</TableHead>
+                        )}
+                        {columnVisibility?.actions !== false && (
+                            <TableHead className="text-center text-sm font-semibold">-</TableHead>
+                        )}
+                    </TableRow>
+
+                    {/* Complete Records Row */}
+                    <TableRow className="bg-green-50 text-green-800 border-b border-gray-300">
+                        {columnVisibility?.index !== false && (
+                            <TableHead className="text-center text-sm font-semibold">Complete</TableHead>
+                        )}
+                        {columnVisibility?.companyName !== false && (
+                            <TableHead className="text-center text-sm font-semibold">
+                                {sortedRecords.filter(r => r?.status?.status === 'completed' || allDocumentsUploaded(r)).length}
+                            </TableHead>
+                        )}
+                        {columnVisibility?.readyToFile !== false && (
+                            <TableHead className="text-center text-sm font-semibold">-</TableHead>
+                        )}
+                        {columnVisibility?.payeAcknowledgment !== false && (
+                            <TableHead className="text-center text-sm font-semibold">
+                                {sortedRecords.filter(r => (r?.status?.status === 'completed' || allDocumentsUploaded(r)) && r?.payment_slips_documents?.paye_acknowledgment).length}
+                            </TableHead>
+                        )}
+                        {columnVisibility?.payeSlip !== false && (
+                            <TableHead className="text-center text-sm font-semibold">
+                                {sortedRecords.filter(r => (r?.status?.status === 'completed' || allDocumentsUploaded(r)) && r?.payment_slips_documents?.paye_slip).length}
+                            </TableHead>
+                        )}
+                        {columnVisibility?.housingLevy !== false && (
+                            <TableHead className="text-center text-sm font-semibold">
+                                {sortedRecords.filter(r => (r?.status?.status === 'completed' || allDocumentsUploaded(r)) && r?.payment_slips_documents?.housing_levy_slip).length}
+                            </TableHead>
+                        )}
+                        {columnVisibility?.nita !== false && (
+                            <TableHead className="text-center text-sm font-semibold">
+                                {sortedRecords.filter(r => (r?.status?.status === 'completed' || allDocumentsUploaded(r)) && r?.payment_slips_documents?.nita_slip).length}
+                            </TableHead>
+                        )}
+                        {columnVisibility?.shif !== false && (
+                            <TableHead className="text-center text-sm font-semibold">
+                                {sortedRecords.filter(r => (r?.status?.status === 'completed' || allDocumentsUploaded(r)) && r?.payment_slips_documents?.shif_slip).length}
+                            </TableHead>
+                        )}
+                        {columnVisibility?.nssf !== false && (
+                            <TableHead className="text-center text-sm font-semibold">
+                                {sortedRecords.filter(r => (r?.status?.status === 'completed' || allDocumentsUploaded(r)) && r?.payment_slips_documents?.nssf_slip).length}
+                            </TableHead>
+                        )}
+                        {columnVisibility?.allTaxSlips !== false && (
+                            <TableHead className="text-center text-sm font-semibold">
+                                {sortedRecords.filter(r => allDocumentsUploaded(r)).length}
+                            </TableHead>
+                        )}
+                        {/* {columnVisibility?.emailStatus !== false && (
+                            <TableHead className="text-center text-sm font-semibold">-</TableHead>
+                        )} */}
+                        {columnVisibility?.email !== false && (
+                            <TableHead className="text-center text-sm font-semibold">-</TableHead>
+                        )}
+                        {columnVisibility?.whatsapp !== false && (
+                            <TableHead className="text-center text-sm font-semibold">-</TableHead>
+                        )}
+                        {columnVisibility?.actions !== false && (
+                            <TableHead className="text-center text-sm font-semibold">-</TableHead>
+                        )}
+                    </TableRow>
+
+                    {/* Pending Records Row */}
+                    <TableRow className="bg-yellow-50 text-yellow-800 border-b border-gray-300">
+                        {columnVisibility?.index !== false && (
+                            <TableHead className="text-center text-sm font-semibold">Pending</TableHead>
+                        )}
+                        {columnVisibility?.companyName !== false && (
+                            <TableHead className="text-center text-sm font-semibold">
+                                {sortedRecords.filter(r => 
+                                    r?.status?.status !== 'completed' && 
+                                    !allDocumentsUploaded(r) &&
+                                    !(r?.status?.verification_date?.includes('NIL'))
+                                ).length}
+                            </TableHead>
+                        )}
+                        {columnVisibility?.readyToFile !== false && (
+                            <TableHead className="text-center text-sm font-semibold">-</TableHead>
+                        )}
+                        {columnVisibility?.payeAcknowledgment !== false && (
+                            <TableHead className="text-center text-sm font-semibold">
+                                {sortedRecords.filter(r => 
+                                    r?.status?.status !== 'completed' && 
+                                    !allDocumentsUploaded(r) &&
+                                    !(r?.status?.verification_date?.includes('NIL')) && 
+                                    !r?.payment_slips_documents?.paye_acknowledgment
+                                ).length}
+                            </TableHead>
+                        )}
+                        {columnVisibility?.payeSlip !== false && (
+                            <TableHead className="text-center text-sm font-semibold">
+                                {sortedRecords.filter(r => 
+                                    r?.status?.status !== 'completed' && 
+                                    !allDocumentsUploaded(r) &&
+                                    !(r?.status?.verification_date?.includes('NIL')) && 
+                                    !r?.payment_slips_documents?.paye_slip
+                                ).length}
+                            </TableHead>
+                        )}
+                        {columnVisibility?.housingLevy !== false && (
+                            <TableHead className="text-center text-sm font-semibold">
+                                {sortedRecords.filter(r => 
+                                    r?.status?.status !== 'completed' && 
+                                    !allDocumentsUploaded(r) &&
+                                    !(r?.status?.verification_date?.includes('NIL')) && 
+                                    !r?.payment_slips_documents?.housing_levy_slip
+                                ).length}
+                            </TableHead>
+                        )}
+                        {columnVisibility?.nita !== false && (
+                            <TableHead className="text-center text-sm font-semibold">
+                                {sortedRecords.filter(r => 
+                                    r?.status?.status !== 'completed' && 
+                                    !allDocumentsUploaded(r) &&
+                                    !(r?.status?.verification_date?.includes('NIL')) && 
+                                    !r?.payment_slips_documents?.nita_slip
+                                ).length}
+                            </TableHead>
+                        )}
+                        {columnVisibility?.shif !== false && (
+                            <TableHead className="text-center text-sm font-semibold">
+                                {sortedRecords.filter(r => 
+                                    r?.status?.status !== 'completed' && 
+                                    !allDocumentsUploaded(r) &&
+                                    !(r?.status?.verification_date?.includes('NIL')) && 
+                                    !r?.payment_slips_documents?.shif_slip
+                                ).length}
+                            </TableHead>
+                        )}
+                        {columnVisibility?.nssf !== false && (
+                            <TableHead className="text-center text-sm font-semibold">
+                                {sortedRecords.filter(r => 
+                                    r?.status?.status !== 'completed' && 
+                                    !allDocumentsUploaded(r) &&
+                                    !(r?.status?.verification_date?.includes('NIL')) && 
+                                    !r?.payment_slips_documents?.nssf_slip
+                                ).length}
+                            </TableHead>
+                        )}
+                        {columnVisibility?.allTaxSlips !== false && (
+                            <TableHead className="text-center text-sm font-semibold">-</TableHead>
+                        )}
+                        {/* {columnVisibility?.emailStatus !== false && (
+                            <TableHead className="text-center text-sm font-semibold">-</TableHead>
+                        )} */}
+                        {columnVisibility?.email !== false && (
+                            <TableHead className="text-center text-sm font-semibold">-</TableHead>
+                        )}
+                        {columnVisibility?.whatsapp !== false && (
+                            <TableHead className="text-center text-sm font-semibold">-</TableHead>
+                        )}
+                        {columnVisibility?.actions !== false && (
+                            <TableHead className="text-center text-sm font-semibold">-</TableHead>
+                        )}
+                    </TableRow>
+
+                    {/* NIL Records Row */}
+                    <TableRow className="bg-purple-50 text-purple-800 border-b border-gray-300">
+                        {columnVisibility?.index !== false && (
+                            <TableHead className="text-center text-sm font-semibold">NIL Records</TableHead>
+                        )}
+                        {columnVisibility?.companyName !== false && (
+                            <TableHead className="text-center text-sm font-semibold">
+                                {sortedRecords.filter(r => r?.status?.verification_date?.includes('NIL')).length}
+                            </TableHead>
+                        )}
+                        {columnVisibility?.readyToFile !== false && (
+                            <TableHead className="text-center text-sm font-semibold">-</TableHead>
+                        )}
+                        {columnVisibility?.payeAcknowledgment !== false && (
+                            <TableHead className="text-center text-sm font-semibold">-</TableHead>
+                        )}
+                        {columnVisibility?.payeSlip !== false && (
+                            <TableHead className="text-center text-sm font-semibold">-</TableHead>
+                        )}
+                        {columnVisibility?.housingLevy !== false && (
+                            <TableHead className="text-center text-sm font-semibold">-</TableHead>
+                        )}
+                        {columnVisibility?.nita !== false && (
+                            <TableHead className="text-center text-sm font-semibold">-</TableHead>
+                        )}
+                        {columnVisibility?.shif !== false && (
+                            <TableHead className="text-center text-sm font-semibold">-</TableHead>
+                        )}
+                        {columnVisibility?.nssf !== false && (
+                            <TableHead className="text-center text-sm font-semibold">-</TableHead>
+                        )}
+                        {columnVisibility?.allTaxSlips !== false && (
+                            <TableHead className="text-center text-sm font-semibold">-</TableHead>
+                        )}
+                        {/* {columnVisibility?.emailStatus !== false && (
+                            <TableHead className="text-center text-sm font-semibold">-</TableHead>
+                        )} */}
+                        {columnVisibility?.email !== false && (
+                            <TableHead className="text-center text-sm font-semibold">-</TableHead>
+                        )}
+                        {columnVisibility?.whatsapp !== false && (
+                            <TableHead className="text-center text-sm font-semibold">-</TableHead>
+                        )}
+                        {columnVisibility?.actions !== false && (
+                            <TableHead className="text-center text-sm font-semibold">-</TableHead>
+                        )}
+                    </TableRow>
+
+                    {/* Original column headers */}
+                    <TableRow className="bg-blue-500 text-white">
                         {columnVisibility?.index !== false && (
                             <TableHead className="text-white font-semibold" scope="col">#</TableHead>
                         )}
@@ -814,31 +1079,104 @@ export function TaxPaymentTable({
                                         )}
                                     </TableCell>
                                 )}
-                                {Object.entries(DOCUMENT_LABELS).map(([key]) => (
-                                    key !== 'all_csv' && columnVisibility?.[key] !== false ? (
-                                        <TableCell key={key} className="text-center">
-                                            <DocumentUploadDialog
-                                                documentType={key as DocumentType}
-                                                recordId={record.id}
-                                                onUpload={(file, docType) => handleDocumentUpload(record.id, file, docType || key as DocumentType)}
-                                                onDelete={(docType) => handleDocumentDelete(record.id, docType || key as DocumentType)}
-                                                existingDocument={record.payment_slips_documents ? record.payment_slips_documents[key as DocumentType] : null}
-                                                label={DOCUMENT_LABELS[key]}
-                                                isNilFiling={record.status?.finalization_date === 'NIL'}
-                                                allDocuments={getDocumentsForUpload(record)}
-                                                companyName={record.company?.company_name || ''}
-                                            />
-                                        </TableCell>
-                                    ) : null
-                                ))}
-                                {columnVisibility?.all_csv !== false && (
+                                {columnVisibility?.payeAcknowledgment !== false && (
+                                    <TableCell className="text-center">
+                                        <DocumentUploadDialog
+                                            documentType="paye_acknowledgment"
+                                            recordId={record.id}
+                                            onUpload={(file, docType) => handleDocumentUpload(record.id, file, docType || "paye_acknowledgment")}
+                                            onDelete={(docType) => handleDocumentDelete(record.id, docType || "paye_acknowledgment")}
+                                            existingDocument={record.payment_slips_documents ? record.payment_slips_documents.paye_acknowledgment : null}
+                                            label="PAYE Ack."
+                                            isNilFiling={record.status?.finalization_date === 'NIL'}
+                                            allDocuments={getDocumentsForUpload(record)}
+                                            companyName={record.company?.company_name || ''}
+                                        />
+                                    </TableCell>
+                                )}
+                                {columnVisibility?.payeSlip !== false && (
+                                    <TableCell className="text-center">
+                                        <DocumentUploadDialog
+                                            documentType="paye_slip"
+                                            recordId={record.id}
+                                            onUpload={(file, docType) => handleDocumentUpload(record.id, file, docType || "paye_slip")}
+                                            onDelete={(docType) => handleDocumentDelete(record.id, docType || "paye_slip")}
+                                            existingDocument={record.payment_slips_documents ? record.payment_slips_documents.paye_slip : null}
+                                            label="PAYE Slip"
+                                            isNilFiling={record.status?.finalization_date === 'NIL'}
+                                            allDocuments={getDocumentsForUpload(record)}
+                                            companyName={record.company?.company_name || ''}
+                                        />
+                                    </TableCell>
+                                )}
+                                {columnVisibility?.housingLevy !== false && (
+                                    <TableCell className="text-center">
+                                        <DocumentUploadDialog
+                                            documentType="housing_levy_slip"
+                                            recordId={record.id}
+                                            onUpload={(file, docType) => handleDocumentUpload(record.id, file, docType || "housing_levy_slip")}
+                                            onDelete={(docType) => handleDocumentDelete(record.id, docType || "housing_levy_slip")}
+                                            existingDocument={record.payment_slips_documents ? record.payment_slips_documents.housing_levy_slip : null}
+                                            label="Housing Levy"
+                                            isNilFiling={record.status?.finalization_date === 'NIL'}
+                                            allDocuments={getDocumentsForUpload(record)}
+                                            companyName={record.company?.company_name || ''}
+                                        />
+                                    </TableCell>
+                                )}
+                                {columnVisibility?.nita !== false && (
+                                    <TableCell className="text-center">
+                                        <DocumentUploadDialog
+                                            documentType="nita_slip"
+                                            recordId={record.id}
+                                            onUpload={(file, docType) => handleDocumentUpload(record.id, file, docType || "nita_slip")}
+                                            onDelete={(docType) => handleDocumentDelete(record.id, docType || "nita_slip")}
+                                            existingDocument={record.payment_slips_documents ? record.payment_slips_documents.nita_slip : null}
+                                            label="NITA"
+                                            isNilFiling={record.status?.finalization_date === 'NIL'}
+                                            allDocuments={getDocumentsForUpload(record)}
+                                            companyName={record.company?.company_name || ''}
+                                        />
+                                    </TableCell>
+                                )}
+                                {columnVisibility?.shif !== false && (
+                                    <TableCell className="text-center">
+                                        <DocumentUploadDialog
+                                            documentType="shif_slip"
+                                            recordId={record.id}
+                                            onUpload={(file, docType) => handleDocumentUpload(record.id, file, docType || "shif_slip")}
+                                            onDelete={(docType) => handleDocumentDelete(record.id, docType || "shif_slip")}
+                                            existingDocument={record.payment_slips_documents ? record.payment_slips_documents.shif_slip : null}
+                                            label="SHIF"
+                                            isNilFiling={record.status?.finalization_date === 'NIL'}
+                                            allDocuments={getDocumentsForUpload(record)}
+                                            companyName={record.company?.company_name || ''}
+                                        />
+                                    </TableCell>
+                                )}
+                                {columnVisibility?.nssf !== false && (
+                                    <TableCell className="text-center">
+                                        <DocumentUploadDialog
+                                            documentType="nssf_slip"
+                                            recordId={record.id}
+                                            onUpload={(file, docType) => handleDocumentUpload(record.id, file, docType || "nssf_slip")}
+                                            onDelete={(docType) => handleDocumentDelete(record.id, docType || "nssf_slip")}
+                                            existingDocument={record.payment_slips_documents ? record.payment_slips_documents.nssf_slip : null}
+                                            label="NSSF"
+                                            isNilFiling={record.status?.finalization_date === 'NIL'}
+                                            allDocuments={getDocumentsForUpload(record)}
+                                            companyName={record.company?.company_name || ''}
+                                        />
+                                    </TableCell>
+                                )}
+                                {columnVisibility?.allTaxSlips !== false && (
                                     <TableCell>
                                         <Badge className={record.status?.finalization_date === 'NIL' ? 'bg-purple-500' : 'bg-blue-500'}>
                                             {getDocumentCount(record)}
                                         </Badge>
                                     </TableCell>
                                 )}
-                                {columnVisibility?.emailStatus !== false && (
+                                {/* {columnVisibility?.emailStatus !== false && (
                                     <TableCell>
                                         <div className="flex items-center gap-2">
                                             <TooltipProvider>
@@ -887,7 +1225,7 @@ export function TaxPaymentTable({
                                             </TooltipProvider>
                                         </div>
                                     </TableCell>
-                                )}
+                                )} */}
                                 {columnVisibility?.email !== false && (
                                     <TableCell>
                                         <div className="flex items-center gap-2">
@@ -931,6 +1269,56 @@ export function TaxPaymentTable({
                                                             </div>
                                                         ) : (
                                                             "Send documents via WhatsApp"
+                                                        )}
+                                                    </TooltipContent>
+                                                </Tooltip>
+                                            </TooltipProvider>
+                                        </div>
+                                    </TableCell>
+                                )}
+                                {columnVisibility?.whatsapp !== false && (
+                                    <TableCell>
+                                        <div className="flex items-center gap-2">
+                                            <TooltipProvider>
+                                                <Tooltip>
+                                                    <TooltipTrigger asChild>
+                                                        <ContactModal
+                                                            trigger={
+                                                                <Button
+                                                                    variant="outline"
+                                                                    size="icon"
+                                                                    className="relative"
+                                                                >
+                                                                    <Mail className="h-4 w-4" />
+                                                                    {record.email_history?.length > 0 && (
+                                                                        <Badge
+                                                                            className="absolute -top-2 -right-2 h-5 w-5 rounded-full bg-green-500"
+                                                                            variant="secondary"
+                                                                        >
+                                                                            {record.email_history.length}
+                                                                        </Badge>
+                                                                    )}
+                                                                </Button>
+                                                            }
+                                                            companyName={record.company?.company_name || ''}
+                                                            companyEmail={record.company?.email}
+                                                            documents={getDocumentsForUpload(record)}
+                                                            onEmailSent={(data) => handleEmailSent(record.id, data)}
+                                                        />
+                                                    </TooltipTrigger>
+                                                    <TooltipContent>
+                                                        {record.email_history?.length > 0 ? (
+                                                            <div className="space-y-2">
+                                                                <p className="font-semibold">Email History:</p>
+                                                                {record.email_history.map((history, i) => (
+                                                                    <div key={i} className="text-sm">
+                                                                        <p>Sent: {format(new Date(history.date), 'dd/MM/yyyy HH:mm')}</p>
+                                                                        <p>To: {history.recipients.join(', ')}</p>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        ) : (
+                                                            "Send documents via email"
                                                         )}
                                                     </TooltipContent>
                                                 </Tooltip>

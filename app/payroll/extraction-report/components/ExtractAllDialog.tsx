@@ -177,157 +177,6 @@ export function ExtractAllDialog({
         }
     };
 
-    // const handleExtractAll = async () => {
-    //     if (selectedRecords.size === 0) {
-    //         toast({
-    //             title: "No Records Selected",
-    //             description: "Please select at least one record to process",
-    //             variant: "destructive"
-    //         });
-    //         return;
-    //     }
-
-    //     // Check cache first
-    //     const cacheKey = Array.from(selectedRecords).join('-');
-    //     const cachedResults = extractionCache.get(cacheKey);
-
-    //     if (cachedResults) {
-    //         setProcessedDocs(cachedResults);
-    //         setCurrentCompanyIndex(0);
-    //         setPreviewDialogOpen(true);
-    //         return;
-    //     }
-
-    //     setProcessing(true);
-    //     const allProcessedDocs = [];
-
-    //     try {
-    //         const recordsToProcess = sortedRecords.filter(r => selectedRecords.has(r.id));
-
-    //         for (const record of recordsToProcess) {
-    //             // Update progress
-    //             setResults(prev => [
-    //                 ...prev,
-    //                 {
-    //                     companyName: record.company.company_name,
-    //                     status: 'processing'
-    //                 }
-    //             ]);
-
-    //             // Gather all documents for this company
-    //             const companyDocs = [];
-    //             for (const tax of TAX_TYPES) {
-    //                 const docPath = record.payment_receipts_documents[tax.receiptType];
-    //                 if (docPath) {
-    //                     const { data: { publicUrl } } = await supabase.storage
-    //                         .from('Payroll-Cycle')
-    //                         .getPublicUrl(docPath);
-
-    //                     if (publicUrl) {
-    //                         companyDocs.push({
-    //                             type: tax.receiptType,
-    //                             url: publicUrl,
-    //                             label: tax.label
-    //                         });
-    //                     }
-    //                 }
-    //             }
-
-    //             if (companyDocs.length === 0) {
-    //                 // Update progress for no documents
-    //                 setResults(prev =>
-    //                     prev.map(r =>
-    //                         r.companyName === record.company.company_name
-    //                             ? { ...r, status: 'error', error: 'No documents found' }
-    //                             : r
-    //                     )
-    //                 );
-    //                 continue;
-    //             }
-
-    //             try {
-    //                 // Process all documents for this company in parallel
-    //                 const extractionPromises = companyDocs.map(doc =>
-    //                     performExtraction(
-    //                         doc.url,
-    //                         EXTRACTION_FIELDS,
-    //                         'payment_receipt',
-    //                         (message) => console.log(`${record.company.company_name} - ${doc.label}: ${message}`)
-    //                     )
-    //                 );
-
-    //                 const extractionResults = await Promise.all(extractionPromises);
-
-    //                 // Map results to documents
-    //                 const processedDocs = companyDocs.map((doc, index) => ({
-    //                     file: null,
-    //                     type: doc.type,
-    //                     label: doc.label,
-    //                     url: doc.url,
-    //                     extractions: extractionResults[index].success ?
-    //                         extractionResults[index].extractedData :
-    //                         {
-    //                             amount: null,
-    //                             payment_date: null,
-    //                             payment_mode: null,
-    //                             bank_name: null
-    //                         }
-    //                 }));
-
-    //                 allProcessedDocs.push({
-    //                     recordId: record.id,
-    //                     companyName: record.company.company_name,
-    //                     documents: processedDocs
-    //                 });
-
-    //                 // Update progress
-    //                 setResults(prev =>
-    //                     prev.map(r =>
-    //                         r.companyName === record.company.company_name
-    //                             ? { ...r, status: 'success' }
-    //                             : r
-    //                     )
-    //                 );
-
-    //             } catch (error) {
-    //                 console.error(`Error processing ${record.company.company_name}:`, error);
-    //                 setResults(prev =>
-    //                     prev.map(r =>
-    //                         r.companyName === record.company.company_name
-    //                             ? { ...r, status: 'error', error: error.message }
-    //                             : r
-    //                     )
-    //                 );
-    //             }
-    //         }
-
-    //         if (allProcessedDocs.length > 0) {
-    //             // Cache the results
-    //             setExtractionCache(prev => new Map(prev).set(cacheKey, allProcessedDocs));
-    //             setProcessedDocs(allProcessedDocs);
-    //             setCurrentCompanyIndex(0);
-    //             setPreviewDialogOpen(true);
-    //         } else {
-    //             toast({
-    //                 title: "No Documents Processed",
-    //                 description: "No documents were successfully processed",
-    //                 variant: "warning"
-    //             });
-    //         }
-
-    //     } catch (error) {
-    //         console.error('Extraction error:', error);
-    //         toast({
-    //             title: "Error",
-    //             description: "Failed to complete extractions",
-    //             variant: "destructive"
-    //         });
-    //     } finally {
-    //         setProcessing(false);
-    //     }
-    // };
-
-
     const handleExtractAll = async () => {
         if (selectedRecords.size === 0) {
             toast({
@@ -617,16 +466,16 @@ export function ExtractAllDialog({
     return (
         <>
             <Dialog open={isOpen} onOpenChange={onClose}>
-                <DialogContent className="max-w-7xl max-h-[80vh] overflow-hidden flex flex-col">
+                <DialogContent className="max-w-7xl max-h-[90vh] overflow-hidden flex flex-col">
                     <DialogHeader>
                         <div className="flex justify-between items-center">
                             <DialogTitle>Extract All Documents</DialogTitle>
-                            <MonthYearSelector
+                            {/* <MonthYearSelector
                                 selectedYear={selectedYear}
                                 selectedMonth={selectedMonth}
                                 onYearChange={setSelectedYear}
                                 onMonthChange={setSelectedMonth}
-                            />
+                            /> */}
                         </div>
                     </DialogHeader>
 
@@ -743,20 +592,20 @@ export function ExtractAllDialog({
                                         Resume Previous Extraction ({selectedRecords.size})
                                     </Button>
                                 ) : (
-                                    <Button
-                                        onClick={handleExtractAll}
-                                        disabled={processing}
-                                        className="bg-blue-600 hover:bg-blue-700"
-                                    >
-                                        {processing ? (
-                                            <>
-                                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                                Processing...
-                                            </>
-                                        ) : (
-                                            `Extract Selected (${selectedRecords.size})`
-                                        )}
-                                    </Button>
+                                        <Button
+                                            onClick={handleExtractAll}
+                                            disabled={processing || selectedRecords.size === 0}
+                                            className="bg-blue-600 hover:bg-blue-700"
+                                        >
+                                            {processing ? (
+                                                <>
+                                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                                    Processing...
+                                                </>
+                                            ) : (
+                                                `Extract Selected (${selectedRecords.size})`
+                                            )}
+                                        </Button>
                                 )}
                             </>
                         )}

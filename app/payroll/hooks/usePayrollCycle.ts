@@ -376,7 +376,7 @@ export const usePayrollCycle = () => {
 
             return uploadData.path
         } catch (error) {
-            console.error('Upload error:', error)
+            console.error('Upload error:', error)   
             toast({
                 title: 'Error',
                 description: error instanceof Error ? error.message : 'Failed to upload document',

@@ -339,20 +339,21 @@ export function PayslipPaymentReceiptsTable({
         }
     }, [records]);
 
+    // Updated renderStatusBadge function
     const renderStatusBadge = (extractedData: any) => {
         if (!extractedData || Object.keys(extractedData).length === 0) {
-            return <Badge variant="outline" className="bg-gray-100 text-gray-500">Not Extracted</Badge>;
+            return <Badge variant="outline" className="bg-red-100 text-red-700">Pending</Badge>;
         }
-        
+
         // Check if essential fields are extracted
         const hasAmount = !!extractedData.amount;
         const hasPaymentDate = !!extractedData.payment_date;
         const hasPaymentMode = !!extractedData.payment_mode;
-        
+
         if (hasAmount && hasPaymentDate && hasPaymentMode) {
             return <Badge variant="outline" className="bg-green-100 text-green-700">Extracted</Badge>;
         } else {
-            return <Badge variant="outline" className="bg-yellow-100 text-yellow-700">Partial</Badge>;
+            return <Badge variant="outline" className="bg-red-100 text-red-700">Pending</Badge>;
         }
     };
 
@@ -414,74 +415,46 @@ export function PayslipPaymentReceiptsTable({
                     allDocuments={[]}
                     companyName={record.company.company_name}
                 />
-                
-                {documentPath && (
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-8 text-green-600 hover:text-green-700 px-2"
-                        onClick={() => handleOpenDocument(
-                            documentPath,
-                            receiptType,
-                            record.id,
-                            record.company.company_name,
-                            docLabel,
-                            extractions
-                        )}
-                    >
-                        <Eye className="h-4 w-4 mr-1" /> View
-                    </Button>
-                )}
+
             </div>
         );
     };
 
+    // Updated renderColumnContent function
     const renderColumnContent = (record: CompanyPayrollRecord, docType: string, columnType: string) => {
         const receiptType = `${docType}_receipt` as DocumentType;
-        
-        // Get extraction data safely with an empty object fallback to prevent nulls
         const extractionData = record.payment_receipts_extractions?.[receiptType] || {};
-        
-        // If document exists but no extraction data available
-        if (Object.keys(extractionData).length === 0 && record.payment_receipts_documents?.[receiptType]) {
-            return <span className="text-orange-500 font-medium">NOT EXTRACTED</span>;
-        }
-        
-        // If neither document nor extraction exists
-        if (Object.keys(extractionData).length === 0 && !record.payment_receipts_documents?.[receiptType]) {
-            return <span className="text-gray-400 italic">-</span>;
-        }
-        
+
         switch (columnType) {
             case 'status':
                 return renderStatusBadge(extractionData);
-                
+
             case 'amount':
+                if (!extractionData.amount) {
+                    return <span className="text-red-600 font-bold">MISSING</span>;
+                }
                 return formatAmount(extractionData.amount);
-                
+
             case 'payment_mode':
                 if (!extractionData.payment_mode) {
                     return <span className="text-red-600 font-bold">MISSING</span>;
                 }
                 return <span className="text-center font-medium">{extractionData.payment_mode}</span>;
-                
+
             case 'payment_date':
                 if (!extractionData.payment_date) {
                     return <span className="text-red-600 font-bold">MISSING</span>;
                 }
                 return formatDate(extractionData.payment_date);
-                
+
             case 'bank_name':
                 if (extractionData.payment_mode === 'Mpesa') {
-                    return <span className="text-center font-medium text-blue-600">N/A</span>;
+                    return <span className="text-center font-bold text-blue-600">N/A</span>;
                 }
                 if (!extractionData.bank_name) {
                     return <span className="text-red-600 font-bold">MISSING</span>;
                 }
                 return <span className="text-center font-medium">{extractionData.bank_name}</span>;
-                
-            default:
-                return <span>-</span>;
         }
     };
 
