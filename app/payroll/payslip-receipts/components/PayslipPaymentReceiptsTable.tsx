@@ -976,6 +976,7 @@ export function PayslipPaymentReceiptsTable({
     ];
 
     // Get counts for each document type
+    // Get counts for each document type
     const getDocumentTypeCounts = useCallback(() => {
         const counts = {
             total: sortedRecords.length,
@@ -1001,30 +1002,46 @@ export function PayslipPaymentReceiptsTable({
 
         // Calculate counts for each document type
         sortedRecords.forEach(record => {
+            const isNil = isNilRecord(record);
+            const isComplete = record?.status?.status === 'completed' || allDocumentsUploaded(record);
+
+            // Skip counting pending if it's a NIL record
+            if (isNil) {
+                counts.nil++;
+                return;
+            }
+
             summaryColumns
                 .filter(col => col.documentType)
                 .forEach(col => {
                     const docType = col.documentType as DocumentType;
-                    const isNil = isNilRecord(record);
-                    const isUploaded = record?.payment_receipts_documents?.[docType];
-                    const isComplete = record?.status?.status === 'completed' || allDocumentsUploaded(record);
+                    const isUploaded = !!record?.payment_receipts_documents?.[docType];
 
-                    // Total count (including NIL records as "uploaded")
-                    if (isUploaded || isNil) {
+                    // Total count - include only actual uploads (not NIL)
+                    if (isUploaded) {
                         counts.documentTypes[docType].total++;
                     }
 
-                    // Complete count
-                    if (isComplete && (isUploaded || isNil)) {
+                    // Complete count - only if the record is complete and document is uploaded
+                    if (isComplete && isUploaded) {
                         counts.documentTypes[docType].complete++;
                     }
 
-                    // Pending count - only for non-NIL records that are not uploaded
-                    if (!isNil && !isUploaded && !isComplete) {
+                    // Pending count - only for non-complete, non-NIL records that don't have this document
+                    if (!isComplete && !isNil && !isUploaded) {
                         counts.documentTypes[docType].pending++;
                     }
                 });
         });
+
+        // Ensure the total counts include NIL records as "uploaded" for display purposes
+        const nilCount = counts.nil;
+        summaryColumns
+            .filter(col => col.documentType)
+            .forEach(col => {
+                const docType = col.documentType as string;
+                counts.documentTypes[docType].total += nilCount;
+            });
 
         return counts;
     }, [sortedRecords, allDocumentsUploaded, isNilRecord]);
@@ -1116,13 +1133,10 @@ export function PayslipPaymentReceiptsTable({
                                 return <TableHead key={column.key} className="text-center text-sm font-semibold">Pending</TableHead>;
                             }
                             if (column.key === 'companyName') {
+                                // Get non-nil, non-complete records
                                 return (
                                     <TableHead key={column.key} className="text-center text-sm font-semibold">
-                                        {sortedRecords.filter(r =>
-                                            r?.status?.status !== 'completed' &&
-                                            !allDocumentsUploaded(r) &&
-                                            !isNilRecord(r)
-                                        ).length}
+                                        {counts.total - counts.complete - counts.nil}
                                     </TableHead>
                                 );
                             }
