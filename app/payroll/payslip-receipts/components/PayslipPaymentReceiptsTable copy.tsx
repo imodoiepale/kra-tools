@@ -1107,7 +1107,7 @@ export function PayslipPaymentReceiptsTable({
         { key: 'nitaReceipt', title: 'NITA Receipt', documentType: 'nita_receipt' },
         { key: 'shifReceipt', title: 'SHIF Receipt', documentType: 'shif_receipt' },
         { key: 'nssfReceipt', title: 'NSSF Receipt', documentType: 'nssf_receipt' },
-        { key: 'allDocuments', title: 'All Docs' },
+        { key: 'allDocuments', title: 'All Documents' },
         { key: 'actions', title: 'Actions' },
         { key: 'emailStatus', title: 'Email Status' }
     ];
@@ -1202,7 +1202,7 @@ export function PayslipPaymentReceiptsTable({
                         <ChevronDown className="h-3 w-3" />
                     </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="">
+                <DropdownMenuContent align="end">
                     <DropdownMenuItem onClick={() => handleSort(documentType, 'uploaded')}>
                         Uploaded First
                     </DropdownMenuItem>
@@ -1250,7 +1250,7 @@ export function PayslipPaymentReceiptsTable({
             )}
             <Table aria-label="Payroll Records" className="border border-gray-200">
 
-
+                
                 <TableHeader>
                     {/* Main column headers */}
                     <TableRow className="bg-blue-600 hover:bg-blue-550 text-white">
@@ -1274,10 +1274,15 @@ export function PayslipPaymentReceiptsTable({
                             // Add sorting functionality to document columns
                             if (column.documentType) {
                                 content = (
-                                    <div className="flex items-center justify-center text-nowrap">
+                                    <div className="flex items-center justify-center">
                                         {column.title}
                                         <SortDropdown documentType={column.documentType} label={column.title} />
-                                        
+                                        {sortConfig.documentType === column.documentType && (
+                                            <Badge variant="outline" className="ml-1 bg-blue-700 text-white text-xs">
+                                                {sortConfig.criteria === 'uploaded' ? 'Uploaded' :
+                                                    sortConfig.criteria === 'nil' ? 'NIL' : 'Missing'} First
+                                            </Badge>
+                                        )}
                                     </div>
                                 );
                             }
@@ -1285,7 +1290,7 @@ export function PayslipPaymentReceiptsTable({
                             // Add special sorting dropdown for All Documents column
                             if (column.key === 'allDocuments') {
                                 content = (
-                                    <div className="flex items-center justify-center text-center">
+                                    <div className="flex items-center justify-center">
                                         {column.title}
                                         <DropdownMenu>
                                             <DropdownMenuTrigger asChild>
@@ -1312,6 +1317,13 @@ export function PayslipPaymentReceiptsTable({
                                                 </DropdownMenuItem>
                                             </DropdownMenuContent>
                                         </DropdownMenu>
+                                        {sortConfig.field === 'allDocuments' && (
+                                            <Badge variant="outline" className="ml-1 bg-blue-700 text-white text-xs">
+                                                {sortConfig.criteria === 'complete' ? 'Complete' :
+                                                    sortConfig.criteria === 'nil' ? 'NIL' :
+                                                        sortConfig.criteria === 'partial' ? 'Partial' : 'Missing'} First
+                                            </Badge>
+                                        )}
                                     </div>
                                 );
                             }
@@ -1783,12 +1795,81 @@ export function PayslipPaymentReceiptsTable({
                                         )}
                                     </TableCell>
                                 )}
-                                {columnVisibility?.allDocuments !== false && (
+                                {/* {columnVisibility?.nhifReceipt !== false && (
                                     <TableCell className="text-center">
-                                        <Badge className={record.status?.finalization_date === 'NIL' ? 'bg-purple-500' : 'bg-blue-500'}>
-                                            {record.status?.finalization_date === 'NIL' ? 'N/A' : `${getUploadedDocCount(record)}/${Object.keys(DOCUMENT_LABELS).length - 1}`}
-                                        </Badge>
+                                        {getDocumentsForUpload(record).find(doc => doc.type === 'nhif_receipt')?.status === 'uploaded' ? (
+                                            <div className="flex justify-center items-center space-x-1">
+                                                <Button 
+                                                    size="sm"
+                                                    className="bg-green-500 hover:bg-green-600 h-6 text-xs px-2"
+                                                    onClick={() => openDocumentViewer(record, 'nhif_receipt')}
+                                                >
+                                                    View
+                                                </Button>
+                                                <Button
+                                                    size="sm"
+                                                    variant="ghost"
+                                                    className="h-6 w-6 p-0 text-red-500 hover:text-red-700"
+                                                    onClick={() => handleDocumentDelete(record.id, 'nhif_receipt')}
+                                                >
+                                                    <Trash2 className="h-4 w-4" />
+                                                </Button>
+                                            </div>
+                                        ) : (
+                                            <div className="flex justify-center">
+                                                <DocumentUploadDialog
+                                                    documentType="nhif_receipt"
+                                                    recordId={record.id}
+                                                    onUpload={(file) => handleLocalDocumentUpload(record.id, file, 'nhif_receipt')}
+                                                    onDelete={() => handleDocumentDelete(record.id, 'nhif_receipt')}
+                                                    existingDocument={record.payment_receipts_documents?.nhif_receipt || null}
+                                                    label={DOCUMENT_LABELS['nhif_receipt']}
+                                                    isNilFiling={record.status?.finalization_date === 'NIL'}
+                                                    allDocuments={getDocumentsForUpload(record)}
+                                                    companyName={record.company?.company_name || 'Unknown'}
+                                                />
+                                            </div>
+                                        )}
                                     </TableCell>
+                                )} */}
+                                {columnVisibility?.allDocuments !== false && (
+                                    <TableHead key="allDocuments" className="text-center text-white font-semibold py-1 px-2">
+                                        <div className="flex items-center justify-center">
+                                            All Documents
+                                            <DropdownMenu>
+                                                <DropdownMenuTrigger asChild>
+                                                    <Button variant="ghost" size="sm" className="h-6 p-0 ml-1">
+                                                        <ChevronDown className="h-3 w-3" />
+                                                    </Button>
+                                                </DropdownMenuTrigger>
+                                                <DropdownMenuContent align="end">
+                                                    <DropdownMenuItem onClick={() => handleSortAllDocuments('complete')}>
+                                                        All Complete First
+                                                    </DropdownMenuItem>
+                                                    <DropdownMenuItem onClick={() => handleSortAllDocuments('nil')}>
+                                                        NIL First
+                                                    </DropdownMenuItem>
+                                                    <DropdownMenuItem onClick={() => handleSortAllDocuments('partial')}>
+                                                        Partially Complete First
+                                                    </DropdownMenuItem>
+                                                    <DropdownMenuItem onClick={() => handleSortAllDocuments('missing')}>
+                                                        All Missing First
+                                                    </DropdownMenuItem>
+                                                    <DropdownMenuSeparator />
+                                                    <DropdownMenuItem onClick={() => handleSort(null)}>
+                                                        Reset Sort
+                                                    </DropdownMenuItem>
+                                                </DropdownMenuContent>
+                                            </DropdownMenu>
+                                            {sortConfig.field === 'allDocuments' && (
+                                                <Badge variant="outline" className="ml-1 bg-blue-700 text-white text-xs">
+                                                    {sortConfig.criteria === 'complete' ? 'Complete' :
+                                                        sortConfig.criteria === 'nil' ? 'NIL' :
+                                                            sortConfig.criteria === 'partial' ? 'Partial' : 'Missing'} First
+                                                </Badge>
+                                            )}
+                                        </div>
+                                    </TableHead>
                                 )}
                                 {columnVisibility?.actions !== false && (
                                     <TableCell className="text-center">
