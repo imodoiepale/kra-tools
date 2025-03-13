@@ -1000,12 +1000,12 @@ ${readyDocs.length > 0 ? readyDocs.join('\n') : 'No documents are ready to send.
     }
 
     return (
-        <div className="flex gap-1">
+        <div className="flex gap-0.5">
             <Button
                 size="sm"
                 className={existingDocument
-                    ? "bg-green-500 hover:bg-green-600 h-6 text-xs px-2"
-                    : "bg-red-500 hover:bg-red-600 h-6 text-xs px-2"}
+                    ? "bg-green-500 hover:bg-green-600 h-6 text-xs " 
+                    : "bg-red-500 hover:bg-red-600 h-6 text-xs "}
                 onClick={() => existingDocument ? handleView(existingDocument) : setUploadDialog(true)}
                 // disabled={!existingDocument}
             >
@@ -1014,21 +1014,13 @@ ${readyDocs.length > 0 ? readyDocs.join('\n') : 'No documents are ready to send.
 
             {existingDocument && (
                 <>
-                    {/* <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-6 text-xs px-2"
-                        onClick={() => handleView(existingDocument)}
-                    >
-                        <Eye className="h-3 w-3" />
-                    </Button> */}
                     <Button
-                        size="sm"
+                        size="xs" 
                         variant="destructive"
-                        className="h-6 text-xs px-2"
+                        className="h-5 text-[10px] px-1" 
                         onClick={() => setConfirmDeleteDialog(true)}
                     >
-                        <Trash2 className="h-3 w-3" />
+                        <Trash2 className="h-2.5 w-2.5" />
                     </Button>
                 </>
             )}
@@ -1102,18 +1094,7 @@ ${readyDocs.length > 0 ? readyDocs.join('\n') : 'No documents are ready to send.
                                                         {mpesaValidationError}
                                                     </div>
                                                 )}
-                                                {/* <div className="space-y-2">
-                                                    <Label>MPESA Message Preview</Label>
-                                                    {mpesaPreview ? (
-                                                        <div className="p-4 bg-gray-50 rounded-md font-mono text-sm whitespace-pre-wrap">
-                                                            {mpesaPreview}
-                                                        </div>
-                                                    ) : (
-                                                        <div className="p-4 bg-gray-50 rounded-md text-gray-400 text-sm">
-                                                            Enter an MPESA message to see preview
-                                                        </div>
-                                                    )}
-                                                </div> */}
+                                                
                                                 <Button
                                                     onClick={handleMpesaUpload}
                                                     disabled={!mpesaMessage.trim() || isConverting}
