@@ -18,50 +18,57 @@ export const useStatementCycle = () => {
     const fetchOrCreateStatementCycle = useCallback(async () => {
         setLoading(true)
         try {
-            // Check if a statement cycle exists for this month/year
-            let { data: cycle, error: cycleError } = await supabase
+            // Use upsert with onConflict to ensure uniqueness
+            const { data: cycle, error } = await supabase
                 .from('statement_cycles')
-                .select('*')
-                .eq('month_year', selectedMonthYear)
+                .upsert(
+                    {
+                        month_year: selectedMonthYear,
+                        status: 'active',
+                        created_at: new Date().toISOString()
+                    },
+                    {
+                        onConflict: 'month_year',
+                        ignoreDuplicates: true // This ensures we don't update existing records
+                    }
+                )
+                .select()
                 .single()
 
-            // If no cycle exists or there was an error finding it
-            if (cycleError) {
-                if (cycleError.code === 'PGRST116') { // No rows returned
-                    // Create a new cycle for this month/year
-                    const { data: newCycle, error: createError } = await supabase
-                        .from('statement_cycles')
-                        .insert([{ 
-                            month_year: selectedMonthYear,
-                            status: 'active',
-                            created_at: new Date().toISOString()
-                        }])
-                        .select()
-                        .single()
+            if (error) {
+                throw error;
+            }
 
-                    if (createError) throw createError
-                    cycle = newCycle
-                } else {
-                    throw cycleError
-                }
+            // If no cycle was returned from upsert (because it already existed)
+            // fetch the existing one
+            if (!cycle) {
+                const { data: existingCycle, error: fetchError } = await supabase
+                    .from('statement_cycles')
+                    .select('*')
+                    .eq('month_year', selectedMonthYear)
+                    .single()
+
+                if (fetchError) throw fetchError;
+
+                setStatementCycleId(existingCycle.id);
+                return existingCycle.id;
             }
 
             // Store the cycle ID
-            setStatementCycleId(cycle.id)
-            
-            return cycle.id
+            setStatementCycleId(cycle.id);
+            return cycle.id;
         } catch (error) {
-            console.error('Failed to initialize statement cycle:', error)
+            console.error('Failed to initialize statement cycle:', error);
             toast({
                 title: 'Error',
                 description: 'Failed to initialize statement cycle',
                 variant: 'destructive'
-            })
-            return null
+            });
+            return null;
         } finally {
-            setLoading(false)
+            setLoading(false);
         }
-    }, [selectedMonthYear, toast])
+    }, [selectedMonthYear, toast]);
 
     // Function to get bank statements for the current cycle
     const fetchBankStatements = async (cycleId: string, filters = {}) => {

@@ -8,8 +8,8 @@ import { supabase } from '@/lib/supabase'
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
-import {
-    validateExtraction,
+import { 
+    validateExtraction, 
     PAYMENT_MODES,
     determinePaymentMode
 } from '../../utils/documentUtils'
@@ -63,10 +63,10 @@ const useDocumentUrl = (storageUrl: string, isOpen: boolean): DocumentState => {
 
             if (error) throw error
 
-            setState(prev => ({
-                ...prev,
-                url: publicUrl,
-                loading: false,
+            setState(prev => ({ 
+                ...prev, 
+                url: publicUrl, 
+                loading: false, 
                 error: null,
                 retryCount: 0
             }))
@@ -86,7 +86,7 @@ const useDocumentUrl = (storageUrl: string, isOpen: boolean): DocumentState => {
                     retryCount: newRetryCount
                 };
             });
-
+            
             if (state.retryCount >= MAX_RETRIES) {
                 toast.error('Error loading document after multiple attempts')
             }
@@ -111,11 +111,11 @@ const useDocumentUrl = (storageUrl: string, isOpen: boolean): DocumentState => {
     return state
 }
 
-export function DocumentViewer({
-    url,
-    isOpen,
-    onClose,
-    title,
+export function DocumentViewer({ 
+    url, 
+    isOpen, 
+    onClose, 
+    title, 
     companyName,
     documentType,
     recordId,
@@ -139,9 +139,9 @@ export function DocumentViewer({
     });
     const [isSaving, setIsSaving] = useState(false)
     const [isFetching, setIsFetching] = useState(false)
-    const [validation, setValidation] = useState<{ isValid: boolean; errors: string[] }>({
-        isValid: false,
-        errors: []
+    const [validation, setValidation] = useState<{ isValid: boolean; errors: string[] }>({ 
+        isValid: false, 
+        errors: [] 
     })
 
     // Fetch existing extractions when component mounts or recordId/documentType changes
@@ -246,7 +246,7 @@ export function DocumentViewer({
 
         try {
             setIsSaving(true);
-
+            
             // Validate required parameters
             if (!documentType) {
                 throw new Error('Document type is required');
@@ -288,7 +288,7 @@ export function DocumentViewer({
 
             const { error: updateError } = await supabase
                 .from('company_payroll_records')
-                .update({
+                .update({ 
                     payment_receipts_extractions: updatedExtractions
                 })
                 .eq('id', recordId);
@@ -314,10 +314,10 @@ export function DocumentViewer({
         const hasValue = value !== null && value !== '';
         const isValid = !validation.errors.some(error => error.toLowerCase().includes(field));
         console.log(`Rendering field: ${field}, hasValue: ${hasValue}, isValid: ${isValid}`);
-
+        
         return (
-            <div className="space-y-0.5"> {/* Reduced from space-y-1 */}
-                <Label htmlFor={field} className="text-[10px]"> {/* Reduced from text-xs */}
+            <div className="space-y-1">
+                <Label htmlFor={field} className="text-xs">
                     {label}
                     {field === 'bank_name' && localExtractions.payment_mode === PAYMENT_MODES.MPESA && (
                         <span className="text-gray-400 ml-1">(N/A for Mpesa)</span>
@@ -329,10 +329,10 @@ export function DocumentViewer({
                     onChange={(e) => handleExtractionUpdate(field, e.target.value)}
                     placeholder={placeholder}
                     className={cn(
-                        "text-xs h-7", /* Reduced from text-sm and added height */
-                        hasValue && isValid ? "border-green-500 focus:border-green-500" :
-                            hasValue ? "border-red-500 focus:border-red-500" :
-                                "border-gray-200"
+                        "text-sm",
+                        hasValue && isValid ? "border-green-500 focus:border-green-500" : 
+                        hasValue ? "border-red-500 focus:border-red-500" : 
+                        "border-gray-200"
                     )}
                     disabled={field === 'bank_name' && localExtractions.payment_mode === PAYMENT_MODES.MPESA}
                     aria-label={label}
@@ -344,16 +344,16 @@ export function DocumentViewer({
     return (
         <Dialog open={isOpen} onOpenChange={onClose}>
             <DialogContent className="max-w-7xl max-h-[90vh]">
-                <DialogHeader className="pb-1"> {/* Reduced from default padding */}
+                <DialogHeader>
                     <div className="flex justify-between items-center">
-                        <DialogTitle className="text-base font-semibold"> {/* Reduced from text-lg */}
+                        <DialogTitle className="text-lg font-semibold">
                             <span className="text-blue-600">{companyName}</span>
-                            <span className="text-xs text-gray-500"> - {title}</span> {/* Reduced from text-sm */}
+                            <span className="text-sm text-gray-500"> - {title}</span>
                         </DialogTitle>
                     </div>
                 </DialogHeader>
 
-                <div className="grid grid-cols-6 gap-4 h-[calc(90vh-80px)]"> {/* Reduced gap from 6 to 4 */}
+                <div className="grid grid-cols-6 gap-6 h-[calc(90vh-100px)]">
                     <div className="col-span-4 border rounded bg-white overflow-hidden">
                         {documentUrl ? (
                             <iframe
@@ -369,17 +369,16 @@ export function DocumentViewer({
                         )}
                     </div>
 
-                    <div className="col-span-2 flex flex-col gap-3"> {/* Reduced gap from 4 to 3 */}
-                        <div className="border rounded-lg p-3 space-y-3 bg-white h-full"> {/* Reduced from p-4 and space-y-4 */}
-                            <div className="flex justify-between items-center mb-1"> {/* Reduced from mb-2 */}
-                                <h4 className="font-bold uppercase underline text-sm"> {/* Reduced from text-md */}
+                    <div className="col-span-2 flex flex-col gap-4">
+                        <div className="border rounded-lg p-4 space-y-4 bg-white h-full">
+                            <div className="flex justify-between items-center mb-2">
+                                <h4 className="font-bold uppercase underline text-md">
                                     Document Details
                                 </h4>
-                                <div className="flex gap-1"> {/* Reduced from gap-2 */}
+                                <div className="flex gap-2">
                                     <Button
-                                        size="xs"
+                                        size="sm"
                                         variant="outline"
-                                        className="h-5 text-[10px] px-0" 
                                         onClick={() => {
                                             if (documentUrl) {
                                                 if (localExtractions.amount || localExtractions.payment_date || localExtractions.payment_mode || localExtractions.bank_name) {
@@ -419,22 +418,20 @@ export function DocumentViewer({
                                         }}
                                         disabled={isSaving || !documentUrl || isFetching}
                                     >
-                                        <RotateCw className="h-2.5 w-2.5 mr-0.5" /> 
                                         {localExtractions.amount || localExtractions.payment_date || localExtractions.payment_mode || localExtractions.bank_name ? 'Re-Extract' : 'Extract'}
                                     </Button>
                                     <Button
-                                        size="xs" 
-                                        className="h-5 text-[10px] px-1.5" 
+                                        size="sm"
                                         onClick={handleSave}
                                         disabled={isSaving || isFetching}
                                     >
                                         {isSaving ? (
-                                            <Loader2 className="h-2.5 w-2.5 animate-spin" /> 
+                                            <Loader2 className="h-4 w-4 animate-spin" />
                                         ) : (
-                                        <>
-                                            <Save className="h-2.5 w-2.5 mr-0.5" /> 
-                                            Save
-                                        </>
+                                            <>
+                                                <Save className="h-4 w-4 mr-1" />
+                                                Save
+                                            </>
                                         )}
                                     </Button>
                                 </div>
@@ -445,7 +442,7 @@ export function DocumentViewer({
                                     <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
                                 </div>
                             ) : (
-                                <div className="space-y-2 flex-grow">
+                                <div className="space-y-3 flex-grow">
                                     {renderExtractionField('amount', 'Amount', 'Enter amount...')}
                                     {renderExtractionField('payment_date', 'Payment Date', 'DD/MM/YYYY')}
                                     {renderExtractionField('payment_mode', 'Payment Mode', 'Enter payment mode...')}

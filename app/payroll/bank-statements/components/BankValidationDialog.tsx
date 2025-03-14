@@ -2,10 +2,13 @@
 // @ts-nocheck
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { AlertTriangle, CheckCircle, Calendar, DollarSign, Building, CreditCard, FileCheck } from "lucide-react"
+import { AlertTriangle, CheckCircle, Calendar, DollarSign, Building, CreditCard, FileCheck, RefreshCcw } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
+import { performBankStatementExtraction } from "@/lib/bankExtractionUtils"
+import { Button } from "@/components/ui/button"
+import { useState } from "react"
 
 interface Bank {
     id: number
@@ -59,14 +62,16 @@ const normalizeCurrencyCode = (code) => {
         'KENYAN SHILLING': 'KES',
         'KENYAN SHILLINGS': 'KES',
         'KSH': 'KES',
-        'K.SH': 'KES',
         'KSHS': 'KES',
+        'K.SH': 'KES',
         'K.SHS': 'KES',
-        'SH': 'KES',
-        'KES': 'KES',
-        'KESH': 'KES', 
         'KSH.': 'KES',
         'KSHS.': 'KES',
+        'KENYA SHILLING': 'KES',
+        'KENYA SHILLINGS': 'KES',
+        'KENYAN SHILLING': 'KES',
+        'KENYAN SHILLINGS': 'KES',
+        'SH': 'KES',
         'KS': 'KES',
         'KS.': 'KES'
     };
@@ -211,6 +216,12 @@ export function BankValidationDialog({
         }
     }
 
+    const hasCriticalMismatches = () => {
+        const criticalFields = ['account_number', 'company_name', 'statement_period'];
+        return mismatches.some(mismatch =>
+            criticalFields.some(field => mismatch.toLowerCase().includes(field))
+        );
+    };
     // Check if currencies match using the normalization function
     const currencyMatches = isMatchingCurrency(extractedData?.currency, bank?.bank_currency);
 
@@ -222,6 +233,38 @@ export function BankValidationDialog({
     );
 
     const isPeriodValid = isPeriodContained(extractedData?.statement_period, cycleMonth, cycleYear);
+
+    const [processing, setProcessing] = useState(false);
+
+    const handleReExtraction = async () => {
+        try {
+            setProcessing(true);
+
+            // Call the performBankStatementExtraction function again
+            const extractionResult = await performBankStatementExtraction(
+                fileUrl,
+                { month: cycleMonth, year: cycleYear }
+            );
+
+            if (extractionResult.success) {
+                // Update the extracted data
+                setExtractedData(extractionResult.extractedData);
+
+                // Re-validate
+                const newMismatches = validateExtractedData(
+                    extractionResult.extractedData,
+                    bank
+                ).mismatches;
+
+                setMismatches(newMismatches);
+            }
+        } catch (error) {
+            console.error('Re-extraction error:', error);
+        } finally {
+            setProcessing(false);
+        }
+    };
+
 
     return (
         <AlertDialog open={isOpen} onOpenChange={onClose}>
@@ -362,85 +405,135 @@ export function BankValidationDialog({
                                         <div className="mt-2 pt-2 border-t border-blue-200 flex justify-between items-center">
                                             <p className="text-sm font-medium">Period Validation</p>
                                             <Badge className={isPeriodValid ? "bg-green-100 text-green-700 hover:bg-green-100" : "bg-red-100 text-red-700 hover:bg-amber-100"}>
-                                                {isPeriodValid ? "Period Valid" : "Period Mismatch"}
+                                                {isPeriodValid ? "Valid" : "Period Mismatch"}
                                             </Badge>
                                         </div>
                                     </div>
-
-                                    <div className="space-y-2">
-                                        <h4 className="font-medium flex items-center">
-                                            <DollarSign className="h-4 w-4 mr-1" />
-                                            Balance Information
-                                        </h4>
-                                        <div className="grid grid-cols-2 gap-4">
-                                            <div className="p-2 bg-gray-50 rounded-md">
-                                                <p className="text-xs text-muted-foreground">Opening Balance</p>
-                                                <p className="font-medium">{extractedData?.opening_balance != null ? formatCurrency(extractedData.opening_balance) : 'Not detected'}</p>
-                                            </div>
-                                            <div className="p-2 bg-gray-50 rounded-md">
-                                                <p className="text-xs text-muted-foreground">Closing Balance</p>
-                                                <p className="font-medium">{extractedData?.closing_balance != null ? formatCurrency(extractedData.closing_balance) : 'Not detected'}</p>
-                                            </div>
-                                        </div>
-                                    </div>
+                                    <Button
+                                        variant="outline"
+                                        onClick={handleReExtraction}
+                                        className="bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100"
+                                    >
+                                        <RefreshCcw className="h-4 w-4 mr-2" />
+                                        Re-extract Data
+                                    </Button>
                                 </div>
                             </CardContent>
                         </Card>
                     </div>
 
+                    
                     {extractedData?.monthly_balances && extractedData.monthly_balances.length > 0 && (
                         <Card>
                             <CardHeader className="py-3 bg-blue-50">
                                 <CardTitle className="text-base flex items-center">
                                     <FileCheck className="h-4 w-4 mr-2" />
-                                    Monthly Balances Found
+                                    Months Found
                                 </CardTitle>
                             </CardHeader>
                             <CardContent className="pt-4">
-                                <Table>
-                                    <TableHeader>
-                                        <TableRow>
-                                            <TableHead>Period</TableHead>
-                                            <TableHead>Opening</TableHead>
-                                            <TableHead>Closing</TableHead>
-                                            <TableHead>Closing Date</TableHead>
-                                            <TableHead>Page</TableHead>
-                                        </TableRow>
-                                    </TableHeader>
-                                    <TableBody>
-                                        {extractedData.monthly_balances.map((balance, index) => (
-                                            <TableRow key={index} className={balance.month === cycleMonth && balance.year === cycleYear ? "bg-blue-50" : ""}>
-                                                <TableCell className="font-medium">
-                                                    {formatDate(balance.year, balance.month)}
-                                                    {balance.month === cycleMonth && balance.year === cycleYear && (
-                                                        <Badge className="ml-2 bg-blue-100 text-blue-700 hover:bg-blue-100">Current</Badge>
-                                                    )}
-                                                </TableCell>
-                                                <TableCell>{balance?.opening_balance != null ? formatCurrency(balance.opening_balance) : 'N/A'}</TableCell>
-                                                <TableCell>{balance?.closing_balance != null ? formatCurrency(balance.closing_balance) : 'N/A'}</TableCell>
-                                                <TableCell>{balance?.closing_date || 'N/A'}</TableCell>
-                                                <TableCell>{balance?.statement_page || 'N/A'}</TableCell>
-                                            </TableRow>
-                                        ))}
-                                    </TableBody>
-                                </Table>
+                                <div className="flex flex-wrap gap-2">
+                                    {(() => {
+                                        // Generate badges for all months in statement period
+                                        const badges = [];
+                                        let includedExpectedMonth = false;
+
+                                        if (extractedData?.statement_period) {
+                                            // Parse statement period (e.g., "01/01/2024 - 30/07/2024")
+                                            const dates = extractedData.statement_period.match(/(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})/g);
+
+                                            if (dates && dates.length >= 2) {
+                                                // Parse start and end dates
+                                                const parseDate = (dateStr) => {
+                                                    const parts = dateStr.split(/[\/\-\.]/);
+                                                    if (parts.length !== 3) return null;
+
+                                                    // Try DD/MM/YYYY format first
+                                                    const day = parseInt(parts[0], 10);
+                                                    const month = parseInt(parts[1], 10);
+                                                    const year = parseInt(parts[2], 10);
+
+                                                    if (day >= 1 && day <= 31 && month >= 1 && month <= 12) {
+                                                        return { day, month: month - 1, year }; // Month is 0-indexed for Date
+                                                    }
+
+                                                    // Try MM/DD/YYYY format
+                                                    const day2 = parseInt(parts[1], 10);
+                                                    const month2 = parseInt(parts[0], 10);
+
+                                                    if (day2 >= 1 && day2 <= 31 && month2 >= 1 && month2 <= 12) {
+                                                        return { day: day2, month: month2 - 1, year }; // Month is 0-indexed for Date
+                                                    }
+
+                                                    return null;
+                                                };
+
+                                                const startDate = parseDate(dates[0]);
+                                                const endDate = parseDate(dates[1]);
+
+                                                if (startDate && endDate) {
+                                                    // Create JavaScript Date objects
+                                                    const start = new Date(startDate.year, startDate.month, 1);
+                                                    const end = new Date(endDate.year, endDate.month, 1);
+
+                                                    // Check if expected month is within the date range
+                                                    const expectedDate = new Date(cycleYear, cycleMonth, 1);
+                                                    includedExpectedMonth = expectedDate >= start && expectedDate <= end;
+
+                                                    // Generate badges for each month in the range
+                                                    let current = new Date(start);
+                                                    let index = 1;
+
+                                                    while (current <= end) {
+                                                        const year = current.getFullYear();
+                                                        const month = current.getMonth();
+
+                                                        // Check if this month is in the monthly_balances array
+                                                        const isInMonthlyBalances = extractedData.monthly_balances?.some(
+                                                            balance => balance.month === month && balance.year === year
+                                                        );
+
+                                                        badges.push(
+                                                            <Badge
+                                                                key={`${year}-${month}`}
+                                                                className={
+                                                                    isInMonthlyBalances
+                                                                        ? "bg-green-100 text-green-700 hover:bg-green-200"
+                                                                        : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                                                                }
+                                                            >
+                                                                {index}. {formatDate(year, month)}
+                                                            </Badge>
+                                                        );
+
+                                                        // Move to next month
+                                                        current.setMonth(current.getMonth() + 1);
+                                                        index++;
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        // Add the expected month badge if it wasn't included in the range
+                                        if (!includedExpectedMonth) {
+                                            badges.push(
+                                                <Badge
+                                                    key="expected-month"
+                                                    className="bg-red-100 text-red-700 hover:bg-red-200"
+                                                >
+                                                    {badges.length + 1}. {formatDate(cycleYear, cycleMonth)} (Expected - Missing)
+                                                </Badge>
+                                            );
+                                        }
+
+                                        return badges;
+                                    })()}
+                                </div>
                             </CardContent>
                         </Card>
                     )}
 
-                    {/* {mismatches.length > 0 && (
-                        <div className="p-4 bg-red-50 border border-red-200 rounded-md">
-                            <h4 className="font-medium text-red-700 flex items-center mb-2">
-                                <AlertTriangle className="h-4 w-4 mr-2" />
-                                Validation Issues
-                            </h4>
-                            <ul className="pl-6 space-y-1 list-disc text-red-600">
-                                {mismatches.map((mismatch, index) => (
-                                    <li key={index}>{mismatch}</li>
-                                ))}
-                            </ul>
-                        </div>
-                    )} */}
+                    
                 </div>
 
                 <AlertDialogFooter>
@@ -450,9 +543,22 @@ export function BankValidationDialog({
                     <AlertDialogAction
                         onClick={onProceed}
                         className="bg-amber-600 hover:bg-amber-700"
+                        disabled={hasCriticalMismatches()}
                     >
-                        Proceed Anyway
+                        {hasCriticalMismatches() ?
+                            "Critical mismatches detected" :
+                            "Proceed Anyway"}
                     </AlertDialogAction>
+                    {hasCriticalMismatches() && (
+                        <Alert className="mb-4 bg-red-50 border-red-200">
+                            <AlertTriangle className="h-4 w-4 text-red-600" />
+                            <AlertTitle>Cannot Proceed</AlertTitle>
+                            <AlertDescription>
+                                Critical mismatches in account number, company name, or statement period were detected.
+                                These must be resolved before proceeding.
+                            </AlertDescription>
+                        </Alert>
+                    )}
                 </AlertDialogFooter>
             </AlertDialogContent>
         </AlertDialog>

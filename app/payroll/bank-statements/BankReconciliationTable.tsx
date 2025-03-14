@@ -112,13 +112,13 @@ interface Company {
 }
 
 interface BankReconciliationTableProps {
-    selectedYear: number
-    selectedMonth: number
-    searchTerm: string
-    setSearchTerm: (term: string) => void
-    onStatsChange: () => void
-    activeFilters?: string[];
-    selectedCategories: string[];
+    selectedYear: number;
+    selectedMonth: number;
+    searchTerm: string;
+    setSearchTerm: (term: string) => void;
+    onStatsChange: () => void;
+    activeFilters?: FilterWithStatus[]; // Changed from string[] to FilterWithStatus[]
+    selectedCategories: FilterWithStatus[]; // Changed similarly
 }
 
 // Helper function to normalize currency codes
@@ -325,28 +325,63 @@ const fetchCompaniesAndBanks = async () => {
     }, [organizedData, searchTerm]);
 
     // Filter statements based on active filters
+    // Filter statements based on active filters
     const filteredStatements = useMemo(() => {
         if (activeFilters.length === 0) return bankStatements;
 
         return bankStatements.filter(statement => {
+            // Check if statement matches any of the active filters
             return activeFilters.some(filter => {
+                // Get the condition for each filter type
+                let condition = false;
+
                 switch (filter) {
                     case 'validated':
-                        return statement.validation_status?.is_validated;
+                        condition = !!statement.validation_status?.is_validated;
+                        break;
                     case 'pending_validation':
-                        return !statement.validation_status?.is_validated;
+                        condition = !statement.validation_status?.is_validated;
+                        break;
                     case 'has_issues':
-                        return statement.validation_status?.mismatches?.length > 0;
+                        condition = (statement.validation_status?.mismatches?.length || 0) > 0;
+                        break;
                     case 'reconciled':
-                        return Math.abs((statement.quickbooks_balance || 0) - (statement.statement_extractions?.closing_balance || 0)) <= 0.01;
+                        const closingBal = statement.statement_extractions?.closing_balance || 0;
+                        const qbBal = statement.quickbooks_balance || 0;
+                        condition = Math.abs(closingBal - qbBal) <= 0.01;
+                        break;
                     case 'pending_reconciliation':
-                        return Math.abs((statement.quickbooks_balance || 0) - (statement.statement_extractions?.closing_balance || 0)) > 0.01;
+                        const closingBalance = statement.statement_extractions?.closing_balance || 0;
+                        const quickbooksBalance = statement.quickbooks_balance || 0;
+                        condition = Math.abs(closingBalance - quickbooksBalance) > 0.01;
+                        break;
                     default:
-                        return true;
+                        condition = true;
                 }
+
+                return condition;
             });
         });
     }, [bankStatements, activeFilters]);
+
+    const getFilterCondition = (statement: BankStatement, filterKey: string) => {
+        switch (filterKey) {
+            case 'validated':
+                return statement.validation_status?.is_validated;
+            case 'pending_validation':
+                return !statement.validation_status?.is_validated;
+            case 'has_issues':
+                return statement.validation_status?.mismatches?.length > 0;
+            case 'reconciled':
+                return Math.abs((statement.quickbooks_balance || 0) -
+                    (statement.statement_extractions?.closing_balance || 0)) <= 0.01;
+            case 'pending_reconciliation':
+                return Math.abs((statement.quickbooks_balance || 0) -
+                    (statement.statement_extractions?.closing_balance || 0)) > 0.01;
+            default:
+                return true;
+        }
+    };
 
     // Single useEffect to handle payroll cycle and data fetching - without searchTerm dependency
     useEffect(() => {
@@ -354,7 +389,7 @@ const fetchCompaniesAndBanks = async () => {
             setLoading(true);
             try {
                 // Format month with leading zero for consistency
-                const monthStr = selectedMonth.toString().padStart(2, '0');
+                const monthStr = (selectedMonth + 1).toString().padStart(2, '0');
                 const cycleMonthYear = `${selectedYear}-${monthStr}`;
                 console.log(`Initializing data for period: ${cycleMonthYear}`);
     
@@ -496,6 +531,17 @@ const fetchCompaniesAndBanks = async () => {
         })
     }
 
+    const handleStatementUpdated = (updatedStatement) => {
+        if (updatedStatement) {
+            setBankStatements(prev =>
+                prev.map(s => s.id === updatedStatement.id ? updatedStatement : s)
+            );
+        } else {
+            // If statement was deleted or is null
+            setExtractionDialogOpen(false);
+            fetchStatements(); // Fetch fresh statements
+        }
+    }
     const handleQuickbooksBalanceUpdated = (statementId: string, balance: number) => {
         setBankStatements(prev =>
             prev.map(s => s.id === statementId

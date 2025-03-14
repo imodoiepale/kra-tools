@@ -79,6 +79,7 @@
     "express": "^4.21.1",
     "file-saver": "^2.0.5",
     "framer-motion": "^11.7.0",
+    "fuse.js": "^7.1.0",
     "groq-sdk": "^0.15.0",
     "html2pdf.js": "^0.10.2",
     "input-otp": "^1.2.4",

@@ -1,16 +1,37 @@
 // @ts-nocheck
-import React from 'react';
+import React, { useState, useCallback } from 'react';
 import {
     DropdownMenu,
     DropdownMenuContent,
     DropdownMenuLabel,
     DropdownMenuSeparator,
     DropdownMenuTrigger,
+    DropdownMenuGroup,
+    DropdownMenuSub,
+    DropdownMenuSubTrigger,
+    DropdownMenuSubContent,
+    DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
-import { Filter, Building, FileText } from "lucide-react";
+import { FileText, Building } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
+
+
+interface FilterWithStatus {
+    key: string;
+    status: FilterStatus;
+}
+
+// Update the props to accept an array of filter objects instead of just strings
+interface BankStatementFiltersProps {
+    onFilterChange: (selectedFilters: FilterWithStatus[]) => void;
+    selectedCategories: FilterWithStatus[];
+    onClientTypeChange?: (selectedTypes: FilterWithStatus[]) => void;
+    selectedClientTypes?: FilterWithStatus[];
+}
+
+
 
 // Client type categories
 const clientTypeCategories = [
@@ -35,10 +56,6 @@ const clientTypeCategories = [
 // Bank statement filters
 const bankStatementFilters = [
     {
-        label: 'All',
-        key: 'all',
-    },
-    {
         label: 'Validated',
         key: 'validated',
     },
@@ -60,6 +77,9 @@ const bankStatementFilters = [
     }
 ];
 
+// Define the structure for filter status
+export type FilterStatus = 'all' | 'active' | 'inactive';
+
 interface BankStatementFiltersProps {
     onFilterChange: (selectedCategories: string[]) => void;
     selectedCategories: string[];
@@ -73,6 +93,23 @@ export function BankStatementFilters({
     onClientTypeChange,
     selectedClientTypes = []
 }: BankStatementFiltersProps) {
+    // Keep track of selected status for each filter
+    const [filterStatuses, setFilterStatuses] = useState<Record<string, FilterStatus>>({
+        validated: 'active',
+        pending_validation: 'active',
+        has_issues: 'active',
+        reconciled: 'active',
+        pending_reconciliation: 'active'
+    });
+
+    // Same for client types
+    const [clientTypeStatuses, setClientTypeStatuses] = useState<Record<string, FilterStatus>>({
+        acc: 'active',
+        audit_tax: 'active',
+        cps_sheria: 'active',
+        imm: 'active'
+    });
+
     const handleFilterChange = (key: string) => {
         if (key === 'all') {
             // If All is selected, clear all filters
@@ -92,6 +129,27 @@ export function BankStatementFilters({
         onFilterChange(newSelectedCategories);
     };
 
+    // Handle status selection for a filter
+    const handleFilterStatusChange = (filter: string, status: FilterStatus) => {
+        setFilterStatuses(prev => ({
+            ...prev,
+            [filter]: status
+        }));
+
+        // Update the selected filters based on the new status
+        let newSelectedFilters = [...selectedCategories];
+
+        // First remove the filter if it exists
+        newSelectedFilters = newSelectedFilters.filter(f => f.key !== filter);
+
+        // Then add it back if the status isn't 'all'
+        if (status !== 'all') {
+            newSelectedFilters.push({ key: filter, status });
+        }
+
+        onFilterChange(newSelectedFilters);
+    };
+
     const handleClientTypeChange = (key: string) => {
         if (!onClientTypeChange) return;
 
@@ -105,6 +163,36 @@ export function BankStatementFilters({
         }
 
         onClientTypeChange(newSelectedTypes);
+    };
+
+    // Handle status selection for a client type
+    const handleClientTypeStatusChange = (clientType: string, status: FilterStatus) => {
+        if (!onClientTypeChange) return;
+
+        setClientTypeStatuses(prev => ({
+            ...prev,
+            [clientType]: status
+        }));
+
+        // Update the selected client types based on the new status
+        let newSelectedTypes = [...selectedClientTypes];
+
+        // First remove the client type if it exists
+        newSelectedTypes = newSelectedTypes.filter(t => t !== clientType);
+
+        // Then add it back if the status isn't 'all'
+        if (status !== 'all') {
+            newSelectedTypes.push(clientType);
+        }
+
+        onClientTypeChange(newSelectedTypes);
+    };
+
+    // Get status badge text
+    const getStatusBadgeText = (category: string, isClientType = false): string => {
+        const statuses = isClientType ? clientTypeStatuses : filterStatuses;
+        const status = statuses[category] || 'active';
+        return status.charAt(0).toUpperCase() + status.slice(1);
     };
 
     const selectedCount = selectedCategories.length;
@@ -126,22 +214,81 @@ export function BankStatementFilters({
                             )}
                         </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-56">
+                    <DropdownMenuContent align="end" className="w-64">
                         <DropdownMenuLabel className="text-xs font-medium">Filter by Client Type</DropdownMenuLabel>
                         <DropdownMenuSeparator />
                         <div className="p-2">
+                            {/* All option */}
+                            <label className="flex items-center space-x-2 mb-3 cursor-pointer">
+                                <Checkbox
+                                    checked={selectedClientTypes.length === 0}
+                                    onCheckedChange={() => onClientTypeChange([])}
+                                    className="h-4 w-4"
+                                />
+                                <span className="text-sm font-medium">All Client Types</span>
+                            </label>
+
+                            <DropdownMenuSeparator className="my-2" />
+
+                            {/* Client type options with nested status filters */}
                             {clientTypeCategories.map((filter) => (
-                                <label
-                                    key={filter.key}
-                                    className="flex items-center space-x-2 mb-2 last:mb-0 cursor-pointer"
-                                >
-                                    <Checkbox
-                                        checked={selectedClientTypes.includes(filter.key)}
-                                        onCheckedChange={() => handleClientTypeChange(filter.key)}
-                                        className="h-4 w-4"
-                                    />
-                                    <span className="text-sm">{filter.label}</span>
-                                </label>
+                                <DropdownMenuGroup key={filter.key}>
+                                    <DropdownMenuSub>
+                                        <DropdownMenuSubTrigger className="px-0 py-1.5 cursor-pointer">
+                                            <div className="flex items-center space-x-2 w-full">
+                                                <Checkbox
+                                                    checked={selectedClientTypes.includes(filter.key)}
+                                                    onCheckedChange={() => handleClientTypeChange(filter.key)}
+                                                    className="h-4 w-4"
+                                                    onClick={(e) => e.stopPropagation()}
+                                                />
+                                                <div className="flex flex-1 items-center justify-between">
+                                                    <span className="text-sm">{filter.label}</span>
+                                                    {selectedClientTypes.includes(filter.key) && (
+                                                        <Badge variant="secondary" className="text-xs mr-2">
+                                                            {getStatusBadgeText(filter.key, true)}
+                                                        </Badge>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </DropdownMenuSubTrigger>
+                                        <DropdownMenuSubContent className="w-36">
+                                            <DropdownMenuItem
+                                                className="cursor-pointer"
+                                                onClick={() => handleClientTypeStatusChange(filter.key, 'all')}
+                                            >
+                                                <Checkbox
+                                                    checked={clientTypeStatuses[filter.key] === 'all'}
+                                                    className="h-4 w-4 mr-2"
+                                                    onClick={(e) => e.stopPropagation()}
+                                                />
+                                                <span>All</span>
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem
+                                                className="cursor-pointer"
+                                                onClick={() => handleClientTypeStatusChange(filter.key, 'active')}
+                                            >
+                                                <Checkbox
+                                                    checked={clientTypeStatuses[filter.key] === 'active'}
+                                                    className="h-4 w-4 mr-2"
+                                                    onClick={(e) => e.stopPropagation()}
+                                                />
+                                                <span>Active Only</span>
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem
+                                                className="cursor-pointer"
+                                                onClick={() => handleClientTypeStatusChange(filter.key, 'inactive')}
+                                            >
+                                                <Checkbox
+                                                    checked={clientTypeStatuses[filter.key] === 'inactive'}
+                                                    className="h-4 w-4 mr-2"
+                                                    onClick={(e) => e.stopPropagation()}
+                                                />
+                                                <span>Inactive Only</span>
+                                            </DropdownMenuItem>
+                                        </DropdownMenuSubContent>
+                                    </DropdownMenuSub>
+                                </DropdownMenuGroup>
                             ))}
                         </div>
                     </DropdownMenuContent>
@@ -161,22 +308,81 @@ export function BankStatementFilters({
                         )}
                     </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuContent align="end" className="w-64">
                     <DropdownMenuLabel className="text-xs font-medium">Filter by Status</DropdownMenuLabel>
                     <DropdownMenuSeparator />
                     <div className="p-2">
+                        {/* All option */}
+                        <label className="flex items-center space-x-2 mb-3 cursor-pointer">
+                            <Checkbox
+                                checked={selectedCategories.length === 0}
+                                onCheckedChange={() => handleFilterChange('all')}
+                                className="h-4 w-4"
+                            />
+                            <span className="text-sm font-medium">All Statements</span>
+                        </label>
+
+                        <DropdownMenuSeparator className="my-2" />
+
+                        {/* Filter options with nested status filters */}
                         {bankStatementFilters.map((filter) => (
-                            <label
-                                key={filter.key}
-                                className="flex items-center space-x-2 mb-2 last:mb-0 cursor-pointer"
-                            >
-                                <Checkbox
-                                    checked={filter.key === 'all' ? selectedCategories.length === 0 : selectedCategories.includes(filter.key)}
-                                    onCheckedChange={() => handleFilterChange(filter.key)}
-                                    className="h-4 w-4"
-                                />
-                                <span className="text-sm">{filter.label}</span>
-                            </label>
+                            <DropdownMenuGroup key={filter.key}>
+                                <DropdownMenuSub>
+                                    <DropdownMenuSubTrigger className="px-0 py-1.5 cursor-pointer">
+                                        <div className="flex items-center space-x-2 w-full">
+                                            <Checkbox
+                                                checked={selectedCategories.includes(filter.key)}
+                                                onCheckedChange={() => handleFilterChange(filter.key)}
+                                                className="h-4 w-4"
+                                                onClick={(e) => e.stopPropagation()}
+                                            />
+                                            <div className="flex flex-1 items-center justify-between">
+                                                <span className="text-sm">{filter.label}</span>
+                                                {selectedCategories.includes(filter.key) && (
+                                                    <Badge variant="secondary" className="text-xs mr-2">
+                                                        {getStatusBadgeText(filter.key)}
+                                                    </Badge>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </DropdownMenuSubTrigger>
+                                    <DropdownMenuSubContent className="w-36">
+                                        <DropdownMenuItem
+                                            className="cursor-pointer"
+                                            onClick={() => handleFilterStatusChange(filter.key, 'all')}
+                                        >
+                                            <Checkbox
+                                                checked={filterStatuses[filter.key] === 'all'}
+                                                className="h-4 w-4 mr-2"
+                                                onClick={(e) => e.stopPropagation()}
+                                            />
+                                            <span>All</span>
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem
+                                            className="cursor-pointer"
+                                            onClick={() => handleFilterStatusChange(filter.key, 'active')}
+                                        >
+                                            <Checkbox
+                                                checked={filterStatuses[filter.key] === 'active'}
+                                                className="h-4 w-4 mr-2"
+                                                onClick={(e) => e.stopPropagation()}
+                                            />
+                                            <span>Active Only</span>
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem
+                                            className="cursor-pointer"
+                                            onClick={() => handleFilterStatusChange(filter.key, 'inactive')}
+                                        >
+                                            <Checkbox
+                                                checked={filterStatuses[filter.key] === 'inactive'}
+                                                className="h-4 w-4 mr-2"
+                                                onClick={(e) => e.stopPropagation()}
+                                            />
+                                            <span>Inactive Only</span>
+                                        </DropdownMenuItem>
+                                    </DropdownMenuSubContent>
+                                </DropdownMenuSub>
+                            </DropdownMenuGroup>
                         ))}
                     </div>
                 </DropdownMenuContent>

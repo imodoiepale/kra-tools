@@ -47,8 +47,9 @@ export default function BankReconciliationPage() {
         mismatches: 0
     })
     const [selectedClientTypes, setSelectedClientTypes] = useState<string[]>(["acc"])
-    const [selectedFilters, setSelectedFilters] = useState<string[]>([])
+    const [selectedFilters, setSelectedFilters] = useState<FilterWithStatus[]>([])
     const [loading, setLoading] = useState<boolean>(true);
+    
 
     const [showBulkUpload, setShowBulkUpload] = useState<boolean>(false)
     const [banks, setBanks] = useState<Bank[]>([])
@@ -116,9 +117,9 @@ export default function BankReconciliationPage() {
         }
     }
 
-    const handleFilterChange = (newFilters: string[]) => {
+    const handleFilterChange = (newFilters: FilterWithStatus[]) => {
         setSelectedFilters(newFilters);
-    }
+    };
 
     const handleClientTypeChange = (newTypes: string[]) => {
         setSelectedClientTypes(newTypes);

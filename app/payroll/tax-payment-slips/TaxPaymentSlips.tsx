@@ -12,7 +12,7 @@ import { CategoryFilters } from '../components/CategoryFilters'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ObligationFilters } from '../components/ObligationFilters'
-import { Settings2, Download, Upload } from 'lucide-react'
+import { Settings2, Download, Upload, Filter } from 'lucide-react'
 import {
     DropdownMenu,
     DropdownMenuCheckboxItem,
@@ -58,6 +58,8 @@ export default function TaxPaymentSlips({
     const [selectedCategories, setSelectedCategories] = useState<string[]>(['acc']);
     const [selectedObligations, setSelectedObligations] = useState<string[]>(['active']);
     const [bulkUploadDialogOpen, setBulkUploadDialogOpen] = useState(false);
+    const [showSummaryHeaders, setShowSummaryHeaders] = useState(true);
+    const { toast } = useToast();
 
     // Column definitions for visibility toggle
     const columnDefinitions = [
@@ -281,6 +283,15 @@ export default function TaxPaymentSlips({
                             ))}
                         </DropdownMenuContent>
                     </DropdownMenu>
+                    
+                    <Button
+                        onClick={() => setShowSummaryHeaders(prev => !prev)}
+                        className="h-8 flex items-center gap-1 px-2 bg-indigo-500 hover:bg-indigo-600"
+                    >
+                        <Filter className="h-4 w-4 text-white" />
+                        {showSummaryHeaders ? 'Hide Counts' : 'Show Counts'}
+                    </Button>
+                    
                     <Button
                         // onClick={handleExtractAll}
                         className="h-8 px-2 bg-green-500 text-white hover:bg-green-600"
@@ -314,6 +325,7 @@ export default function TaxPaymentSlips({
                 onExportCsv={handleBulkExport}
                 bulkUploadDialogOpen={bulkUploadDialogOpen}
                 setBulkUploadDialogOpen={setBulkUploadDialogOpen}
+                showSummaryHeaders={showSummaryHeaders}
             />
         </div>
     )

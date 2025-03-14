@@ -1,18 +1,15 @@
 // @ts-nocheck
-
-import { supabase } from '@/lib/supabase'
-import { GoogleGenerativeAI } from "@google/generative-ai";
-import dayjs from 'dayjs';
-import { API_KEYS } from './apiKeys';
+import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
 import * as pdfjsLib from 'pdfjs-dist';
+import { API_KEYS } from './apiKeys';
 
 // Constants
-const CHUNK_SIZE = 4; // Process 3 pages at a time
-const MAX_CONCURRENT_REQUESTS = 4; // Process 4 chunks in parallel
+const EMBEDDING_MODEL = "gemini-embedding-exp-03-07";
+const EXTRACTION_MODEL = "gemini-2.0-flash";
 const RATE_LIMIT_COOLDOWN = 60000; // 1 minute cooldown
 const MAX_FAILURES = 5; // Max consecutive failures before cooling down
 
-// Initialize the Gemini API
+// Initialize the Gemini API with key rotation
 let currentApiKeyIndex = 0;
 let genAI = new GoogleGenerativeAI(API_KEYS[currentApiKeyIndex]);
 
@@ -25,6 +22,67 @@ API_KEYS.forEach(key => {
     cooldownUntil: 0
   });
 });
+
+// API key management functions
+const getNextApiKey = () => {
+  const now = Date.now();
+
+  for (let i = 0; i < API_KEYS.length; i++) {
+    const key = API_KEYS[i];
+    const status = apiKeyStatus.get(key);
+
+    if (!status) continue;
+    if (now < status.cooldownUntil) continue;
+    if (now - status.lastUsed > RATE_LIMIT_COOLDOWN) {
+      status.failureCount = 0;
+    }
+
+    if (status.failureCount < MAX_FAILURES) {
+      currentApiKeyIndex = API_KEYS.indexOf(key);
+      genAI = new GoogleGenerativeAI(key);
+      return key;
+    }
+  }
+
+  // Reset all keys if all are in cooldown
+  API_KEYS.forEach(key => {
+    apiKeyStatus.set(key, {
+      lastUsed: now,
+      failureCount: 0,
+      cooldownUntil: 0
+    });
+  });
+
+  currentApiKeyIndex = 0;
+  genAI = new GoogleGenerativeAI(API_KEYS[0]);
+  return API_KEYS[0];
+};
+
+const markApiKeyFailure = (key) => {
+  const status = apiKeyStatus.get(key);
+  if (!status) return;
+
+  status.failureCount++;
+  status.lastUsed = Date.now();
+
+  if (status.failureCount >= MAX_FAILURES) {
+    status.cooldownUntil = Date.now() + RATE_LIMIT_COOLDOWN;
+    console.log(`API key put in cooldown until ${new Date(status.cooldownUntil).toLocaleString()}`);
+  }
+
+  apiKeyStatus.set(key, status);
+};
+
+const resetApiKeyStatus = (key) => {
+  apiKeyStatus.set(key, {
+    lastUsed: Date.now(),
+    failureCount: 0,
+    cooldownUntil: 0
+  });
+};
+
+// Delay helper function
+const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 // Helper function to normalize currency codes
 const normalizeCurrencyCode = (code) => {
@@ -55,65 +113,82 @@ const normalizeCurrencyCode = (code) => {
   return currencyMap[upperCode] || upperCode;
 };
 
-// API key management functions
-const getNextApiKey = () => {
-  const now = Date.now();
+// Helper function to parse currency amounts
+function parseCurrencyAmount(amount) {
+  if (!amount) return null;
 
-  for (let i = 0; i < API_KEYS.length; i++) {
-    const key = API_KEYS[i];
-    const status = apiKeyStatus.get(key);
+  // Handle both string and number cases
+  const amountStr = typeof amount === 'string' ? amount : amount.toString();
+  const cleanedAmount = amountStr.replace(/[^\d.-]/g, '');
+  const parsedAmount = parseFloat(cleanedAmount);
+  return isNaN(parsedAmount) ? null : parsedAmount;
+}
 
-    if (!status) continue;
-    if (now < status.cooldownUntil) continue;
-    if (now - status.lastUsed > RATE_LIMIT_COOLDOWN) {
-      status.failureCount = 0;
+// Helper to get PDF page count
+async function getPdfPageCount(fileUrl) {
+  try {
+    // If fileUrl is a string URL
+    if (typeof fileUrl === 'string') {
+      const pdf = await pdfjsLib.getDocument(fileUrl).promise;
+      return pdf.numPages;
     }
 
-    if (status.failureCount < MAX_FAILURES) {
-      return key;
+    // If fileUrl is a File object
+    if (fileUrl instanceof File) {
+      const arrayBuffer = await fileUrl.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument(new Uint8Array(arrayBuffer)).promise;
+      return pdf.numPages;
     }
+
+    // Default fallback
+    return 1;
+  } catch (error) {
+    console.error('Error getting PDF page count:', error);
+    return 1; // Default to 1 page if we can't determine
   }
+}
 
-  // Reset all keys if all are in cooldown
-  API_KEYS.forEach(key => {
-    apiKeyStatus.set(key, {
-      lastUsed: now,
-      failureCount: 0,
-      cooldownUntil: 0
-    });
-  });
+// Extract text from specific PDF pages
+async function extractTextFromPdfPages(fileUrl, pageNumbers) {
+  try {
+    let pdf;
 
-  return API_KEYS[0];
-};
+    // Load PDF based on input type
+    if (typeof fileUrl === 'string') {
+      pdf = await pdfjsLib.getDocument(fileUrl).promise;
+    } else if (fileUrl instanceof File) {
+      const arrayBuffer = await fileUrl.arrayBuffer();
+      pdf = await pdfjsLib.getDocument(new Uint8Array(arrayBuffer)).promise;
+    } else {
+      throw new Error('Invalid file input type');
+    }
 
-const markApiKeyFailure = (key) => {
-  const status = apiKeyStatus.get(key);
-  if (!status) return;
+    // Extract text from each requested page
+    const textByPage = {};
 
-  status.failureCount++;
-  status.lastUsed = Date.now();
+    for (const pageNum of pageNumbers) {
+      // Handle special case for last page
+      const actualPageNum = pageNum === -1 ? pdf.numPages : pageNum;
 
-  if (status.failureCount >= MAX_FAILURES) {
-    status.cooldownUntil = Date.now() + RATE_LIMIT_COOLDOWN;
-    console.log(`API key put in cooldown until ${new Date(status.cooldownUntil).toLocaleString()}`);
+      if (actualPageNum < 1 || actualPageNum > pdf.numPages) {
+        continue;
+      }
+
+      const page = await pdf.getPage(actualPageNum);
+      const textContent = await page.getTextContent();
+      const pageText = textContent.items.map(item => item.str).join(' ');
+
+      textByPage[actualPageNum] = pageText;
+    }
+
+    return textByPage;
+  } catch (error) {
+    console.error('Error extracting text from PDF:', error);
+    throw error;
   }
+}
 
-  apiKeyStatus.set(key, status);
-};
-
-const resetApiKeyStatus = (key) => {
-  apiKeyStatus.set(key, {
-    lastUsed: Date.now(),
-    failureCount: 0,
-    cooldownUntil: 0
-  });
-};
-
-// Delay helper function
-const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-
-
-// Utility function to convert file to a format usable by the AI model
+// Convert file to part format for Gemini API
 async function fileToGenerativePart(fileInput, originalFileName) {
   try {
     let mimeType;
@@ -176,231 +251,259 @@ async function fileToGenerativePart(fileInput, originalFileName) {
   }
 }
 
-// Process a single chunk of PDF pages
-async function processChunk(fileUrl, chunk, params, onProgress) {
-  let attempts = 0;
-  const MAX_ATTEMPTS = 3;
+// Generate embeddings for text content
+async function generateTextEmbeddings(textContent) {
+  try {
+    let attempts = 0;
+    const MAX_ATTEMPTS = 3;
 
-  while (attempts < MAX_ATTEMPTS) {
-    try {
-      onProgress?.(`Processing pages ${chunk.startPage} to ${chunk.endPage}...`);
+    while (attempts < MAX_ATTEMPTS) {
+      try {
+        const embeddingModel = genAI.getGenerativeModel({ model: EMBEDDING_MODEL });
 
-      // Convert file to format compatible with Gemini API
-      const filePart = await fileToGenerativePart(fileUrl);
+        const result = await embeddingModel.embedContent({
+          content: { parts: [{ text: textContent }], role: "user" },
+        });
 
-      // Create prompt focusing only on this chunk of pages
-      const prompt = `
-Analyze pages ${chunk.startPage} to ${chunk.endPage} of this bank statement PDF and extract the following key financial information:
+        return result.embedding;
+      } catch (error) {
+        attempts++;
 
-1. Bank Details:
-   - Bank Name and Logo: Identify the official bank name (e.g., "Prime Bank", "Equity Bank") and from Logo and compare with Kenyan Banks write full name
-   - Account Number: Extract the complete account number, including any formatting characters
-   - Currency: Determine the currency used (e.g., KES, USD, EUR)
+        if (error.message?.includes('429') || error.message?.includes('quota')) {
+          markApiKeyFailure(API_KEYS[currentApiKeyIndex]);
+          getNextApiKey();
+        }
 
-2. Statement Period:
-   - Find the exact date range stated on the document (format: DD/MM/YYYY - DD/MM/YYYY) ..only use the greatest date for each month to determine    
-   - Identify any specific month/year labels in the document
+        if (attempts < MAX_ATTEMPTS) {
+          await delay(1000 * attempts);
+        } else {
+          throw error;
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Error generating embeddings:', error);
+    throw error;
+  }
+}
 
-3. Account Holder:
-   - Company Name: Extract the full, official name of the account holder
+// Create extraction queries for the embedding
+function createExtractionQueries() {
+  return [
+    { field: 'bank_name', query: "What is the name of the bank?" },
+    { field: 'account_number', query: "What is the account number?" },
+    { field: 'company_name', query: "What is the name of the company or account holder?" },
+    { field: 'currency', query: "What currency is used in this statement?" },
+    { field: 'statement_period', query: "What is the statement period? Include start and end dates." },
+    // { field: 'opening_balance', query: "What is the opening balance of the account?" },
+    // { field: 'closing_balance', query: "What is the closing balance of the account?" },
+    { field: 'monthly_balances', query: "List all monthly balances including month, year, opening and closing balances." }
+  ];
+}
 
-4. Balance Information:
-   - Opening Balance: The starting balance at the beginning of the statement period
-   - Closing Balance: The final balance at the end of the statement period
+// Process extraction using embeddings
+async function processExtraction(pageTextContent, params, onProgress) {
+  try {
+    onProgress?.('Generating embeddings for bank statement pages...');
 
-5. Monthly Breakdown (VERY IMPORTANT - find EVERY month mentioned in these pages):
-   - Month and Year: Identify each distinct month covered in the statement
-   - Monthly Opening Balance: First balance shown for that month, or balance brought forward
-   - Monthly Closing Balance: Last balance shown for that month, or balance carried forward
-   - Page Location: Note the actual page number where this information appears
-   - SEARCH THOROUGHLY for ALL months mentioned on these pages
+    // Create text embedding for the content
+    const pageText = Object.values(pageTextContent).join("\n\n--- PAGE BREAK ---\n\n");
+    const contentEmbedding = await generateTextEmbeddings(pageText);
 
-FOCUS ONLY ON PAGES ${chunk.startPage} to ${chunk.endPage} of the document.
-Be thorough and find ALL months mentioned, even if they appear in tables, footnotes, or summaries.
+    if (!contentEmbedding) {
+      throw new Error('Failed to generate embeddings');
+    }
 
-Return the data in this structured JSON format:
+    onProgress?.('Running extraction queries against embeddings...');
+
+    // Create a custom extraction prompt
+    const extractionPrompt = `
+You are analyzing a bank statement. Extract the following information from the text:
+
+1. Bank Name: The official name of the bank and also from Logos available in the document
+2. Account Number: The full account number 
+3. Company Name: The name of the account holder
+4. Currency: The currency code or name used in the statement
+5. Statement Period: The exact date range covered
+// 6. Opening Balance: The starting balance
+// 7. Closing Balance: The final balance
+6. Monthly Balances: Any balances for specific months mentioned
+
+For the specific month ${params.month}/${params.year}, find exact opening and closing balances if available.
+
+Return your analysis in this JSON format:
 {
   "bank_name": "Bank Name",
   "account_number": "Account Number",
-  "currency": "Currency Code",
   "company_name": "Company Name",
+  "currency": "Currency Code",
   "statement_period": "Start Date - End Date",
-  "opening_balance": number,
-  "closing_balance": number,
+  // "opening_balance": number,
+  // "closing_balance": number,
   "monthly_balances": [
     {
       "month": month_number,
       "year": year_number,
       "opening_balance": number,
       "closing_balance": number,
-      "statement_page": page_number,
-      "opening_date": "YYYY-MM-DD",
-      "closing_date": "YYYY-MM-DD"
+      "statement_page": page_number
     }
   ]
-}`;
+}
+`;
 
-      // Rotate API keys if needed
-      if (attempts > 0) {
-        const nextKey = getNextApiKey();
-        genAI = new GoogleGenerativeAI(nextKey);
-      }
+    // Use the content and extraction model
+    const extractionModel = genAI.getGenerativeModel({
+      model: EXTRACTION_MODEL,
+      generationConfig: {
+        temperature: 0.2,
+        topP: 0.8,
+        topK: 40,
+        maxOutputTokens: 8192,
+      },
+      safetySettings: [
+        {
+          category: HarmCategory.HARM_CATEGORY_HARASSMENT,
+          threshold: HarmBlockThreshold.BLOCK_NONE,
+        },
+        {
+          category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+          threshold: HarmBlockThreshold.BLOCK_NONE,
+        },
+        {
+          category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+          threshold: HarmBlockThreshold.BLOCK_NONE,
+        },
+        {
+          category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+          threshold: HarmBlockThreshold.BLOCK_NONE,
+        },
+      ],
+    });
 
-      const model = genAI.getGenerativeModel({
-        model: "gemini-2.0-flash",
-        generationConfig: {
-          temperature: 0.2,
-          topP: .8,
-          topK: 40,
-          maxOutputTokens: 8192,
-        }
-      });
+    const result = await extractionModel.generateContent([
+      extractionPrompt,
+      pageText
+    ]);
 
-      onProgress?.(`Analyzing content of pages ${chunk.startPage} to ${chunk.endPage}...`);
-      const result = await model.generateContent([prompt, filePart]);
-      const response = await result.response;
-      const text = response.text();
+    const responseText = result.response.text();
 
-      if (!text) {
-        throw new Error('No text generated from the model');
-      }
+    // Parse and validate the extracted data
+    onProgress?.('Processing extracted information...');
 
-      // Extract JSON from response
-      let extractedData;
-      try {
-        const jsonMatch = text.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          extractedData = JSON.parse(jsonMatch[0]);
-        } else {
-          throw new Error('No JSON found in response');
-        }
-      } catch (jsonError) {
-        console.error('JSON parsing error:', jsonError);
-        throw new Error('Failed to parse JSON from model response');
-      }
-
-      // Helper function to parse currency amounts
-      function parseCurrencyAmount(amount) {
-        if (!amount) return null;
-        const cleanedAmount = amount.toString().replace(/[^\d.-]/g, '');
-        const parsedAmount = parseFloat(cleanedAmount);
-        return isNaN(parsedAmount) ? null : parsedAmount;
-      }
-
-      // Normalize currency codes and data
-      const normalizedData = {
-        bank_name: extractedData.bank_name || null,
-        company_name: extractedData.company_name || null,
-        account_number: extractedData.account_number || null,
-        currency: extractedData.currency ? normalizeCurrencyCode(extractedData.currency) : null,
-        statement_period: extractedData.statement_period || null,
-        opening_balance: typeof extractedData.opening_balance === 'string'
-          ? parseCurrencyAmount(extractedData.opening_balance)
-          : extractedData.opening_balance,
-        closing_balance: typeof extractedData.closing_balance === 'string'
-          ? parseCurrencyAmount(extractedData.closing_balance)
-          : extractedData.closing_balance,
-        monthly_balances: Array.isArray(extractedData.monthly_balances)
-          ? extractedData.monthly_balances.map(balance => ({
-            month: balance.month,
-            year: balance.year,
-            opening_balance: typeof balance.opening_balance === 'string'
-              ? parseCurrencyAmount(balance.opening_balance)
-              : balance.opening_balance,
-            closing_balance: typeof balance.closing_balance === 'string'
-              ? parseCurrencyAmount(balance.closing_balance)
-              : balance.closing_balance,
-            statement_page: balance.statement_page || chunk.startPage,
-            highlight_coordinates: null,
-            is_verified: false,
-            verified_by: null,
-            verified_at: null,
-            opening_date: balance.opening_date || null,
-            closing_date: balance.closing_date || null
-          }))
-          : []
-      };
-
-      // Reset API key status
-      resetApiKeyStatus(API_KEYS[currentApiKeyIndex]);
-
-      return {
-        success: true,
-        extractedData: normalizedData,
-        chunk: chunk
-      };
-
-    } catch (error) {
-      attempts++;
-      console.error(`Extraction attempt ${attempts} failed for pages ${chunk.startPage}-${chunk.endPage}:`, error);
-
-      // Check for rate limit error
-      if (error.message?.includes('429') || error.message?.includes('quota')) {
-        markApiKeyFailure(API_KEYS[currentApiKeyIndex]);
-      }
-
-      if (attempts < MAX_ATTEMPTS) {
-        onProgress?.(`Extraction failed. Retrying chunk (attempt ${attempts + 1}/${MAX_ATTEMPTS})...`);
-        await delay(1000);
+    let extractedData;
+    try {
+      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        extractedData = JSON.parse(jsonMatch[0]);
       } else {
-        return {
-          success: false,
-          extractedData: {
-            bank_name: null,
-            company_name: null,
-            account_number: null,
-            currency: null,
-            statement_period: null,
-            opening_balance: null,
-            closing_balance: null,
-            monthly_balances: []
-          },
-          chunk: chunk,
-          message: `Extraction failed after ${MAX_ATTEMPTS} attempts for pages ${chunk.startPage}-${chunk.endPage}.`
-        };
+        throw new Error('No JSON found in response');
       }
+    } catch (jsonError) {
+      console.error('JSON parsing error:', jsonError);
+      throw new Error('Failed to parse extraction results');
     }
+
+    // Return the normalized data
+    return normalizeExtractedData(extractedData, params);
+
+  } catch (error) {
+    console.error('Error in extraction process:', error);
+    throw error;
   }
 }
 
-// Main extraction function using virtual chunking
+// Normalize the extracted data
+function normalizeExtractedData(extractedData, params) {
+  // Helper function to ensure monthly balances structure
+  const processMonthlyBalances = () => {
+    const balances = Array.isArray(extractedData.monthly_balances)
+      ? extractedData.monthly_balances.map(balance => ({
+        month: balance.month,
+        year: balance.year,
+        // opening_balance: parseCurrencyAmount(balance.opening_balance),
+        // closing_balance: parseCurrencyAmount(balance.closing_balance),
+        statement_page: balance.statement_page || 1,
+        highlight_coordinates: null,
+        is_verified: false,
+        verified_by: null,
+        verified_at: null
+      }))
+      : [];
+
+    // Ensure we have at least the current month in the balances
+    const hasCurrentMonth = balances.some(
+      balance => balance.month === params.month && balance.year === params.year
+    );
+
+    if (!hasCurrentMonth) {
+      balances.push({
+        month: params.month,
+        year: params.year,
+        // opening_balance: parseCurrencyAmount(extractedData.opening_balance),
+        // closing_balance: parseCurrencyAmount(extractedData.closing_balance),
+        statement_page: 1,
+        highlight_coordinates: null,
+        is_verified: false,
+        verified_by: null,
+        verified_at: null
+      });
+    }
+
+    return balances;
+  };
+
+  return {
+    bank_name: extractedData.bank_name || null,
+    company_name: extractedData.company_name || null,
+    account_number: extractedData.account_number || null,
+    currency: extractedData.currency ? normalizeCurrencyCode(extractedData.currency) : null,
+    statement_period: extractedData.statement_period || null,
+    // opening_balance: parseCurrencyAmount(extractedData.opening_balance),
+    // closing_balance: parseCurrencyAmount(extractedData.closing_balance),
+    monthly_balances: processMonthlyBalances()
+  };
+}
+
+// Main extraction function
 export async function performBankStatementExtraction(
   fileUrl,
   params,
   onProgress = (message) => console.log(message)
 ) {
   try {
-    onProgress('Starting bank statement extraction (first and last pages only)...');
+    onProgress('Starting bank statement extraction with embedding approach...');
 
-    // Instead of creating chunks for all pages, define just two "chunks"
-    const chunks = [
-      { startPage: 1, endPage: 1, pageCount: 1 },  // First page
-      { startPage: -1, endPage: -1, pageCount: 1 } // Last page (special marker for last page)
-    ];
+    // Get total page count
+    const totalPages = await getPdfPageCount(fileUrl);
+    onProgress(`Detected ${totalPages} pages in document`);
 
-    onProgress('Processing first and last pages for basic details...');
+    // Define pages to process: first and last page
+    const pages = [1];
+    if (totalPages > 1) {
+      pages.push(totalPages);
+    }
 
-    // Process first and last pages
-    const firstPageResult = await processChunk(fileUrl, chunks[0], params, onProgress);
-    const lastPageResult = await processSpecialChunk(fileUrl, chunks[1], params, onProgress);
+    onProgress(`Extracting text from pages ${pages.join(', ')}...`);
+    const pageTextContent = await extractTextFromPdfPages(fileUrl, pages);
 
-    // Merge results from first and last pages
-    const mergedData = mergeFirstAndLastPageResults(
-      firstPageResult,
-      lastPageResult,
-      params,
-      onProgress
-    );
+    // Process extraction using the page text
+    const extractedData = await processExtraction(pageTextContent, params, onProgress);
 
-    onProgress('Basic extraction completed successfully.');
+    // Add visual data for the document if needed (for highlighting)
+    if (pages.length > 0 && pageTextContent) {
+      onProgress('Extraction completed successfully');
+    }
 
     return {
       success: true,
-      extractedData: mergedData
+      extractedData: extractedData
     };
+
   } catch (error) {
-    console.error('Error in extraction process:', error);
-    // Return empty data fallback
+    console.error('Error in bank statement extraction:', error);
+
+    // Return fallback data structure on error
     return {
       success: false,
       extractedData: {
@@ -409,125 +512,24 @@ export async function performBankStatementExtraction(
         account_number: null,
         currency: null,
         statement_period: null,
-        opening_balance: null,
-        closing_balance: null,
-        monthly_balances: []
+        // opening_balance: null,
+        // closing_balance: null,
+        monthly_balances: [{
+          month: params.month,
+          year: params.year,
+          // opening_balance: null,
+          // closing_balance: null,
+          statement_page: 1,
+          highlight_coordinates: null,
+          is_verified: false,
+          verified_by: null,
+          verified_at: null
+        }]
       },
       message: `Extraction failed: ${error.message}`
     };
   }
 }
-async function processSpecialChunk(fileUrl, chunk, params, onProgress) {
-  try {
-    onProgress('Processing last page of the document...');
-
-    // First determine the total number of pages in the PDF
-    const totalPages = await getPdfPageCount(fileUrl);
-
-    // Update chunk to use actual last page number
-    chunk.startPage = totalPages;
-    chunk.endPage = totalPages;
-
-    // Now process the last page using regular processing
-    return await processChunk(fileUrl, chunk, params, onProgress);
-  } catch (error) {
-    console.error('Error processing last page:', error);
-    return {
-      success: false,
-      extractedData: {
-        bank_name: null,
-        company_name: null,
-        account_number: null,
-        currency: null,
-        statement_period: null,
-        opening_balance: null,
-        closing_balance: null,
-        monthly_balances: []
-      },
-      chunk: chunk,
-      message: 'Failed to process last page'
-    };
-  }
-}
-
-
-// Helper to get PDF page count
-async function getPdfPageCount(fileUrl) {
-  try {
-    // If fileUrl is a string URL
-    if (typeof fileUrl === 'string') {
-      const pdf = await pdfjsLib.getDocument(fileUrl).promise;
-      return pdf.numPages;
-    }
-
-    // If fileUrl is a File object
-    if (fileUrl instanceof File) {
-      const arrayBuffer = await fileUrl.arrayBuffer();
-      const pdf = await pdfjsLib.getDocument(new Uint8Array(arrayBuffer)).promise;
-      return pdf.numPages;
-    }
-
-    // Default fallback
-    return 1;
-  } catch (error) {
-    console.error('Error getting PDF page count:', error);
-    return 1; // Default to 1 page if we can't determine
-  }
-}
-
-// Specialized merge function for first and last page results
-function mergeFirstAndLastPageResults(firstPageResult, lastPageResult, params, onProgress) {
-  onProgress('Merging data from first and last pages...');
-
-  // Initialize with empty data
-  const merged = {
-    bank_name: null,
-    company_name: null,
-    account_number: null,
-    currency: null,
-    statement_period: null,
-    opening_balance: null,
-    closing_balance: null,
-    monthly_balances: []
-  };
-
-  // First page typically has account details
-  if (firstPageResult.success && firstPageResult.extractedData) {
-    merged.bank_name = firstPageResult.extractedData.bank_name;
-    merged.company_name = firstPageResult.extractedData.company_name;
-    merged.account_number = firstPageResult.extractedData.account_number;
-    merged.currency = firstPageResult.extractedData.currency;
-    merged.statement_period = firstPageResult.extractedData.statement_period;
-    merged.opening_balance = firstPageResult.extractedData.opening_balance;
-  }
-
-  // Last page might have closing balance or additional details
-  if (lastPageResult.success && lastPageResult.extractedData) {
-    // Only override if values weren't found in first page
-    merged.bank_name = merged.bank_name || lastPageResult.extractedData.bank_name;
-    merged.company_name = merged.company_name || lastPageResult.extractedData.company_name;
-    merged.account_number = merged.account_number || lastPageResult.extractedData.account_number;
-    merged.currency = merged.currency || lastPageResult.extractedData.currency;
-    merged.statement_period = merged.statement_period || lastPageResult.extractedData.statement_period;
-    merged.closing_balance = lastPageResult.extractedData.closing_balance;
-  }
-
-  // Ensure we have the requested month (for UI manual entry)
-  merged.monthly_balances.push({
-    month: params.month,
-    year: params.year,
-    opening_balance: merged.opening_balance || null,
-    closing_balance: merged.closing_balance || null,
-    statement_page: 1,
-    highlight_coordinates: null,
-    is_verified: false,
-    verified_by: null,
-    verified_at: null
-  });
-
-  return merged;
-}
-
 
 // Function to handle multi-month statement submission
 async function handleMultiMonthStatement(
@@ -655,3 +657,68 @@ async function handleMultiMonthStatement(
   }
 }
 
+// Helper functions for multi-month statements
+function parseStatementPeriod(periodString) {
+  if (!periodString) return null;
+
+  // Try to match various date formats
+  // Format: "January 2024" (single month)
+  const singleMonthMatch = periodString.match(/(\w+)\s+(\d{4})/i);
+  if (singleMonthMatch) {
+    const month = new Date(`${singleMonthMatch[1]} 1, 2000`).getMonth() + 1;
+    const year = parseInt(singleMonthMatch[2]);
+    return {
+      startMonth: month,
+      startYear: year,
+      endMonth: month,
+      endYear: year
+    };
+  }
+
+  // Format: "January - March 2024" or "January to March 2024"
+  const sameYearMatch = periodString.match(/(\w+)\s*(?:-|to)\s*(\w+)\s+(\d{4})/i);
+  if (sameYearMatch) {
+    const startMonth = new Date(`${sameYearMatch[1]} 1, 2000`).getMonth() + 1;
+    const endMonth = new Date(`${sameYearMatch[2]} 1, 2000`).getMonth() + 1;
+    const year = parseInt(sameYearMatch[3]);
+    return {
+      startMonth,
+      startYear: year,
+      endMonth,
+      endYear: year
+    };
+  }
+
+  // Format: "January 2024 - March 2024" or "January 2024 to March 2024"
+  const differentYearMatch = periodString.match(/(\w+)\s+(\d{4})\s*(?:-|to)\s*(\w+)\s+(\d{4})/i);
+  if (differentYearMatch) {
+    const startMonth = new Date(`${differentYearMatch[1]} 1, 2000`).getMonth() + 1;
+    const startYear = parseInt(differentYearMatch[2]);
+    const endMonth = new Date(`${differentYearMatch[3]} 1, 2000`).getMonth() + 1;
+    const endYear = parseInt(differentYearMatch[4]);
+    return {
+      startMonth,
+      startYear,
+      endMonth,
+      endYear
+    };
+  }
+
+  return null;
+}
+
+// Helper function to generate month range from start to end
+function generateMonthRange(startMonth, startYear, endMonth, endYear) {
+  const months = [];
+
+  for (let year = startYear; year <= endYear; year++) {
+    const start = year === startYear ? startMonth : 1;
+    const end = year === endYear ? endMonth : 12;
+
+    for (let month = start; month <= end; month++) {
+      months.push({ month, year });
+    }
+  }
+
+  return months;
+}
