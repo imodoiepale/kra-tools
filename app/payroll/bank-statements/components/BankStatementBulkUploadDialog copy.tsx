@@ -123,7 +123,7 @@ export function BankStatementBulkUploadDialog({
     const [currentManualMatchItem, setCurrentManualMatchItem] = useState<number | null>(null);
     const [showBankSelectorDialog, setShowBankSelectorDialog] = useState<boolean>(false);
 
-
+    
 
     // Use useEffect to sync with prop changes
     useEffect(() => {
@@ -131,7 +131,7 @@ export function BankStatementBulkUploadDialog({
             setLocalCycleId(statementCycleId);
         }
     }, [statementCycleId]);
-
+    
     const fileInputRef = useRef<HTMLInputElement>(null)
     const { toast } = useToast()
 
@@ -342,162 +342,162 @@ export function BankStatementBulkUploadDialog({
     };
 
     const processFiles = async (cycleId) => {
-        setTotalMatched(0);
-        setTotalUnmatched(0);
+    setTotalMatched(0);
+    setTotalUnmatched(0);
 
-        // Process each file sequentially
-        for (let i = 0; i < uploadItems.length; i++) {
-            if (uploadItems[i].status === 'uploaded' || uploadItems[i].status === 'vouched') continue;
+    // Process each file sequentially
+    for (let i = 0; i < uploadItems.length; i++) {
+        if (uploadItems[i].status === 'uploaded' || uploadItems[i].status === 'vouched') continue;
 
-            setProcessingIndex(i);
-            setOverallProgress(Math.floor((i / uploadItems.length) * 100));
+        setProcessingIndex(i);
+        setOverallProgress(Math.floor((i / uploadItems.length) * 100));
 
-            try {
-                // Update status to processing
-                setUploadItems(items => {
-                    const updated = [...items];
-                    updated[i] = {
-                        ...updated[i],
-                        status: 'processing',
-                        uploadProgress: 10
-                    };
-                    return updated;
-                });
+        try {
+            // Update status to processing
+            setUploadItems(items => {
+                const updated = [...items];
+                updated[i] = {
+                    ...updated[i],
+                    status: 'processing',
+                    uploadProgress: 10
+                };
+                return updated;
+            });
 
-                // Step 1: Extract data from PDF
-                const fileUrl = URL.createObjectURL(uploadItems[i].file);
-                const extractionResult = await performBankStatementExtraction(
-                    fileUrl,
-                    {
-                        month: cycleMonth,
-                        year: cycleYear
-                    },
-                    (message) => {
-                        console.log(`File ${i + 1}/${uploadItems.length}: ${message}`);
-                        // Increment progress during extraction
-                        setUploadItems(items => {
-                            const updated = [...items];
-                            updated[i] = {
-                                ...updated[i],
-                                uploadProgress: Math.min(40, (updated[i].uploadProgress || 0) + 5)
-                            };
-                            return updated;
-                        });
-                    }
+            // Step 1: Extract data from PDF
+            const fileUrl = URL.createObjectURL(uploadItems[i].file);
+            const extractionResult = await performBankStatementExtraction(
+                fileUrl,
+                {
+                    month: cycleMonth,
+                    year: cycleYear
+                },
+                (message) => {
+                    console.log(`File ${i + 1}/${uploadItems.length}: ${message}`);
+                    // Increment progress during extraction
+                    setUploadItems(items => {
+                        const updated = [...items];
+                        updated[i] = {
+                            ...updated[i],
+                            uploadProgress: Math.min(40, (updated[i].uploadProgress || 0) + 5)
+                        };
+                        return updated;
+                    });
+                }
+            );
+
+            // Cleanup URL
+            URL.revokeObjectURL(fileUrl);
+
+            if (!extractionResult.success) throw new Error('Failed to extract data from PDF');
+
+            // Update with extracted data
+            setUploadItems(items => {
+                const updated = [...items];
+                updated[i] = {
+                    ...updated[i],
+                    extractedData: extractionResult.extractedData,
+                    uploadProgress: 50
+                };
+                return updated;
+            });
+
+            // Step 2: Try to match with a bank
+            const matchedBank = findMatchingBank(extractionResult.extractedData, banks);
+
+            if (matchedBank) {
+                // Create updated item with matched bank
+                const updatedItem = {
+                    ...uploadItems[i],
+                    status: 'matched',
+                    matchedBank,
+                    extractedData: extractionResult.extractedData,
+                    uploadProgress: 70
+                };
+
+                // Validate the extracted data against the matched bank
+                const validation = validateExtractedData(extractionResult.extractedData, matchedBank);
+
+                // If there are critical mismatches, pause for validation
+                const criticalMismatches = validation.mismatches.filter(mismatch =>
+                    !mismatch.toLowerCase().includes('period')
                 );
 
-                // Cleanup URL
-                URL.revokeObjectURL(fileUrl);
-
-                if (!extractionResult.success) throw new Error('Failed to extract data from PDF');
-
-                // Update with extracted data
-                setUploadItems(items => {
-                    const updated = [...items];
-                    updated[i] = {
-                        ...updated[i],
-                        extractedData: extractionResult.extractedData,
-                        uploadProgress: 50
-                    };
-                    return updated;
-                });
-
-                // Step 2: Try to match with a bank
-                const matchedBank = findMatchingBank(extractionResult.extractedData, banks);
-
-                if (matchedBank) {
-                    // Create updated item with matched bank
-                    const updatedItem = {
-                        ...uploadItems[i],
-                        status: 'matched',
-                        matchedBank,
-                        extractedData: extractionResult.extractedData,
-                        uploadProgress: 70
-                    };
-
-                    // Validate the extracted data against the matched bank
-                    const validation = validateExtractedData(extractionResult.extractedData, matchedBank);
-
-                    // If there are critical mismatches, pause for validation
-                    const criticalMismatches = validation.mismatches.filter(mismatch =>
-                        !mismatch.toLowerCase().includes('period')
-                    );
-
-                    if (criticalMismatches.length > 0) {
-                        // Use the updated item for validation
-                        setCurrentValidationItem({ item: updatedItem, index: i });
-                        setValidationResult(validation);
-                        setShowValidation(true);
-                        setUploading(false);
-
-                        // Update the items state with the matched bank
-                        setUploadItems(items => {
-                            const updated = [...items];
-                            updated[i] = updatedItem;
-                            return updated;
-                        });
-                        setTotalMatched(prev => prev + 1);
-                        return;
-                    }
-
-                    // Update state with matched bank
+                if (criticalMismatches.length > 0) {
+                    // Use the updated item for validation
+                    setCurrentValidationItem({ item: updatedItem, index: i });
+                    setValidationResult(validation);
+                    setShowValidation(true);
+                    setUploading(false);
+                    
+                    // Update the items state with the matched bank
                     setUploadItems(items => {
                         const updated = [...items];
                         updated[i] = updatedItem;
                         return updated;
                     });
                     setTotalMatched(prev => prev + 1);
-
-                    // Proceed with upload if no critical mismatches
-                    await uploadStatementFile(i, matchedBank, cycleId);
-
-                } else {
-                    setUploadItems(items => {
-                        const updated = [...items];
-                        updated[i] = {
-                            ...updated[i],
-                            status: 'unmatched',
-                            uploadProgress: 60,
-                            error: 'No matching bank found'
-                        };
-                        return updated;
-                    });
-                    setTotalUnmatched(prev => prev + 1);
-                    continue; // Skip to next file
+                    return;
                 }
 
-            } catch (error) {
-                console.error(`Error processing file ${i}:`, error);
+                // Update state with matched bank
+                setUploadItems(items => {
+                    const updated = [...items];
+                    updated[i] = updatedItem;
+                    return updated;
+                });
+                setTotalMatched(prev => prev + 1);
+
+                // Proceed with upload if no critical mismatches
+                await uploadStatementFile(i, matchedBank, cycleId);
+
+            } else {
                 setUploadItems(items => {
                     const updated = [...items];
                     updated[i] = {
                         ...updated[i],
-                        status: 'failed',
-                        error: error.message || 'Unknown error occurred'
+                        status: 'unmatched',
+                        uploadProgress: 60,
+                        error: 'No matching bank found'
                     };
                     return updated;
                 });
+                setTotalUnmatched(prev => prev + 1);
+                continue; // Skip to next file
             }
+
+        } catch (error) {
+            console.error(`Error processing file ${i}:`, error);
+            setUploadItems(items => {
+                const updated = [...items];
+                updated[i] = {
+                    ...updated[i],
+                    status: 'failed',
+                    error: error.message || 'Unknown error occurred'
+                };
+                return updated;
+            });
         }
+    }
 
-        setProcessingIndex(-1);
-        setOverallProgress(100);
-        setUploading(false);
+    setProcessingIndex(-1);
+    setOverallProgress(100);
+    setUploading(false);
 
-        toast({
-            title: 'Upload Complete',
-            description: `Successfully processed ${totalMatched} statements. ${totalUnmatched} items couldn't be matched.`
-        });
+    toast({
+        title: 'Upload Complete',
+        description: `Successfully processed ${totalMatched} statements. ${totalUnmatched} items couldn't be matched.`
+    });
 
-        // Move to vouching tab if we have matched statements
-        if (totalMatched > 0) {
-            setActiveTab('vouching');
-        } else {
-            setActiveTab('review');
-        }
+    // Move to vouching tab if we have matched statements
+    if (totalMatched > 0) {
+        setActiveTab('vouching');
+    } else {
+        setActiveTab('review');
+    }
 
-        onUploadsComplete();
-    };
+    onUploadsComplete();
+};
 
 
     const validateExtractedData = (extracted: any, bank: Bank): any => {
@@ -1105,8 +1105,8 @@ export function BankStatementBulkUploadDialog({
     // Helper function to generate month range
     const generateMonthRange = (startMonth: number, startYear: number, endMonth: number, endYear: number) => {
         const months = [];
-        let currentDate = new Date(startYear, startMonth);
-        const endDate = new Date(endYear, endMonth);
+        let currentDate = new Date(startYear, startMonth );
+        const endDate = new Date(endYear, endMonth );
 
         while (currentDate <= endDate) {
             months.push({
@@ -1449,7 +1449,7 @@ export function BankStatementBulkUploadDialog({
                             <p><span className="font-medium">Bank Name:</span> {item.extractedData?.bank_name || 'Not detected'}</p>
                             <p><span className="font-medium">Account Number:</span> {item.extractedData?.account_number || 'Not detected'}</p>
                             <p><span className="font-medium">Currency:</span> {item.extractedData?.currency || 'Not detected'}</p>
-                            <p><span className="font-medium">Period:</span> {item.extractedData?.statement_period || format(new Date(cycleYear, cycleMonth), 'MMMM yyyy')}</p>
+                            <p><span className="font-medium">Period:</span> {item.extractedData?.statement_period || format(new Date(cycleYear, cycleMonth ), 'MMMM yyyy')}</p>
                         </div>
                     </div>
 
@@ -1559,7 +1559,7 @@ export function BankStatementBulkUploadDialog({
                             </div>
                             <DialogTitle className="text-center text-xl text-blue-800">Bulk Upload Bank Statements</DialogTitle>
                             <p className="text-center text-blue-600 text-sm mt-1">
-                                {format(new Date(cycleYear, cycleMonth, 1), 'MMMM yyyy')}
+                                {format(new Date(cycleYear, cycleMonth , 1), 'MMMM yyyy')}
                             </p>
                         </div>
                     </DialogHeader>
@@ -1743,8 +1743,8 @@ export function BankStatementBulkUploadDialog({
                                                 <TableHead>Bank Name</TableHead>
                                                 <TableHead>Account Number</TableHead>
                                                 <TableHead>Currency</TableHead>
-                                                <TableHead>Period</TableHead>
-                                                {/* <TableHead>File Name</TableHead> */}
+                                                {/* <TableHead>Closing Balance</TableHead> */}
+                                                <TableHead>File Name</TableHead>
                                                 <TableHead>Status</TableHead>
                                                 <TableHead>Actions</TableHead>
                                             </TableRow>
@@ -1753,12 +1753,34 @@ export function BankStatementBulkUploadDialog({
                                             {uploadItems.map((item, index) => (
                                                 <TableRow key={index} className={item.status === 'unmatched' ? 'bg-yellow-50' : ''}>
                                                     <TableCell>{index + 1}</TableCell>
-                                                    <TableCell>{item.matchedBank?.company_name || item.extractedData?.company_name || '-'}</TableCell>
+                                                    <TableCell>{item.matchedBank?.company_name || '-'}</TableCell>
                                                     <TableCell>{item.matchedBank?.bank_name || item.extractedData?.bank_name || '-'}</TableCell>
                                                     <TableCell className="font-mono text-xs">{item.matchedBank?.account_number || item.extractedData?.account_number || '-'}</TableCell>
                                                     <TableCell>{item.matchedBank?.bank_currency || item.extractedData?.currency || '-'}</TableCell>
-                                                    <TableCell className="text-xs space-y-0.5">{item.extractedData?.statement_period || '-'}</TableCell>
-                                                    {/* <TableCell className="font-medium">{item.file.name}</TableCell> */}
+                                                    <TableCell>
+                                                        {item.status === 'matched' || item.status === 'uploaded' || item.status === 'vouched' ? (
+                                                            renderClosingBalanceInput(item, index)
+                                                        ) : item.extractedData?.closing_balance ? (
+                                                            <span className="font-medium">
+                                                                {formatCurrency(item.extractedData.closing_balance,
+                                                                    item.extractedData.currency || 'USD')}
+                                                            </span>
+                                                        ) : (
+                                                            <span className="text-muted-foreground text-sm">Not available</span>
+                                                        )}
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        {item.extractedData ? (
+                                                            <div className="text-xs space-y-0.5">
+                                                                <div><span className="font-medium">Period:</span> {item.extractedData.statement_period || '-'}</div>
+                                                                <div><span className="font-medium">Currency:</span> {item.extractedData.currency || '-'}</div>
+                                                                
+                                                            </div>
+                                                        ) : (
+                                                            <span className="text-muted-foreground text-sm">Not available</span>
+                                                        )}
+                                                    </TableCell>
+                                                    <TableCell className="font-medium">{item.file.name}</TableCell>
                                                     <TableCell>{getStatusBadge(item.status)}</TableCell>
                                                     <TableCell>
                                                         {item.status === 'failed' && (
@@ -1767,8 +1789,8 @@ export function BankStatementBulkUploadDialog({
                                                         {item.status === 'unmatched' && (
                                                             <Button
                                                                 variant="ghost"
-                                                                size=""
-                                                                className="h-8 bg-green-800 text-white text-[10px]"
+                                                                size="sm"
+                                                                className="h-8"
                                                                 onClick={() => {
                                                                     // Open a bank selection dialog for this item
                                                                     setCurrentManualMatchItem(index);

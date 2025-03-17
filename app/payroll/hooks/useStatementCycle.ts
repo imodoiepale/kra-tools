@@ -269,6 +269,49 @@ export const useStatementCycle = () => {
         }
     }
 
+    const createStatementCyclesForPeriod = async (statementPeriod: string) => {
+        try {
+            const periodDates = parseStatementPeriod(statementPeriod);
+            if (!periodDates) return [];
+
+            const { startMonth, startYear, endMonth, endYear } = periodDates;
+            const monthsInRange = generateMonthRange(startMonth, startYear, endMonth, endYear);
+
+            const createdCycles = [];
+
+            for (const { month, year } of monthsInRange) {
+                const monthStr = (month + 1).toString().padStart(2, '0');
+                const cycleMonthYear = `${year}-${monthStr}`;
+
+                const { data: cycle, error } = await supabase
+                    .from('statement_cycles')
+                    .upsert({
+                        month_year: cycleMonthYear,
+                        status: 'active',
+                        created_at: new Date().toISOString()
+                    }, {
+                        onConflict: 'month_year',
+                        ignoreDuplicates: true
+                    })
+                    .select()
+                    .single();
+
+                if (error) {
+                    console.error(`Cycle creation error for ${cycleMonthYear}:`, error);
+                    continue;
+                }
+
+                createdCycles.push(cycle);
+            }
+
+            return createdCycles;
+        } catch (error) {
+            console.error('Statement cycle creation error:', error);
+            return [];
+        }
+    };
+
+
     return {
         selectedYear,
         setSelectedYear,
@@ -279,6 +322,7 @@ export const useStatementCycle = () => {
         loading,
         statementCycleId,
         fetchOrCreateStatementCycle,
+        createStatementCyclesForPeriod,
         fetchBankStatements,
         updateBankStatement,
         uploadStatementDocument,

@@ -320,7 +320,7 @@ async function processExtraction(pageTextContent, params, onProgress) {
     const extractionPrompt = `
 You are analyzing a bank statement. Extract the following information from the text:
 
-1. Bank Name: The official name of the bank and also from Logos available in the document
+1. Bank Name: The official name of the bank from the document and also identify from Logos available in the document
 2. Account Number: The full account number 
 3. Company Name: The name of the account holder
 4. Currency: The currency code or name used in the statement

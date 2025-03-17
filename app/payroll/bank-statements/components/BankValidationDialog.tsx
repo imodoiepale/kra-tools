@@ -9,6 +9,7 @@ import { Separator } from '@/components/ui/separator'
 import { performBankStatementExtraction } from "@/lib/bankExtractionUtils"
 import { Button } from "@/components/ui/button"
 import { useState } from "react"
+import { Input } from "@/components/ui/input"
 
 interface Bank {
     id: number
@@ -38,6 +39,7 @@ interface BankValidationDialogProps {
     onCancel: () => void
     cycleMonth: number
     cycleYear: number
+    fileUrl: string;
 }
 
 // Helper function to normalize currency codes
@@ -196,6 +198,8 @@ export function BankValidationDialog({
         return null;
     }
 
+    const [editableBankName, setEditableBankName] = useState(extractedData?.bank_name || '');
+
     // Extract expected month/year from the period if available
     let expectedMonth = null;
     let expectedYear = null;
@@ -240,35 +244,148 @@ export function BankValidationDialog({
         try {
             setProcessing(true);
 
-            // Call the performBankStatementExtraction function again
             const extractionResult = await performBankStatementExtraction(
                 fileUrl,
                 { month: cycleMonth, year: cycleYear }
             );
 
             if (extractionResult.success) {
-                // Update the extracted data
+                // Update the extracted data in state
                 setExtractedData(extractionResult.extractedData);
 
-                // Re-validate
-                const newMismatches = validateExtractedData(
-                    extractionResult.extractedData,
-                    bank
-                ).mismatches;
+                // Re-validate with the new data
+                const newValidation = validateExtractedData(extractionResult.extractedData, bank);
+                setMismatches(newValidation.mismatches);
 
-                setMismatches(newMismatches);
+                toast({
+                    title: "Data Re-extracted",
+                    description: "Statement data has been re-analyzed"
+                });
             }
         } catch (error) {
             console.error('Re-extraction error:', error);
+            toast({
+                title: "Extraction Failed",
+                description: "Could not re-extract data from document",
+                variant: "destructive"
+            });
         } finally {
             setProcessing(false);
         }
     };
 
+    const fuzzyBankNameMatch = (expected: string, extracted: string): {
+        matches: boolean,
+        similarity: number,
+        correctedName: string
+    } => {
+        // Normalization function
+        const normalize = (name: string) =>
+            name.toLowerCase()
+                .replace(/\s*(bank|ltd|limited|plc)\s*/gi, '')
+                .replace(/[^\w\s]/g, '')
+                .trim();
+
+        const normalizedExpected = normalize(expected);
+        const normalizedExtracted = normalize(extracted || '');
+
+        // Levenshtein distance calculation
+        const levenshteinDistance = (s1: string, s2: string) => {
+            const m = s1.length;
+            const n = s2.length;
+            const dp: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+
+            for (let i = 0; i <= m; i++) dp[i][0] = i;
+            for (let j = 0; j <= n; j++) dp[0][j] = j;
+
+            for (let i = 1; i <= m; i++) {
+                for (let j = 1; j <= n; j++) {
+                    if (s1[i - 1] === s2[j - 1]) {
+                        dp[i][j] = dp[i - 1][j - 1];
+                    } else {
+                        dp[i][j] = Math.min(
+                            dp[i - 1][j] + 1,     // deletion
+                            dp[i][j - 1] + 1,     // insertion
+                            dp[i - 1][j - 1] + 1  // substitution
+                        );
+                    }
+                }
+            }
+
+            return dp[m][n];
+        };
+
+        // Calculate similarity
+        const maxLength = Math.max(normalizedExpected.length, normalizedExtracted.length);
+        const distance = levenshteinDistance(normalizedExpected, normalizedExtracted);
+        const similarity = 1 - (distance / maxLength);
+
+        return {
+            matches: similarity >= 0.7, // 70% similarity threshold
+            similarity,
+            correctedName: expected // Always use the expected name
+        };
+    };
+
+    const validateStatementPeriod = (extractedPeriod, cycleMonth, cycleYear) => {
+        if (!extractedPeriod) return { isValid: false, details: 'No statement period detected' };
+
+        // Handle multiple date formats (DD/MM/YYYY, MM/DD/YYYY, etc.)
+        const datePatterns = [
+            /(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{4})\s*-\s*(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{4})/, // DD/MM/YYYY - DD/MM/YYYY
+            /(\d{4})-(\d{1,2})-(\d{1,2})\s*-\s*(\d{4})-(\d{1,2})-(\d{1,2})/ // YYYY-MM-DD - YYYY-MM-DD
+        ];
+
+        for (const pattern of datePatterns) {
+            const match = extractedPeriod.match(pattern);
+            if (match) {
+                // Try both DD/MM/YYYY and MM/DD/YYYY formats
+                let startDay, startMonth, startYear, endDay, endMonth, endYear;
+
+                // First, assume DD/MM/YYYY
+                startDay = parseInt(match[1], 10);
+                startMonth = parseInt(match[2], 10);
+                startYear = parseInt(match[3], 10);
+                endDay = parseInt(match[4], 10);
+                endMonth = parseInt(match[5], 10);
+                endYear = parseInt(match[6], 10);
+
+                // Validate the parsed dates (check if month is between 1-12)
+                if (startMonth > 12 || endMonth > 12) {
+                    // Try MM/DD/YYYY instead
+                    startMonth = parseInt(match[1], 10);
+                    startDay = parseInt(match[2], 10);
+                    // startYear stays the same
+                    endMonth = parseInt(match[4], 10);
+                    endDay = parseInt(match[5], 10);
+                    // endYear stays the same
+                }
+
+                // Check if cycle month/year falls within the range
+                if (startYear <= cycleYear && endYear >= cycleYear) {
+                    if (startYear < cycleYear || (startYear === cycleYear && startMonth <= cycleMonth)) {
+                        if (endYear > cycleYear || (endYear === cycleYear && endMonth >= cycleMonth)) {
+                            return { isValid: true, details: 'Period contains cycle month' };
+                        }
+                    }
+                }
+            }
+        }
+
+        // Fall back to text-based matching
+        const cycleMonthName = new Date(cycleYear, cycleMonth - 1).toLocaleString('en-US', { month: 'long' }).toLowerCase();
+        const normalizedPeriod = extractedPeriod.toLowerCase();
+
+        if (normalizedPeriod.includes(cycleMonthName) && normalizedPeriod.includes(cycleYear.toString())) {
+            return { isValid: true, details: 'Month and year found in period text' };
+        }
+
+        return { isValid: false, details: 'Cycle month/year not found in period' };
+    };
 
     return (
         <AlertDialog open={isOpen} onOpenChange={onClose}>
-            <AlertDialogContent className="max-w-5xl">
+            <AlertDialogContent className="max-w-7xl">
                 <AlertDialogHeader>
                     <AlertDialogTitle className="flex items-center text-amber-600">
                         <AlertTriangle className="h-5 w-5 mr-2" />
@@ -281,8 +398,8 @@ export function BankValidationDialog({
                 </AlertDialogHeader>
 
                 <div className="py-4 space-y-6">
-                    <div className="grid grid-cols-2 gap-4">
-                        <Card>
+                    <div className="grid grid-cols-5 gap-4">
+                        <Card className="col-span-3">
                             <CardHeader className="py-3 bg-blue-50">
                                 <CardTitle className="text-base flex items-center">
                                     <Building className="h-4 w-4 mr-2" />
@@ -322,20 +439,44 @@ export function BankValidationDialog({
                                         <TableRow>
                                             <TableCell className="font-medium">Bank Name</TableCell>
                                             <TableCell>{bank?.bank_name}</TableCell>
-                                            <TableCell>{extractedData?.bank_name || 'Not detected'}</TableCell>
                                             <TableCell>
-                                                {extractedData?.bank_name &&
-                                                    extractedData.bank_name.toLowerCase().includes(bank?.bank_name?.toLowerCase()) ? (
-                                                    <div className="flex items-center text-green-500 font-medium">
-                                                        <CheckCircle className="h-4 w-4 mr-1" />
-                                                        Match
-                                                    </div>
-                                                ) : (
-                                                    <div className="flex items-center text-red-500 font-medium">
-                                                        <AlertTriangle className="h-4 w-4 mr-1" />
-                                                        Mismatch
-                                                    </div>
-                                                )}
+                                                <Input
+                                                    value={editableBankName || extractedData?.bank_name || ''}
+                                                    onChange={(e) => setEditableBankName(e.target.value)}
+                                                    className="w-full"
+                                                />
+                                            </TableCell>
+                                            <TableCell>
+                                                {(() => {
+                                                    // If no extracted bank name, show mismatch
+                                                    if (!extractedData?.bank_name) {
+                                                        return (
+                                                            <div className="flex items-center text-red-500 font-medium">
+                                                                <AlertTriangle className="h-4 w-4 mr-1" />
+                                                                Not Detected
+                                                            </div>
+                                                        );
+                                                    }
+
+                                                    // Perform fuzzy matching
+                                                    const matchResult = fuzzyBankNameMatch(bank?.bank_name, extractedData?.bank_name);
+
+                                                    if (matchResult.matches) {
+                                                        return (
+                                                            <div className="flex items-center text-green-500 font-medium">
+                                                                <CheckCircle className="h-4 w-4 mr-1" />
+                                                                Match
+                                                            </div>
+                                                        );
+                                                    }
+
+                                                    return (
+                                                        <div className="flex items-center text-yellow-600 font-medium">
+                                                            <AlertTriangle className="h-4 w-4 mr-1" />
+                                                            Partial Match ({(matchResult.similarity * 100).toFixed(0)}%)
+                                                        </div>
+                                                    );
+                                                })()}
                                             </TableCell>
                                         </TableRow>
                                         <TableRow>
@@ -382,7 +523,7 @@ export function BankValidationDialog({
                             </CardContent>
                         </Card>
 
-                        <Card>
+                        <Card className="col-span-2">
                             <CardHeader className="py-3 bg-blue-50">
                                 <CardTitle className="text-base flex items-center">
                                     <Calendar className="h-4 w-4 mr-2" />
@@ -404,9 +545,25 @@ export function BankValidationDialog({
                                         </div>
                                         <div className="mt-2 pt-2 border-t border-blue-200 flex justify-between items-center">
                                             <p className="text-sm font-medium">Period Validation</p>
-                                            <Badge className={isPeriodValid ? "bg-green-100 text-green-700 hover:bg-green-100" : "bg-red-100 text-red-700 hover:bg-amber-100"}>
-                                                {isPeriodValid ? "Valid" : "Period Mismatch"}
-                                            </Badge>
+                                            {(() => {
+                                                const periodValidation = validateStatementPeriod(
+                                                    extractedData?.statement_period,
+                                                    cycleMonth,
+                                                    cycleYear
+                                                );
+
+                                                return (
+                                                    <Badge
+                                                        className={
+                                                            periodValidation.isValid
+                                                                ? "bg-green-100 text-green-700 hover:bg-green-100"
+                                                                : "bg-red-100 text-red-700 hover:bg-red-100"
+                                                        }
+                                                    >
+                                                        {periodValidation.isValid ? "Valid" : "Period Mismatch"}
+                                                    </Badge>
+                                                );
+                                            })()}
                                         </div>
                                     </div>
                                     <Button
