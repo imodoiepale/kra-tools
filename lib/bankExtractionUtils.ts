@@ -324,7 +324,7 @@ You are analyzing a bank statement. Extract the following information from the t
 2. Account Number: The full account number 
 3. Company Name: The name of the account holder
 4. Currency: The currency code or name used in the statement
-5. Statement Period: The exact date range covered
+5. Statement Period: The exact date range covered in dd/mm/yyyy format always
 // 6. Opening Balance: The starting balance
 // 7. Closing Balance: The final balance
 6. Monthly Balances: Any balances for specific months mentioned
