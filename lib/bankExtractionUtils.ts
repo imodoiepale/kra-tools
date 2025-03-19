@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
 import * as pdfjsLib from 'pdfjs-dist';
+import { PDFDocument } from 'pdf-lib';
 import { API_KEYS } from './apiKeys';
 
 // Constants
@@ -425,11 +426,43 @@ Return your analysis in this JSON format:
 
     let extractedData;
     try {
-      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+      // First attempt: Try to find a JSON object in the response
+      const jsonMatch = responseText.match(/\{[\s\S]*?\}/);
+      
       if (jsonMatch) {
-        extractedData = JSON.parse(jsonMatch[0]);
+        try {
+          // Try to parse the matched JSON
+          extractedData = JSON.parse(jsonMatch[0]);
+        } catch (parseError) {
+          // If direct parsing fails, try to repair the JSON
+          const repairResult = repairJsonString(jsonMatch[0]);
+          
+          if (repairResult.success) {
+            extractedData = repairResult.json;
+          } else {
+            // Try a more aggressive approach to find any JSON-like structure
+            const potentialJson = responseText.replace(/[\s\S]*?(\{[\s\S]*\})[\s\S]*/, '$1');
+            const secondRepairResult = repairJsonString(potentialJson);
+            
+            if (secondRepairResult.success) {
+              extractedData = secondRepairResult.json;
+            } else {
+              // Last resort: try to extract key parts manually
+              extractedData = extractFallbackData(responseText, params);
+              
+              if (!extractedData) {
+                throw new Error('No valid JSON structure found in response');
+              }
+            }
+          }
+        }
       } else {
-        throw new Error('No JSON found in response');
+        // Try to extract key parts manually if no JSON-like structure is found
+        extractedData = extractFallbackData(responseText, params);
+        
+        if (!extractedData) {
+          throw new Error('No JSON found in response');
+        }
       }
     } catch (jsonError) {
       console.error('JSON parsing error:', jsonError);
@@ -442,6 +475,59 @@ Return your analysis in this JSON format:
   } catch (error) {
     console.error('Error in extraction process:', error);
     throw error;
+  }
+}
+
+// Helper function to extract data manually when JSON parsing fails
+function extractFallbackData(text, params) {
+  try {
+    // Create a basic structure
+    const fallbackData = {
+      bank_name: null,
+      account_number: null,
+      company_name: null,
+      currency: null,
+      statement_period: null,
+      // opening_balance: null,
+      // closing_balance: null,
+      monthly_balances: []
+    };
+    
+    // Try to extract bank name
+    const bankNameMatch = text.match(/[Bb]ank\s*[Nn]ame\s*:?\s*([A-Za-z\s]+(?:Bank|BANK|Ltd|LIMITED|Limited))/);
+    if (bankNameMatch) fallbackData.bank_name = bankNameMatch[1].trim();
+    
+    // Try to extract account number
+    const accountMatch = text.match(/[Aa]ccount\s*[Nn]umber\s*:?\s*([0-9\-]+)/);
+    if (accountMatch) fallbackData.account_number = accountMatch[1].trim();
+    
+    // Try to extract company name
+    const companyMatch = text.match(/[Cc]ompany\s*[Nn]ame\s*:?\s*([A-Za-z\s]+(?:Ltd|LIMITED|Limited|LLC|Co\.|Inc\.|Corporation)?)/);
+    if (companyMatch) fallbackData.company_name = companyMatch[1].trim();
+    
+    // Try to extract currency
+    const currencyMatch = text.match(/[Cc]urrency\s*:?\s*([A-Z]{3}|[A-Za-z\s]+)/);
+    if (currencyMatch) fallbackData.currency = currencyMatch[1].trim();
+    
+    // Try to extract statement period
+    const periodMatch = text.match(/[Ss]tatement\s*[Pp]eriod\s*:?\s*([A-Za-z0-9\s\-\/]+)/);
+    if (periodMatch) fallbackData.statement_period = periodMatch[1].trim();
+    
+    // Add the current month to monthly balances
+    fallbackData.monthly_balances.push({
+      month: params.month,
+      year: params.year,
+      statement_page: 1,
+      highlight_coordinates: null,
+      is_verified: false,
+      verified_by: null,
+      verified_at: null
+    });
+    
+    return fallbackData;
+  } catch (error) {
+    console.error('Fallback extraction failed:', error);
+    return null;
   }
 }
 
@@ -508,19 +594,55 @@ export async function performBankStatementExtraction(
 
     // Get total page count
     const totalPages = await getPdfPageCount(fileUrl);
-    onProgress(`Detected ${totalPages} pages in document`);
+    
+    if (!totalPages || !totalPages.success) {
+      const errorMessage = totalPages?.error || 'Failed to get page count';
+      onProgress(`Error: ${errorMessage}`);
+      
+      // Check if password protected
+      if (totalPages?.requiresPassword) {
+        return {
+          success: false,
+          requiresPassword: true,
+          passwordNeeded: totalPages.passwordNeeded,
+          message: 'This PDF is password protected. Please provide a password.'
+        };
+      }
+      
+      throw new Error(errorMessage);
+    }
+    
+    onProgress(`Detected ${totalPages.numPages} pages in document`);
 
     // Define pages to process: first and last page
     const pages = [1];
-    if (totalPages > 1) {
-      pages.push(totalPages);
+    if (totalPages.numPages > 1) {
+      pages.push(totalPages.numPages);
     }
 
     onProgress(`Extracting text from pages ${pages.join(', ')}...`);
     const pageTextContent = await extractTextFromPdfPages(fileUrl, pages);
+    
+    if (!pageTextContent || !pageTextContent.success) {
+      const errorMessage = pageTextContent?.error || 'Failed to extract text from PDF';
+      onProgress(`Error: ${errorMessage}`);
+      
+      // Check if password protected
+      if (pageTextContent?.requiresPassword) {
+        return {
+          success: false,
+          requiresPassword: true,
+          passwordNeeded: pageTextContent.passwordNeeded,
+          message: 'This PDF is password protected. Please provide a password.'
+        };
+      }
+      
+      throw new Error(errorMessage);
+    }
 
     // Process extraction using the page text
-    const extractedData = await processExtraction(pageTextContent, params, onProgress);
+    onProgress('Analyzing document content...');
+    const extractedData = await processExtraction(pageTextContent.textByPage, params, onProgress);
 
     // Add visual data for the document if needed (for highlighting)
     if (pages.length > 0 && pageTextContent) {
@@ -721,7 +843,9 @@ export async function processBulkExtraction(batchFiles, params, onProgress) {
         // Extract text from first and last pages
         const totalPages = pageCountResult.numPages;
         const pagesToProcess = [1];
-        if (totalPages > 1) pagesToProcess.push(totalPages);
+        if (totalPages > 1) {
+          pagesToProcess.push(totalPages);
+        }
 
         const textResult = await extractTextFromPdfPages(file.fileUrl, pagesToProcess, file.password);
 
@@ -850,15 +974,63 @@ ${Object.entries(textResult.textByPage).map(([pageNum, text]) =>
         const extractionResult = await extractionModel.generateContent([extractionPrompt, textChunks[i]]);
         const responseText = extractionResult.response.text();
 
-        // Parse results
-        const chunkResults = parseExtractionResults(responseText, batchFiles);
-        allResults.push(...chunkResults);
+        // Parse the results
+        const chunkResults = [];
 
-        // Update progress
-        onProgress(0.5 + 0.4 * ((i + 1) / textChunks.length));
+        // Look for JSON structures in the response
+        // The response should contain multiple JSON objects, one for each document
+        const jsonMatches = responseText.match(/\{[\s\S]*?\}/g) || [];
+
+        for (let j = 0; j < jsonMatches.length; j++) {
+          try {
+            const parsedJson = JSON.parse(jsonMatches[j]);
+
+            // Find which document this result belongs to
+            const documentIndex = parsedJson.document_index || parsedJson.index || j;
+            const originalIndex = batchFiles.find(f => f.index === parseInt(parsedJson.document_index))?.index || j;
+
+            // Normalize the extracted data
+            const normalizedData = normalizeExtractedData(parsedJson, {
+              month: batchFiles[0].params?.month,
+              year: batchFiles[0].params?.year
+            });
+
+            chunkResults.push({
+              index: originalIndex,
+              success: true,
+              extractedData: normalizedData,
+              originalItem: batchFiles[originalIndex].originalItem
+            });
+          } catch (jsonError) {
+            console.error('Error parsing JSON for batch item:', jsonError);
+
+            // If parsing fails, add a failed result
+            chunkResults.push({
+              index: j,
+              success: false,
+              error: 'Failed to parse extraction results'
+            });
+          }
+        }
+
+        // If we didn't get results for all documents, add failed results
+        for (const file of batchFiles) {
+          if (!chunkResults.some(result => result.index === file.index)) {
+            chunkResults.push({
+              index: file.index,
+              success: false,
+              error: 'No extraction result found for this document'
+            });
+          }
+        }
+
+        allResults.push(...chunkResults);
       } catch (error) {
         console.error(`Error processing chunk ${i + 1}:`, error);
       }
+
+      // Update progress
+      onProgress(0.5 + 0.4 * ((i + 1) / textChunks.length));
     }
 
     // Return results with password-protected files if any
@@ -898,6 +1070,14 @@ function parseExtractionResults(responseText, batchFiles) {
     console.log(`Found ${standardMatches.length} standard JSON objects`);
     potentialJsonMatches.push(...standardMatches);
 
+    // If no standard matches found, try a more general approach
+    if (standardMatches.length === 0) {
+      const generalRegex = /\{[\s\S]*?\}/g;
+      const generalMatches = responseText.match(generalRegex) || [];
+      console.log(`Found ${generalMatches.length} general JSON objects`);
+      potentialJsonMatches.push(...generalMatches);
+    }
+
     // Process each potential JSON object
     for (let i = 0; i < potentialJsonMatches.length; i++) {
       const jsonStr = potentialJsonMatches[i];
@@ -905,37 +1085,62 @@ function parseExtractionResults(responseText, batchFiles) {
       try {
         // Try to clean up any invalid JSON
         let jsonText = jsonStr.trim();
-
-        // Handle malformed JSON with missing closing braces
-        const openBraces = (jsonText.match(/\{/g) || []).length;
-        const closeBraces = (jsonText.match(/\}/g) || []).length;
-        if (openBraces > closeBraces) {
-          const missing = openBraces - closeBraces;
-          jsonText = jsonText + "}".repeat(missing);
+        
+        // Try to parse directly first
+        try {
+          const parsedObj = JSON.parse(jsonText);
+          
+          // Skip if no document_index
+          if (parsedObj.document_index === undefined) {
+            // Try to infer document_index from position
+            parsedObj.document_index = i;
+          }
+          
+          // Find matching file
+          const matchingFile = batchFiles.find(file => file.index === parseInt(parsedObj.document_index));
+          
+          if (matchingFile) {
+            // Successfully matched and parsed
+            results.push({
+              index: parsedObj.document_index,
+              success: true,
+              extractedData: normalizeExtractedData(parsedObj, matchingFile.params || { month: 0, year: 0 }),
+              originalItem: matchingFile.originalItem
+            });
+            continue;
+          }
+        } catch (directParseError) {
+          // Direct parsing failed, try repair
+        }
+        
+        // Try to repair the JSON
+        const repairResult = repairJsonString(jsonText);
+        
+        if (repairResult.success) {
+          const parsedObj = repairResult.json;
+          
+          // Skip if no document_index
+          if (parsedObj.document_index === undefined) {
+            // Try to infer document_index from position
+            parsedObj.document_index = i;
+          }
+          
+          // Find matching file
+          const matchingFile = batchFiles.find(file => file.index === parseInt(parsedObj.document_index));
+          
+          if (matchingFile) {
+            // Successfully matched and parsed
+            results.push({
+              index: parsedObj.document_index,
+              success: true,
+              extractedData: normalizeExtractedData(parsedObj, matchingFile.params || { month: 0, year: 0 }),
+              originalItem: matchingFile.originalItem
+            });
+            continue;
+          }
         }
 
-        // Parse the JSON object
-        const parsedObj = JSON.parse(jsonText);
-
-        // Skip if no document_index
-        if (parsedObj.document_index === undefined) continue;
-
-        // Find matching file
-        const matchingFile = batchFiles.find(file => file.index === parseInt(parsedObj.document_index));
-
-        if (matchingFile) {
-          // Successfully matched and parsed
-          results.push({
-            index: parsedObj.document_index,
-            success: true,
-            extractedData: normalizeExtractedData(parsedObj, matchingFile.params || { month: 0, year: 0 }),
-            originalItem: matchingFile.originalItem
-          });
-        }
-      } catch (jsonError) {
-        console.error("Failed to parse JSON object:", jsonError);
-        console.log("Problematic JSON:", jsonStr.substring(0, 100) + "...");
-
+        // If we get here, both direct parsing and repair failed
         // Attempt more advanced repair (for malformed JSON)
         try {
           // Try to extract the document_index directly with regex
@@ -975,6 +1180,28 @@ function parseExtractionResults(responseText, batchFiles) {
         } catch (repairError) {
           console.error("Failed to repair JSON:", repairError);
         }
+      } catch (jsonError) {
+        console.error("Failed to parse JSON object:", jsonError);
+        console.log("Problematic JSON:", jsonStr.substring(0, 100) + "...");
+      }
+    }
+
+    // If no results were parsed but we have batchFiles, try fallback extraction
+    if (results.length === 0 && batchFiles.length > 0) {
+      console.log("No valid JSON objects found, attempting fallback extraction");
+      
+      // Try to extract data for each file using regex patterns
+      for (const file of batchFiles) {
+        const fallbackData = extractFallbackData(responseText, file.params || { month: 0, year: 0 });
+        
+        if (fallbackData) {
+          results.push({
+            index: file.index,
+            success: true,
+            extractedData: fallbackData,
+            originalItem: file.originalItem
+          });
+        }
       }
     }
 
@@ -994,7 +1221,7 @@ function parseExtractionResults(responseText, batchFiles) {
   } catch (error) {
     console.error('Error in parseExtractionResults:', error);
 
-    // Fallback to return error results for all files
+    // Return failed results for all files
     return batchFiles.map(file => ({
       index: file.index,
       success: false,
@@ -1058,7 +1285,111 @@ function repairJsonString(jsonStr) {
   }
 }
 
+// Function to verify if a PDF is unlocked
+async function verifyPdfIsUnlocked(file: File): Promise<boolean> {
+    try {
+        const arrayBuffer = await file.arrayBuffer();
+        const loadingTask = pdfjsLib.getDocument({
+            data: arrayBuffer
+        });
+        
+        // Try to load the document without a password
+        const pdfDoc = await loadingTask.promise;
+        
+        // Try to get text from the first page
+        const page = await pdfDoc.getPage(1);
+        const textContent = await page.getTextContent();
+        
+        // If we can get text content, the PDF is unlocked
+        return textContent.items.length > 0;
+    } catch (error) {
+        console.error('Error verifying PDF unlock status:', error);
+        return false;
+    }
+}
 
+// Function to remove password protection from a PDF using pdf-lib
+export async function removePasswordProtection(pdfFile: File, password: string): Promise<File | null> {
+    try {
+        // First verify we can open the PDF with the password using PDF.js
+        const arrayBuffer = await pdfFile.arrayBuffer();
+        const loadingTask = pdfjsLib.getDocument({
+            data: arrayBuffer,
+            password: password
+        });
+
+        // Verify the password works
+        await loadingTask.promise;
+
+        try {
+            // Load the PDF with pdf-lib
+            const pdfDoc = await PDFDocument.load(arrayBuffer, {
+                password: password,
+                ignoreEncryption: true,
+                updateMetadata: false
+            });
+
+            // Create a new document
+            const newPdfDoc = await PDFDocument.create();
+
+            // Copy all pages from the original document
+            const pages = await newPdfDoc.copyPages(pdfDoc, pdfDoc.getPageIndices());
+            pages.forEach(page => newPdfDoc.addPage(page));
+
+            // Copy form fields if any
+            if (pdfDoc.getForm()) {
+                const form = pdfDoc.getForm();
+                const newForm = newPdfDoc.getForm();
+                const fields = form.getFields();
+                for (const field of fields) {
+                    const type = field.constructor.name;
+                    switch (type) {
+                        case 'PDFTextField':
+                            newForm.createTextField(field.getName());
+                            break;
+                        case 'PDFCheckBox':
+                            newForm.createCheckBox(field.getName());
+                            break;
+                        case 'PDFRadioGroup':
+                            newForm.createRadioGroup(field.getName());
+                            break;
+                        // Add other field types as needed
+                    }
+                }
+            }
+
+            // Save without encryption
+            const pdfBytes = await newPdfDoc.save({
+                useObjectStreams: false,
+                addDefaultPage: false,
+                updateMetadata: false
+            });
+
+            // Create the unprotected file
+            const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+            const unprotectedFile = new File([blob], pdfFile.name, {
+                type: 'application/pdf',
+                lastModified: Date.now()
+            });
+
+            // Verify the new file is truly unlocked
+            const isUnlocked = await verifyPdfIsUnlocked(unprotectedFile);
+            if (!isUnlocked) {
+                console.error('Failed to verify PDF is unlocked');
+                return null;
+            }
+
+            console.log('Successfully removed password protection from PDF');
+            return unprotectedFile;
+        } catch (pdfLibError) {
+            console.error('Error using pdf-lib:', pdfLibError);
+            return null;
+        }
+    } catch (error) {
+        console.error('Error removing password protection:', error);
+        return null;
+    }
+}
 
 // Function to handle batch document extraction
 async function batchExtractDocuments(files, prompt) {
@@ -1132,7 +1463,7 @@ async function batchExtractDocuments(files, prompt) {
 
         // Find which document this result belongs to
         const documentIndex = parsedJson.document_index || parsedJson.index || i;
-        const originalIndex = files.find(f => f.index === documentIndex)?.index || i;
+        const originalIndex = files.find(f => f.index === parseInt(parsedJson.document_index))?.index || i;
 
         // Normalize the extracted data
         const normalizedData = normalizeExtractedData(parsedJson, {
@@ -1246,4 +1577,137 @@ function generateMonthRange(startMonth, startYear, endMonth, endYear) {
   }
 
   return months;
+}
+
+// Helper function to detect account number from filename
+export function detectAccountNumberFromFilename(filename: string): string | null {
+    // Common patterns for account numbers in filenames
+    const patterns = [
+        /acc[_\-]?(\d{5,})/i,              // Matches "acc_12345", "acc-12345"
+        /acct[_\-]?(\d{5,})/i,             // Matches "acct_12345", "acct-12345"
+        /account[_\-]?(\d{5,})/i,          // Matches "account_12345"
+        /\b(\d{10,})\b/,                   // Matches any 10+ digit number
+        /[_\-](\d{5,})[_\-]/               // Matches numbers between underscores/hyphens
+    ];
+
+    for (const pattern of patterns) {
+        const match = filename.match(pattern);
+        if (match && match[1]) {
+            // Clean up the account number (remove any non-digits)
+            const accountNumber = match[1].replace(/\D/g, '');
+            console.log("Detected account number in filename:", accountNumber);
+            return accountNumber;
+        }
+    }
+
+    return null;
+}
+
+// Helper function to detect bank name from filename
+export function getBankNameFromFilename(filename: string): string | null {
+    // Common bank name patterns (add more as needed)
+    const bankPatterns = [
+        { pattern: /equity/i, name: "Equity Bank" },
+        { pattern: /kcb/i, name: "KCB Bank" },
+        { pattern: /cooperative|coop/i, name: "Cooperative Bank" },
+        { pattern: /stanchart|standard[-\s]?chartered/i, name: "Standard Chartered" },
+        { pattern: /absa/i, name: "ABSA Bank" },
+        { pattern: /dtb|diamond[-\s]?trust/i, name: "Diamond Trust Bank" },
+        { pattern: /ncba/i, name: "NCBA Bank" },
+        { pattern: /family/i, name: "Family Bank" }
+    ];
+
+    for (const { pattern, name } of bankPatterns) {
+        if (pattern.test(filename)) {
+            console.log("Detected bank name in filename:", name);
+            return name;
+        }
+    }
+
+    return null;
+}
+
+// Enhanced file info detection that combines all detections
+export function detectFileInfoFromFilename(filename: string): {
+    accountNumber: string | null;
+    bankName: string | null;
+    password: string | null;
+} {
+    const accountNumber = detectAccountNumberFromFilename(filename);
+    const bankName = getBankNameFromFilename(filename);
+    
+    // Password patterns (reusing from the previous implementation)
+    const passwordPatterns = [
+        /pass[_\-]?(\w+)/i,             // Matches "pass_123", "pass-123", "password123"
+        /pwd[_\-]?(\w+)/i,              // Matches "pwd_123", "pwd-123"
+        /\b(?:p|pw)[\s_\-]?(\w{4,})\b/i // Matches "p 1234", "pw_1234" with min 4 chars
+    ];
+
+    let password = null;
+    for (const pattern of passwordPatterns) {
+        const match = filename.match(pattern);
+        if (match && match[1]) {
+            password = match[1];
+            console.log("Detected password from filename:", password);
+            break;
+        }
+    }
+
+    // Return the detected information
+    return {
+        accountNumber,
+        bankName,
+        password
+    };
+}
+
+// Check if a PDF is password protected
+export async function isPdfPasswordProtected(file: File): Promise<boolean> {
+    try {
+        const arrayBuffer = await file.arrayBuffer();
+        const loadingTask = pdfjsLib.getDocument({
+            data: arrayBuffer
+        });
+
+        try {
+            await loadingTask.promise;
+            return false; // If we can load without password, it's not protected
+        } catch (error: any) {
+            if (error.name === 'PasswordException') {
+                return true; // PDF.js specific password error
+            }
+            // For other errors, try with pdf-lib
+            try {
+                await PDFDocument.load(arrayBuffer);
+                return false;
+            } catch (pdfLibError: any) {
+                return pdfLibError.message.includes('encrypted');
+            }
+        }
+    } catch (error) {
+        console.error('Error checking if PDF is password protected:', error);
+        return true; // Assume protected if we can't verify
+    }
+}
+
+// Apply password to PDF files
+export async function applyPasswordToFiles(file: File, password: string): Promise<boolean> {
+    try {
+        const arrayBuffer = await file.arrayBuffer();
+        const loadingTask = pdfjsLib.getDocument({
+            data: arrayBuffer,
+            password: password
+        });
+        
+        try {
+            await loadingTask.promise;
+            return true; // Password was successfully applied
+        } catch (error) {
+            console.error('Password application error:', error);
+            return false; // Password was incorrect or some other error occurred
+        }
+    } catch (error) {
+        console.error('Error applying password to PDF:', error);
+        return false;
+    }
 }

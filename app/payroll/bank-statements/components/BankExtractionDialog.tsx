@@ -65,7 +65,6 @@ import {
 import * as pdfjsLib from 'pdfjs-dist';
 import { PDFDocumentProxy } from 'pdfjs-dist';
 
-
 // Initialize PDF.js worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 
@@ -326,7 +325,7 @@ export function BankExtractionDialog({
     const [currentPage, setCurrentPage] = useState<number>(1)
     const [totalPages, setTotalPages] = useState<number>(1)
     const [pdfScale, setPdfScale] = useState<number>(1.0) // Scale for PDF view
-    const [documentSize, setDocumentSize] = useState<number>(statement.statement_document.document_size || 0)
+    const [documentSize, setDocumentSize] = useState<number | null>(null)
     const [loading, setLoading] = useState<boolean>(true)
     const [saving, setSaving] = useState<boolean>(false)
     const [deleting, setDeleting] = useState<boolean>(false)
@@ -336,9 +335,10 @@ export function BankExtractionDialog({
     const [pdfText, setPdfText] = useState<string>('')
     const [selectedText, setSelectedText] = useState<string>('')
     const [allPagesRendered, setAllPagesRendered] = useState<boolean[]>([])
-    const [renderedPageCanvases, setRenderedPageCanvases] = useState<HTMLCanvasElement[]>([])
-
+    const [renderedPageCanvases, setRenderedPageCanvases] = useState<(HTMLCanvasElement | null)[]>([])
     const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
+    const [showPasswordDialog, setShowPasswordDialog] = useState(false);
+    const [pdfNeedsPassword, setPdfNeedsPassword] = useState(false);
 
     // Detected periods in PDF
     const [detectedPeriods, setDetectedPeriods] = useState<{ month: number, year: number, page: number, lastDate?: string }[]>([])
@@ -430,7 +430,7 @@ export function BankExtractionDialog({
 
     // Load PDF document
     useEffect(() => {
-        const loadPdf = async () => {
+        const loadPdfDocument = async () => {
             if (!statement.statement_document.statement_pdf) {
                 setLoading(false)
                 return
@@ -439,24 +439,25 @@ export function BankExtractionDialog({
             try {
                 setLoading(true)
 
-                // Get public URL for the PDF
-                const { data, error } = await supabase.storage
+                // Get signed URL for the PDF
+                const { data } = await supabase.storage
                     .from('Statement-Cycle')
-                    .createSignedUrl(statement.statement_document.statement_pdf, 3600)
+                    .createSignedUrl(statement.statement_document.statement_pdf, 3600);
 
-                if (error) throw error
+                if (!data?.signedUrl) {
+                    throw new Error('Could not get signed URL for PDF');
+                }
 
-                setPdfUrl(data.signedUrl)
-
-                // Load the PDF document using PDF.js
-                const loadingTask = pdfjsLib.getDocument(data.signedUrl);
-                const pdf = await loadingTask.promise;
+                // Load the PDF document
+                const pdf = await pdfjsLib.getDocument(data.signedUrl).promise;
                 setPdfDocument(pdf);
                 setTotalPages(pdf.numPages);
 
-                // Initialize empty rendered pages array
-                setAllPagesRendered(new Array(pdf.numPages).fill(false));
-                setRenderedPageCanvases(new Array(pdf.numPages).fill(null));
+                // Handle password protection
+                const canProceed = await handlePasswordProtectedPdf(pdf, bank);
+                if (!canProceed) {
+                    return; // Wait for password input
+                }
 
                 // Get document size
                 const stats = await supabase.storage
@@ -469,23 +470,27 @@ export function BankExtractionDialog({
                     setDocumentSize(size);
                 }
 
+                // Initialize empty rendered pages array
+                setAllPagesRendered(new Array(pdf.numPages).fill(false));
+                setRenderedPageCanvases(new Array(pdf.numPages).fill(null));
+
                 // Load all pages
                 await renderAllPages(pdf);
 
             } catch (error) {
-                console.error('Error loading PDF:', error)
+                console.error('Error loading PDF:', error);
                 toast({
                     title: 'Error',
                     description: 'Failed to load PDF document',
                     variant: 'destructive'
-                })
+                });
             } finally {
                 setLoading(false)
             }
         }
 
         if (isOpen) {
-            loadPdf()
+            loadPdfDocument()
         }
 
         return () => {
@@ -494,7 +499,7 @@ export function BankExtractionDialog({
                 pdfDocument.destroy();
             }
         };
-    }, [isOpen, statement.statement_document.statement_pdf, toast])
+    }, [isOpen, statement.statement_document.statement_pdf, toast, bank]);
 
     // Function to format date for the current month
     const formatDateForCurrentMonth = () => {
@@ -1348,24 +1353,75 @@ export function BankExtractionDialog({
         }
     };
 
-
     // Helper function to format number with commas
-const formatNumberWithCommas = (value) => {
-    if (value === '' || value === null || value === undefined) return '';
-    
-    // Convert to string if it's a number
-    const stringValue = typeof value === 'number' ? value.toString() : value;
-    
-    // Handle decimal numbers
-    const parts = stringValue.split('.');
-    const wholePart = parts[0];
-    const decimalPart = parts.length > 1 ? '.' + parts[1] : '';
-    
-    // Add commas to the whole part
-    const formattedWholePart = wholePart.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-    
-    return formattedWholePart + decimalPart;
-};
+    const formatNumberWithCommas = (value) => {
+        if (value === '' || value === null || value === undefined) return '';
+        
+        // Convert to string if it's a number
+        const stringValue = typeof value === 'number' ? value.toString() : value;
+        
+        // Handle decimal numbers
+        const parts = stringValue.split('.');
+        const wholePart = parts[0];
+        const decimalPart = parts.length > 1 ? '.' + parts[1] : '';
+        
+        // Add commas to the whole part
+        const formattedWholePart = wholePart.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+        
+        return formattedWholePart + decimalPart;
+    };
+
+    // Function to check if PDF is password protected and handle password application
+    const handlePasswordProtectedPdf = async (pdf, bank) => {
+        try {
+            // Check if PDF is password protected
+            const needsPassword = await isPdfPasswordProtected(pdf);
+            setPdfNeedsPassword(needsPassword);
+
+            if (needsPassword) {
+                const password = bank.acc_password || promptUserForPassword(); // Prompt user if no stored password
+                if (password) {
+                    const success = await applyPasswordToFiles(pdf, password);
+                    if (!success) {
+                        alert('Failed to apply password. Please try again.');
+                        return false;
+                    }
+                } else {
+                    alert('Password is required to proceed.');
+                    return false;
+                }
+            }
+            return true;
+        } catch (error) {
+            console.error('Error checking password protection:', error);
+            return false;
+        }
+    };
+
+    // Function to apply password to PDF
+    const applyPasswordToFiles = async (pdf, password) => {
+        try {
+            await pdf.authenticatePassword(password);
+            setPdfNeedsPassword(false);
+            setShowPasswordDialog(false);
+            return true;
+        } catch (error) {
+            console.error('Error applying password:', error);
+            toast({
+                title: 'Password Error',
+                description: 'The provided password is incorrect.',
+                variant: 'destructive'
+            });
+            return false;
+        }
+    };
+
+    // Function to prompt user for password
+    const promptUserForPassword = () => {
+        // Implement a function to prompt the user for a password
+        // This could be a dialog or input prompt
+        return window.prompt('Enter the PDF password:');
+    };
 
     return (
         <Dialog open={isOpen} onOpenChange={handleClose}>
@@ -1404,6 +1460,56 @@ const formatNumberWithCommas = (value) => {
 
                     <TabsContent value="overview" className="flex-1 flex flex-col overflow-hidden">
                         <div className="flex flex-col h-full space-y-2 overflow-hidden">
+                            {/* Uploaded Files Information */}
+                            <Card className="shrink-0">
+                                <CardHeader className="py-3">
+                                    <CardTitle className="text-lg flex items-center">
+                                        <FileCheck className="h-5 w-5 mr-2" />
+                                        Uploaded Files
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent className="py-2">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {/* PDF File Information */}
+                                        <div className="flex flex-col space-y-1">
+                                            <div className="flex items-center">
+                                                <FileCheck className="h-4 w-4 mr-2 text-primary" />
+                                                <span className="font-medium">PDF Statement:</span>
+                                            </div>
+                                            {statement.statement_document.statement_pdf ? (
+                                                <div className="text-sm pl-6 flex items-center">
+                                                    <span className="truncate max-w-[250px]">
+                                                        {statement.statement_document.statement_pdf.split('/').pop()}
+                                                    </span>
+                                                    <Badge variant="outline" className="ml-2">
+                                                        {Math.round((statement.statement_document.document_size || 0) / 1024)} KB
+                                                    </Badge>
+                                                </div>
+                                            ) : (
+                                                <div className="text-sm pl-6 text-muted-foreground">No PDF file uploaded</div>
+                                            )}
+                                        </div>
+                                        
+                                        {/* Excel File Information */}
+                                        <div className="flex flex-col space-y-1">
+                                            <div className="flex items-center">
+                                                <FileCheck className="h-4 w-4 mr-2 text-primary" />
+                                                <span className="font-medium">Excel Statement:</span>
+                                            </div>
+                                            {statement.statement_document.statement_excel ? (
+                                                <div className="text-sm pl-6 flex items-center">
+                                                    <span className="truncate max-w-[250px]">
+                                                        {statement.statement_document.statement_excel.split('/').pop()}
+                                                    </span>
+                                                </div>
+                                            ) : (
+                                                <div className="text-sm pl-6 text-muted-foreground">No Excel file uploaded</div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </CardContent>
+                            </Card>
+
                             {/* Period navigation */}
                             {/* <div className="flex items-center justify-between bg-muted p-2 rounded-md shrink-0">
                                     <Button
@@ -1623,7 +1729,7 @@ const formatNumberWithCommas = (value) => {
                                                         <TableHeader className="sticky top-0 bg-white z-10">
                                                             <TableRow>
                                                                 <TableHead className="w-[30%]">Period</TableHead>
-                                                                <TableHead className="w-[45%]">Closing Balance</TableHead>
+                                                                <TableHead>Closing Balance</TableHead>
                                                                 <TableHead className="w-[25%]">Actions</TableHead>
                                                             </TableRow>
                                                         </TableHeader>
@@ -1709,7 +1815,7 @@ const formatNumberWithCommas = (value) => {
                                     {/* Display QuickBooks reconciliation info when available */}
                                     {statement.quickbooks_balance !== null && getMonthlyClosingBalance() !== null && (
                                         <Card className="shrink-0">
-                                            <CardHeader className="py-2 bg-gradient-to-r from-blue-50 to-blue-100">
+                                            <CardHeader className="py-2 bg-blue-50">
                                                 <CardTitle className="text-base flex items-center">
                                                     <Calculator className="h-4 w-4 mr-2 text-blue-600" />
                                                     QuickBooks Reconciliation
@@ -2016,7 +2122,7 @@ const formatNumberWithCommas = (value) => {
                                                         {formatCurrency(getMonthlyClosingBalance() - statement.quickbooks_balance, bank.bank_currency)}
                                                     </p>
                                                     {Math.abs(getMonthlyClosingBalance() - statement.quickbooks_balance) > 0.01 ? (
-                                                        <p className="text-sm text-red-500 mt-2">
+                                                        <p className="text-sm text-red-600 mt-2">
                                                             Bank statement balance does not match QuickBooks. Reconciliation needed.
                                                         </p>
                                                     ) : (
@@ -2055,6 +2161,27 @@ const formatNumberWithCommas = (value) => {
                     </AlertDialogContent>
                 </AlertDialog>
 
+                {/* Password Dialog */}
+                <AlertDialog open={showPasswordDialog} onOpenChange={setShowPasswordDialog}>
+                    <AlertDialogContent>
+                        <AlertDialogHeader>
+                            <AlertDialogTitle>Enter Password</AlertDialogTitle>
+                            <AlertDialogDescription>
+                                Please enter the password for the PDF document.
+                            </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction
+                                onClick={() => applyPasswordToFiles(pdfDocument, 'password123')} // Replace with actual password input
+                                className="bg-blue-600 hover:bg-blue-700 text-white"
+                            >
+                                Submit
+                            </AlertDialogAction>
+                        </AlertDialogFooter>
+                    </AlertDialogContent>
+                </AlertDialog>
+
                 <DialogFooter>
                     <Button
                         variant="outline"
@@ -2086,4 +2213,25 @@ const formatNumberWithCommas = (value) => {
             </DialogContent>
         </Dialog>
     );
+}
+
+// Add the following functions to handle password-protected PDFs
+async function isPdfPasswordProtected(pdf) {
+    try {
+        await pdf.authenticatePassword('');
+        return false;
+    } catch (error) {
+        return true;
+    }
+}
+
+async function applyPasswordToFiles(pdf, password) {
+    try {
+        await pdf.authenticatePassword(password);
+        console.log('Password applied successfully');
+        return true;
+    } catch (error) {
+        console.error('Error applying password:', error);
+        return false;
+    }
 }

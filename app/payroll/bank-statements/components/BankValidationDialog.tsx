@@ -2,7 +2,7 @@
 // @ts-nocheck
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { AlertTriangle, CheckCircle, Calendar, DollarSign, Building, CreditCard, FileCheck, RefreshCcw } from "lucide-react"
+import { AlertTriangle, CheckCircle, Calendar, DollarSign, Building, CreditCard, FileCheck, RefreshCcw, Loader2 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
@@ -10,6 +10,8 @@ import { performBankStatementExtraction } from "@/lib/bankExtractionUtils"
 import { Button } from "@/components/ui/button"
 import { useState } from "react"
 import { Input } from "@/components/ui/input"
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert"
+import { useToast } from "@/hooks/use-toast"
 
 interface Bank {
     id: number
@@ -43,11 +45,8 @@ interface BankValidationDialogProps {
 }
 
 // Helper function to normalize currency codes
-const normalizeCurrencyCode = (code) => {
-    if (!code) return 'USD'; // Default fallback
-
-    // Convert to uppercase and trim
-    const upperCode = code.toUpperCase().trim();
+const normalizeCurrencyCode = (code: string): string => {
+    const codeUpper = code.toUpperCase().trim();
 
     // Map of common incorrect currency codes to valid ISO codes
     const currencyMap = {
@@ -79,11 +78,11 @@ const normalizeCurrencyCode = (code) => {
     };
 
     // Return mapped value or the original if not in the map
-    return currencyMap[upperCode] || upperCode;
+    return currencyMap[codeUpper] || codeUpper;
 };
 
 // Safe currency formatter
-const formatCurrency = (amount) => {
+const formatCurrency = (amount: number | null | undefined) => {
     if (amount === null || amount === undefined) return 'N/A';
 
     try {
@@ -98,7 +97,7 @@ const formatCurrency = (amount) => {
 };
 
 // Safe date formatter
-const formatDate = (year, month) => {
+const formatDate = (year: number | null, month: number | null) => {
     if (year == null || month == null) return 'Unknown Date';
 
     try {
@@ -109,7 +108,7 @@ const formatDate = (year, month) => {
     }
 };
 
-function isPeriodContained(statementPeriod, cycleMonth, cycleYear) {
+function isPeriodContained(statementPeriod: string | null, cycleMonth: number, cycleYear: number) {
     if (!statementPeriod) return false;
 
     // For simple month/year validation
@@ -117,9 +116,9 @@ function isPeriodContained(statementPeriod, cycleMonth, cycleYear) {
     const monthNames = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
 
     if (monthYearRegex.test(statementPeriod)) {
-        // Check if the month matches
+        // Check if the month matches - cycleMonth is 1-indexed (January = 1)
         const normalizedPeriod = statementPeriod.toLowerCase();
-        const cycleMonthName = monthNames[cycleMonth ];
+        const cycleMonthName = monthNames[cycleMonth - 1]; // Adjust index since monthNames is 0-indexed
         return normalizedPeriod.includes(cycleMonthName);
     }
 
@@ -129,7 +128,7 @@ function isPeriodContained(statementPeriod, cycleMonth, cycleYear) {
         if (!dates || dates.length < 2) return false;
 
         // Try to parse dates - first attempt DD/MM/YYYY format
-        const parseDate = (dateStr) => {
+        const parseDate = (dateStr: string) => {
             const parts = dateStr.split(/[\/\-\.]/);
             if (parts.length !== 3) return null;
 
@@ -191,22 +190,26 @@ export function BankValidationDialog({
     onProceed,
     onCancel,
     cycleMonth,
-    cycleYear
+    cycleYear,
+    fileUrl // Add fileUrl as a prop
 }: BankValidationDialogProps) {
     if (!bank) {
         console.error('Bank object is undefined in BankValidationDialog');
         return null;
     }
 
+    const { toast } = useToast(); // Import toast hook
     const [editableBankName, setEditableBankName] = useState(extractedData?.bank_name || '');
+    const [currentExtractedData, setCurrentExtractedData] = useState(extractedData);
+    const [currentMismatches, setCurrentMismatches] = useState(mismatches);
 
     // Extract expected month/year from the period if available
     let expectedMonth = null;
     let expectedYear = null;
 
-    if (extractedData?.statement_period) {
+    if (currentExtractedData?.statement_period) {
         // Try to parse month/year from period
-        const matches = extractedData.statement_period.match(/(\w+)\s+(\d{4})/i);
+        const matches = currentExtractedData.statement_period.match(/(\w+)\s+(\d{4})/i);
         if (matches && matches.length >= 3) {
             const monthName = matches[1];
             const year = parseInt(matches[2]);
@@ -214,7 +217,7 @@ export function BankValidationDialog({
             // Convert month name to number
             const monthIndex = new Date(`${monthName} 1, 2000`).getMonth();
             if (!isNaN(monthIndex) && !isNaN(year)) {
-                expectedMonth = monthIndex + 1;
+                expectedMonth = monthIndex + 1; // Convert from 0-indexed to 1-indexed
                 expectedYear = year;
             }
         }
@@ -222,51 +225,102 @@ export function BankValidationDialog({
 
     const hasCriticalMismatches = () => {
         const criticalFields = ['account_number', 'company_name', 'statement_period'];
-        return mismatches.some(mismatch =>
+        return currentMismatches.some(mismatch =>
             criticalFields.some(field => mismatch.toLowerCase().includes(field))
         );
     };
     // Check if currencies match using the normalization function
-    const currencyMatches = isMatchingCurrency(extractedData?.currency, bank?.bank_currency);
+    const currencyMatches = isMatchingCurrency(currentExtractedData?.currency, bank?.bank_currency);
 
     // Check if period contains the expected month/year
     const periodMatches = isPeriodContained(
-        extractedData?.statement_period,
+        currentExtractedData?.statement_period,
         expectedMonth || cycleMonth,
         expectedYear || cycleYear
     );
 
-    const isPeriodValid = isPeriodContained(extractedData?.statement_period, cycleMonth, cycleYear);
+    const isPeriodValid = isPeriodContained(currentExtractedData?.statement_period, cycleMonth, cycleYear);
 
     const [processing, setProcessing] = useState(false);
 
-    const handleReExtraction = async () => {
-        try {
-            setProcessing(true);
+    // Function to validate extracted data against bank details
+    const validateExtractedData = (extractedData: any, bank: any) => {
+        const mismatches = [];
+        
+        // Check company name
+        if (extractedData.company_name && !extractedData.company_name.toLowerCase().includes(bank.company_name.toLowerCase())) {
+            mismatches.push('Company name mismatch');
+        }
+        
+        // Check account number
+        if (extractedData.account_number && !extractedData.account_number.includes(bank.account_number)) {
+            mismatches.push('Account number mismatch');
+        }
+        
+        // Check currency
+        if (!isMatchingCurrency(extractedData.currency, bank.bank_currency)) {
+            mismatches.push('Currency mismatch');
+        }
+        
+        // Check statement period
+        if (!isPeriodContained(extractedData.statement_period, cycleMonth, cycleYear)) {
+            mismatches.push('Statement period mismatch');
+        }
+        
+        return {
+            isValid: mismatches.length === 0,
+            mismatches
+        };
+    };
 
+    const handleReExtraction = async () => {
+        if (!fileUrl) {
+            toast({
+                title: "Error",
+                description: "No PDF file URL available for re-extraction",
+                variant: "destructive"
+            });
+            return;
+        }
+        
+        setProcessing(true);
+        
+        try {
+            // Extract data from PDF using the provided fileUrl
             const extractionResult = await performBankStatementExtraction(
                 fileUrl,
                 { month: cycleMonth, year: cycleYear }
             );
-
+            
             if (extractionResult.success) {
-                // Update the extracted data in state
-                setExtractedData(extractionResult.extractedData);
-
-                // Re-validate with the new data
-                const newValidation = validateExtractedData(extractionResult.extractedData, bank);
-                setMismatches(newValidation.mismatches);
-
+                // Update extracted data state with new extraction result
+                setCurrentExtractedData(extractionResult.extractedData);
+                
+                // Re-validate with new data
+                const newMismatches = validateExtractedData(
+                    extractionResult.extractedData,
+                    bank
+                );
+                
+                setCurrentMismatches(newMismatches);
+                
                 toast({
-                    title: "Data Re-extracted",
-                    description: "Statement data has been re-analyzed"
+                    title: "Success",
+                    description: "Re-extraction completed successfully",
+                    variant: "default"
+                });
+            } else {
+                toast({
+                    title: "Extraction Failed",
+                    description: extractionResult.message || "Could not extract data from PDF",
+                    variant: "destructive"
                 });
             }
         } catch (error) {
-            console.error('Re-extraction error:', error);
+            console.error("Re-extraction error:", error);
             toast({
-                title: "Extraction Failed",
-                description: "Could not re-extract data from document",
+                title: "Extraction Error",
+                description: "An error occurred during re-extraction",
                 variant: "destructive"
             });
         } finally {
@@ -327,7 +381,7 @@ export function BankValidationDialog({
         };
     };
 
-    const validateStatementPeriod = (extractedPeriod, cycleMonth, cycleYear) => {
+    const validateStatementPeriod = (extractedPeriod: string | null, cycleMonth: number, cycleYear: number) => {
         if (!extractedPeriod) return { isValid: false, details: 'No statement period detected' };
 
         // Handle multiple date formats (DD/MM/YYYY, MM/DD/YYYY, etc.)
@@ -420,10 +474,10 @@ export function BankValidationDialog({
                                         <TableRow>
                                             <TableCell className="font-medium">Company Name</TableCell>
                                             <TableCell>{bank?.company_name}</TableCell>
-                                            <TableCell>{extractedData?.company_name || 'Not detected'}</TableCell>
+                                            <TableCell>{currentExtractedData?.company_name || 'Not detected'}</TableCell>
                                             <TableCell>
-                                                {extractedData?.company_name &&
-                                                    extractedData.company_name.toLowerCase().includes(bank?.company_name?.toLowerCase()) ? (
+                                                {currentExtractedData?.company_name &&
+                                                    currentExtractedData.company_name.toLowerCase().includes(bank?.company_name?.toLowerCase()) ? (
                                                     <div className="flex items-center text-green-500 font-medium">
                                                         <CheckCircle className="h-4 w-4 mr-1" />
                                                         Match
@@ -441,7 +495,7 @@ export function BankValidationDialog({
                                             <TableCell>{bank?.bank_name}</TableCell>
                                             <TableCell>
                                                 <Input
-                                                    value={editableBankName || extractedData?.bank_name || ''}
+                                                    value={editableBankName || currentExtractedData?.bank_name || ''}
                                                     onChange={(e) => setEditableBankName(e.target.value)}
                                                     className="w-full"
                                                 />
@@ -449,7 +503,7 @@ export function BankValidationDialog({
                                             <TableCell>
                                                 {(() => {
                                                     // If no extracted bank name, show mismatch
-                                                    if (!extractedData?.bank_name) {
+                                                    if (!currentExtractedData?.bank_name) {
                                                         return (
                                                             <div className="flex items-center text-red-500 font-medium">
                                                                 <AlertTriangle className="h-4 w-4 mr-1" />
@@ -459,7 +513,7 @@ export function BankValidationDialog({
                                                     }
 
                                                     // Perform fuzzy matching
-                                                    const matchResult = fuzzyBankNameMatch(bank?.bank_name, extractedData?.bank_name);
+                                                    const matchResult = fuzzyBankNameMatch(bank?.bank_name, currentExtractedData?.bank_name);
 
                                                     if (matchResult.matches) {
                                                         return (
@@ -482,10 +536,10 @@ export function BankValidationDialog({
                                         <TableRow>
                                             <TableCell className="font-medium">Account Number</TableCell>
                                             <TableCell>{bank?.account_number}</TableCell>
-                                            <TableCell>{extractedData?.account_number || 'Not detected'}</TableCell>
+                                            <TableCell>{currentExtractedData?.account_number || 'Not detected'}</TableCell>
                                             <TableCell>
-                                                {extractedData?.account_number &&
-                                                    extractedData.account_number.includes(bank?.account_number) ? (
+                                                {currentExtractedData?.account_number &&
+                                                    currentExtractedData.account_number.includes(bank?.account_number) ? (
                                                     <div className="flex items-center text-green-500 font-medium">
                                                         <CheckCircle className="h-4 w-4 mr-1" />
                                                         Match
@@ -501,7 +555,7 @@ export function BankValidationDialog({
                                         <TableRow>
                                             <TableCell className="font-medium">Currency</TableCell>
                                             <TableCell>{bank?.bank_currency}</TableCell>
-                                            <TableCell>{extractedData?.currency || 'Not detected'}</TableCell>
+                                            <TableCell>{currentExtractedData?.currency || 'Not detected'}</TableCell>
                                             <TableCell>
                                                 <div className={`flex items-center ${currencyMatches ? "text-green-500" : "text-red-500"} font-medium`}>
                                                     {currencyMatches ? (
@@ -540,14 +594,14 @@ export function BankValidationDialog({
                                             </div>
                                             <div className="col-span-2">
                                                 <p className="text-xs text-muted-foreground">Statement Period</p>
-                                                <p className="font-medium">{extractedData?.statement_period || 'Not detected'}</p>
+                                                <p className="font-medium">{currentExtractedData?.statement_period || 'Not detected'}</p>
                                             </div>
                                         </div>
                                         <div className="mt-2 pt-2 border-t border-blue-200 flex justify-between items-center">
                                             <p className="text-sm font-medium">Period Validation</p>
                                             {(() => {
                                                 const periodValidation = validateStatementPeriod(
-                                                    extractedData?.statement_period,
+                                                    currentExtractedData?.statement_period,
                                                     cycleMonth,
                                                     cycleYear
                                                 );
@@ -569,10 +623,20 @@ export function BankValidationDialog({
                                     <Button
                                         variant="outline"
                                         onClick={handleReExtraction}
+                                        disabled={processing}
                                         className="bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100"
                                     >
-                                        <RefreshCcw className="h-4 w-4 mr-2" />
-                                        Re-extract Data
+                                        {processing ? (
+                                            <>
+                                                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                                Processing...
+                                            </>
+                                        ) : (
+                                            <>
+                                                <RefreshCcw className="h-4 w-4 mr-2" />
+                                                Re-extract Data
+                                            </>
+                                        )}
                                     </Button>
                                 </div>
                             </CardContent>
@@ -580,7 +644,7 @@ export function BankValidationDialog({
                     </div>
 
                     
-                    {extractedData?.monthly_balances && extractedData.monthly_balances.length > 0 && (
+                    {currentExtractedData?.monthly_balances && currentExtractedData.monthly_balances.length > 0 && (
                         <Card>
                             <CardHeader className="py-3 bg-blue-50">
                                 <CardTitle className="text-base flex items-center">
@@ -595,13 +659,13 @@ export function BankValidationDialog({
                                         const badges = [];
                                         let includedExpectedMonth = false;
 
-                                        if (extractedData?.statement_period) {
+                                        if (currentExtractedData?.statement_period) {
                                             // Parse statement period (e.g., "01/01/2024 - 30/07/2024")
-                                            const dates = extractedData.statement_period.match(/(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})/g);
+                                            const dates = currentExtractedData.statement_period.match(/(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})/g);
 
                                             if (dates && dates.length >= 2) {
                                                 // Parse start and end dates
-                                                const parseDate = (dateStr) => {
+                                                const parseDate = (dateStr: string) => {
                                                     const parts = dateStr.split(/[\/\-\.]/);
                                                     if (parts.length !== 3) return null;
 
@@ -634,7 +698,7 @@ export function BankValidationDialog({
                                                     const end = new Date(endDate.year, endDate.month, 1);
 
                                                     // Check if expected month is within the date range
-                                                    const expectedDate = new Date(cycleYear, cycleMonth, 1);
+                                                    const expectedDate = new Date(cycleYear, cycleMonth - 1, 1); // Adjust to 0-indexed
                                                     includedExpectedMonth = expectedDate >= start && expectedDate <= end;
 
                                                     // Generate badges for each month in the range
@@ -646,7 +710,7 @@ export function BankValidationDialog({
                                                         const month = current.getMonth();
 
                                                         // Check if this month is in the monthly_balances array
-                                                        const isInMonthlyBalances = extractedData.monthly_balances?.some(
+                                                        const isInMonthlyBalances = currentExtractedData.monthly_balances?.some(
                                                             balance => balance.month === month && balance.year === year
                                                         );
 
@@ -678,7 +742,7 @@ export function BankValidationDialog({
                                                     key="expected-month"
                                                     className="bg-red-100 text-red-700 hover:bg-red-200"
                                                 >
-                                                    {badges.length + 1}. {formatDate(cycleYear, cycleMonth)} (Expected - Missing)
+                                                    {badges.length + 1}. {formatDate(cycleYear, cycleMonth - 1)} (Expected - Missing)
                                                 </Badge>
                                             );
                                         }

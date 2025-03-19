@@ -1,18 +1,58 @@
 // BankStatementUploadDialog.tsx
 // @ts-nocheck
-import { useState, useRef } from 'react'
-import { Loader2, Upload, AlertTriangle, CheckCircle, UploadCloud, FileText, Sheet, Building, Landmark, CreditCard, DollarSign, Calendar } from 'lucide-react'
+import { useState, useRef, useEffect } from 'react'
+import { 
+    CircleMinus,
+    CirclePlus,
+    Clock10,
+    Download,
+    File,
+    FileDigit,
+    FileText,
+    Upload,
+    ClipboardCheck,
+    Loader2,
+    AlertTriangle, 
+    CheckCircle, 
+    UploadCloud, 
+    Sheet, 
+    Building, 
+    Landmark, 
+    CreditCard, 
+    DollarSign, 
+    Calendar, 
+    Lock 
+} from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/hooks/use-toast'
 import { format } from 'date-fns'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
+import { 
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogDescription,
+    DialogFooter 
+} from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
 import { BankValidationDialog } from './BankValidationDialog'
-import { performBankStatementExtraction } from '@/lib/bankExtractionUtils'
+import { PasswordInputDialog } from './PasswordInputDialog'
+import { BankExtractionDialog } from './BankExtractionDialog'
+import {
+    isPdfPasswordProtected,
+    applyPasswordToFiles,
+    performBankStatementExtraction,
+    detectFileInfoFromFilename,
+    detectAccountNumberFromFilename,
+    getBankNameFromFilename,
+    removePasswordProtection
+} from '@/lib/bankExtractionUtils'
+import { detectFileInfo } from '../utils/fileDetectionUtils'
 
 interface Bank {
     id: number
@@ -21,6 +61,7 @@ interface Bank {
     bank_currency: string
     company_id: number
     company_name: string
+    acc_password?: string
 }
 
 interface BankStatement {
@@ -32,6 +73,7 @@ interface BankStatement {
     statement_document: {
         statement_pdf: string | null
         statement_excel: string | null
+        document_size: number | null
     }
     statement_extractions: {
         bank_name: string | null
@@ -99,7 +141,7 @@ interface BankStatementUploadDialogProps {
     statementCycleId: string | null
 }
 
-
+// Helper function to check if a period is contained within a given month/year
 function isPeriodContained(statementPeriod, cycleMonth, cycleYear) {
     if (!statementPeriod) return false;
 
@@ -185,67 +227,370 @@ export function BankStatementUploadDialog({
     const [extracting, setExtracting] = useState<boolean>(false)
     const [showValidation, setShowValidation] = useState<boolean>(false)
     const [validationResult, setValidationResult] = useState<ValidationResult | null>(null)
+    const [detectedPassword, setDetectedPassword] = useState<string | null>(null)
+    const [detectedAccountNumber, setDetectedAccountNumber] = useState<string | null>(null)
+    const [showPasswordDialog, setShowPasswordDialog] = useState<boolean>(false)
+    const [pdfNeedsPassword, setPdfNeedsPassword] = useState<boolean>(false)
+    const [showExtractionDialog, setShowExtractionDialog] = useState<boolean>(false)
+    const [uploadedStatement, setUploadedStatement] = useState<BankStatement | null>(null)
+    const [fileUrl, setFileUrl] = useState<string | null>(null);
+    const [showValidationDialog, setShowValidationDialog] = useState<boolean>(false)
+    const [extractionResults, setExtractionResults] = useState<any>(null)
+    const [validationResults, setValidationResults] = useState<{ isValid: boolean, mismatches: string[] } | null>(null)
+    const [password, setPassword] = useState<string>('')
+    const [applyingPassword, setApplyingPassword] = useState<boolean>(false)
+    const [passwordApplied, setPasswordApplied] = useState<boolean>(false)
 
     const pdfInputRef = useRef<HTMLInputElement>(null)
     const excelInputRef = useRef<HTMLInputElement>(null)
 
     const { toast } = useToast()
 
+    // Function to detect password and account number from filename
+    const detectFileInfoFromFilename = (filename: string) => {
+        // Use the utility function
+        const fileInfo = detectFileInfo(filename);
+        setDetectedPassword(fileInfo.password);
+        setDetectedAccountNumber(fileInfo.accountNumber);
+    }
+
+    // Function to detect password from filename
+    const detectPasswordFromFilename = (filename: string): string | null => {
+        // Simple pattern matching for common password formats in filenames
+        // Examples: "statement_password123.pdf", "statement-pass_123.pdf"
+        const passwordPatterns = [
+            /pass[_\-]?(\w+)/i,             // Matches "pass_123", "pass-123", "password123"
+            /pwd[_\-]?(\w+)/i,              // Matches "pwd_123", "pwd-123"
+            /\b(?:p|pw)[\s_\-]?(\w{4,})\b/i // Matches "p 1234", "pw_1234" with min 4 chars
+        ];
+        
+        for (const pattern of passwordPatterns) {
+            const match = filename.match(pattern);
+            if (match && match[1]) {
+                const detectedPwd = match[1];
+                console.log("Detected possible password in filename:", detectedPwd);
+                return detectedPwd;
+            }
+        }
+        
+        return null;
+    };
+
+    // Handle file selection with password detection and removal
+    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>, fileType: 'pdf' | 'excel') => {
+        if (!e.target.files || e.target.files.length === 0) return;
+        
+        const selectedFile = e.target.files[0];
+        
+        if (fileType === 'pdf') {
+            setPdfFile(selectedFile);
+            
+            // Reset states for new file
+            setPdfNeedsPassword(false);
+            setPasswordApplied(false);
+            setPassword('');
+            setDetectedPassword(null);
+            setDetectedAccountNumber(null);
+            
+            // Get file info including potential password and account number
+            const fileInfo = detectFileInfoFromFilename(selectedFile.name) || {
+                password: null,
+                accountNumber: null,
+                bankName: null
+            };
+            
+            // Update detected info
+            if (fileInfo?.password) {
+                setDetectedPassword(fileInfo.password);
+                console.log('Detected password from filename:', fileInfo.password);
+            }
+            if (fileInfo?.accountNumber) {
+                setDetectedAccountNumber(fileInfo.accountNumber);
+                console.log('Detected account number from filename:', fileInfo.accountNumber);
+            }
+            
+            try {
+                // Check if PDF is password protected
+                const isProtected = await isPdfPasswordProtected(selectedFile);
+                setPdfNeedsPassword(isProtected);
+                
+                if (isProtected) {
+                    let passwordSuccess = false;
+                    let unprotectedFile = null;
+                    
+                    // Try stored bank password first
+                    if (bank?.acc_password) {
+                        console.log('Trying stored bank password...');
+                        passwordSuccess = await applyPasswordToFiles(selectedFile, bank.acc_password);
+                        if (passwordSuccess) {
+                            unprotectedFile = await removePasswordProtection(selectedFile, bank.acc_password);
+                            if (unprotectedFile) {
+                                setPdfFile(unprotectedFile);
+                                setPasswordApplied(true);
+                                setPassword(bank.acc_password);
+                                setPdfNeedsPassword(false);
+                                toast({
+                                    title: "Success",
+                                    description: "Bank's password applied and protection removed",
+                                });
+                            }
+                        }
+                    }
+                    
+                    // If bank password didn't work, try detected password
+                    if (!passwordSuccess && fileInfo.password) {
+                        console.log('Trying detected password from filename...');
+                        passwordSuccess = await applyPasswordToFiles(selectedFile, fileInfo.password);
+                        if (passwordSuccess) {
+                            unprotectedFile = await removePasswordProtection(selectedFile, fileInfo.password);
+                            if (unprotectedFile) {
+                                setPdfFile(unprotectedFile);
+                                setPasswordApplied(true);
+                                setPassword(fileInfo.password);
+                                setPdfNeedsPassword(false);
+                                toast({
+                                    title: "Success",
+                                    description: "Detected password applied and protection removed",
+                                });
+                            }
+                        }
+                    }
+                    
+                    // If no password worked or couldn't remove protection, show dialog
+                    if (!passwordSuccess || !unprotectedFile) {
+                        setShowPasswordDialog(true);
+                        toast({
+                            title: "Password Required",
+                            description: "Please enter the PDF password",
+                        });
+                    }
+                }
+            } catch (error) {
+                console.error('Error handling PDF password:', error);
+                toast({
+                    title: "Error",
+                    description: "Failed to check PDF password protection",
+                    variant: "destructive"
+                });
+            }
+        } else if (fileType === 'excel') {
+            setExcelFile(selectedFile);
+        }
+    };
+
+    // Function to check if PDF is password protected
+    const checkIfPasswordProtected = async (file: File): Promise<boolean> => {
+        try {
+            if (!file) {
+                console.error('No file provided to check for password protection');
+                return false;
+            }
+            
+            const isProtected = await isPdfPasswordProtected(file);
+            console.log('PDF password protection check:', isProtected ? 'Protected' : 'Not protected');
+            
+            // Update state with result
+            setPdfNeedsPassword(isProtected);
+            
+            return isProtected;
+        } catch (error) {
+            console.error('Error checking if PDF is password protected:', error);
+            // Assume it might be password protected if we can't determine
+            setPdfNeedsPassword(true);
+            
+            toast({
+                title: 'Warning',
+                description: 'Could not determine if PDF is password protected. Please proceed with caution.',
+                variant: 'default'
+            });
+            
+            return true; // Safer to assume it's protected
+        }
+    };
+
+    // Function to handle password application
+    const handlePasswordSubmit = async (passwordToTry: string) => {
+        if (!pdfFile || !passwordToTry) return;
+        
+        setApplyingPassword(true);
+        try {
+            // First try to apply the password
+            const success = await applyPasswordToFiles(pdfFile, passwordToTry);
+            
+            if (success) {
+                // Remove password protection
+                const unprotectedFile = await removePasswordProtection(pdfFile, passwordToTry);
+                
+                if (unprotectedFile) {
+                    // Update the file state with unprotected version
+                    setPdfFile(unprotectedFile);
+                    setPasswordApplied(true);
+                    setPdfNeedsPassword(false);
+                    setPassword(passwordToTry);
+                    setShowPasswordDialog(false);
+                    
+                    toast({
+                        title: "Success",
+                        description: "Password protection has been removed from the PDF",
+                    });
+                } else {
+                    toast({
+                        title: "Warning",
+                        description: "Password applied but could not remove protection",
+                        variant: "warning"
+                    });
+                }
+            } else {
+                toast({
+                    title: "Error",
+                    description: "Invalid password. Please try again.",
+                    variant: "destructive"
+                });
+            }
+        } catch (error) {
+            console.error('Error handling password:', error);
+            toast({
+                title: "Error",
+                description: "Failed to apply password",
+                variant: "destructive"
+            });
+        } finally {
+            setApplyingPassword(false);
+        }
+    };
+
+    // Function to prompt user for password
+    function promptUserForPassword() {
+        return window.prompt('Enter the PDF password:');
+    }
+
+    // Function to check if bank details match and auto-insert bank name
+    function validateAndAutoInsertBankName(validationResult, expectedBankName) {
+        if (validationResult.isValid) {
+            const { account_number, currency, company_name } = validationResult.extractedData;
+            if (account_number && currency && company_name) {
+                validationResult.extractedData.bank_name = expectedBankName;
+            }
+        }
+    }
+
+    // Function to handle re-extraction
+    function handleReExtract() {
+        setExtracting(true);
+        performBankStatementExtraction(fileUrl, {
+            month: cycleMonth,
+            year: cycleYear
+        }, (progress) => {
+            console.log(progress);
+        }).then((result) => {
+            setValidationResult(result);
+            setExtracting(false);
+        }).catch((error) => {
+            console.error('Re-extraction failed:', error);
+            setExtracting(false);
+        });
+    }
+
+    // Function to identify statement months
+    function identifyStatementMonths(statementPeriod) {
+        const months = parseStatementPeriod(statementPeriod);
+        if (months) {
+            return generateMonthRange(months.startMonth, months.startYear, months.endMonth, months.endYear);
+        }
+        return [];
+    }
+
     const resetForm = () => {
         setPdfFile(null)
         setExcelFile(null)
-        setHasSoftCopy(existingStatement?.has_soft_copy || false)
-        setHasHardCopy(existingStatement?.has_hard_copy || false)
-        setShowValidation(false)
+        setHasSoftCopy(true)
+        setHasHardCopy(false)
         setValidationResult(null)
+        setDetectedPassword(null)
+        setDetectedAccountNumber(null)
+        setPdfNeedsPassword(false)
+        setShowPasswordDialog(false)
+        setShowExtractionDialog(false)
+        setUploadedStatement(null)
+        
+        // Reset file inputs
         if (pdfInputRef.current) pdfInputRef.current.value = ''
         if (excelInputRef.current) excelInputRef.current.value = ''
     }
 
-    const validateExtractedData = (extracted: any): ValidationResult => {
-        const mismatches: string[] = []
-
-        // Validate bank name
-        if (extracted.bank_name && !extracted.bank_name.toLowerCase().includes(bank.bank_name.toLowerCase())) {
-            mismatches.push(`Bank name mismatch: Expected "${bank.bank_name}", found "${extracted.bank_name}"`)
+    // Function to validate extracted data against expected values
+    const validateExtractedData = (extractedData: any): { isValid: boolean, mismatches: string[] } => {
+        if (!extractedData) {
+            return { isValid: false, mismatches: ['No data extracted'] };
         }
 
-        // Validate account number
-        if (extracted.account_number && !extracted.account_number.includes(bank.account_number)) {
-            mismatches.push(`Account number mismatch: Expected "${bank.account_number}", found "${extracted.account_number}"`)
+        const mismatches: string[] = [];
+
+        // Validate bank name if available
+        if (extractedData.bank_name && !extractedData.bank_name.toLowerCase().includes(bank.bank_name.toLowerCase())) {
+            mismatches.push('Bank name mismatch');
         }
 
-        // Validate currency
-        if (extracted.currency && extracted.currency !== bank.bank_currency) {
-            mismatches.push(`Currency mismatch: Expected "${bank.bank_currency}", found "${extracted.currency}"`)
+        // Validate company name if available
+        if (extractedData.company_name && !extractedData.company_name.toLowerCase().includes(bank.company_name.toLowerCase())) {
+            mismatches.push('Company name mismatch');
         }
 
-        // Validate statement month/year
-        // Use the isPeriodContained function from BankValidationDialog
-        if (extracted.statement_period) {
-            const isPeriodValid = isPeriodContained(extracted.statement_period, cycleMonth, cycleYear)
-            if (!isPeriodValid) {
-                mismatches.push(`Statement period mismatch: Expected statement for ${format(new Date(cycleYear, cycleMonth), 'MMMM yyyy')}, found "${extracted.statement_period}"`)
+        // Validate account number if available - using includes to handle formatting differences
+        if (extractedData.account_number && !extractedData.account_number.includes(bank.account_number)) {
+            mismatches.push('Account number mismatch');
+        }
+
+        // Validate currency if available - normalize currency codes
+        if (extractedData.currency) {
+            const normalizedExtractedCurrency = normalizeCurrencyCode(extractedData.currency);
+            const normalizedBankCurrency = normalizeCurrencyCode(bank.bank_currency);
+            
+            if (normalizedExtractedCurrency !== normalizedBankCurrency) {
+                mismatches.push('Currency mismatch');
             }
         }
 
-        // For monthly balances, check if the expected month/year exists
-        if (extracted.monthly_balances && extracted.monthly_balances.length > 0) {
-            const hasExpectedMonth = extracted.monthly_balances.some(
-                balance => balance.month === cycleMonth && balance.year === cycleYear
-            )
-
-            if (!hasExpectedMonth) {
-                mismatches.push(`Monthly balance mismatch: Expected balance for ${format(new Date(cycleYear, cycleMonth), 'MMMM yyyy')} not found in statement`)
+        // Validate statement period contains the expected month/year
+        if (extractedData.statement_period) {
+            const periodContainsExpectedMonth = isPeriodContained(
+                extractedData.statement_period,
+                cycleMonth,
+                cycleYear
+            );
+            
+            if (!periodContainsExpectedMonth) {
+                mismatches.push('Statement period mismatch');
             }
         }
 
         return {
             isValid: mismatches.length === 0,
-            mismatches,
-            extractedData: extracted
+            mismatches
+        };
+    };
+
+    useEffect(() => {
+        // Clean up previous fileUrl
+        if (fileUrl) {
+            URL.revokeObjectURL(fileUrl);
         }
-    }
+        
+        // Create new fileUrl if pdfFile exists
+        if (pdfFile) {
+            const newFileUrl = URL.createObjectURL(pdfFile);
+            setFileUrl(newFileUrl);
+        } else {
+            setFileUrl(null);
+        }
+        
+        // Cleanup on unmount
+        return () => {
+            if (fileUrl) {
+                URL.revokeObjectURL(fileUrl);
+            }
+        };
+    }, [pdfFile]);
 
     if (!statementCycleId) {
         toast({
@@ -306,92 +651,205 @@ export function BankStatementUploadDialog({
         return null;
     }
 
-    // Helper function to determine if a statement spans multiple months
-    function isMultiMonthPeriod(periodString) {
-        const periodDates = parseStatementPeriod(periodString);
-        if (!periodDates) return false;
+    // Helper function to generate month range from start to end
+    function generateMonthRange(startMonth, startYear, endMonth, endYear) {
+        const months = [];
 
-        const { startMonth, startYear, endMonth, endYear } = periodDates;
+        for (let year = startYear; year <= endYear; year++) {
+            const start = year === startYear ? startMonth : 1;
+            const end = year === endYear ? endMonth : 12;
 
-        // Check if period spans multiple months
-        if (startYear < endYear) return true;
-        if (startYear === endYear && startMonth < endMonth) return true;
+            for (let month = start; month <= end; month++) {
+                months.push({ month, year });
+            }
+        }
 
-        return false;
+        return months;
     }
 
-    const handleUpload = async (proceed: boolean = true) => {
-        if (!pdfFile && !hasSoftCopy) {
-            toast({
-                title: 'Validation Error',
-                description: 'Please upload a PDF file or check "Has Soft Copy"',
-                variant: 'destructive'
-            });
-            return;
-        }
-
-        // Add safe check for statementCycleId
-        if (!statementCycleId) {
-            toast({
-                title: 'Error',
-                description: 'No active statement cycle found. Please try again later.',
-                variant: 'destructive'
-            });
-            return;
-        }
-
+    // Function to handle multi-month statement submission
+    const handleMultiMonthStatement = async (
+        baseStatementData: any,
+        bank: any,
+        extractedData: any,
+        documentPaths: any
+    ) => {
         try {
-            setUploading(true);
-
-            // If we have a PDF file, first extract data for validation
-            if (pdfFile && !validationResult && proceed) {
-                setExtracting(true);
-
-                // Generate a temporary URL for the file
-                const fileUrl = URL.createObjectURL(pdfFile);
-
-                try {
-                    // Extract data from the PDF - only first and last pages
-                    const extractionResult = await performBankStatementExtraction(
-                        fileUrl,
-                        {
-                            month: cycleMonth,
-                            year: cycleYear
-                        }
-                    );
-
-                    // Validate the extracted data
-                    const validation = validateExtractedData(extractionResult.extractedData);
-                    setValidationResult(validation);
-
-                    // Only show validation for critical mismatches (bank name, account number)
-                    // Filter out period mismatches which aren't critical
-                    const criticalMismatches = validation.mismatches.filter(mismatch =>
-                        !mismatch.toLowerCase().includes('period')
-                    );
-
-                    if (criticalMismatches.length > 0) {
-                        setShowValidation(true);
-                        setExtracting(false);
-                        setUploading(false);
-                        return;
+            // Parse the period to get start and end months
+            const period = extractedData.statement_period;
+            const monthsInRange = getMonthsFromPeriod(period);
+            
+            // If we couldn't determine the months, just create a single entry
+            if (!monthsInRange || monthsInRange.length === 0) {
+                console.warn('Could not determine months in multi-month period:', period);
+                return;
+            }
+            
+            console.log('Creating entries for months:', monthsInRange);
+            
+            // Create a statement entry for each month in the range
+            for (const { month, year } of monthsInRange) {
+                // Skip if this is the current selected month/year (it will be handled separately)
+                if (month === cycleMonth && year === cycleYear) {
+                    continue;
+                }
+                
+                // Check if a statement already exists for this month/year
+                const { data: existingStatement, error: getExistingError } = await supabase
+                    .from('acc_cycle_bank_statements')
+                    .select('*')
+                    .eq('bank_id', bank.id)
+                    .eq('statement_month', month)
+                    .eq('statement_year', year)
+                    .single();
+                
+                if (getExistingError) throw getExistingError;
+                
+                // Prepare statement data for this month
+                const monthStatementData = {
+                    ...baseStatementData,
+                    statement_month: month,
+                    statement_year: year,
+                    statement_document: documentPaths,
+                    statement_extractions: extractedData,
+                    validation_status: {
+                        is_validated: false,
+                        validation_date: new Date().toISOString(),
+                        validated_by: null,
+                        mismatches: ['Auto-created from multi-month statement']
                     }
-                } catch (error) {
-                    console.error('Extraction error:', error);
-                    toast({
-                        title: 'Extraction Error',
-                        description: 'Failed to extract data from the PDF. Proceeding with upload only.',
-                        variant: 'destructive'
-                    });
-                } finally {
-                    URL.revokeObjectURL(fileUrl);
-                    setExtracting(false);
+                };
+                
+                if (existingStatement) {
+                    // Update existing statement
+                    await supabase
+                        .from('acc_cycle_bank_statements')
+                        .update(monthStatementData)
+                        .eq('id', existingStatement.id);
+                } else {
+                    // Create new statement
+                    await supabase
+                        .from('acc_cycle_bank_statements')
+                        .insert(monthStatementData);
                 }
             }
+        } catch (error) {
+            console.error('Error handling multi-month statement:', error);
+            throw new Error('Failed to process multi-month statement');
+        }
+    };
 
+    const getMonthsFromPeriod = (period: string) => {
+        // Implement logic to parse period string into months
+        // For demonstration, assume period is in format "January - March 2024"
+        const match = period.match(/(\w+)\s*(?:-|to)\s*(\w+)\s+(\d{4})/i);
+        if (match) {
+            const startMonth = new Date(`${match[1]} 1, 2000`).getMonth() + 1;
+            const endMonth = new Date(`${match[2]} 1, 2000`).getMonth() + 1;
+            const year = parseInt(match[3]);
+            return generateMonthRange(startMonth, year, endMonth, year);
+        }
+        return null;
+    };
+
+    // Function to handle upload
+    const handleUpload = async () => {
+        // Validate that the bank is selected
+        if (!bank) {
+            toast({
+                title: 'Bank Required',
+                description: 'Please select a bank first.',
+                variant: 'destructive'
+            })
+            return
+        }
+
+        // Ensure PDF file is present
+        if (!pdfFile) {
+            toast({
+                title: 'PDF Required',
+                description: 'Please upload a PDF bank statement.',
+                variant: 'destructive'
+            })
+            return
+        }
+
+        // Handle password protection
+        if (pdfNeedsPassword && !passwordApplied) {
+            setShowPasswordDialog(true)
+            return
+        }
+
+        setUploading(true)
+        setExtractionResults(null)
+        setValidationResults(null)
+
+        try {
+            // Create a temporary URL for the PDF file (for extraction)
+            let localFileUrl: string;
+            if (fileUrl) {
+                URL.revokeObjectURL(fileUrl);
+            }
+            localFileUrl = URL.createObjectURL(pdfFile);
+            setFileUrl(localFileUrl);
+
+            // Do extraction first
+            if (localFileUrl) {
+                await handleExtraction(localFileUrl);
+            }
+            
+            // Continue with upload
+            await proceedWithUpload();
+        } catch (error) {
+            console.error('Upload process error:', error)
+            toast({
+                title: 'Upload Failed',
+                description: error instanceof Error ? error.message : 'Failed to upload bank statement',
+                variant: 'destructive'
+            })
+        } finally {
+            setUploading(false)
+        }
+    };
+
+    // Function to handle extraction for validation
+    const handleExtraction = async (fileUrl: string) => {
+        if (!pdfFile || !fileUrl) {
+            console.error('PDF file or URL not available for extraction');
+            return null;
+        }
+
+        setExtracting(true);
+
+        try {
+            // Use the fileUrl from state for extraction
+            const extractionResult = await performBankStatementExtraction(
+                fileUrl,
+                { month: cycleMonth, year: cycleYear }
+            );
+
+            console.log('Extraction results:', extractionResult);
+            return extractionResult;
+        } catch (error) {
+            console.error('Extraction error:', error);
+            toast({
+                title: 'Extraction Error',
+                description: 'Failed to extract data from PDF.',
+                variant: 'destructive'
+            });
+            return null;
+        } finally {
+            setExtracting(false);
+        }
+    };
+
+    // Function to proceed with the actual upload after extraction/validation
+    const proceedWithUpload = async () => {
+        try {
             // Upload files to storage
             let pdfPath = existingStatement?.statement_document.statement_pdf || null;
             let excelPath = existingStatement?.statement_document.statement_excel || null;
+            let documentSize = existingStatement?.statement_document.document_size || 0;
 
             // Upload PDF if provided
             if (pdfFile) {
@@ -399,7 +857,7 @@ export function BankStatementUploadDialog({
                 const pdfFilePath = `statement_documents/${cycleYear}/${cycleMonth}/${bank.company_id}/${pdfFileName}`;
 
                 const { data: pdfUploadData, error: pdfUploadError } = await supabase.storage
-                    .from('Statement-Cycle')  // Changed from 'Payroll-Cycle'
+                    .from('Statement-Cycle')
                     .upload(pdfFilePath, pdfFile, {
                         cacheControl: '3600',
                         upsert: true
@@ -408,6 +866,7 @@ export function BankStatementUploadDialog({
                 if (pdfUploadError) throw pdfUploadError;
 
                 pdfPath = pdfUploadData.path;
+                documentSize = pdfFile.size; // Store the PDF file size
             }
 
             // Upload Excel if provided
@@ -416,7 +875,7 @@ export function BankStatementUploadDialog({
                 const excelFilePath = `statement_documents/${cycleYear}/${cycleMonth}/${bank.company_id}/${excelFileName}`;
 
                 const { data: excelUploadData, error: excelUploadError } = await supabase.storage
-                    .from('Statement-Cycle')  // Changed from 'Payroll-Cycle'
+                    .from('Statement-Cycle')
                     .upload(excelFilePath, excelFile, {
                         cacheControl: '3600',
                         upsert: true
@@ -431,14 +890,14 @@ export function BankStatementUploadDialog({
             const documentPaths = {
                 statement_pdf: pdfPath,
                 statement_excel: excelPath,
-                document_size: pdfFile ? pdfFile.size : existingStatement?.statement_document.document_size || 0
+                document_size: documentSize
             };
 
             // Prepare base statement data
             const baseStatementData = {
                 bank_id: bank.id,
                 company_id: bank.company_id,
-                statement_cycle_id: statementCycleId,  // Changed from payroll_cycle_id
+                statement_cycle_id: statementCycleId,
                 statement_month: cycleMonth,
                 statement_year: cycleYear,
                 statement_document: documentPaths,
@@ -446,22 +905,22 @@ export function BankStatementUploadDialog({
                 has_hard_copy: hasHardCopy
             };
 
-            // If we have extracted data from validation, include it
-            if (validationResult) {
+            // Check if we have valid extraction results from state
+            if (extractionResults && extractionResults.success) {
                 Object.assign(baseStatementData, {
-                    statement_extractions: validationResult.extractedData,
+                    statement_extractions: extractionResults.extractedData,
                     validation_status: {
-                        is_validated: validationResult.isValid,
+                        is_validated: true,
                         validation_date: new Date().toISOString(),
                         validated_by: null,
-                        mismatches: validationResult.mismatches
+                        mismatches: validationResults?.mismatches || []
                     }
                 });
             }
 
             // Determine if this is a multi-month statement
-            const isMultiMonth = validationResult && validationResult.extractedData.statement_period
-                ? isMultiMonthPeriod(validationResult.extractedData.statement_period)
+            const isMultiMonth = extractionResults && extractionResults.extractedData && extractionResults.extractedData.statement_period
+                ? isMultiMonthPeriod(extractionResults.extractedData.statement_period)
                 : false;
 
             let statement;
@@ -471,13 +930,13 @@ export function BankStatementUploadDialog({
                 await handleMultiMonthStatement(
                     baseStatementData,
                     bank,
-                    validationResult.extractedData,
+                    extractionResults.extractedData,
                     documentPaths
                 );
 
                 // Get the current month statement to return
                 const { data: currentMonthStatement, error: getCurrentError } = await supabase
-                    .from('acc_cycle_bank_statements')
+                    .from('bank_statements')
                     .select('*')
                     .eq('bank_id', bank.id)
                     .eq('statement_month', cycleMonth)
@@ -486,11 +945,6 @@ export function BankStatementUploadDialog({
 
                 if (getCurrentError) throw getCurrentError;
                 statement = currentMonthStatement;
-
-                toast({
-                    title: 'Success',
-                    description: 'Multi-month bank statement processed successfully'
-                });
             } else {
                 // Regular single-month statement handling
                 if (existingStatement) {
@@ -517,8 +971,16 @@ export function BankStatementUploadDialog({
                 }
             }
 
+            // Store the uploaded statement for the extraction dialog
+            setUploadedStatement(statement);
+            
             // Notify parent component
             onStatementUploaded(statement);
+            
+            // Show extraction dialog immediately after upload
+            setShowExtractionDialog(true);
+            
+            // Reset form
             resetForm();
 
             toast({
@@ -526,157 +988,220 @@ export function BankStatementUploadDialog({
                 description: 'Bank statement uploaded successfully'
             });
         } catch (error) {
-            console.error('Upload error:', error);
+            console.error('Upload process error:', error);
+            throw error; // Re-throw to be caught by the parent function
+        }
+    };
+
+    // Function to handle proceeding despite validation issues
+    const handleProceedWithValidationIssues = async () => {
+        setShowValidationDialog(false);
+        setUploading(true);
+        
+        try {
+            // Modify extraction results to include validation issues
+            if (extractionResults && validationResults) {
+                const modifiedResults = {
+                    ...extractionResults,
+                    validationIssues: validationResults.mismatches
+                };
+                
+                // Include validation status in the database
+                const updatedExtractionResults = {
+                    ...extractionResults,
+                    validationStatus: {
+                        is_validated: false,
+                        validation_date: new Date().toISOString(),
+                        validated_by: null,
+                        mismatches: validationResults.mismatches
+                    }
+                };
+                
+                await proceedWithUpload(updatedExtractionResults);
+            } else {
+                await proceedWithUpload(null);
+            }
+        } catch (error) {
+            console.error('Error proceeding with validation issues:', error);
             toast({
                 title: 'Upload Error',
-                description: 'Failed to upload bank statement',
+                description: 'Failed to upload statement with validation issues',
                 variant: 'destructive'
             });
         } finally {
             setUploading(false);
         }
     };
+    
+    // Function to handle cancellation of upload due to validation issues
+    const handleCancelUpload = () => {
+        setShowValidationDialog(false);
+        setUploading(false);
+        setExtractionResults(null);
+        setValidationResults(null);
+        
+        toast({
+            title: 'Upload Cancelled',
+            description: 'Bank statement upload was cancelled due to validation issues'
+        });
+    };
 
-    // Helper function to generate month range from start to end
-    function generateMonthRange(startMonth, startYear, endMonth, endYear) {
-        const months = [];
-
-        for (let year = startYear; year <= endYear; year++) {
-            const start = year === startYear ? startMonth : 1;
-            const end = year === endYear ? endMonth : 12;
-
-            for (let month = start; month <= end; month++) {
-                months.push({ month, year });
-            }
+    // Function to normalize currency codes
+    const normalizeCurrencyCode = (currency: string): string => {
+        const code = currency.trim().toUpperCase();
+        
+        // Handle common currency variations
+        if (code === 'KES' || code === 'KSHS' || code === 'KSH') {
+            return 'KES';
         }
+        if (code === 'USD' || code === 'US$' || code === '$') {
+            return 'USD';
+        }
+        if (code === 'GBP' || code === '£') {
+            return 'GBP';
+        }
+        if (code === 'EUR' || code === '€') {
+            return 'EUR';
+        }
+        
+        return code;
+    };
 
-        return months;
-    }
+    // Function to check if a period string contains a specific month/year
+    const isPeriodContained = (period: string, month: number, year: number): boolean => {
+        // Normalize month to 1-12 format (JavaScript uses 0-11)
+        const normalizedMonth = month;
+        
+        // Try to extract dates from the period string
+        const monthNames = ['january', 'february', 'march', 'april', 'may', 'june', 
+                           'july', 'august', 'september', 'october', 'november', 'december'];
+        
+        // Sample formats: "January to February 2023", "Jan - Mar 2023", "01/01/2023 - 31/01/2023"
+        const periodLower = period.toLowerCase();
+        
+        // Check if the month name or number is in the period string
+        const monthInPeriod = monthNames[normalizedMonth - 1].toLowerCase();
+        const monthAbbreviation = monthInPeriod.substring(0, 3);
+        
+        const hasMonth = periodLower.includes(monthInPeriod) || 
+                         periodLower.includes(monthAbbreviation) || 
+                         periodLower.includes(`/${normalizedMonth}/`) || 
+                         periodLower.includes(`/${normalizedMonth.toString().padStart(2, '0')}/`);
+        
+        // Check if the year is in the period string
+        const hasYear = periodLower.includes(year.toString());
+        
+        // If both month and year are found, the period contains the specified month/year
+        return hasMonth && hasYear;
+    };
 
-    // Function to handle multi-month statement submission
-    async function handleMultiMonthStatement(
-        baseStatementData,
-        bank,
-        extractedData,
-        documentPaths
-    ) {
-        try {
-            // Parse the statement period to get all months in the range
-            const periodDates = parseStatementPeriod(extractedData.statement_period);
-
-            if (!periodDates) {
-                console.warn('Could not parse statement period, using only current month');
-                return;
-            }
-
-            const { startMonth, startYear, endMonth, endYear } = periodDates;
-            const monthsInRange = generateMonthRange(startMonth, startYear, endMonth, endYear);
-
-            // For each month in the range, create a separate statement entry
-            for (const { month, year } of monthsInRange) {
-                // Format month/year for cycle lookup
-                const monthStr = month.toString().padStart(2, '0');
-                const monthYearStr = `${year}-${monthStr}`;
-
-                // Check if a statement cycle exists for this month, create if needed
-                let cyclePeriod;
-
-                const { data: existingCycle, error: cycleError } = await supabase
-                    .from('statement_cycles')
-                    .select('id')
-                    .eq('month_year', monthYearStr)
-                    .single();
-
-                if (cycleError) {
-                    if (cycleError.code === 'PGRST116') { // No rows found
-                        // Create new cycle for this month
-                        const { data: newCycle, error: createError } = await supabase
-                            .from('statement_cycles')
-                            .insert({
-                                month_year: monthYearStr,
-                                status: 'active',
-                                created_at: new Date().toISOString()
-                            })
-                            .select('id')
-                            .single();
-
-                        if (createError) throw createError;
-                        cyclePeriod = newCycle;
-                    } else {
-                        throw cycleError;
-                    }
-                } else {
-                    cyclePeriod = existingCycle;
-                }
-
-                // Check if a statement already exists for this bank/month
-                const { data: existingStatement } = await supabase
-                    .from('acc_cycle_bank_statements')
-                    .select('id')
-                    .eq('bank_id', bank.id)
-                    .eq('statement_month', month)
-                    .eq('statement_year', year)
-                    .single();
-
-                if (existingStatement) {
-                    console.log(`Statement already exists for ${month}/${year}`);
-                    continue; // Skip if already exists
-                }
-
-                // Find specific month data if available
-                const monthData = extractedData.monthly_balances.find(
-                    mb => mb.month === month && mb.year === year
-                ) || {
-                    month,
-                    year,
-                    opening_balance: null,
-                    closing_balance: null,
-                    statement_page: 1,
-                    highlight_coordinates: null,
-                    is_verified: false,
-                    verified_by: null,
-                    verified_at: null
-                };
-
-                // Create new statement for this month
-                const newStatementData = {
-                    ...baseStatementData,
-                    statement_cycle_id: cyclePeriod.id,
-                    statement_month: month,
-                    statement_year: year,
-                    statement_document: documentPaths, // Same document for all periods
-                    statement_extractions: {
-                        ...extractedData,
-                        // Only include relevant month in monthly_balances
-                        monthly_balances: [monthData]
-                    },
-                    validation_status: {
-                        is_validated: false,
-                        validation_date: null,
-                        validated_by: null,
-                        mismatches: []
-                    },
-                    status: {
-                        status: 'pending_validation',
-                        assigned_to: null,
-                        verification_date: null
-                    }
-                };
-
-                // Insert the new statement
-                await supabase
-                    .from('acc_cycle_bank_statements')
-                    .insert([newStatementData]);
-
-                console.log(`Created statement record for ${month}/${year}`);
-            }
-
+    // Function to check if a statement period covers multiple months
+    const isMultiMonthPeriod = (periodStr: string): boolean => {
+        // Common multi-month patterns: "Jan - Mar", "January to March", "01/01/2023 - 31/03/2023"
+        
+        // Try to extract dates from the period string
+        let startDate: Date | null = null;
+        let endDate: Date | null = null;
+        
+        // Check for date ranges like "01/01/2023 - 31/03/2023"
+        const datePattern = /(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4}).*?(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})/;
+        const dateMatch = periodStr.match(datePattern);
+        
+        if (dateMatch) {
+            // Dates in format DD/MM/YYYY or MM/DD/YYYY
+            // We'll assume DD/MM/YYYY as it's more common globally
+            const [_, startDay, startMonth, startYear, endDay, endMonth, endYear] = dateMatch;
+            
+            startDate = new Date(
+                parseInt(startYear.length === 2 ? `20${startYear}` : startYear),
+                parseInt(startMonth) - 1,
+                parseInt(startDay)
+            );
+            
+            endDate = new Date(
+                parseInt(endYear.length === 2 ? `20${endYear}` : endYear),
+                parseInt(endMonth) - 1,
+                parseInt(endDay)
+            );
+        }
+        
+        // Check if we have valid dates and if they span different months
+        if (startDate && endDate && 
+            (startDate.getMonth() !== endDate.getMonth() || 
+             startDate.getFullYear() !== endDate.getFullYear())) {
             return true;
-        } catch (error) {
-            console.error('Error handling multi-month statement:', error);
-            throw error;
         }
-    }
+        
+        // Check for month name patterns like "January - March 2023"
+        const monthNames = ['january', 'february', 'march', 'april', 'may', 'june', 
+                          'july', 'august', 'september', 'october', 'november', 'december'];
+        const monthAbbr = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 
+                         'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+        
+        // Create a pattern to match month names
+        const periodLower = periodStr.toLowerCase();
+        
+        // Check if different month names are mentioned
+        let foundMonths: number[] = [];
+        
+        // Check full month names
+        monthNames.forEach((month, index) => {
+            if (periodLower.includes(month)) {
+                foundMonths.push(index);
+            }
+        });
+        
+        // Check abbreviated month names
+        monthAbbr.forEach((month, index) => {
+            if (periodLower.includes(month)) {
+                // Only add if not already found by full name
+                if (!foundMonths.includes(index)) {
+                    foundMonths.push(index);
+                }
+            }
+        });
+        
+        // If we found multiple distinct months, it's a multi-month period
+        return new Set(foundMonths).size > 1;
+    };
+
+    // Function to handle automatic password application
+    const handleAutoPasswordApplication = async (file: File, passwordToTry: string) => {
+        setApplyingPassword(true);
+        
+        try {
+            // Try to apply the password automatically
+            const success = await applyPasswordToFiles(file, passwordToTry);
+            
+            if (success) {
+                setPdfNeedsPassword(false);
+                setPasswordApplied(true);
+                setPassword(passwordToTry);
+                
+                toast({
+                    title: "Password Applied",
+                    description: "Password was applied automatically",
+                    variant: "default"
+                });
+                
+                // Continue with upload process
+                handleUpload();
+            } else {
+                // Password didn't work, show password dialog
+                toast({
+                    title: "Password Required",
+                    description: "Automatic password application failed. Please enter the correct password.",
+                    variant: "default"
+                });
+                setShowPasswordDialog(true);
+            }
+        } catch (error) {
+            console.error("Error in auto password application:", error);
+            setShowPasswordDialog(true);
+        } finally {
+            setApplyingPassword(false);
+        }
+    };
 
     return (
         <>
@@ -756,13 +1281,7 @@ export function BankStatementUploadDialog({
                                         ref={pdfInputRef}
                                         type="file"
                                         accept=".pdf"
-                                        onChange={(e) => {
-                                            const file = e.target.files?.[0]
-                                            if (file) {
-                                                setPdfFile(file)
-                                                setValidationResult(null)
-                                            }
-                                        }}
+                                        onChange={(e) => handleFileChange(e, 'pdf')}
                                         disabled={uploading || extracting}
                                         className="cursor-pointer file:bg-blue-50 file:text-blue-700 file:border-blue-200 
                                    hover:file:bg-blue-100 file:mr-4 file:px-3 file:py-2 file:rounded-md
@@ -794,18 +1313,15 @@ export function BankStatementUploadDialog({
                                         ref={excelInputRef}
                                         type="file"
                                         accept=".xlsx,.xls,.csv"
-                                        onChange={(e) => {
-                                            const file = e.target.files?.[0]
-                                            if (file) setExcelFile(file)
-                                        }}
+                                        onChange={(e) => handleFileChange(e, 'excel')}
                                         disabled={uploading}
                                         className="cursor-pointer file:bg-emerald-50 file:text-emerald-700 file:border-emerald-200 
-                                   hover:file:bg-emerald-100 file:mr-4 file:px-3 file:py-2 file:rounded-md
-                                   file:transition-colors group-hover:border-emerald-300"
+                                        hover:file:bg-emerald-100 file:mr-4 file:px-3 file:py-2 file:rounded-md
+                                        file:transition-colors group-hover:border-emerald-300"
                                     />
                                     {excelFile && (
                                         <div className="absolute right-3 top-1/2 transform -translate-y-1/2 text-emerald-700 bg-emerald-50/80 
-                                      py-0.5 px-2 rounded-full text-xs font-medium border border-emerald-200 truncate max-w-[200px]">
+                                        py-0.5 px-2 rounded-full text-xs font-medium border border-emerald-200 truncate max-w-[200px]">
                                             {excelFile.name}
                                         </div>
                                     )}
@@ -842,6 +1358,60 @@ export function BankStatementUploadDialog({
                                 <Label htmlFor="has-hard-copy" className="text-sm font-medium">Has Hard Copy</Label>
                             </div>
                         </div>
+
+                        {/* Bank Password Section */}
+                        <div className="bg-gradient-to-r from-purple-50/80 to-purple-50/40 rounded-md p-4 border border-purple-100 shadow-sm">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                    <Lock className="h-4 w-4 text-purple-600" />
+                                    <h3 className="text-sm font-medium text-purple-800">Statement Password</h3>
+                                </div>
+                                {detectedPassword && (
+                                    <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">
+                                        Detected from filename
+                                    </Badge>
+                                )}
+                            </div>
+                            <div className="mt-2 space-y-2">
+                                {bank.acc_password && (
+                                    <div className="flex items-center gap-2 text-sm">
+                                        <span className="text-purple-700">Bank Password:</span>
+                                        <code className="bg-purple-50 px-2 py-0.5 rounded border border-purple-200">
+                                            {bank.acc_password}
+                                        </code>
+                                    </div>
+                                )}
+                                {detectedPassword && (
+                                    <div className="flex items-center gap-2 text-sm">
+                                        <span className="text-purple-700">Detected Password:</span>
+                                        <code className="bg-purple-50 px-2 py-0.5 rounded border border-purple-200">
+                                            {detectedPassword}
+                                        </code>
+                                        {bank.acc_password !== detectedPassword && (
+                                            <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
+                                                Different from bank record
+                                            </Badge>
+                                        )}
+                                    </div>
+                                )}
+                                {!bank.acc_password && !detectedPassword && (
+                                    <div className="text-sm text-gray-500 italic">
+                                        No password available for this bank statement
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Account Number Detection */}
+                        {detectedAccountNumber && detectedAccountNumber !== bank.account_number && (
+                            <Alert className="bg-amber-50 border-amber-200">
+                                <AlertTriangle className="h-4 w-4 text-amber-600" />
+                                <AlertTitle className="text-amber-800">Account Number Mismatch</AlertTitle>
+                                <AlertDescription className="text-amber-700">
+                                    Detected account number ({detectedAccountNumber}) differs from bank record ({bank.account_number})
+                                </AlertDescription>
+                            </Alert>
+                        )}
 
                         {existingStatement && (
                             <Alert className="bg-amber-50 border-amber-200 text-amber-800">
@@ -900,16 +1470,124 @@ export function BankStatementUploadDialog({
                     bank={bank}
                     extractedData={validationResult.extractedData}
                     mismatches={validationResult.mismatches}
-                    onProceed={() => {
-                        setShowValidation(false)
-                        handleUpload(true)
-                    }}
-                    onCancel={() => {
-                        setShowValidation(false)
-                        setValidationResult(null)
-                    }}
+                    onProceed={handleProceedWithValidationIssues}
+                    onCancel={handleCancelUpload}
                     cycleMonth={cycleMonth}
                     cycleYear={cycleYear}
+                    fileUrl={fileUrl}
+                />
+            )}
+
+            {/* Password Dialog */}
+            {showPasswordDialog && pdfFile && (
+                <Dialog open={showPasswordDialog} onOpenChange={setShowPasswordDialog}>
+                    <DialogContent className="sm:max-w-md">
+                        <DialogHeader>
+                            <DialogTitle>PDF Password Required</DialogTitle>
+                            <DialogDescription>
+                                This PDF is password-protected. Please enter the password to continue.
+                            </DialogDescription>
+                        </DialogHeader>
+                        
+                        <div className="grid gap-4 py-4">
+                            <div className="flex flex-col gap-4">
+                                {/* Password input */}
+                                <div className="space-y-2">
+                                    <Label htmlFor="password">Password</Label>
+                                    <Input 
+                                        id="password" 
+                                        type="password" 
+                                        value={password}
+                                        onChange={(e) => setPassword(e.target.value)}
+                                        placeholder="Enter password" 
+                                    />
+                                </div>
+
+                                {/* Show detected password if available */}
+                                {detectedPassword && (
+                                    <div className="flex items-center gap-2 text-sm">
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => {
+                                                setPassword(detectedPassword);
+                                                handlePasswordSubmit(detectedPassword);
+                                            }}
+                                        >
+                                            Use detected password: <Badge variant="secondary" className="ml-2">{detectedPassword}</Badge>
+                                        </Button>
+                                    </div>
+                                )}
+
+                                {/* Show stored bank password if available */}
+                                {bank?.acc_password && (
+                                    <div className="flex items-center gap-2 text-sm">
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => {
+                                                setPassword(bank.acc_password);
+                                                handlePasswordSubmit(bank.acc_password);
+                                            }}
+                                        >
+                                            Use bank's password: <Badge variant="secondary" className="ml-2">{bank.acc_password}</Badge>
+                                        </Button>
+                                    </div>
+                                )}
+
+                                {/* Show detected account number if available */}
+                                {detectedAccountNumber && (
+                                    <div className="text-sm text-muted-foreground mt-4">
+                                        <p>Detected Account Number: <Badge variant="outline">{detectedAccountNumber}</Badge></p>
+                                        {bank?.account_number && detectedAccountNumber !== bank.account_number && (
+                                            <p className="text-yellow-600 mt-1">
+                                                Note: This differs from the bank's registered account number: <Badge variant="outline">{bank.account_number}</Badge>
+                                            </p>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                        
+                        <DialogFooter className="sm:justify-end">
+                            <Button
+                                type="button"
+                                variant="secondary"
+                                onClick={() => setShowPasswordDialog(false)}
+                            >
+                                Cancel
+                            </Button>
+                            <Button
+                                type="button"
+                                onClick={() => handlePasswordSubmit(password)}
+                                disabled={applyingPassword || !password}
+                            >
+                                {applyingPassword ? (
+                                    <>
+                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                        Applying...
+                                    </>
+                                ) : (
+                                    'Apply Password'
+                                )}
+                            </Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
+            )}
+
+            {/* Bank Extraction Dialog */}
+            {showExtractionDialog && uploadedStatement && (
+                <BankExtractionDialog
+                    isOpen={showExtractionDialog}
+                    onClose={() => setShowExtractionDialog(false)}
+                    bank={bank}
+                    statement={uploadedStatement}
+                    onStatementUpdated={(updatedStatement) => {
+                        // Update the parent component with the updated statement
+                        onStatementUploaded(updatedStatement);
+                        setShowExtractionDialog(false);
+                    }}
                 />
             )}
         </>
