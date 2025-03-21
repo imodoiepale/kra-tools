@@ -1,11 +1,12 @@
 // @ts-nocheck
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
 import * as pdfjsLib from 'pdfjs-dist';
-import * as qpdf from 'node-qpdf';
+// import * as qpdf from 'node-qpdf';
 import { API_KEYS } from './apiKeys';
-import * as fs from 'fs';
+// import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { PDFDocument } from 'pdf-lib';
 
 // Constants
 const EMBEDDING_MODEL = "gemini-embedding-exp-03-07";
@@ -128,14 +129,24 @@ function parseCurrencyAmount(amount) {
   return isNaN(parsedAmount) ? null : parsedAmount;
 }
 
+// Dynamic import for canvas in Node.js environment
+const getCanvas = async () => {
+  if (typeof window === 'undefined') {
+    return require('canvas');
+  }
+  return require('canvas-browserify');
+};
+
 // Helper to get PDF page count
 async function getPdfPageCount(fileUrl, password = null) {
   try {
     // If fileUrl is a string URL
     if (typeof fileUrl === 'string') {
+      const canvas = await getCanvas();
       const loadingTask = pdfjsLib.getDocument({
         url: fileUrl,
-        password: password
+        password: password,
+        canvasFactory: canvas.createCanvas,
       });
       const pdf = await loadingTask.promise;
       return { success: true, numPages: pdf.numPages, pdf };
@@ -144,9 +155,11 @@ async function getPdfPageCount(fileUrl, password = null) {
     // If fileUrl is a File object
     if (fileUrl instanceof File) {
       const arrayBuffer = await fileUrl.arrayBuffer();
+      const canvas = await getCanvas();
       const loadingTask = pdfjsLib.getDocument({
         data: new Uint8Array(arrayBuffer),
-        password: password
+        password: password,
+        canvasFactory: canvas.createCanvas,
       });
       const pdf = await loadingTask.promise;
       return { success: true, numPages: pdf.numPages, pdf };
@@ -173,18 +186,22 @@ async function extractTextFromPdfPages(fileUrl, pageNumbers, password = null) {
   try {
     let pdf;
 
-    // Load PDF based on input type
+    // Load PDF based on input type with password if provided
     if (typeof fileUrl === 'string') {
+      const canvas = await getCanvas();
       const loadingTask = pdfjsLib.getDocument({
         url: fileUrl,
-        password: password
+        password: password,
+        canvasFactory: canvas.createCanvas,
       });
       pdf = await loadingTask.promise;
     } else if (fileUrl instanceof File) {
       const arrayBuffer = await fileUrl.arrayBuffer();
+      const canvas = await getCanvas();
       const loadingTask = pdfjsLib.getDocument({
         data: new Uint8Array(arrayBuffer),
-        password: password
+        password: password,
+        canvasFactory: canvas.createCanvas,
       });
       pdf = await loadingTask.promise;
     } else {
@@ -595,13 +612,13 @@ export async function performBankStatementExtraction(
   try {
     onProgress('Starting bank statement extraction with embedding approach...');
 
-    // Get total page count
-    const totalPages = await getPdfPageCount(fileUrl);
-    
+    // Get total page count (now with password)
+    const totalPages = await getPdfPageCount(fileUrl, params.password);
+
     if (!totalPages || !totalPages.success) {
       const errorMessage = totalPages?.error || 'Failed to get page count';
       onProgress(`Error: ${errorMessage}`);
-      
+
       // Check if password protected
       if (totalPages?.requiresPassword) {
         return {
@@ -611,7 +628,7 @@ export async function performBankStatementExtraction(
           message: 'This PDF is password protected. Please provide a password.'
         };
       }
-      
+
       throw new Error(errorMessage);
     }
     
@@ -624,7 +641,7 @@ export async function performBankStatementExtraction(
     }
 
     onProgress(`Extracting text from pages ${pages.join(', ')}...`);
-    const pageTextContent = await extractTextFromPdfPages(fileUrl, pages);
+    const pageTextContent = await extractTextFromPdfPages(fileUrl, pages, params.password);
     
     if (!pageTextContent || !pageTextContent.success) {
       const errorMessage = pageTextContent?.error || 'Failed to extract text from PDF';
@@ -1311,135 +1328,6 @@ async function verifyPdfIsUnlocked(file: File): Promise<boolean> {
     }
 }
 
-// Function to remove password protection from a PDF using qpdf
-export async function removePasswordProtection(pdfFile: File, password: string): Promise<File | null> {
-    let inputPath = '';
-    let outputPath = '';
-    
-    try {
-        // Save the input file to temp directory
-        inputPath = await saveTempFile(pdfFile, 'protected');
-        outputPath = path.join(os.tmpdir(), `unprotected_${Date.now()}.pdf`);
-
-        // Decrypt the PDF
-        await qpdf.decrypt(inputPath, password, outputPath);
-        
-        // Convert back to File object
-        const unprotectedFile = await pathToFile(outputPath, pdfFile);
-        console.log('Successfully removed password protection from PDF');
-        
-        return unprotectedFile;
-    } catch (error) {
-        console.error('Error removing password protection:', error);
-        return null;
-    } finally {
-        // Clean up temp files
-        await cleanupTempFiles(inputPath, outputPath);
-    }
-}
-
-// Check if a PDF is password protected
-export async function isPdfPasswordProtected(file: File): Promise<boolean> {
-    let tempPath = '';
-    let outputPath = '';
-    
-    try {
-        // First try with PDF.js
-        const arrayBuffer = await file.arrayBuffer();
-        const loadingTask = pdfjsLib.getDocument({
-            data: arrayBuffer
-        });
-
-        try {
-            await loadingTask.promise;
-            return false; // If we can load without password, it's not protected
-        } catch (error: any) {
-            if (error.name === 'PasswordException') {
-                return true; // PDF.js specific password error
-            }
-            
-            // For other errors, try with qpdf
-            tempPath = await saveTempFile(file, 'check');
-            outputPath = path.join(os.tmpdir(), `test_${Date.now()}.pdf`);
-            
-            try {
-                // Try to decrypt without password - if it fails, the file is password protected
-                await qpdf.decrypt(tempPath, '', outputPath);
-                return false;
-            } catch (qpdfError) {
-                return true;
-            }
-        }
-    } catch (error) {
-        console.error('Error checking if PDF is password protected:', error);
-        return true; // Assume protected if we can't verify
-    } finally {
-        // Clean up temp files
-        await cleanupTempFiles(tempPath, outputPath);
-    }
-}
-
-// Apply password to PDF files
-export async function applyPasswordToFiles(file: File, password: string): Promise<boolean> {
-    let inputPath = '';
-    let outputPath = '';
-    
-    try {
-        // Save the input file to temp directory
-        inputPath = await saveTempFile(file, 'unprotected');
-        outputPath = path.join(os.tmpdir(), `protected_${Date.now()}.pdf`);
-
-        // Encrypt the PDF with AES-256
-        const options = {
-            keyLength: 256,
-            password: password,
-            restrictions: {
-                print: 'full',
-                modify: 'none',
-                extract: 'n',
-                accessibility: 'y'
-            }
-        };
-
-        await qpdf.encrypt(inputPath, options, outputPath);
-        return true;
-    } catch (error) {
-        console.error('Error applying password to PDF:', error);
-        return false;
-    } finally {
-        // Clean up temp files
-        await cleanupTempFiles(inputPath, outputPath);
-    }
-}
-
-// Helper functions for PDF file handling
-async function saveTempFile(file: File, prefix: string): Promise<string> {
-    const tempDir = os.tmpdir();
-    const tempPath = path.join(tempDir, `${prefix}_${Date.now()}.pdf`);
-    const buffer = await file.arrayBuffer();
-    fs.writeFileSync(tempPath, Buffer.from(buffer));
-    return tempPath;
-}
-
-async function pathToFile(filePath: string, originalFile: File): Promise<File> {
-    const buffer = fs.readFileSync(filePath);
-    return new File([buffer], originalFile.name, {
-        type: 'application/pdf',
-        lastModified: Date.now()
-    });
-}
-
-async function cleanupTempFiles(...paths: string[]) {
-    for (const path of paths) {
-        if (fs.existsSync(path)) {
-            try {
-                fs.unlinkSync(path);
-            } catch (error) {
-                console.error('Error cleaning up temp file:', path, error);
-            }
-        }
-    }
-}
 
 // Function to handle batch document extraction
 async function batchExtractDocuments(files, prompt) {
@@ -1713,74 +1601,200 @@ export function detectFileInfoFromFilename(filename: string): {
 
 // Check if a PDF is password protected
 export async function isPdfPasswordProtected(file: File): Promise<boolean> {
-    let tempPath = '';
-    let outputPath = '';
-    
-    try {
-        // First try with PDF.js
-        const arrayBuffer = await file.arrayBuffer();
-        const loadingTask = pdfjsLib.getDocument({
-            data: arrayBuffer
-        });
+  try {
+    // Use PDF.js to try loading the document without a password
+    const arrayBuffer = await file.arrayBuffer();
+    const loadingTask = pdfjsLib.getDocument({
+      data: new Uint8Array(arrayBuffer)
+    });
 
-        try {
-            await loadingTask.promise;
-            return false; // If we can load without password, it's not protected
-        } catch (error: any) {
-            if (error.name === 'PasswordException') {
-                return true; // PDF.js specific password error
-            }
-            
-            // For other errors, try with qpdf
-            tempPath = await saveTempFile(file, 'check');
-            outputPath = path.join(os.tmpdir(), `test_${Date.now()}.pdf`);
-            
-            try {
-                // Try to decrypt without password - if it fails, the file is password protected
-                await qpdf.decrypt(tempPath, '', outputPath);
-                return false;
-            } catch (qpdfError) {
-                return true;
-            }
-        }
+    try {
+      // If the document loads without error, it's not password protected
+      await loadingTask.promise;
+      return false;
     } catch (error) {
-        console.error('Error checking if PDF is password protected:', error);
-        return true; // Assume protected if we can't verify
-    } finally {
-        // Clean up temp files
-        await cleanupTempFiles(tempPath, outputPath);
+      // Check if the error is a password exception
+      if (error.name === 'PasswordException') {
+        return true;
+      }
+
+      // For other types of errors, check if they contain password-related messages
+      const errorMessage = error.message || '';
+      return errorMessage.includes('password') ||
+        errorMessage.includes('encrypted') ||
+        errorMessage.includes('protection');
     }
+  } catch (error) {
+    console.error('Error checking if PDF is password protected:', error);
+    // If we can't determine, assume it might be protected
+    return true;
+  }
 }
 
-// Apply password to PDF files
+// Apply password to files
 export async function applyPasswordToFiles(file: File, password: string): Promise<boolean> {
-    let inputPath = '';
-    let outputPath = '';
-    
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+
+    // Try to load the document with the given password
+    const loadingTask = pdfjsLib.getDocument({
+      data: new Uint8Array(arrayBuffer),
+      password: password
+    });
+
     try {
-        // Save the input file to temp directory
-        inputPath = await saveTempFile(file, 'unprotected');
-        outputPath = path.join(os.tmpdir(), `protected_${Date.now()}.pdf`);
-
-        // Encrypt the PDF with AES-256
-        const options = {
-            keyLength: 256,
-            password: password,
-            restrictions: {
-                print: 'full',
-                modify: 'none',
-                extract: 'n',
-                accessibility: 'y'
-            }
-        };
-
-        await qpdf.encrypt(inputPath, options, outputPath);
-        return true;
+      // If the document loads with this password, it's correct
+      await loadingTask.promise;
+      return true;
     } catch (error) {
-        console.error('Error applying password to PDF:', error);
-        return false;
-    } finally {
-        // Clean up temp files
-        await cleanupTempFiles(inputPath, outputPath);
+      // Check if it's a wrong password error
+      if (error.name === 'PasswordException' && error.code === 2) {
+        return false; // Wrong password
+      }
+
+      // Other error occurred
+      console.error('Error applying password:', error);
+      return false;
     }
+  } catch (error) {
+    console.error('Error in applyPasswordToFiles:', error);
+    return false;
+  }
+}
+
+// Remove password protection from PDF
+export async function removePasswordProtection(file: File, password: string): Promise<File | null> {
+  try {
+    // Get a fresh array buffer from the file
+    const arrayBuffer = await file.arrayBuffer();
+
+    // First validate the password with PDF.js
+    try {
+      const uint8Array = new Uint8Array(arrayBuffer);
+      const loadingTask = pdfjsLib.getDocument({
+        data: uint8Array,
+        password: password
+      });
+      await loadingTask.promise;
+      // Password is valid, continue
+    } catch (error) {
+      console.error('Password validation failed:', error);
+      return null;
+    }
+
+    // Get a fresh copy of the array buffer for pdf-lib
+    const freshArrayBuffer = await file.arrayBuffer();
+    const uint8Array = new Uint8Array(freshArrayBuffer);
+
+    // Use PDF.js to extract all pages with the password
+    const pdfJsDoc = await pdfjsLib.getDocument({
+      data: uint8Array,
+      password: password
+    }).promise;
+
+    // Create a new PDF document
+    const newPdfDoc = await PDFDocument.create();
+
+    // Process each page
+    for (let i = 1; i <= pdfJsDoc.numPages; i++) {
+      const page = await pdfJsDoc.getPage(i);
+      const viewport = page.getViewport({ scale: 1.0 });
+
+      // Create a canvas to render the page
+      const canvas = document.createElement('canvas');
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      const context = canvas.getContext('2d');
+
+      // Render the page to canvas
+      await page.render({
+        canvasContext: context,
+        viewport: viewport
+      }).promise;
+
+      // Add the rendered page as an image to the new PDF
+      const pngData = canvas.toDataURL('image/png');
+      const pngImage = await newPdfDoc.embedPng(pngData);
+
+      // Add a page with the same dimensions
+      const newPage = newPdfDoc.addPage([viewport.width, viewport.height]);
+
+      // Draw the image onto the page
+      newPage.drawImage(pngImage, {
+        x: 0,
+        y: 0,
+        width: viewport.width,
+        height: viewport.height
+      });
+    }
+
+    // Save the new unencrypted document
+    const unlockedPdfBytes = await newPdfDoc.save();
+
+    // Create a new File object with the unprotected PDF
+    return new File(
+      [unlockedPdfBytes],
+      file.name,
+      { type: 'application/pdf' }
+    );
+  } catch (error) {
+    console.error('Error removing password protection:', error);
+    return null;
+  }
+}
+
+// Unlock PDF with password
+async function unlockPDF(fileBuffer: ArrayBuffer, password: string) {
+  try {
+    // Create a new Uint8Array from the buffer to avoid detached buffer issues
+    const uint8Array = new Uint8Array(fileBuffer);
+
+    // Use PDF.js to load the document with the password
+    const pdfJsDoc = await pdfjsLib.getDocument({
+      data: uint8Array,
+      password: password
+    }).promise;
+
+    // Create a new PDF document
+    const newPdfDoc = await PDFDocument.create();
+
+    // Process each page
+    for (let i = 1; i <= pdfJsDoc.numPages; i++) {
+      const page = await pdfJsDoc.getPage(i);
+      const viewport = page.getViewport({ scale: 1.0 });
+
+      // Create a canvas to render the page
+      const canvas = document.createElement('canvas');
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      const context = canvas.getContext('2d');
+
+      // Render the page to canvas
+      await page.render({
+        canvasContext: context,
+        viewport: viewport
+      }).promise;
+
+      // Add the rendered page as an image to the new PDF
+      const pngData = canvas.toDataURL('image/png');
+      const pngImage = await newPdfDoc.embedPng(pngData);
+
+      // Add a page with the same dimensions
+      const newPage = newPdfDoc.addPage([viewport.width, viewport.height]);
+
+      // Draw the image onto the page
+      newPage.drawImage(pngImage, {
+        x: 0,
+        y: 0,
+        width: viewport.width,
+        height: viewport.height
+      });
+    }
+
+    // Save the new unencrypted document
+    return await newPdfDoc.save();
+  } catch (error) {
+    console.error('Error unlocking PDF:', error);
+    throw error;
+  }
 }

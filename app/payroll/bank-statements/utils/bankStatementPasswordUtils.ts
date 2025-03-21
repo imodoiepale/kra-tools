@@ -1,3 +1,5 @@
+// @ts-nocheck
+
 /**
  * Utility functions for handling password-protected bank statements
  */

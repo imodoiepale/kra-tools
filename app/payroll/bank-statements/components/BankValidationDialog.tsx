@@ -244,29 +244,40 @@ export function BankValidationDialog({
     const [processing, setProcessing] = useState(false);
 
     // Function to validate extracted data against bank details
-    const validateExtractedData = (extractedData: any, bank: any) => {
-        const mismatches = [];
-        
-        // Check company name
-        if (extractedData.company_name && !extractedData.company_name.toLowerCase().includes(bank.company_name.toLowerCase())) {
-            mismatches.push('Company name mismatch');
+    const validateExtractedData = (extractedData: any): { isValid: boolean, mismatches: string[] } => {
+        if (!extractedData) {
+            return { isValid: false, mismatches: ['No data extracted'] };
         }
-        
-        // Check account number
-        if (extractedData.account_number && !extractedData.account_number.includes(bank.account_number)) {
-            mismatches.push('Account number mismatch');
+
+        const mismatches: string[] = [];
+
+        // Validate bank name - more lenient matching (using includes instead of exact match)
+        if (extractedData.bank_name && !extractedData.bank_name.toLowerCase().includes(bank.bank_name.toLowerCase()) &&
+            !bank.bank_name.toLowerCase().includes(extractedData.bank_name.toLowerCase())) {
+            mismatches.push(`Bank name mismatch: Expected "${bank.bank_name}", found "${extractedData.bank_name}"`);
         }
-        
-        // Check currency
-        if (!isMatchingCurrency(extractedData.currency, bank.bank_currency)) {
-            mismatches.push('Currency mismatch');
+
+        // Validate account number - more lenient matching for partial account numbers
+        if (extractedData.account_number) {
+            const cleanExtractedAccount = extractedData.account_number.replace(/\D/g, '');
+            const cleanBankAccount = bank.account_number.replace(/\D/g, '');
+
+            if (!cleanExtractedAccount.includes(cleanBankAccount) &&
+                !cleanBankAccount.includes(cleanExtractedAccount)) {
+                mismatches.push(`Account number mismatch: Expected "${bank.account_number}", found "${extractedData.account_number}"`);
+            }
         }
-        
-        // Check statement period
-        if (!isPeriodContained(extractedData.statement_period, cycleMonth, cycleYear)) {
-            mismatches.push('Statement period mismatch');
+
+        // Validate currency with normalization
+        if (extractedData.currency) {
+            const normalizedExtractedCurrency = normalizeCurrencyCode(extractedData.currency);
+            const normalizedBankCurrency = normalizeCurrencyCode(bank.bank_currency);
+
+            if (normalizedExtractedCurrency !== normalizedBankCurrency) {
+                mismatches.push(`Currency mismatch: Expected "${bank.bank_currency}", found "${extractedData.currency}"`);
+            }
         }
-        
+
         return {
             isValid: mismatches.length === 0,
             mismatches
@@ -441,7 +452,7 @@ export function BankValidationDialog({
         <AlertDialog open={isOpen} onOpenChange={onClose}>
             <AlertDialogContent className="max-w-7xl">
                 <AlertDialogHeader>
-                    <AlertDialogTitle className="flex items-center text-amber-600">
+                    <AlertDialogTitle className="flex items-center text-red-600">
                         <AlertTriangle className="h-5 w-5 mr-2" />
                         Validation Issues Detected
                     </AlertDialogTitle>
@@ -763,7 +774,7 @@ export function BankValidationDialog({
                     </AlertDialogCancel>
                     <AlertDialogAction
                         onClick={onProceed}
-                        className="bg-amber-600 hover:bg-amber-700"
+                        className="bg-red-600 hover:bg-red-700"
                         disabled={hasCriticalMismatches()}
                     >
                         {hasCriticalMismatches() ?

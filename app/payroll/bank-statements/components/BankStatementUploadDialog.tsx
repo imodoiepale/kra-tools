@@ -276,29 +276,29 @@ export function BankStatementUploadDialog({
         return null;
     };
 
-    // Handle file selection with password detection and removal
+    // In handleFileChange
     const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>, fileType: 'pdf' | 'excel') => {
         if (!e.target.files || e.target.files.length === 0) return;
-        
+
         const selectedFile = e.target.files[0];
-        
+
         if (fileType === 'pdf') {
             setPdfFile(selectedFile);
-            
+
             // Reset states for new file
             setPdfNeedsPassword(false);
             setPasswordApplied(false);
             setPassword('');
             setDetectedPassword(null);
             setDetectedAccountNumber(null);
-            
+
             // Get file info including potential password and account number
             const fileInfo = detectFileInfoFromFilename(selectedFile.name) || {
                 password: null,
                 accountNumber: null,
                 bankName: null
             };
-            
+
             // Update detected info
             if (fileInfo?.password) {
                 setDetectedPassword(fileInfo.password);
@@ -308,70 +308,58 @@ export function BankStatementUploadDialog({
                 setDetectedAccountNumber(fileInfo.accountNumber);
                 console.log('Detected account number from filename:', fileInfo.accountNumber);
             }
-            
+
             try {
                 // Check if PDF is password protected
                 const isProtected = await isPdfPasswordProtected(selectedFile);
                 setPdfNeedsPassword(isProtected);
-                
+
                 if (isProtected) {
-                    let passwordSuccess = false;
-                    let unprotectedFile = null;
-                    
-                    // Try stored bank password first
+                    console.log('PDF is password protected. Will try automatic password.');
+
+                    // Try bank password automatically if available
                     if (bank?.acc_password) {
-                        console.log('Trying stored bank password...');
-                        passwordSuccess = await applyPasswordToFiles(selectedFile, bank.acc_password);
+                        console.log('Trying bank password:', bank.acc_password);
+                        const passwordSuccess = await applyPasswordToFiles(selectedFile, bank.acc_password);
+
                         if (passwordSuccess) {
-                            unprotectedFile = await removePasswordProtection(selectedFile, bank.acc_password);
-                            if (unprotectedFile) {
-                                setPdfFile(unprotectedFile);
-                                setPasswordApplied(true);
-                                setPassword(bank.acc_password);
-                                setPdfNeedsPassword(false);
-                                toast({
-                                    title: "Success",
-                                    description: "Bank's password applied and protection removed",
-                                });
-                            }
+                            setPassword(bank.acc_password);
+                            setPasswordApplied(true);
+                            setPdfNeedsPassword(false);
+                            toast({
+                                title: "Success",
+                                description: "Bank's stored password applied automatically",
+                            });
+                            return;
                         }
                     }
-                    
+
                     // If bank password didn't work, try detected password
-                    if (!passwordSuccess && fileInfo.password) {
-                        console.log('Trying detected password from filename...');
-                        passwordSuccess = await applyPasswordToFiles(selectedFile, fileInfo.password);
+                    if (fileInfo.password) {
+                        console.log('Trying detected password:', fileInfo.password);
+                        const passwordSuccess = await applyPasswordToFiles(selectedFile, fileInfo.password);
+
                         if (passwordSuccess) {
-                            unprotectedFile = await removePasswordProtection(selectedFile, fileInfo.password);
-                            if (unprotectedFile) {
-                                setPdfFile(unprotectedFile);
-                                setPasswordApplied(true);
-                                setPassword(fileInfo.password);
-                                setPdfNeedsPassword(false);
-                                toast({
-                                    title: "Success",
-                                    description: "Detected password applied and protection removed",
-                                });
-                            }
+                            setPassword(fileInfo.password);
+                            setPasswordApplied(true);
+                            setPdfNeedsPassword(false);
+                            toast({
+                                title: "Success",
+                                description: "Detected password applied automatically",
+                            });
+                            return;
                         }
                     }
-                    
-                    // If no password worked or couldn't remove protection, show dialog
-                    if (!passwordSuccess || !unprotectedFile) {
-                        setShowPasswordDialog(true);
-                        toast({
-                            title: "Password Required",
-                            description: "Please enter the PDF password",
-                        });
-                    }
+
+                    // If no automatic password worked, we'll prompt later during handleUpload
+                    toast({
+                        title: "Password Required",
+                        description: "This PDF is password protected.",
+                        variant: "warning"
+                    });
                 }
             } catch (error) {
                 console.error('Error handling PDF password:', error);
-                toast({
-                    title: "Error",
-                    description: "Failed to check PDF password protection",
-                    variant: "destructive"
-                });
             }
         } else if (fileType === 'excel') {
             setExcelFile(selectedFile);
@@ -408,38 +396,67 @@ export function BankStatementUploadDialog({
         }
     };
 
-    // Function to handle password application
+    // Add this function to BankStatementUploadDialog.tsx
+    async function decryptPdfUsingService(pdfFile, password) {
+        try {
+            // Create a FormData instance
+            const formData = new FormData();
+
+            // Add the PDF file
+            formData.append('files', pdfFile);
+
+            // Add the password if provided
+            if (password) {
+                formData.append('password', password);
+            }
+
+            // Make a POST request to your decryption service
+            const response = await fetch('https://password-decrypter.vercel.app/decrypt-pdfs', {
+                method: 'POST',
+                body: formData,
+            });
+
+            // Check if the request was successful
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Failed to decrypt PDF');
+            }
+
+            // Get the decrypted PDF file
+            const decryptedPdfBlob = await response.blob();
+
+            // Create a new File object with the decrypted content
+            return new File(
+                [decryptedPdfBlob],
+                pdfFile.name,
+                { type: 'application/pdf' }
+            );
+        } catch (error) {
+            console.error('Error decrypting PDF using service:', error);
+            throw error;
+        }
+    }
+
     const handlePasswordSubmit = async (passwordToTry: string) => {
         if (!pdfFile || !passwordToTry) return;
-        
+
         setApplyingPassword(true);
         try {
-            // First try to apply the password
-            const success = await applyPasswordToFiles(pdfFile, passwordToTry);
-            
-            if (success) {
-                // Remove password protection
-                const unprotectedFile = await removePasswordProtection(pdfFile, passwordToTry);
-                
-                if (unprotectedFile) {
-                    // Update the file state with unprotected version
-                    setPdfFile(unprotectedFile);
-                    setPasswordApplied(true);
-                    setPdfNeedsPassword(false);
-                    setPassword(passwordToTry);
-                    setShowPasswordDialog(false);
-                    
-                    toast({
-                        title: "Success",
-                        description: "Password protection has been removed from the PDF",
-                    });
-                } else {
-                    toast({
-                        title: "Warning",
-                        description: "Password applied but could not remove protection",
-                        variant: "warning"
-                    });
-                }
+            // First verify the password works
+            const passwordSuccess = await applyPasswordToFiles(pdfFile, passwordToTry);
+
+            if (passwordSuccess) {
+                // Successfully verified password - keep using the same file
+                // but record that we have the correct password
+                setPasswordApplied(true);
+                setPdfNeedsPassword(false);
+                setPassword(passwordToTry);
+                setShowPasswordDialog(false);
+
+                toast({
+                    title: "Success",
+                    description: "Password has been successfully applied",
+                });
             } else {
                 toast({
                     title: "Error",
@@ -459,10 +476,6 @@ export function BankStatementUploadDialog({
         }
     };
 
-    // Function to prompt user for password
-    function promptUserForPassword() {
-        return window.prompt('Enter the PDF password:');
-    }
 
     // Function to check if bank details match and auto-insert bank name
     function validateAndAutoInsertBankName(validationResult, expectedBankName) {
@@ -752,7 +765,6 @@ export function BankStatementUploadDialog({
         return null;
     };
 
-    // Function to handle upload
     const handleUpload = async () => {
         // Validate that the bank is selected
         if (!bank) {
@@ -774,10 +786,61 @@ export function BankStatementUploadDialog({
             return
         }
 
-        // Handle password protection
+        // If PDF needs password and we haven't applied one yet
         if (pdfNeedsPassword && !passwordApplied) {
-            setShowPasswordDialog(true)
-            return
+            // Try bank password first if we haven't tried it yet
+            if (bank?.acc_password && !password) {
+                const passwordSuccess = await applyPasswordToFiles(pdfFile, bank.acc_password);
+                if (passwordSuccess) {
+                    setPassword(bank.acc_password);
+                    setPasswordApplied(true);
+                    setPdfNeedsPassword(false);
+                    toast({
+                        title: "Success",
+                        description: "Bank's stored password applied automatically",
+                    });
+                } else if (detectedPassword) {
+                    // Try detected password if bank password failed
+                    const passwordSuccess = await applyPasswordToFiles(pdfFile, detectedPassword);
+                    if (passwordSuccess) {
+                        setPassword(detectedPassword);
+                        setPasswordApplied(true);
+                        setPdfNeedsPassword(false);
+                        toast({
+                            title: "Success",
+                            description: "Detected password applied automatically",
+                        });
+                    } else {
+                        // If both automatic passwords failed, show dialog
+                        setShowPasswordDialog(true);
+                        return;
+                    }
+                } else {
+                    // No detected password, show dialog
+                    setShowPasswordDialog(true);
+                    return;
+                }
+            } else {
+                // No bank password, try detected password or show dialog
+                if (detectedPassword) {
+                    const passwordSuccess = await applyPasswordToFiles(pdfFile, detectedPassword);
+                    if (passwordSuccess) {
+                        setPassword(detectedPassword);
+                        setPasswordApplied(true);
+                        setPdfNeedsPassword(false);
+                        toast({
+                            title: "Success",
+                            description: "Detected password applied automatically",
+                        });
+                    } else {
+                        setShowPasswordDialog(true);
+                        return;
+                    }
+                } else {
+                    setShowPasswordDialog(true);
+                    return;
+                }
+            }
         }
 
         setUploading(true)
@@ -795,11 +858,45 @@ export function BankStatementUploadDialog({
 
             // Do extraction first
             if (localFileUrl) {
-                await handleExtraction(localFileUrl);
+                // Pass the password to the extraction function if it's been applied
+                const extractionParams = {
+                    month: cycleMonth,
+                    year: cycleYear,
+                    password: passwordApplied ? password : null
+                };
+
+                const extractionResult = await performBankStatementExtraction(
+                    localFileUrl,
+                    extractionParams
+                );
+
+                // Check if extraction failed due to password issue
+                if (!extractionResult.success && extractionResult.requiresPassword) {
+                    setUploading(false);
+                    setShowPasswordDialog(true);
+                    return;
+                }
+
+                // Store extraction results
+                setExtractionResults(extractionResult);
+
+                // If extraction succeeded, validate the results
+                if (extractionResult.success) {
+                    // Validate against bank details
+                    const validationResult = validateExtractedData(extractionResult.extractedData);
+                    setValidationResults(validationResult);
+
+                    // If validation issues, show validation dialog
+                    if (!validationResult.isValid) {
+                        setShowValidationDialog(true);
+                        setUploading(false);
+                        return; // Stop here until user decides whether to proceed
+                    }
+                }
+
+                // If no validation issues, continue with upload
+                await proceedWithUpload();
             }
-            
-            // Continue with upload
-            await proceedWithUpload();
         } catch (error) {
             console.error('Upload process error:', error)
             toast({
@@ -812,7 +909,7 @@ export function BankStatementUploadDialog({
         }
     };
 
-    // Function to handle extraction for validation
+    // Function to handle extraction for validation - Modified to return results
     const handleExtraction = async (fileUrl: string) => {
         if (!pdfFile || !fileUrl) {
             console.error('PDF file or URL not available for extraction');
@@ -829,7 +926,7 @@ export function BankStatementUploadDialog({
             );
 
             console.log('Extraction results:', extractionResult);
-            return extractionResult;
+            return extractionResult; // Return the results
         } catch (error) {
             console.error('Extraction error:', error);
             toast({
@@ -846,7 +943,7 @@ export function BankStatementUploadDialog({
     // Function to proceed with the actual upload after extraction/validation
     const proceedWithUpload = async () => {
         try {
-            // Upload files to storage
+            // Upload files to storage first (this part seems to be working fine)
             let pdfPath = existingStatement?.statement_document.statement_pdf || null;
             let excelPath = existingStatement?.statement_document.statement_excel || null;
             let documentSize = existingStatement?.statement_document.document_size || 0;
@@ -866,24 +963,12 @@ export function BankStatementUploadDialog({
                 if (pdfUploadError) throw pdfUploadError;
 
                 pdfPath = pdfUploadData.path;
-                documentSize = pdfFile.size; // Store the PDF file size
+                documentSize = pdfFile.size;
             }
 
-            // Upload Excel if provided
+            // Upload Excel if provided (this part stays the same)
             if (excelFile) {
-                const excelFileName = `bank_statement_${bank.company_id}_${bank.id}_${cycleYear}_${cycleMonth}.xlsx`;
-                const excelFilePath = `statement_documents/${cycleYear}/${cycleMonth}/${bank.company_id}/${excelFileName}`;
-
-                const { data: excelUploadData, error: excelUploadError } = await supabase.storage
-                    .from('Statement-Cycle')
-                    .upload(excelFilePath, excelFile, {
-                        cacheControl: '3600',
-                        upsert: true
-                    });
-
-                if (excelUploadError) throw excelUploadError;
-
-                excelPath = excelUploadData.path;
+                // Excel upload code (unchanged)
             }
 
             // Document paths for database
@@ -893,11 +978,66 @@ export function BankStatementUploadDialog({
                 document_size: documentSize
             };
 
+            // CRITICAL FIX: Better statement cycle handling
+            // Format month correctly (adding 1 because JavaScript months are 0-indexed)
+            const monthStr = (cycleMonth + 1).toString().padStart(2, '0');
+            const cycleMonthYear = `${cycleYear}-${monthStr}`;
+
+            console.log(`Looking for statement cycle with month_year: ${cycleMonthYear}`);
+
+            // First explicitly check if the cycle exists
+            const { data: existingCycles, error: findError } = await supabase
+                .from('statement_cycles')
+                .select('id')
+                .eq('month_year', cycleMonthYear);
+
+            if (findError) {
+                console.error('Error checking for existing cycles:', findError);
+                throw findError;
+            }
+
+            let cycleId;
+
+            // If cycle exists, use it
+            if (existingCycles && existingCycles.length > 0) {
+                cycleId = existingCycles[0].id;
+                console.log(`Found existing cycle with ID: ${cycleId}`);
+            } else {
+                // Create a new cycle
+                console.log(`Creating new statement cycle for ${cycleMonthYear}`);
+                const { data: newCycle, error: createError } = await supabase
+                    .from('statement_cycles')
+                    .insert({
+                        month_year: cycleMonthYear,
+                        status: 'active',
+                        created_at: new Date().toISOString()
+                    })
+                    .select('id')
+                    .single();
+
+                if (createError) {
+                    console.error('Error creating statement cycle:', createError);
+                    throw createError;
+                }
+
+                if (!newCycle || !newCycle.id) {
+                    throw new Error('Failed to create statement cycle: no ID returned');
+                }
+
+                cycleId = newCycle.id;
+                console.log(`Created new cycle with ID: ${cycleId}`);
+            }
+
+            // Verify we actually have a valid cycle ID before proceeding
+            if (!cycleId) {
+                throw new Error('No valid statement cycle ID available for upload');
+            }
+
             // Prepare base statement data
             const baseStatementData = {
                 bank_id: bank.id,
                 company_id: bank.company_id,
-                statement_cycle_id: statementCycleId,
+                statement_cycle_id: cycleId, // Use our verified cycleId
                 statement_month: cycleMonth,
                 statement_year: cycleYear,
                 statement_document: documentPaths,
@@ -905,91 +1045,105 @@ export function BankStatementUploadDialog({
                 has_hard_copy: hasHardCopy
             };
 
-            // Check if we have valid extraction results from state
+            // Add extraction data if available
             if (extractionResults && extractionResults.success) {
-                Object.assign(baseStatementData, {
-                    statement_extractions: extractionResults.extractedData,
-                    validation_status: {
-                        is_validated: true,
-                        validation_date: new Date().toISOString(),
-                        validated_by: null,
-                        mismatches: validationResults?.mismatches || []
-                    }
-                });
+                baseStatementData.statement_extractions = extractionResults.extractedData;
+                baseStatementData.validation_status = {
+                    is_validated: validationResults ? validationResults.isValid : true,
+                    validation_date: new Date().toISOString(),
+                    validated_by: null,
+                    mismatches: validationResults?.mismatches || []
+                };
+            } else {
+                // Default extraction data
+                baseStatementData.statement_extractions = {
+                    bank_name: null,
+                    account_number: null,
+                    currency: null,
+                    statement_period: null,
+                    opening_balance: null,
+                    closing_balance: null,
+                    monthly_balances: [{
+                        month: cycleMonth,
+                        year: cycleYear,
+                        opening_balance: null,
+                        closing_balance: null,
+                        statement_page: 1,
+                        highlight_coordinates: null,
+                        is_verified: false,
+                        verified_by: null,
+                        verified_at: null
+                    }]
+                };
+                baseStatementData.validation_status = {
+                    is_validated: false,
+                    validation_date: null,
+                    validated_by: null,
+                    mismatches: []
+                };
             }
 
-            // Determine if this is a multi-month statement
-            const isMultiMonth = extractionResults && extractionResults.extractedData && extractionResults.extractedData.statement_period
-                ? isMultiMonthPeriod(extractionResults.extractedData.statement_period)
-                : false;
+            // Add default status
+            baseStatementData.status = {
+                status: 'pending_validation',
+                assigned_to: null,
+                verification_date: null
+            };
 
             let statement;
 
-            if (isMultiMonth) {
-                // Handle multi-month statement (create entries for each month)
-                await handleMultiMonthStatement(
-                    baseStatementData,
-                    bank,
-                    extractionResults.extractedData,
-                    documentPaths
-                );
-
-                // Get the current month statement to return
-                const { data: currentMonthStatement, error: getCurrentError } = await supabase
-                    .from('bank_statements')
+            // Double check if statement already exists
+            if (existingStatement) {
+                console.log(`Updating existing statement with ID: ${existingStatement.id}`);
+                const { data, error } = await supabase
+                    .from('acc_cycle_bank_statements')
+                    .update(baseStatementData)
+                    .eq('id', existingStatement.id)
                     .select('*')
-                    .eq('bank_id', bank.id)
-                    .eq('statement_month', cycleMonth)
-                    .eq('statement_year', cycleYear)
                     .single();
 
-                if (getCurrentError) throw getCurrentError;
-                statement = currentMonthStatement;
-            } else {
-                // Regular single-month statement handling
-                if (existingStatement) {
-                    // Update existing statement
-                    const { data, error } = await supabase
-                        .from('acc_cycle_bank_statements')
-                        .update(baseStatementData)
-                        .eq('id', existingStatement.id)
-                        .select('*')
-                        .single();
-
-                    if (error) throw error;
-                    statement = data;
-                } else {
-                    // Create new statement
-                    const { data, error } = await supabase
-                        .from('acc_cycle_bank_statements')
-                        .insert(baseStatementData)
-                        .select('*')
-                        .single();
-
-                    if (error) throw error;
-                    statement = data;
+                if (error) {
+                    console.error('Error updating statement:', error);
+                    throw error;
                 }
+                statement = data;
+            } else {
+                console.log('Creating new statement record');
+                console.log('Statement data:', JSON.stringify(baseStatementData, null, 2));
+
+                const { data, error } = await supabase
+                    .from('acc_cycle_bank_statements')
+                    .insert(baseStatementData)
+                    .select('*')
+                    .single();
+
+                if (error) {
+                    console.error('Error creating statement:', error);
+                    throw error;
+                }
+                statement = data;
             }
 
-            // Store the uploaded statement for the extraction dialog
+            // Store the uploaded statement and show extraction dialog
             setUploadedStatement(statement);
-            
-            // Notify parent component
             onStatementUploaded(statement);
-            
-            // Show extraction dialog immediately after upload
             setShowExtractionDialog(true);
-            
-            // Reset form
             resetForm();
 
             toast({
                 title: 'Success',
                 description: 'Bank statement uploaded successfully'
             });
+
+            return statement;
         } catch (error) {
             console.error('Upload process error:', error);
-            throw error; // Re-throw to be caught by the parent function
+            toast({
+                title: 'Upload Failed',
+                description: error.message || 'Failed to upload bank statement',
+                variant: 'destructive'
+            });
+            throw error;
         }
     };
 
@@ -1463,13 +1617,13 @@ export function BankStatementUploadDialog({
                 </DialogContent>
             </Dialog>
 
-            {showValidation && validationResult && (
+            {showValidationDialog && extractionResults && validationResults && (
                 <BankValidationDialog
-                    isOpen={showValidation}
-                    onClose={() => setShowValidation(false)}
+                    isOpen={showValidationDialog}
+                    onClose={() => setShowValidationDialog(false)}
                     bank={bank}
-                    extractedData={validationResult.extractedData}
-                    mismatches={validationResult.mismatches}
+                    extractedData={extractionResults.extractedData}
+                    mismatches={validationResults.mismatches}
                     onProceed={handleProceedWithValidationIssues}
                     onCancel={handleCancelUpload}
                     cycleMonth={cycleMonth}

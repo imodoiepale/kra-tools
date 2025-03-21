@@ -296,6 +296,27 @@ const fetchCompaniesAndBanks = async () => {
     }, [filteredCompanies, allBanks]);
 
     // Filter by search term
+
+    const filteredData = useMemo(() => {
+        if (!searchTerm.trim()) return organizedData;
+
+        const lowerSearchTerm = searchTerm.toLowerCase();
+
+        return organizedData.filter(company => {
+            // Search in company name
+            if (company.company_name?.toLowerCase().includes(lowerSearchTerm)) {
+                return true;
+            }
+
+            // Search in banks
+            return company.banks?.some(bank =>
+                bank.bank_name?.toLowerCase().includes(lowerSearchTerm) ||
+                bank.account_number?.includes(searchTerm)
+            );
+        });
+    }, [organizedData, searchTerm]);
+
+
     // Filter by search term
     const searchFilteredData = useMemo(() => {
         if (!searchTerm) return organizedData;
@@ -688,14 +709,14 @@ const fetchCompaniesAndBanks = async () => {
                                     <Loader2 className="h-6 w-6 animate-spin mx-auto text-primary" />
                                 </TableCell>
                             </TableRow>
-                        ) : searchFilteredData.length === 0 ? (
+                        ) : filteredData.length === 0 ? (
                             <TableRow>
                                 <TableCell colSpan={11} className="text-center py-4">
                                     No banks found
                                 </TableCell>
                             </TableRow>
                         ) : (
-                            searchFilteredData.map((company, companyIndex) => {
+                            filteredData.map((company, companyIndex) => {
                                 // For companies with no banks
                                 if (company.banks.length === 0) {
                                     return (

@@ -339,6 +339,8 @@ export function BankExtractionDialog({
     const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
     const [showPasswordDialog, setShowPasswordDialog] = useState(false);
     const [pdfNeedsPassword, setPdfNeedsPassword] = useState(false);
+    const [password, setPassword] = useState<string>('');
+
 
     // Detected periods in PDF
     const [detectedPeriods, setDetectedPeriods] = useState<{ month: number, year: number, page: number, lastDate?: string }[]>([])
@@ -448,34 +450,57 @@ export function BankExtractionDialog({
                     throw new Error('Could not get signed URL for PDF');
                 }
 
-                // Load the PDF document
-                const pdf = await pdfjsLib.getDocument(data.signedUrl).promise;
-                setPdfDocument(pdf);
-                setTotalPages(pdf.numPages);
+                // First check if we have a stored password for this bank
+                const passwordToTry = bank?.acc_password || null;
 
-                // Handle password protection
-                const canProceed = await handlePasswordProtectedPdf(pdf, bank);
-                if (!canProceed) {
-                    return; // Wait for password input
+                // Load the PDF document with password if available
+                const loadingTask = pdfjsLib.getDocument({
+                    url: data.signedUrl,
+                    password: passwordToTry
+                });
+
+                try {
+
+                    // Load the PDF document
+                    const pdf = await loadingTask.promise;
+                    setPdfDocument(pdf);
+                    setTotalPages(pdf.numPages);
+
+                    // Get document size
+                    const stats = await supabase.storage
+                        .from('Statement-Cycle')
+                        .getPublicUrl(statement.statement_document.statement_pdf);
+
+                    if (stats) {
+                        const response = await fetch(data.signedUrl, { method: 'HEAD' });
+                        const size = parseInt(response.headers.get('content-length') || '0');
+                        setDocumentSize(size);
+                    }
+
+                    // Initialize empty rendered pages array
+                    setAllPagesRendered(new Array(pdf.numPages).fill(false));
+                    setRenderedPageCanvases(new Array(pdf.numPages).fill(null));
+
+                    // Load all pages
+                    await renderAllPages(pdf);
+
+                } catch (error) {
+                    // Check if it's a password error
+                    if (error.name === 'PasswordException') {
+                        // Show password dialog
+                        setPdfNeedsPassword(true);
+                        setShowPasswordDialog(true);
+                        toast({
+                            title: 'Password Required',
+                            description: 'This PDF is password protected',
+                            variant: 'warning'
+                        });
+                    } else {
+                        throw error; // Re-throw other errors
+                    }
                 }
 
-                // Get document size
-                const stats = await supabase.storage
-                    .from('Statement-Cycle')
-                    .getPublicUrl(statement.statement_document.statement_pdf);
 
-                if (stats) {
-                    const response = await fetch(data.signedUrl, { method: 'HEAD' });
-                    const size = parseInt(response.headers.get('content-length') || '0');
-                    setDocumentSize(size);
-                }
-
-                // Initialize empty rendered pages array
-                setAllPagesRendered(new Array(pdf.numPages).fill(false));
-                setRenderedPageCanvases(new Array(pdf.numPages).fill(null));
-
-                // Load all pages
-                await renderAllPages(pdf);
 
             } catch (error) {
                 console.error('Error loading PDF:', error);
@@ -1356,47 +1381,47 @@ export function BankExtractionDialog({
     // Helper function to format number with commas
     const formatNumberWithCommas = (value) => {
         if (value === '' || value === null || value === undefined) return '';
-        
+
         // Convert to string if it's a number
         const stringValue = typeof value === 'number' ? value.toString() : value;
-        
+
         // Handle decimal numbers
         const parts = stringValue.split('.');
         const wholePart = parts[0];
         const decimalPart = parts.length > 1 ? '.' + parts[1] : '';
-        
+
         // Add commas to the whole part
         const formattedWholePart = wholePart.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-        
+
         return formattedWholePart + decimalPart;
     };
 
     // Function to check if PDF is password protected and handle password application
-    const handlePasswordProtectedPdf = async (pdf, bank) => {
-        try {
-            // Check if PDF is password protected
-            const needsPassword = await isPdfPasswordProtected(pdf);
-            setPdfNeedsPassword(needsPassword);
+    // const handlePasswordProtectedPdf = async (pdf, bank) => {
+    //     try {
+    //         // Check if PDF is password protected
+    //         const needsPassword = await isPdfPasswordProtected(pdf);
+    //         setPdfNeedsPassword(needsPassword);
 
-            if (needsPassword) {
-                const password = bank.acc_password || promptUserForPassword(); // Prompt user if no stored password
-                if (password) {
-                    const success = await applyPasswordToFiles(pdf, password);
-                    if (!success) {
-                        alert('Failed to apply password. Please try again.');
-                        return false;
-                    }
-                } else {
-                    alert('Password is required to proceed.');
-                    return false;
-                }
-            }
-            return true;
-        } catch (error) {
-            console.error('Error checking password protection:', error);
-            return false;
-        }
-    };
+    //         if (needsPassword) {
+    //             const password = bank.acc_password || null; // Prompt user if no stored password
+    //             if (password) {
+    //                 const success = await applyPasswordToFiles(pdf, password);
+    //                 if (!success) {
+    //                     alert('Failed to apply password. Please try again.');
+    //                     return false;
+    //                 }
+    //             } else {
+    //                 alert('Password is required to proceed.');
+    //                 return false;
+    //             }
+    //         }
+    //         return true;
+    //     } catch (error) {
+    //         console.error('Error checking password protection:', error);
+    //         return false;
+    //     }
+    // };
 
     // Function to apply password to PDF
     const applyPasswordToFiles = async (pdf, password) => {
@@ -1416,12 +1441,6 @@ export function BankExtractionDialog({
         }
     };
 
-    // Function to prompt user for password
-    const promptUserForPassword = () => {
-        // Implement a function to prompt the user for a password
-        // This could be a dialog or input prompt
-        return window.prompt('Enter the PDF password:');
-    };
 
     return (
         <Dialog open={isOpen} onOpenChange={handleClose}>
@@ -1489,7 +1508,7 @@ export function BankExtractionDialog({
                                                 <div className="text-sm pl-6 text-muted-foreground">No PDF file uploaded</div>
                                             )}
                                         </div>
-                                        
+
                                         {/* Excel File Information */}
                                         <div className="flex flex-col space-y-1">
                                             <div className="flex items-center">
@@ -1838,8 +1857,8 @@ export function BankExtractionDialog({
                                                 </div>
 
                                                 <div className={`p-4 rounded-md border ${Math.abs(getMonthlyClosingBalance() - statement.quickbooks_balance) <= 0.01
-                                                        ? "bg-green-50/70 border-green-200"
-                                                        : "bg-red-50/70 border-red-200"
+                                                    ? "bg-green-50/70 border-green-200"
+                                                    : "bg-red-50/70 border-red-200"
                                                     }`}>
                                                     <div className="flex justify-between items-center">
                                                         <div className="flex items-center">
@@ -1849,8 +1868,8 @@ export function BankExtractionDialog({
                                                                 <AlertTriangle className="h-5 w-5 text-red-500 mr-2" />
                                                             )}
                                                             <p className={`font-medium ${Math.abs(getMonthlyClosingBalance() - statement.quickbooks_balance) <= 0.01
-                                                                    ? "text-green-700"
-                                                                    : "text-red-700"
+                                                                ? "text-green-700"
+                                                                : "text-red-700"
                                                                 }`}>
                                                                 {Math.abs(getMonthlyClosingBalance() - statement.quickbooks_balance) <= 0.01
                                                                     ? "Reconciled"
@@ -1858,8 +1877,8 @@ export function BankExtractionDialog({
                                                             </p>
                                                         </div>
                                                         <p className={`font-bold text-lg ${Math.abs(getMonthlyClosingBalance() - statement.quickbooks_balance) <= 0.01
-                                                                ? "text-green-700"
-                                                                : "text-red-700"
+                                                            ? "text-green-700"
+                                                            : "text-red-700"
                                                             }`}>
                                                             {formatCurrency(getMonthlyClosingBalance() - statement.quickbooks_balance, bank.bank_currency)}
                                                         </p>
