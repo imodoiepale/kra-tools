@@ -87,6 +87,7 @@ function CompanyReports() {
   const [taxDropdownOpen, setTaxDropdownOpen] = useState(false)
   const [monthDropdownOpen, setMonthDropdownOpen] = useState(false)
   const [columnDropdownOpen, setColumnDropdownOpen] = useState(false)
+  const [showTotals, setShowTotals] = useState(true)
   
   // Store the last valid company data to avoid UI flashing
   const [stableReportData, setStableReportData] = useState({})
@@ -685,6 +686,17 @@ function CompanyReports() {
                   </DropdownMenuCheckboxItem>
                 </DropdownMenuContent>
               </DropdownMenu>
+
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowTotals(!showTotals)}
+                  className="ml-2"
+                >
+                  {showTotals ? "Hide Totals" : "Show Totals"}
+                </Button>
+              </div>
             </div>
 
             {/* Data table section */}
@@ -693,10 +705,11 @@ function CompanyReports() {
                 <DataTable 
                   data={isRangeView ? [] : displayData}
                   yearlyData={isRangeView ? displayData : null}
-                  selectedColumns={getFilteredColumns()}
+                  selectedColumns={["paye", "housingLevy", "nita", "shif", "nssf"]}
                   selectedSubColumns={selectedSubColumns}
                   isLoading={loading && selectedCompany !== null}
                   isHorizontalView={isRangeView}
+                  showTotals={showTotals}
                 />
               ) : (
                 <div className="flex flex-col items-center justify-center h-32 border rounded-md bg-muted/10 space-y-4">
