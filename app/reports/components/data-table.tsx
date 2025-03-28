@@ -98,11 +98,11 @@ const formatDate = (date: string | null) => {
 };
 
 const taxColumns = [
-  { id: "paye", name: "PAYE", headerBg: "bg-blue-100" },
-  { id: "housingLevy", name: "Housing Levy", headerBg: "bg-purple-100" },
-  { id: "nita", name: "NITA", headerBg: "bg-green-100" },
-  { id: "shif", name: "SHIF", headerBg: "bg-orange-100" },
-  { id: "nssf", name: "NSSF", headerBg: "bg-red-100" },
+  { id: "paye", name: "PAYE", headerBg: "bg-blue-100", label: "PAYE" },
+  { id: "housingLevy", name: "Housing Levy", headerBg: "bg-purple-100", label: "Housing Levy" },
+  { id: "nita", name: "NITA", headerBg: "bg-green-100", label: "NITA" },
+  { id: "shif", name: "SHIF", headerBg: "bg-orange-100", label: "SHIF" },
+  { id: "nssf", name: "NSSF", headerBg: "bg-red-100", label: "NSSF" },
 ] as const;
 
 // Memoized data cell to prevent unnecessary re-renders
@@ -209,8 +209,8 @@ export const DataTable = memo(({
     }, {} as Record<string, number>);
   }, [data]);
 
+  // Render horizontal view (yearly tables)
   if (isHorizontalView && yearlyData) {
-    // Horizontal view implementation
     const years = Object.keys(yearlyData).sort().reverse();
     const months = [
       "JAN", "FEB", "MAR", "APR", "MAY", "JUN", 
@@ -222,192 +222,94 @@ export const DataTable = memo(({
         {title && (
           <h3 className="text-xl font-semibold text-slate-800 px-1">{title}</h3>
         )}
-        <div className="rounded-xl border-2 border-slate-300 shadow-md overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-slate-100">
-                {selectedColumns.includes("month") && (
-                  <TableHead className="w-[120px] font-bold text-slate-700 py-4 px-5 border-2 border-slate-300">
-                    MONTH
+        {years.map((year) => (
+          <div key={year} className="rounded-xl border-2 border-slate-300 shadow-md overflow-hidden mb-8">
+            <div className="bg-blue-600 text-white py-2 px-4 text-lg font-semibold">
+              {year}
+            </div>
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-slate-100">
+                  <TableHead className="w-[100px] font-bold text-slate-700 py-4 px-5 border-2 border-slate-300">
+                    Month
                   </TableHead>
-                )}
-                {years.map((year) => (
-                  <TableHead
-                    key={year}
-                    className="text-center font-bold text-slate-700 py-4 px-5 border-2 border-slate-300"
-                  >
-                    {year}
-                  </TableHead>
-                ))}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {months.map((month, idx) => (
-                <TableRow
-                  key={month}
-                  className={idx % 2 === 0 ? "bg-white" : "bg-gray-50"}
-                >
-                  {selectedColumns.includes("month") && (
-                    <TableCell className="font-medium text-slate-700 py-3 px-5 border-2 border-slate-300">
-                      {month}
-                    </TableCell>
-                  )}
-                  {years.map((year) => {
-                    const entry = yearlyData[year]?.find(
-                      (e) => e.month === month
-                    );
-                    const amount = entry ? entry[taxType!]?.amount : 0;
-                    return (
-                      <TableCell
-                        key={year}
-                        className="text-center py-3 px-5 border-2 border-slate-300 bg-white"
-                      >
-                        {formatAmount(amount)}
+                  {selectedColumns.slice(1).map(col => (
+                    <TableHead 
+                      key={col}
+                      colSpan={2} 
+                      className={`text-center font-bold text-slate-700 py-4 px-5 border-2 border-slate-300 ${taxColumns.find(t => t.id === col)?.headerBg}`}
+                    >
+                      {taxColumns.find(t => t.id === col)?.label || col.toUpperCase()}
+                    </TableHead>
+                  ))}
+                </TableRow>
+                <TableRow className="bg-slate-100">
+                  <TableHead className="border-2 border-slate-300"></TableHead>
+                  {selectedColumns.slice(1).map(col => (
+                    <React.Fragment key={`${col}-subheaders`}>
+                      <TableHead className={`font-semibold text-slate-700 text-center py-3 px-3 border-2 border-slate-300 ${taxColumns.find(t => t.id === col)?.headerBg}`}>
+                        Amount
+                      </TableHead>
+                      <TableHead className={`font-semibold text-slate-700 text-center py-3 px-3 border-2 border-slate-300 ${taxColumns.find(t => t.id === col)?.headerBg}`}>
+                        Pay Date
+                      </TableHead>
+                    </React.Fragment>
+                  ))}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {months.map((month, idx) => {
+                  const entry = yearlyData[year]?.find(e => e.month === month) || {
+                    month,
+                    paye: { amount: 0, date: null },
+                    housingLevy: { amount: 0, date: null },
+                    nita: { amount: 0, date: null },
+                    shif: { amount: 0, date: null },
+                    nssf: { amount: 0, date: null }
+                  };
+                  
+                  return (
+                    <TableRow key={`${year}-${month}`} className={idx % 2 === 0 ? "bg-white" : "bg-gray-50"}>
+                      <TableCell className="font-medium text-slate-700 py-3 px-5 border-2 border-slate-300">
+                        {month}
                       </TableCell>
+                      {selectedColumns.slice(1).map(col => (
+                        <React.Fragment key={`${col}-data-${month}`}>
+                          <TableCell className="text-right py-3 px-4 font-medium border-2 border-slate-300 bg-white">
+                            <span className="text-slate-700">
+                              {formatAmount(entry[col]?.amount || 0)}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-center py-3 px-3 border-2 border-slate-300 bg-white">
+                            <span className={getDateColor(entry[col]?.date)}>
+                              {formatDate(entry[col]?.date)}
+                            </span>
+                          </TableCell>
+                        </React.Fragment>
+                      ))}
+                    </TableRow>
+                  );
+                })}
+                <TableRow className="bg-slate-100 font-semibold">
+                  <TableCell className="py-4 px-5 text-slate-800 border-2 border-slate-300">
+                    TOTAL
+                  </TableCell>
+                  {selectedColumns.slice(1).map(col => {
+                    const total = yearlyData[year]?.reduce((sum, entry) => sum + (entry[col]?.amount || 0), 0) || 0;
+                    return (
+                      <React.Fragment key={`${col}-total`}>
+                        <TableCell className="text-right py-4 px-4 text-slate-700 font-bold border-2 border-slate-300">
+                          {formatAmount(total)}
+                        </TableCell>
+                        <TableCell className="border-2 border-slate-300" />
+                      </React.Fragment>
                     );
                   })}
                 </TableRow>
-              ))}
-              <TableRow className="bg-slate-100 font-semibold">
-                <TableCell className="py-4 px-5 text-slate-800 border-2 border-slate-300">
-                  TOTAL
-                </TableCell>
-                {years.map((year) => (
-                  <TableCell
-                    key={year}
-                    className="text-center py-4 px-5 text-slate-800 border-2 border-slate-300"
-                  >
-                    {formatAmount(
-                      (yearlyData[year] || []).reduce(
-                        (sum, entry) => sum + (entry[taxType!]?.amount || 0),
-                        0
-                      )
-                    )}
-                  </TableCell>
-                ))}
-              </TableRow>
-            </TableBody>
-          </Table>
-        </div>
-      </div>
-    );
-  }
-
-  // Default vertical view
-  const showAmount = selectedSubColumns.includes("all") || selectedSubColumns.includes("amount");
-  const showDate = selectedSubColumns.includes("all") || selectedSubColumns.includes("date");
-
-  if (!data || data.length === 0) {
-    return (
-      <div className="p-8 text-center text-slate-500 border rounded-xl">
-        No data available to display
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-4">
-      {title && (
-        <h3 className="text-xl font-semibold text-slate-800 px-1">{title}</h3>
-      )}
-      <div className="rounded-xl border-2 border-slate-300 shadow-md overflow-hidden relative">
-        <div className="overflow-x-auto">
-          <Table className="w-full">
-            <TableHeader>
-              <TableRow>
-                {selectedColumns.includes("month") && (
-                  <TableHead
-                    rowSpan={2}
-                    className={`w-[100px] bg-slate-100 font-bold text-slate-700 py-4 px-5 border-2 border-slate-300 ${isLoading ? 'animate-pulse' : ''}`}
-                  >
-                    Month
-                  </TableHead>
-                )}
-                {taxColumns.map(
-                  (tax) =>
-                    selectedColumns.includes(tax.id) && (
-                      <TableHead
-                        key={`${tax.id}-name`}
-                        colSpan={
-                          selectedSubColumns.includes("all")
-                            ? 2
-                            : selectedSubColumns.length
-                        }
-                        className={`font-bold text-slate-700 text-center py-4 px-3 border-2 border-slate-300 ${tax.headerBg} ${isLoading ? 'animate-pulse' : ''}`}
-                      >
-                        {tax.name}
-                      </TableHead>
-                    )
-                )}
-              </TableRow>
-              {(selectedSubColumns.includes("all") || selectedSubColumns.length > 0) && (
-                <TableRow>
-                  {taxColumns.map(
-                    (tax) =>
-                      selectedColumns.includes(tax.id) && (
-                        <React.Fragment key={`${tax.id}-header-fragment`}>
-                          {showAmount && (
-                            <TableHead
-                              key={`${tax.id}-amount-header`}
-                              className={`font-semibold text-slate-700 text-center py-3 px-3 border-2 border-slate-300 ${tax.headerBg} ${isLoading ? 'animate-pulse' : ''}`}
-                            >
-                              Amount
-                            </TableHead>
-                          )}
-                          {showDate && (
-                            <TableHead
-                              key={`${tax.id}-date-header`}
-                              className={`font-semibold text-slate-700 text-center py-3 px-3 border-2 border-slate-300 ${tax.headerBg} ${isLoading ? 'animate-pulse' : ''}`}
-                            >
-                              Pay Date
-                            </TableHead>
-                          )}
-                        </React.Fragment>
-                      )
-                  )}
-                </TableRow>
-              )}
-            </TableHeader>
-            <TableBody>
-              {data.map((entry, idx) => (
-                <TableRowMemo
-                  key={`row-${entry.month}`}
-                  entry={entry}
-                  idx={idx}
-                  selectedColumns={selectedColumns}
-                  selectedSubColumns={selectedSubColumns}
-                  isLoading={isLoading}
-                />
-              ))}
-              <TableRow className="bg-slate-100 font-semibold">
-                <TableCell className="py-4 px-5 text-slate-800 border-2 border-slate-300">
-                  TOTAL
-                </TableCell>
-                {taxColumns.map(
-                  (tax) =>
-                    selectedColumns.includes(tax.id) && (
-                      <React.Fragment key={`${tax.id}-total-fragment`}>
-                        {showAmount && (
-                          <TableCell
-                            key={`${tax.id}-amount-total`}
-                            className="text-right py-4 px-4 text-slate-700 font-bold border-2 border-slate-300"
-                          >
-                            {formatAmount(totals[tax.id] || 0)}
-                          </TableCell>
-                        )}
-                        {showDate && (
-                          <TableCell
-                            key={`${tax.id}-date-total`}
-                            className="border-2 border-slate-300"
-                          />
-                        )}
-                      </React.Fragment>
-                    )
-                )}
-              </TableRow>
-            </TableBody>
-          </Table>
-        </div>
+              </TableBody>
+            </Table>
+          </div>
+        ))}
         {isLoading && (
           <div className="absolute inset-0 bg-white/80 backdrop-blur-sm flex items-center justify-center z-10">
             <div className="flex flex-col items-center gap-4">
@@ -423,6 +325,98 @@ export const DataTable = memo(({
           </div>
         )}
       </div>
+    );
+  }
+
+  // Render vertical view (single year)
+  return (
+    <div className="space-y-4">
+      {title && (
+        <h3 className="text-xl font-semibold text-slate-800 px-1">{title}</h3>
+      )}
+      <div className="rounded-xl border-2 border-slate-300 shadow-md overflow-hidden">
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-slate-100">
+              <TableHead className="w-[120px] font-bold text-slate-700 py-4 px-5 border-2 border-slate-300">
+                Month
+              </TableHead>
+              {selectedColumns.slice(1).map(col => (
+                <TableHead 
+                  key={col}
+                  colSpan={2} 
+                  className={`text-center font-bold text-slate-700 py-4 px-5 border-2 border-slate-300 ${taxColumns.find(t => t.id === col)?.headerBg}`}
+                >
+                  {taxColumns.find(t => t.id === col)?.name || col.toUpperCase()}
+                </TableHead>
+              ))}
+            </TableRow>
+            <TableRow className="bg-slate-100">
+              <TableHead className="border-2 border-slate-300"></TableHead>
+              {selectedColumns.slice(1).map(col => (
+                <React.Fragment key={`${col}-subheaders`}>
+                  <TableHead className={`font-semibold text-slate-700 text-center py-3 px-3 border-2 border-slate-300 ${taxColumns.find(t => t.id === col)?.headerBg}`}>
+                    Amount
+                  </TableHead>
+                  <TableHead className={`font-semibold text-slate-700 text-center py-3 px-3 border-2 border-slate-300 ${taxColumns.find(t => t.id === col)?.headerBg}`}>
+                    Pay Date
+                  </TableHead>
+                </React.Fragment>
+              ))}
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {data.map((entry, idx) => (
+              <TableRow key={entry.month} className={idx % 2 === 0 ? "bg-white" : "bg-gray-50"}>
+                <TableCell className="font-medium text-slate-700 py-3 px-5 border-2 border-slate-300">
+                  {entry.month}
+                </TableCell>
+                {selectedColumns.slice(1).map(col => (
+                  <React.Fragment key={`${col}-data-${entry.month}`}>
+                    <TableCell className="text-right py-3 px-4 font-medium border-2 border-slate-300 bg-white">
+                      <span className="text-slate-700">
+                        {formatAmount(entry[col]?.amount || 0)}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-center py-3 px-3 border-2 border-slate-300 bg-white">
+                      <span className={getDateColor(entry[col]?.date)}>
+                        {formatDate(entry[col]?.date)}
+                      </span>
+                    </TableCell>
+                  </React.Fragment>
+                ))}
+              </TableRow>
+            ))}
+            <TableRow className="bg-slate-100 font-semibold">
+              <TableCell className="py-4 px-5 text-slate-800 border-2 border-slate-300">
+                TOTAL
+              </TableCell>
+              {selectedColumns.slice(1).map(col => (
+                <React.Fragment key={`${col}-total`}>
+                  <TableCell className="text-right py-4 px-4 text-slate-700 font-bold border-2 border-slate-300">
+                    {formatAmount(totals[col] || 0)}
+                  </TableCell>
+                  <TableCell className="border-2 border-slate-300" />
+                </React.Fragment>
+              ))}
+            </TableRow>
+          </TableBody>
+        </Table>
+      </div>
+      {isLoading && (
+        <div className="absolute inset-0 bg-white/80 backdrop-blur-sm flex items-center justify-center z-10">
+          <div className="flex flex-col items-center gap-4">
+            <div className="relative">
+              <div className="animate-spin rounded-full h-12 w-12 border-4 border-muted"></div>
+              <div className="absolute top-0 left-0 animate-spin rounded-full h-12 w-12 border-t-4 border-blue-600"></div>
+            </div>
+            <div className="flex flex-col items-center">
+              <span className="text-sm font-medium text-slate-800">Loading tax data...</span>
+              <span className="text-xs text-slate-500">This may take a few moments</span>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 });

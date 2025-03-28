@@ -105,6 +105,11 @@ function CompanyReports() {
   
   const [selectedYear, setSelectedYear] = useState(currentYear)
   const [selectedMonths, setSelectedMonths] = useState<number[]>([])
+  const [isRangeView, setIsRangeView] = useState(false)
+  const [startYear, setStartYear] = useState(currentYear)
+  const [startMonth, setStartMonth] = useState(1)
+  const [endYear, setEndYear] = useState(currentYear)
+  const [endMonth, setEndMonth] = useState(currentMonth)
 
   // Generate years list (from 2015 to current year)
   const years = useMemo(() => {
@@ -125,102 +130,211 @@ function CompanyReports() {
 
   // Update period selection UI
   const periodSelectionUI = (
-    <div className="flex items-center gap-4 mb-4">
-      <Select value={selectedYear.toString()} onValueChange={(value) => setSelectedYear(Number(value))}>
-        <SelectTrigger className="w-[100px]">
-          <SelectValue placeholder="Year" />
-        </SelectTrigger>
-        <SelectContent>
-          {years.map(year => (
-            <SelectItem key={year} value={year.toString()}>
-              {year}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+    <div className="space-y-4 mb-4">
+      <div className="flex items-center gap-4">
+        <Select value={selectedYear.toString()} onValueChange={(value) => setSelectedYear(Number(value))}>
+          <SelectTrigger className="w-[100px]">
+            <SelectValue placeholder="Year" />
+          </SelectTrigger>
+          <SelectContent>
+            {years.map(year => (
+              <SelectItem key={year} value={year.toString()}>
+                {year}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
 
-      <div className="relative">
-        <Button
-          variant="outline"
-          role="combobox"
-          aria-expanded={monthDropdownOpen}
-          className="w-[200px] justify-between"
-          onClick={() => setMonthDropdownOpen(!monthDropdownOpen)}
-        >
-          {selectedMonths.length === 0 
-            ? "Select months..." 
-            : selectedMonths.length === months.length 
-              ? "All months" 
-              : `${selectedMonths.length} month${selectedMonths.length === 1 ? '' : 's'} selected`
-          }
-          <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-        </Button>
-        {monthDropdownOpen && (
-          <div className="absolute top-full z-50 w-[200px] rounded-md border bg-popover p-1 text-popover-foreground shadow-md animate-in fade-in-80">
-            <div className="flex flex-col gap-1">
-              <Button
-                variant="ghost"
-                className="justify-start font-normal"
-                onClick={() => {
-                  setSelectedMonths(selectedMonths.length === months.length ? [] : months.map(m => m.value))
-                  setMonthDropdownOpen(false)
-                }}
-              >
-                {selectedMonths.length === months.length ? "Deselect All" : "Select All"}
-              </Button>
-              {months.map((month) => (
+        <div className="relative">
+          <Button
+            variant="outline"
+            role="combobox"
+            aria-expanded={monthDropdownOpen}
+            className="w-[200px] justify-between"
+            onClick={() => setMonthDropdownOpen(!monthDropdownOpen)}
+          >
+            {selectedMonths.length === 0 
+              ? "Select months..." 
+              : selectedMonths.length === months.length 
+                ? "All months" 
+                : `${selectedMonths.length} month${selectedMonths.length === 1 ? '' : 's'} selected`
+            }
+            <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+          </Button>
+          {monthDropdownOpen && (
+            <div className="absolute top-full z-50 w-[200px] rounded-md border bg-popover p-1 text-popover-foreground shadow-md animate-in fade-in-80">
+              <div className="flex flex-col gap-1">
                 <Button
-                  key={month.value}
                   variant="ghost"
                   className="justify-start font-normal"
                   onClick={() => {
-                    setSelectedMonths(prev => 
-                      prev.includes(month.value)
-                        ? prev.filter(m => m !== month.value)
-                        : [...prev, month.value].sort((a, b) => a - b)
-                    )
+                    setSelectedMonths(selectedMonths.length === months.length ? [] : months.map(m => m.value))
+                    setMonthDropdownOpen(false)
                   }}
                 >
-                  <div className="flex items-center gap-2">
-                    <Checkbox 
-                      checked={selectedMonths.includes(month.value)}
-                      className="h-4 w-4"
-                    />
-                    {month.label}
-                  </div>
+                  {selectedMonths.length === months.length ? "Deselect All" : "Select All"}
                 </Button>
-              ))}
+                {months.map((month) => (
+                  <Button
+                    key={month.value}
+                    variant="ghost"
+                    className="justify-start font-normal"
+                    onClick={() => {
+                      setSelectedMonths(prev => 
+                        prev.includes(month.value)
+                          ? prev.filter(m => m !== month.value)
+                          : [...prev, month.value].sort((a, b) => a - b)
+                      )
+                    }}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Checkbox 
+                        checked={selectedMonths.includes(month.value)}
+                        className="h-4 w-4"
+                      />
+                      {month.label}
+                    </div>
+                  </Button>
+                ))}
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
+
+        <Button
+          variant="outline"
+          className="ml-4"
+          onClick={() => setIsRangeView(!isRangeView)}
+        >
+          {isRangeView ? "Single Year View" : "Range View"}
+        </Button>
       </div>
+
+      {isRangeView && (
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium">From:</span>
+            <Select value={startYear.toString()} onValueChange={(value) => setStartYear(Number(value))}>
+              <SelectTrigger className="w-[100px]">
+                <SelectValue placeholder="Year" />
+              </SelectTrigger>
+              <SelectContent>
+                {years.map(year => (
+                  <SelectItem key={year} value={year.toString()}>
+                    {year}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Select value={startMonth.toString()} onValueChange={(value) => setStartMonth(Number(value))}>
+              <SelectTrigger className="w-[100px]">
+                <SelectValue placeholder="Month" />
+              </SelectTrigger>
+              <SelectContent>
+                {months.map(month => (
+                  <SelectItem key={month.value} value={month.value.toString()}>
+                    {month.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium">To:</span>
+            <Select value={endYear.toString()} onValueChange={(value) => setEndYear(Number(value))}>
+              <SelectTrigger className="w-[100px]">
+                <SelectValue placeholder="Year" />
+              </SelectTrigger>
+              <SelectContent>
+                {years.filter(year => year >= startYear).map(year => (
+                  <SelectItem key={year} value={year.toString()}>
+                    {year}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Select 
+              value={endMonth.toString()} 
+              onValueChange={(value) => setEndMonth(Number(value))}
+            >
+              <SelectTrigger className="w-[100px]">
+                <SelectValue placeholder="Month" />
+              </SelectTrigger>
+              <SelectContent>
+                {months.map(month => (
+                  <SelectItem 
+                    key={month.value} 
+                    value={month.value.toString()}
+                    disabled={endYear === currentYear && month.value > currentMonth}
+                  >
+                    {month.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      )}
     </div>
   )
 
   // Get data to display with period filtering
   const displayData = useMemo(() => {
-    const yearData = reportData[selectedYear.toString()] || stableReportData[selectedYear.toString()] || []
-    
-    // If no months are explicitly selected and it's current year,
-    // show data up to current month by default
-    if (selectedMonths.length === 0 && selectedYear === currentYear) {
-      return yearData.filter(entry => {
-        const entryMonth = months.findIndex(m => m.label === entry.month) + 1
-        return entryMonth <= currentMonth
-      })
+    if (isRangeView) {
+      // Range view logic
+      const yearlyData: Record<string, any[]> = {};
+      
+      // Create entries for all years in range, even if empty
+      for (let year = startYear; year <= endYear; year++) {
+        const yearData = reportData[year.toString()] || stableReportData[year.toString()] || [];
+        
+        const filteredData = yearData.filter(entry => {
+          const entryMonth = months.findIndex(m => m.label === entry.month) + 1;
+          
+          if (year === startYear && year === endYear) {
+            return entryMonth >= startMonth && entryMonth <= endMonth;
+          } else if (year === startYear) {
+            return entryMonth >= startMonth;
+          } else if (year === endYear) {
+            return entryMonth <= endMonth;
+          }
+          return true;
+        });
+        
+        // Always include the year in the data, even if empty
+        yearlyData[year.toString()] = filteredData;
+      }
+      
+      return yearlyData;
+    } else {
+      // Single year view logic
+      const yearData = reportData[selectedYear.toString()] || stableReportData[selectedYear.toString()] || [];
+      
+      // If no months are explicitly selected and it's current year,
+      // show data up to current month by default
+      if (selectedMonths.length === 0 && selectedYear === currentYear) {
+        return yearData.filter(entry => {
+          const entryMonth = months.findIndex(m => m.label === entry.month) + 1;
+          return entryMonth <= currentMonth;
+        });
+      }
+      
+      // If specific months are selected, filter by those months
+      if (selectedMonths.length > 0) {
+        return yearData.filter(entry => {
+          const entryMonth = months.findIndex(m => m.label === entry.month) + 1;
+          return selectedMonths.includes(entryMonth);
+        });
+      }
+      
+      // Otherwise show all data for the selected year
+      return yearData;
     }
-    
-    // If specific months are selected, filter by those months
-    if (selectedMonths.length > 0) {
-      return yearData.filter(entry => {
-        const entryMonth = months.findIndex(m => m.label === entry.month) + 1
-        return selectedMonths.includes(entryMonth)
-      })
-    }
-    
-    // Otherwise show all data for the selected year
-    return yearData
-  }, [reportData, stableReportData, selectedYear, selectedMonths, months, currentYear, currentMonth])
+  }, [reportData, stableReportData, selectedYear, selectedMonths, months, currentYear, currentMonth,
+      isRangeView, startYear, startMonth, endYear, endMonth]);
 
   const getTruncatedCompanyName = (name: string) => {
     const words = name.split(' ')
@@ -238,40 +352,44 @@ function CompanyReports() {
   // Enhanced export function with better error handling and formatting
   const exportToExcel = useCallback(() => {
     try {
-      if (!selectedYear || !reportData[selectedYear.toString()]) {
+      if (!startYear || !reportData[startYear.toString()]) {
         throw new Error('No data available for selected year');
       }
 
-      const data = reportData[selectedYear.toString()].map(entry => {
-        const row: Record<string, string | number> = { Month: entry.month };
+      const data = Object.keys(displayData).map(year => {
+        const yearData = displayData[year].map(entry => {
+          const row: Record<string, string | number> = { Month: entry.month };
 
-        // Helper function to format amount and date
-        const formatTaxData = (taxType: keyof typeof entry) => ({
-          [`${taxTypes.find(t => t.id === taxType)?.name || taxType} Amount`]: 
-            new Intl.NumberFormat('en-KE', { minimumFractionDigits: 2 }).format(entry[taxType].amount),
-          [`${taxTypes.find(t => t.id === taxType)?.name || taxType} Pay Date`]: 
-            entry[taxType].date || '-'
+          // Helper function to format amount and date
+          const formatTaxData = (taxType: keyof typeof entry) => ({
+            [`${taxTypes.find(t => t.id === taxType)?.name || taxType} Amount`]: 
+              new Intl.NumberFormat('en-KE', { minimumFractionDigits: 2 }).format(entry[taxType].amount),
+            [`${taxTypes.find(t => t.id === taxType)?.name || taxType} Pay Date`]: 
+              entry[taxType].date || '-'
+          });
+
+          // Add selected tax columns
+          if (selectedColumns.includes('all') || selectedColumns.includes('paye')) {
+            Object.assign(row, formatTaxData('paye'));
+          }
+          if (selectedColumns.includes('all') || selectedColumns.includes('housingLevy')) {
+            Object.assign(row, formatTaxData('housingLevy'));
+          }
+          if (selectedColumns.includes('all') || selectedColumns.includes('nita')) {
+            Object.assign(row, formatTaxData('nita'));
+          }
+          if (selectedColumns.includes('all') || selectedColumns.includes('shif')) {
+            Object.assign(row, formatTaxData('shif'));
+          }
+          if (selectedColumns.includes('all') || selectedColumns.includes('nssf')) {
+            Object.assign(row, formatTaxData('nssf'));
+          }
+
+          return row;
         });
 
-        // Add selected tax columns
-        if (selectedColumns.includes('all') || selectedColumns.includes('paye')) {
-          Object.assign(row, formatTaxData('paye'));
-        }
-        if (selectedColumns.includes('all') || selectedColumns.includes('housingLevy')) {
-          Object.assign(row, formatTaxData('housingLevy'));
-        }
-        if (selectedColumns.includes('all') || selectedColumns.includes('nita')) {
-          Object.assign(row, formatTaxData('nita'));
-        }
-        if (selectedColumns.includes('all') || selectedColumns.includes('shif')) {
-          Object.assign(row, formatTaxData('shif'));
-        }
-        if (selectedColumns.includes('all') || selectedColumns.includes('nssf')) {
-          Object.assign(row, formatTaxData('nssf'));
-        }
-
-        return row;
-      });
+        return yearData;
+      }).flat();
 
       const ws = XLSX.utils.json_to_sheet(data);
       const wb = XLSX.utils.book_new();
@@ -293,14 +411,14 @@ function CompanyReports() {
 
       // Generate filename with sanitized company name
       const sanitizedCompanyName = selectedCompanyName.replace(/[^a-z0-9]/gi, '_');
-      const filename = `${sanitizedCompanyName}_${selectedYear}_tax_report.xlsx`;
+      const filename = `${sanitizedCompanyName}_${startYear}_${endYear}_tax_report.xlsx`;
 
       XLSX.writeFile(wb, filename);
     } catch (error) {
       console.error('Error exporting to Excel:', error);
       // You can add a toast notification here to show the error
     }
-  }, [selectedYear, reportData, selectedCompanyName, selectedColumns]);
+  }, [startYear, reportData, selectedCompanyName, selectedColumns, displayData]);
 
   return (
     <div className="flex h-screen max-h-screen">
@@ -571,12 +689,14 @@ function CompanyReports() {
 
             {/* Data table section */}
             <div className="relative">
-              {displayData.length > 0 ? (
+              {(isRangeView ? Object.keys(displayData).length > 0 : displayData.length > 0) ? (
                 <DataTable 
-                  data={displayData}
+                  data={isRangeView ? [] : displayData}
+                  yearlyData={isRangeView ? displayData : null}
                   selectedColumns={getFilteredColumns()}
                   selectedSubColumns={selectedSubColumns}
                   isLoading={loading && selectedCompany !== null}
+                  isHorizontalView={isRangeView}
                 />
               ) : (
                 <div className="flex flex-col items-center justify-center h-32 border rounded-md bg-muted/10 space-y-4">
