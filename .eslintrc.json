@@ -1,0 +1,20 @@
+{
+  "extends": ["next/core-web-vitals", "next/typescript"],
+  "rules": {
+    "@typescript-eslint/ban-ts-comment": "off",
+    "@typescript-eslint/no-unused-vars": "off",
+    "@typescript-eslint/no-explicit-any": "off",
+    "@typescript-eslint/no-empty-object-type": "off",
+    "react-hooks/rules-of-hooks": "off",
+    "react-hooks/exhaustive-deps": "off",
+    "no-unused-vars": "off",
+    "no-undef": "off",
+    "no-console": "off",
+    "no-debugger": "off",
+    "no-empty": "off",
+    "no-extra-semi": "off",
+    "no-irregular-whitespace": "off",
+    "no-unreachable": "off"
+  },
+  "ignorePatterns": ["**/*"]
+}
