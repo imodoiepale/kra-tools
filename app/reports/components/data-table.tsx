@@ -239,6 +239,12 @@ export const DataTable = memo(({
                       {taxColumns.find(t => t.id === col)?.label || col.toUpperCase()}
                     </TableHead>
                   ))}
+                  <TableHead 
+                    className="w-[150px] font-bold text-white py-4 px-5 border-2 border-slate-300 bg-[#2a5a8c]" 
+                    rowSpan={2}
+                  >
+                    Monthly Total
+                  </TableHead>
                 </TableRow>
                 <TableRow>
                   {selectedColumns.map(col => (
@@ -258,7 +264,7 @@ export const DataTable = memo(({
                   <React.Fragment key={year}>
                     <TableRow className="bg-[#eef6fc]">
                       <TableCell 
-                        colSpan={selectedColumns.length * 2 + 1} 
+                        colSpan={selectedColumns.length * 2 + 2} 
                         className="py-2 px-5 font-bold text-lg text-[#1e4d7b] border-2 border-slate-300 sticky left-0 bg-inherit"
                       >
                         {year}
@@ -274,6 +280,10 @@ export const DataTable = memo(({
                         nssf: { amount: 0, date: null }
                       };
                       
+                      const monthlyTotal = selectedColumns.reduce((sum, col) => 
+                        sum + (entry[col]?.amount || 0), 0
+                      );
+
                       return (
                         <TableRow 
                           key={`${year}-${month}`} 
@@ -296,6 +306,11 @@ export const DataTable = memo(({
                               </TableCell>
                             </React.Fragment>
                           ))}
+                          <TableCell className="text-right py-3 px-4 font-medium border-2 border-slate-300 bg-[#eef6fc]">
+                            <span className="text-[#1e4d7b] font-bold">
+                              {formatAmount(monthlyTotal)}
+                            </span>
+                          </TableCell>
                         </TableRow>
                       );
                     })}
@@ -315,6 +330,13 @@ export const DataTable = memo(({
                             </React.Fragment>
                           );
                         })}
+                        <TableCell className="text-right py-4 px-4 font-bold border-2 border-slate-300 bg-[#2a5a8c] text-white">
+                          {formatAmount(
+                            selectedColumns.reduce((sum, col) => 
+                              sum + (yearlyData[year]?.reduce((s, entry) => s + (entry[col]?.amount || 0), 0) || 0), 0
+                            )
+                          )}
+                        </TableCell>
                       </TableRow>
                     )}
                   </React.Fragment>
@@ -363,6 +385,12 @@ export const DataTable = memo(({
                   {taxColumns.find(t => t.id === col)?.label || col.toUpperCase()}
                 </TableHead>
               ))}
+              <TableHead 
+                className="w-[150px] font-bold text-white py-4 px-5 border-2 border-slate-300 bg-[#2a5a8c]" 
+                rowSpan={2}
+              >
+                Monthly Total
+              </TableHead>
             </TableRow>
             <TableRow>
               {selectedColumns.map(col => (
@@ -378,27 +406,37 @@ export const DataTable = memo(({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {data.map((entry, idx) => (
-              <TableRow key={entry.month} className={idx % 2 === 0 ? "bg-white" : "bg-[#f8fbfe]"}>
-                <TableCell className="font-medium text-slate-700 py-3 px-5 border-2 border-slate-300 sticky left-0 bg-inherit">
-                  {entry.month}
-                </TableCell>
-                {selectedColumns.map(col => (
-                  <React.Fragment key={`${col}-data-${entry.month}`}>
-                    <TableCell className="text-right py-3 px-4 font-medium border-2 border-slate-300 bg-inherit">
-                      <span className="text-slate-700">
-                        {formatAmount(entry[col]?.amount || 0)}
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-center py-3 px-3 border-2 border-slate-300 bg-inherit">
-                      <span className={getDateColor(entry[col]?.date)}>
-                        {formatDate(entry[col]?.date)}
-                      </span>
-                    </TableCell>
-                  </React.Fragment>
-                ))}
-              </TableRow>
-            ))}
+            {data.map((entry, idx) => {
+              const monthlyTotal = selectedColumns.reduce((sum, col) => 
+                sum + (entry[col]?.amount || 0), 0
+              );
+              return (
+                <TableRow key={entry.month} className={idx % 2 === 0 ? "bg-white" : "bg-[#f8fbfe]"}>
+                  <TableCell className="font-medium text-slate-700 py-3 px-5 border-2 border-slate-300 sticky left-0 bg-inherit">
+                    {entry.month}
+                  </TableCell>
+                  {selectedColumns.map(col => (
+                    <React.Fragment key={`${col}-data-${entry.month}`}>
+                      <TableCell className="text-right py-3 px-4 font-medium border-2 border-slate-300 bg-inherit">
+                        <span className="text-slate-700">
+                          {formatAmount(entry[col]?.amount || 0)}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-center py-3 px-3 border-2 border-slate-300 bg-inherit">
+                        <span className={getDateColor(entry[col]?.date)}>
+                          {formatDate(entry[col]?.date)}
+                        </span>
+                      </TableCell>
+                    </React.Fragment>
+                  ))}
+                  <TableCell className="text-right py-3 px-4 font-medium border-2 border-slate-300 bg-[#eef6fc]">
+                    <span className="text-[#1e4d7b] font-bold">
+                      {formatAmount(monthlyTotal)}
+                    </span>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
             {showTotals && (
               <TableRow className="bg-[#eef6fc] font-semibold">
                 <TableCell className="py-4 px-5 text-[#1e4d7b] border-2 border-slate-300 sticky left-0 bg-inherit">
@@ -412,6 +450,13 @@ export const DataTable = memo(({
                     <TableCell className="border-2 border-slate-300 bg-inherit" />
                   </React.Fragment>
                 ))}
+                <TableCell className="text-right py-4 px-4 font-bold border-2 border-slate-300 bg-[#2a5a8c] text-white">
+                  {formatAmount(
+                    selectedColumns.reduce((sum, col) => 
+                      sum + (totals[col] || 0), 0
+                    )
+                  )}
+                </TableCell>
               </TableRow>
             )}
           </TableBody>
