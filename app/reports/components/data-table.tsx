@@ -223,7 +223,7 @@ export const DataTable = memo(({
       <div className="space-y-4">
         {title && <h3 className="text-xl font-semibold text-slate-800 px-1">{title}</h3>}
         <div className="rounded-xl border-2 border-slate-300 shadow-md overflow-hidden">
-          <div className="max-h-[800px] overflow-auto relative">
+          <div className="max-h-[calc(100vh-300px)] overflow-auto relative">
             <Table>
               <TableHeader className="sticky top-0 z-10">
                 <TableRow>

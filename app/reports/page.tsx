@@ -536,166 +536,169 @@ function CompanyReports() {
               </Button>
             </div>
 
-            {/* Insert period selection UI */}
-            {periodSelectionUI}
-
-            <div className="flex items-center gap-4 mb-4">
-              <DropdownMenu open={taxDropdownOpen} onOpenChange={setTaxDropdownOpen}>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" className="w-[180px] justify-between">
-                    Select Taxes
-                    <span className="text-xs text-muted-foreground">
-                      ({selectedColumns.length - 1} selected)
-                    </span>
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent 
-                  className="w-[180px]"
-                  onInteractOutside={(e) => {
-                    // Only close if clicking outside both dropdowns
-                    if (!e.target.closest('[role="dialog"]')) {
-                      setTaxDropdownOpen(false)
-                    }
-                  }}
-                >
-                  <DropdownMenuLabel className="flex items-center justify-between">
-                    Tax Types
-                    <Button 
-                      variant="ghost" 
-                      size="sm" 
-                      className="h-6 px-2 text-xs"
-                      onClick={() => {
-                        if (selectedColumns.length === taxTypes.length) {
-                          setSelectedColumns(['month'])
-                        } else {
-                          setSelectedColumns(['month', ...taxTypes.slice(1).map(t => t.id)])
-                        }
-                      }}
-                    >
-                      {selectedColumns.length === taxTypes.length ? 'Unselect All' : 'Select All'}
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <DropdownMenu open={taxDropdownOpen} onOpenChange={setTaxDropdownOpen}>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" className="w-[180px] justify-between">
+                      Select Taxes
+                      <span className="text-xs text-muted-foreground">
+                        ({selectedColumns.length - 1} selected)
+                      </span>
                     </Button>
-                  </DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  {taxTypes.slice(1).map(tax => (
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent 
+                    className="w-[180px]"
+                    onInteractOutside={(e) => {
+                      // Only close if clicking outside both dropdowns
+                      if (!e.target.closest('[role="dialog"]')) {
+                        setTaxDropdownOpen(false)
+                      }
+                    }}
+                  >
+                    <DropdownMenuLabel className="flex items-center justify-between">
+                      Tax Types
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        className="h-6 px-2 text-xs"
+                        onClick={() => {
+                          if (selectedColumns.length === taxTypes.length) {
+                            setSelectedColumns(['month'])
+                          } else {
+                            setSelectedColumns(['month', ...taxTypes.slice(1).map(t => t.id)])
+                          }
+                        }}
+                      >
+                        {selectedColumns.length === taxTypes.length ? 'Unselect All' : 'Select All'}
+                      </Button>
+                    </DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    {taxTypes.slice(1).map(tax => (
+                      <DropdownMenuCheckboxItem
+                        key={tax.id}
+                        checked={selectedColumns.includes(tax.id)}
+                        onSelect={(e) => e.preventDefault()}
+                        onCheckedChange={(checked) => {
+                          if (checked) {
+                            setSelectedColumns([...selectedColumns, tax.id])
+                          } else {
+                            setSelectedColumns(selectedColumns.filter(col => col !== tax.id))
+                          }
+                        }}
+                      >
+                        {tax.name}
+                      </DropdownMenuCheckboxItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+
+                <DropdownMenu open={columnDropdownOpen} onOpenChange={setColumnDropdownOpen}>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" className="w-[180px] justify-between">
+                      Column Details
+                      <span className="text-xs text-muted-foreground">
+                        {selectedSubColumns.includes("all") 
+                          ? "(All)" 
+                          : `(${selectedSubColumns.length} selected)`}
+                      </span>
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent 
+                    className="w-[180px]"
+                    onInteractOutside={(e) => {
+                      // Only close if clicking outside both dropdowns
+                      if (!e.target.closest('[role="dialog"]')) {
+                        setColumnDropdownOpen(false)
+                      }
+                    }}
+                  >
+                    <DropdownMenuLabel className="flex items-center justify-between">
+                  
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        className="h-6 px-2 text-xs"
+                        onClick={() => {
+                          if (selectedSubColumns.includes("all")) {
+                            setSelectedSubColumns(["amount"])
+                          } else {
+                            setSelectedSubColumns(["all"])
+                          }
+                        }}
+                      >
+                        {selectedSubColumns.includes("all") ? 'Show Custom' : 'Show All'}
+                      </Button>
+                    </DropdownMenuLabel>
+                    <DropdownMenuSeparator />
                     <DropdownMenuCheckboxItem
-                      key={tax.id}
-                      checked={selectedColumns.includes(tax.id)}
+                      checked={selectedSubColumns.includes("all")}
                       onSelect={(e) => e.preventDefault()}
                       onCheckedChange={(checked) => {
                         if (checked) {
-                          setSelectedColumns([...selectedColumns, tax.id])
-                        } else {
-                          setSelectedColumns(selectedColumns.filter(col => col !== tax.id))
-                        }
-                      }}
-                    >
-                      {tax.name}
-                    </DropdownMenuCheckboxItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-
-              <DropdownMenu open={columnDropdownOpen} onOpenChange={setColumnDropdownOpen}>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" className="w-[180px] justify-between">
-                    Column Details
-                    <span className="text-xs text-muted-foreground">
-                      {selectedSubColumns.includes("all") 
-                        ? "(All)" 
-                        : `(${selectedSubColumns.length} selected)`}
-                    </span>
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent 
-                  className="w-[180px]"
-                  onInteractOutside={(e) => {
-                    // Only close if clicking outside both dropdowns
-                    if (!e.target.closest('[role="dialog"]')) {
-                      setColumnDropdownOpen(false)
-                    }
-                  }}
-                >
-                  <DropdownMenuLabel className="flex items-center justify-between">
-                  
-                    <Button 
-                      variant="ghost" 
-                      size="sm" 
-                      className="h-6 px-2 text-xs"
-                      onClick={() => {
-                        if (selectedSubColumns.includes("all")) {
-                          setSelectedSubColumns(["amount"])
-                        } else {
                           setSelectedSubColumns(["all"])
+                        } else {
+                          setSelectedSubColumns(["amount"])
                         }
                       }}
                     >
-                      {selectedSubColumns.includes("all") ? 'Show Custom' : 'Show All'}
-                    </Button>
-                  </DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuCheckboxItem
-                    checked={selectedSubColumns.includes("all")}
-                    onSelect={(e) => e.preventDefault()}
-                    onCheckedChange={(checked) => {
-                      if (checked) {
-                        setSelectedSubColumns(["all"])
-                      } else {
-                        setSelectedSubColumns(["amount"])
-                      }
-                    }}
+                      All Details
+                    </DropdownMenuCheckboxItem>
+                    <DropdownMenuCheckboxItem
+                      checked={selectedSubColumns.includes("amount") || selectedSubColumns.includes("all")}
+                      onSelect={(e) => e.preventDefault()}
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          setSelectedSubColumns(prev => {
+                            const newSelection = prev.filter(col => col !== "all").concat("amount")
+                            return newSelection.length > 0 ? newSelection : ["amount"]
+                          })
+                        } else {
+                          setSelectedSubColumns(prev => {
+                            const newSelection = prev.filter(col => col !== "amount" && col !== "all")
+                            return newSelection.length > 0 ? newSelection : ["date"]
+                          })
+                        }
+                      }}
+                    >
+                      Amount
+                    </DropdownMenuCheckboxItem>
+                    <DropdownMenuCheckboxItem
+                      checked={selectedSubColumns.includes("date") || selectedSubColumns.includes("all")}
+                      onSelect={(e) => e.preventDefault()}
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          setSelectedSubColumns(prev => {
+                            const newSelection = prev.filter(col => col !== "all").concat("date")
+                            return newSelection.length > 0 ? newSelection : ["date"]
+                          })
+                        } else {
+                          setSelectedSubColumns(prev => {
+                            const newSelection = prev.filter(col => col !== "date" && col !== "all")
+                            return newSelection.length > 0 ? newSelection : ["amount"]
+                          })
+                        }
+                      }}
+                    >
+                      Pay Date
+                    </DropdownMenuCheckboxItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowTotals(!showTotals)}
+                    className="ml-2"
                   >
-                    All Details
-                  </DropdownMenuCheckboxItem>
-                  <DropdownMenuCheckboxItem
-                    checked={selectedSubColumns.includes("amount") || selectedSubColumns.includes("all")}
-                    onSelect={(e) => e.preventDefault()}
-                    onCheckedChange={(checked) => {
-                      if (checked) {
-                        setSelectedSubColumns(prev => {
-                          const newSelection = prev.filter(col => col !== "all").concat("amount")
-                          return newSelection.length > 0 ? newSelection : ["amount"]
-                        })
-                      } else {
-                        setSelectedSubColumns(prev => {
-                          const newSelection = prev.filter(col => col !== "amount" && col !== "all")
-                          return newSelection.length > 0 ? newSelection : ["date"]
-                        })
-                      }
-                    }}
-                  >
-                    Amount
-                  </DropdownMenuCheckboxItem>
-                  <DropdownMenuCheckboxItem
-                    checked={selectedSubColumns.includes("date") || selectedSubColumns.includes("all")}
-                    onSelect={(e) => e.preventDefault()}
-                    onCheckedChange={(checked) => {
-                      if (checked) {
-                        setSelectedSubColumns(prev => {
-                          const newSelection = prev.filter(col => col !== "all").concat("date")
-                          return newSelection.length > 0 ? newSelection : ["date"]
-                        })
-                      } else {
-                        setSelectedSubColumns(prev => {
-                          const newSelection = prev.filter(col => col !== "date" && col !== "all")
-                          return newSelection.length > 0 ? newSelection : ["amount"]
-                        })
-                      }
-                    }}
-                  >
-                    Pay Date
-                  </DropdownMenuCheckboxItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+                    {showTotals ? "Hide Totals" : "Show Totals"}
+                  </Button>
+                </div>
+              </div>
 
               <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowTotals(!showTotals)}
-                  className="ml-2"
-                >
-                  {showTotals ? "Hide Totals" : "Show Totals"}
-                </Button>
+                {periodSelectionUI}
               </div>
             </div>
 
