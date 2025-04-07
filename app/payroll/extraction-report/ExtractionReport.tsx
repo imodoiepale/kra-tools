@@ -98,6 +98,10 @@ interface ExtractionReportProps {
     handleDocumentDelete: (recordId: string, documentType: DocumentType) => Promise<void>
     handleStatusUpdate: (recordId: string, statusUpdate: Partial<CompanyPayrollRecord['status']>) => Promise<void>
     setPayrollRecords: React.Dispatch<React.SetStateAction<CompanyPayrollRecord[]>>
+    selectedCategories: string[]
+    setSelectedCategories: (categories: string[]) => void
+    selectedObligations: string[]
+    setSelectedObligations: (obligations: string[]) => void
 }
 
 export default function ExtractionReport({
@@ -112,21 +116,24 @@ export default function ExtractionReport({
     handleDocumentUpload,
     handleDocumentDelete,
     handleStatusUpdate,
-    setPayrollRecords
+    setPayrollRecords,
+    // Use shared filter states from hook
+    selectedCategories,
+    setSelectedCategories,
+    selectedObligations,
+    setSelectedObligations
 }: ExtractionReportProps) {
 
     const [selectedDocTypes, setSelectedDocTypes] = useState<string[]>(DOCUMENT_TYPES.map(doc => doc.id));
     const [selectedColumns, setSelectedColumns] = useState<string[]>(COLUMN_TYPES.map(col => col.id));
-    const [selectedCategories, setSelectedCategories] = useState<string[]>(['acc']);
-    const [selectedObligations, setSelectedObligations] = useState<string[]>(['active']);
 
     const handleFilterChange = useCallback((categories: string[]) => {
         setSelectedCategories(categories);
-    }, []);
+    }, [setSelectedCategories]);
 
     const handleObligationFilterChange = useCallback((obligations: string[]) => {
         setSelectedObligations(obligations);
-    }, []);
+    }, [setSelectedObligations]);
 
     const handleDocumentUploadWithFolder = (recordId: string, file: File, documentType: DocumentType) => {
         return handleDocumentUpload(recordId, file, documentType, 'PAYMENT RECEIPTS')
@@ -153,48 +160,75 @@ export default function ExtractionReport({
             const matchesSearch = record.company.company_name?.toLowerCase().includes(searchTerm.toLowerCase()) ?? false;
             
             // Check category filters
-            let matchesCategory = true;
+            let matchesCategory = selectedCategories.length === 0;
             if (selectedCategories.length > 0) {
                 matchesCategory = selectedCategories.some(category => {
                     const currentDate = new Date();
                     
-                    // Extract the base category without status suffix
-                    const baseCategory = category.split('_status_')[0];
-                    const status = category.includes('_status_') 
-                        ? category.split('_status_')[1] as 'active' | 'inactive'
-                        : 'active'; // Default to active status if not specified
+                    // Extract the base category and status
+                    const [baseCategory, statusPart] = category.split('_status_');
+                    const status = statusPart || 'active';
                     
-                    let isInCategory = false;
+                    // Helper function to check if a category is active
+                    const isDateInRange = (fromDate?: string | null, toDate?: string | null): boolean => {
+                        if (!fromDate || !toDate) return false;
+                        try {
+                            // Handle both formats: DD/MM/YYYY and YYYY-MM-DD
+                            const parseDate = (dateStr: string) => {
+                                if (dateStr.includes('/')) {
+                                    const [day, month, year] = dateStr.split('/').map(Number);
+                                    return new Date(year, month - 1, day);
+                                } else {
+                                    return new Date(dateStr);
+                                }
+                            };
+                            const from = parseDate(fromDate);
+                            const to = parseDate(toDate);
+                            return currentDate >= from && currentDate <= to;
+                        } catch (error) {
+                            console.error('Error parsing dates:', error);
+                            return false;
+                        }
+                    };
+                    
+                    // Check each category
                     let isActive = false;
-                    
                     switch (baseCategory) {
                         case 'acc':
-                            isInCategory = true;
-                            isActive = isDateInRange(currentDate, record.company.acc_client_effective_from, record.company.acc_client_effective_to);
+                            isActive = isDateInRange(
+                                record.company.acc_client_effective_from,
+                                record.company.acc_client_effective_to
+                            );
                             break;
                         case 'audit_tax':
-                            isInCategory = true;
-                            isActive = isDateInRange(currentDate, record.company.audit_tax_client_effective_from, record.company.audit_tax_client_effective_to);
+                            isActive = isDateInRange(
+                                record.company.audit_tax_client_effective_from,
+                                record.company.audit_tax_client_effective_to
+                            );
                             break;
                         case 'cps_sheria':
-                            isInCategory = true;
-                            isActive = isDateInRange(currentDate, record.company.cps_sheria_client_effective_from, record.company.cps_sheria_client_effective_to);
+                            isActive = isDateInRange(
+                                record.company.cps_sheria_client_effective_from,
+                                record.company.cps_sheria_client_effective_to
+                            );
                             break;
                         case 'imm':
-                            isInCategory = true;
-                            isActive = isDateInRange(currentDate, record.company.imm_client_effective_from, record.company.imm_client_effective_to);
+                            isActive = isDateInRange(
+                                record.company.imm_client_effective_from,
+                                record.company.imm_client_effective_to
+                            );
                             break;
                         default:
                             return false;
                     }
                     
-                    // If status is 'all', return whether it's in the category
-                    if (status === 'all') {
-                        return isInCategory;
+                    if (status === 'active') {
+                        return isActive;
                     }
-                    
-                    // Otherwise, check if the active status matches the requested status
-                    return isInCategory && ((status === 'active' && isActive) || (status === 'inactive' && !isActive));
+                    if (status === 'inactive') {
+                        return !isActive;
+                    }
+                    return false;
                 });
             }
 
@@ -255,7 +289,7 @@ export default function ExtractionReport({
                         selectedObligations={selectedObligations}
                     />
                     <CategoryFilters
-                        companyDates={filteredRecords[0]?.company}
+                        payrollRecords={payrollRecords} // Pass the full records array
                         onFilterChange={handleFilterChange}
                         selectedCategories={selectedCategories}
                     />
