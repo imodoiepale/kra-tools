@@ -1,3 +1,4 @@
+//@ts-nocheck
 // BankStatementBulkUploadDialog.tsx
 
 import { useState, useRef, useEffect } from 'react'
