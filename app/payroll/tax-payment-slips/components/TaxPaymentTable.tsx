@@ -957,7 +957,7 @@ export function TaxPaymentTable({
     };
 
     return (
-        <div className="rounded-md border overflow-x-auto max-h-[calc(100vh-180px)]">
+        <div className="rounded-md border overflow-x-auto h-[calc(100vh-240px)] ">
             <Table className="table-fixed w-full relative">
                 <TableHeader className="bg-blue-600 text-white sticky top-0 z-10">
                     <TableRow className="hover:bg-blue-600">

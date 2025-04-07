@@ -1223,7 +1223,7 @@ export function PayslipPaymentReceiptsTable({
 
 
     return (
-        <div className="rounded-md border h-[calc(100vh-220px)] overflow-auto">
+        <div className="rounded-md border  h-[calc(100vh-240px)] overflow-auto">
             {/* Sort status indicator */}
             {sortConfig.field && (
                 <div className="bg-blue-100 text-blue-800 p-1 flex items-center justify-center sticky top-0 z-10 text-xs">
