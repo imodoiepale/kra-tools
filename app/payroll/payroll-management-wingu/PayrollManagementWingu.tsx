@@ -37,6 +37,12 @@ interface PayrollManagementProps {
     handleDocumentDelete: (recordId: string, documentType: DocumentType) => Promise<void>
     handleStatusUpdate: (recordId: string, statusUpdate: Partial<CompanyPayrollRecord['status']>) => Promise<void>
     setPayrollRecords: React.Dispatch<React.SetStateAction<CompanyPayrollRecord[]>>
+    updateExistingEmployeeCounts?: () => Promise<void>
+    // Shared filter states
+    selectedCategories: string[]
+    setSelectedCategories: (categories: string[]) => void
+    selectedObligations: string[]
+    setSelectedObligations: (obligations: string[]) => void
 }
 
 export default function PayrollManagementWingu({
@@ -52,14 +58,16 @@ export default function PayrollManagementWingu({
     handleDocumentDelete,
     handleStatusUpdate,
     setPayrollRecords,
-    updateExistingEmployeeCounts
+    updateExistingEmployeeCounts,
+    // Use shared filter states from hook
+    selectedCategories,
+    setSelectedCategories,
+    selectedObligations,
+    setSelectedObligations
 }: PayrollManagementProps) {
     const handleDocumentUploadWithFolder = (recordId: string, file: File, documentType: DocumentType) => {
         return handleDocumentUpload(recordId, file, documentType, 'PREP DOCS')
     }
-
-    const [selectedCategories, setSelectedCategories] = useState<string[]>(['acc']);
-    const [selectedObligations, setSelectedObligations] = useState<string[]>(['active']);
 
     const [extractDialogOpen, setExtractDialogOpen] = useState(false)
     const [exportDialogOpen, setExportDialogOpen] = useState(false)
@@ -121,53 +129,109 @@ export default function PayrollManagementWingu({
         }
     }
 
-    // Filter records based on search term and selected categories
+    // Filter records based on search term, categories, and obligations
     const filteredRecords = useMemo(() => {
         return payrollRecords.filter(record => {
             // Check if record and company exist
             if (!record || !record.company) return false;
 
-            // Check if record matches search term
+            // Search term filter
             const matchesSearch = record.company.company_name?.toLowerCase().includes(searchTerm.toLowerCase()) ?? false;
+            if (!matchesSearch) return false;
 
-            // Check category filters
-            let matchesCategory = true;
+            const currentDate = new Date();
+
+            // Category filters - if no categories selected, show all
+            let matchesCategory = selectedCategories.length === 0;
+
             if (selectedCategories.length > 0) {
-                matchesCategory = selectedCategories.some(category => {
-                    const currentDate = new Date();
-                    switch (category) {
+                matchesCategory = selectedCategories.some(categoryString => {
+                    // Parse the category string
+                    let baseCategory, status;
+
+                    if (categoryString.includes('_status_')) {
+                        [baseCategory, status] = categoryString.split('_status_');
+                    } else {
+                        baseCategory = categoryString;
+                        status = 'all';
+                    }
+
+                    // Determine if the record is in this category and has the right status
+                    let isInCategory = false;
+                    let isActive = false;
+
+                    switch (baseCategory) {
                         case 'acc':
-                            return isDateInRange(currentDate, record.company.acc_client_effective_from, record.company.acc_client_effective_to);
+                            isInCategory = record.company.acc_client_effective_from || record.company.acc_client_effective_to;
+                            isActive = isDateInRange(
+                                currentDate,
+                                record.company.acc_client_effective_from,
+                                record.company.acc_client_effective_to
+                            );
+                            break;
                         case 'audit_tax':
-                            return isDateInRange(currentDate, record.company.audit_tax_client_effective_from, record.company.audit_tax_client_effective_to);
+                            isInCategory = record.company.audit_tax_client_effective_from || record.company.audit_tax_client_effective_to;
+                            isActive = isDateInRange(
+                                currentDate,
+                                record.company.audit_tax_client_effective_from,
+                                record.company.audit_tax_client_effective_to
+                            );
+                            break;
                         case 'cps_sheria':
-                            return isDateInRange(currentDate, record.company.cps_sheria_client_effective_from, record.company.cps_sheria_client_effective_to);
+                            isInCategory = record.company.cps_sheria_client_effective_from || record.company.cps_sheria_client_effective_to;
+                            isActive = isDateInRange(
+                                currentDate,
+                                record.company.cps_sheria_client_effective_from,
+                                record.company.cps_sheria_client_effective_to
+                            );
+                            break;
                         case 'imm':
-                            return isDateInRange(currentDate, record.company.imm_client_effective_from, record.company.imm_client_effective_to);
+                            isInCategory = record.company.imm_client_effective_from || record.company.imm_client_effective_to;
+                            isActive = isDateInRange(
+                                currentDate,
+                                record.company.imm_client_effective_from,
+                                record.company.imm_client_effective_to
+                            );
+                            break;
                         default:
                             return false;
                     }
+
+                    // Check if this record matches the status filter
+                    if (status === 'all') {
+                        return isInCategory;
+                    } else if (status === 'active') {
+                        return isInCategory && isActive;
+                    } else if (status === 'inactive') {
+                        return isInCategory && !isActive;
+                    }
+
+                    return false;
                 });
             }
 
-            // Check obligation filters
-            let matchesObligation = true;
+            // If it doesn't match the category filter, exclude it
+            if (!matchesCategory) return false;
+
+            // Obligation filters - if no obligations selected, show all
+            let matchesObligation = selectedObligations.length === 0;
+
             if (selectedObligations.length > 0) {
-                const obligationStatus = record.pin_details?.paye_status?.toLowerCase();
-                const effectiveFrom = record.pin_details?.paye_effective_from;
+                const obligationStatus = record.pin_details?.paye_status?.toLowerCase() || '';
+                const effectiveFrom = record.pin_details?.paye_effective_from || '';
 
                 // Determine specific status types
                 const isCancelled = obligationStatus === 'cancelled';
                 const isDormant = obligationStatus === 'dormant';
-                const isNoObligation = effectiveFrom?.toLowerCase() === 'no obligation';
-                const isMissing = !effectiveFrom || effectiveFrom === 'Missing';
+                const isNoObligation = effectiveFrom.toLowerCase().includes('no obligation');
+                const isMissing = !effectiveFrom || effectiveFrom.toLowerCase().includes('missing');
 
                 // Explicitly check if it has an active date (not any of the special cases)
                 const hasActiveDate = effectiveFrom &&
                     !isNoObligation &&
+                    !isMissing &&
                     !isCancelled &&
-                    !isDormant &&
-                    !isMissing;
+                    !isDormant;
 
                 // Match against selected filters
                 matchesObligation = (
@@ -179,8 +243,8 @@ export default function PayrollManagementWingu({
                 );
             }
 
-            // Return true only if record matches all active filters
-            return matchesSearch && matchesCategory && matchesObligation;
+            // Return true only if the record matches both category and obligation filters
+            return matchesObligation;
         });
     }, [payrollRecords, searchTerm, selectedCategories, selectedObligations]);
 
@@ -219,7 +283,7 @@ export default function PayrollManagementWingu({
                         selectedObligations={selectedObligations}
                     />
                     <CategoryFilters
-                        companyDates={filteredRecords[0]?.company}
+                        payrollRecords={payrollRecords} // Pass the full records array
                         onFilterChange={handleFilterChange}
                         selectedCategories={selectedCategories}
                     />
@@ -267,7 +331,7 @@ export default function PayrollManagementWingu({
                         size="sm"
                     >
                         <Download className="h-4 w-4" />
-                        Export
+                        Export Docs
                     </Button>
                     <Button 
                         onClick={() => setBulkFilingDialogOpen(true)}

@@ -79,6 +79,7 @@ interface TaxPaymentTableProps {
     onExportCsv: (records: CompanyPayrollRecord[]) => Promise<void>
     bulkUploadDialogOpen: boolean
     setBulkUploadDialogOpen: (open: boolean) => void
+    showSummaryHeaders?: boolean
 }
 
 const DOCUMENT_LABELS: Record<string, string> = {
@@ -139,7 +140,8 @@ export function TaxPaymentTable({
     columnVisibility,
     onExportCsv,
     bulkUploadDialogOpen,
-    setBulkUploadDialogOpen
+    setBulkUploadDialogOpen,
+    showSummaryHeaders = true
 }: TaxPaymentTableProps) {
     const { toast } = useToast()
 
@@ -152,6 +154,14 @@ export function TaxPaymentTable({
     }>({ isOpen: false, recordId: null, assignedTo: 'Tushar', isNil: false });
 
     const [selectedMonthYear, setSelectedMonthYear] = useState<string>(format(new Date(), 'yyyy-MM'));
+    
+    // Add this for sorting functionality similar to PayslipPaymentReceiptsTable
+    const [sortConfig, setSortConfig] = useState({
+        field: null,
+        direction: 'asc',
+        documentType: null,
+        criteria: null
+    });
 
     const [filingDialog, setFilingDialog] = useState<FilingDialogState>({
         isOpen: false,
@@ -192,16 +202,7 @@ export function TaxPaymentTable({
         });
     };
 
-    // Memoize sorted records for performance
-    const sortedRecords = useMemo(() =>
-        [...records].sort((a, b) => {
-            // Safely handle null/undefined company objects
-            const nameA = a?.company?.company_name || '';
-            const nameB = b?.company?.company_name || '';
-            return nameA.localeCompare(nameB);
-        }),
-        [records]
-    );
+    // Note: Main records sorting is handled in the comprehensive sorting logic below
     
     const handleFinalize = (recordId: string) => {
         onStatusUpdate(recordId, {
@@ -679,319 +680,527 @@ export function TaxPaymentTable({
         onExportCsv(recordsWithDocuments);
     };
 
+    // Helper function to check if a record has NIL status
+    const isNilRecord = useCallback((record: CompanyPayrollRecord): boolean => {
+        return record?.status?.finalization_date === 'NIL';
+    }, []);
+
+    // Handle sorting with different criteria
+    const handleSort = useCallback((documentType, criteria) => {
+        setSortConfig({
+            field: documentType ? 'document' : null,
+            direction: 'asc',
+            documentType,
+            criteria
+        });
+    }, []);
+
+    const handleSortAllDocuments = useCallback((criteria) => {
+        setSortConfig({
+            field: 'allDocuments',
+            direction: 'asc',
+            documentType: null,
+            criteria
+        });
+    }, []);
+
+    // Memoize sorted records based on sorting criteria
+    const sortedRecords = useMemo(() => {
+        // Filter out invalid records (no company name)
+        const validRecords = records.filter(r => r && r.company && r.company.company_name);
+        
+        // Make a copy to avoid mutating the original
+        let result = [...validRecords];
+
+        // Apply sorting if configured
+        if (sortConfig.field === 'document' && sortConfig.documentType) {
+            result.sort((a, b) => {
+                const isNilA = isNilRecord(a);
+                const isNilB = isNilRecord(b);
+                const docTypeA = a.payment_slips_documents?.[sortConfig.documentType];
+                const docTypeB = b.payment_slips_documents?.[sortConfig.documentType];
+
+                // Determine status for each document
+                const getStatus = (record, hasDoc) => {
+                    if (isNilRecord(record)) return 'nil';
+                    return hasDoc ? 'uploaded' : 'missing';
+                };
+
+                const statusA = getStatus(a, docTypeA);
+                const statusB = getStatus(b, docTypeB);
+
+                // Create a priority map based on the criteria
+                const getPriority = (status, criteria) => {
+                    if (criteria === 'uploaded') {
+                        return status === 'uploaded' ? 0 : status === 'nil' ? 1 : 2;
+                    } else if (criteria === 'nil') {
+                        return status === 'nil' ? 0 : status === 'uploaded' ? 1 : 2;
+                    } else if (criteria === 'missing') {
+                        return status === 'missing' ? 0 : status === 'nil' ? 1 : 2;
+                    }
+                    return 0;
+                };
+
+                const priorityA = getPriority(statusA, sortConfig.criteria);
+                const priorityB = getPriority(statusB, sortConfig.criteria);
+
+                if (priorityA !== priorityB) {
+                    return priorityA - priorityB;
+                }
+
+                // If priority is the same, fall back to company name
+                return a.company.company_name.localeCompare(b.company.company_name);
+            });
+        } else if (sortConfig.field === 'allDocuments') {
+            result.sort((a, b) => {
+                const isNilA = isNilRecord(a);
+                const isNilB = isNilRecord(b);
+                const countA = getDocumentCount(a).split('/')[0];
+                const countB = getDocumentCount(b).split('/')[0];
+                const totalDocs = Object.keys(DOCUMENT_LABELS).length - 1; // minus 'all_csv'
+
+                const getStatus = (record, count) => {
+                    if (isNilRecord(record)) return 'nil';
+                    if (count === '0') return 'missing';
+                    if (parseInt(count) === totalDocs) return 'complete';
+                    return 'partial';
+                };
+
+                const statusA = getStatus(a, countA);
+                const statusB = getStatus(b, countB);
+
+                // Create priority based on criteria
+                const getPriority = (status) => {
+                    if (sortConfig.criteria === 'complete') {
+                        return status === 'complete' ? 0 : status === 'partial' ? 1 : status === 'nil' ? 2 : 3;
+                    } else if (sortConfig.criteria === 'nil') {
+                        return status === 'nil' ? 0 : status === 'complete' ? 1 : status === 'partial' ? 2 : 3;
+                    } else if (sortConfig.criteria === 'partial') {
+                        return status === 'partial' ? 0 : status === 'complete' ? 1 : status === 'nil' ? 2 : 3;
+                    } else if (sortConfig.criteria === 'missing') {
+                        return status === 'missing' ? 0 : status === 'partial' ? 1 : status === 'nil' ? 2 : 3;
+                    }
+                    return 0;
+                };
+
+                const priorityA = getPriority(statusA);
+                const priorityB = getPriority(statusB);
+
+                if (priorityA !== priorityB) {
+                    return priorityA - priorityB;
+                }
+
+                // If priority is the same, fall back to company name
+                return a.company.company_name.localeCompare(b.company.company_name);
+            });
+        } else {
+            // Default sort by company name
+            result.sort((a, b) => {
+                const nameA = a.company.company_name;
+                const nameB = b.company.company_name;
+                return nameA.localeCompare(nameB);
+            });
+        }
+
+        return result;
+    }, [records, sortConfig, isNilRecord, getDocumentCount]);
+
+    // Define column definitions to make rendering more maintainable
+    const summaryColumns = [
+        { key: 'index', title: '#' },
+        { key: 'companyName', title: 'Company Name' },
+        { key: 'readyToFile', title: 'Ready to File' },
+        { key: 'payeAcknowledgment', title: 'PAYE Ack.', documentType: 'paye_acknowledgment' },
+        { key: 'payeSlip', title: 'PAYE Slip', documentType: 'paye_slip' },
+        { key: 'housingLevy', title: 'Housing Levy', documentType: 'housing_levy_slip' },
+        { key: 'shif', title: 'SHIF', documentType: 'shif_slip' },
+        { key: 'nssf', title: 'NSSF', documentType: 'nssf_slip' },
+        { key: 'nita', title: 'NITA', documentType: 'nita_slip' },
+        { key: 'allTaxSlips', title: 'All Docs' },
+        { key: 'email', title: 'Email' },
+        { key: 'whatsapp', title: 'WhatsApp' },
+        { key: 'actions', title: 'Actions' }
+    ];
+
+    // Get counts for each document type
+    const getDocumentTypeCounts = useCallback(() => {
+        // Get all valid records
+        const validRecords = sortedRecords.filter(r => r && r.company);
+
+        // Count NIL records first
+        const nilRecords = validRecords.filter(record => isNilRecord(record));
+        const nilCount = nilRecords.length;
+
+        // Count records with all documents uploaded and not NIL
+        const completeRecords = validRecords.filter(
+            record => !isNilRecord(record) && allDocumentsUploaded(record)
+        );
+        const completeCount = completeRecords.length;
+
+        // The rest are pending records
+        const pendingCount = validRecords.length - nilCount - completeCount;
+
+        // Initialize counts object
+        const counts = {
+            total: validRecords.length,
+            complete: completeCount,
+            nil: nilCount,
+            pending: pendingCount,
+            documentTypes: {} as Record<string, {
+                total: number,
+                complete: number,
+                pending: number,
+                nil: number
+            }>
+        };
+
+        // Initialize document type counts
+        summaryColumns
+            .filter(col => col.documentType)
+            .forEach(col => {
+                counts.documentTypes[col.documentType as string] = {
+                    total: 0,
+                    complete: 0,
+                    pending: 0,
+                    nil: 0
+                };
+            });
+
+        // Count uploaded documents by type
+        validRecords.forEach(record => {
+            const isNil = isNilRecord(record);
+
+            summaryColumns
+                .filter(col => col.documentType)
+                .forEach(col => {
+                    const docType = col.documentType as DocumentType;
+                    const isUploaded = !!record?.payment_slips_documents?.[docType];
+
+                    if (isNil) {
+                        // Count NIL records separately for each document type
+                        counts.documentTypes[docType].nil += 1;
+                    } else if (isUploaded) {
+                        // Document is uploaded
+                        counts.documentTypes[docType].complete += 1;
+                    } else {
+                        // Document is missing
+                        counts.documentTypes[docType].pending += 1;
+                    }
+                });
+        });
+
+        // Update total counts for each document type
+        summaryColumns
+            .filter(col => col.documentType)
+            .forEach(col => {
+                const docType = col.documentType as string;
+                counts.documentTypes[docType].total = validRecords.length;
+            });
+
+        return counts;
+    }, [sortedRecords, isNilRecord, allDocumentsUploaded]);
+
+    // Memoize the counts to prevent recalculation on each render
+    const counts = useMemo(() => getDocumentTypeCounts(), [getDocumentTypeCounts]);
+
+    // Dropdown component for sorting
+    const SortDropdown = ({ documentType, label }) => {
+        return (
+            <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="sm" className="h-6 p-0 ml-1">
+                        <MoreHorizontal className="h-4 w-4" />
+                    </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56">
+                    <DropdownMenuItem onClick={() => handleSort(documentType, 'uploaded')}>
+                        Uploaded First
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleSort(documentType, 'missing')}>
+                        Missing First
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleSort(documentType, 'nil')}>
+                        NIL First
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => handleSort(null)}>
+                        Reset Sort
+                    </DropdownMenuItem>
+                </DropdownMenuContent>
+            </DropdownMenu>
+        );
+    };
+
+    const handleLocalDocumentUpload = async (recordId: string, file: File, documentType: DocumentType): Promise<void> => {
+        try {
+            const record = records.find(r => r.id === recordId);
+            if (!record) {
+                throw new Error('Record not found');
+            }
+
+            // Call the onDocumentUpload function passed from parent
+            await onDocumentUpload(recordId, file, documentType, 'payment-slips');
+
+            toast({
+                title: 'Success',
+                description: 'Document uploaded successfully'
+            });
+        } catch (error) {
+            console.error('Document upload error:', error);
+            toast({
+                title: 'Error',
+                description: error instanceof Error ? error.message : 'Failed to upload document',
+                variant: 'destructive'
+            });
+            throw error;
+        }
+    };
+
     return (
-        <div className="rounded-md border h-[calc(100vh-220px)] overflow-auto">
-            <Table aria-label="Payroll Records" className="border border-gray-200">
-                <TableHeader>
-                    {/* Total Records Row */}
-                    <TableRow className="bg-blue-50 text-blue-800 border-b border-gray-300">
-                        {columnVisibility?.index !== false && (
-                            <TableHead className="text-center text-sm font-semibold">Total Records</TableHead>
-                        )}
-                        {columnVisibility?.companyName !== false && (
-                            <TableHead className="text-center text-sm font-semibold">{sortedRecords.length}</TableHead>
-                        )}
-                        {columnVisibility?.readyToFile !== false && (
-                            <TableHead className="text-center text-sm font-semibold">-</TableHead>
-                        )}
-                        {columnVisibility?.payeAcknowledgment !== false && (
-                            <TableHead className="text-center text-sm font-semibold">
-                                {sortedRecords.filter(r => r?.payment_slips_documents?.paye_acknowledgment).length}
-                            </TableHead>
-                        )}
-                        {columnVisibility?.payeSlip !== false && (
-                            <TableHead className="text-center text-sm font-semibold">
-                                {sortedRecords.filter(r => r?.payment_slips_documents?.paye_slip).length}
-                            </TableHead>
-                        )}
-                        {columnVisibility?.housingLevy !== false && (
-                            <TableHead className="text-center text-sm font-semibold">
-                                {sortedRecords.filter(r => r?.payment_slips_documents?.housing_levy_slip).length}
-                            </TableHead>
-                        )}
-                        {columnVisibility?.nita !== false && (
-                            <TableHead className="text-center text-sm font-semibold">
-                                {sortedRecords.filter(r => r?.payment_slips_documents?.nita_slip).length}
-                            </TableHead>
-                        )}
-                        {columnVisibility?.shif !== false && (
-                            <TableHead className="text-center text-sm font-semibold">
-                                {sortedRecords.filter(r => r?.payment_slips_documents?.shif_slip).length}
-                            </TableHead>
-                        )}
-                        {columnVisibility?.nssf !== false && (
-                            <TableHead className="text-center text-sm font-semibold">
-                                {sortedRecords.filter(r => r?.payment_slips_documents?.nssf_slip).length}
-                            </TableHead>
-                        )}
-                        {columnVisibility?.allTaxSlips !== false && (
-                            <TableHead className="text-center text-sm font-semibold">
-                                {sortedRecords.filter(r => allDocumentsUploaded(r)).length}
-                            </TableHead>
-                        )}
-                        {/* {columnVisibility?.emailStatus !== false && (
-                            <TableHead className="text-center text-sm font-semibold">-</TableHead>
-                        )} */}
-                        {columnVisibility?.email !== false && (
-                            <TableHead className="text-center text-sm font-semibold">-</TableHead>
-                        )}
-                        {columnVisibility?.whatsapp !== false && (
-                            <TableHead className="text-center text-sm font-semibold">-</TableHead>
-                        )}
-                        {columnVisibility?.actions !== false && (
-                            <TableHead className="text-center text-sm font-semibold">-</TableHead>
-                        )}
+        <div className="rounded-md border overflow-x-auto max-h-[calc(100vh-180px)]">
+            <Table className="table-fixed w-full relative">
+                <TableHeader className="bg-blue-600 text-white sticky top-0 z-10">
+                    <TableRow className="hover:bg-blue-600">
+                        {summaryColumns.map((column) => {
+                            if (columnVisibility?.[column.key] === false) return null;
+                            
+                            let content = column.title;
+                            
+                            // Add sort dropdown for document columns
+                            if (column.documentType) {
+                                content = (
+                                    <div className="flex items-center text-white justify-center ">
+                                        {column.title}
+                                        <SortDropdown 
+                                            documentType={column.documentType} 
+                                            label={column.title} 
+                                        />
+                                    </div>
+                                );
+                            }
+                            
+                            // Add sort dropdown for All Documents column
+                            if (column.key === 'allTaxSlips') {
+                                content = (
+                                    <div className="flex items-center text-white justify-center">
+                                        {column.title}
+                                        <DropdownMenu>
+                                            <DropdownMenuTrigger asChild>
+                                                <Button variant="ghost" size="sm" className="h-6 p-0 ml-1">
+                                                    <MoreHorizontal className="h-4 w-4" />
+                                                </Button>
+                                            </DropdownMenuTrigger>
+                                            <DropdownMenuContent align="end" className="w-56">
+                                                <DropdownMenuItem onClick={() => handleSortAllDocuments('complete')}>
+                                                    All Complete First
+                                                </DropdownMenuItem>
+                                                <DropdownMenuItem onClick={() => handleSortAllDocuments('nil')}>
+                                                    NIL First
+                                                </DropdownMenuItem>
+                                                <DropdownMenuItem onClick={() => handleSortAllDocuments('partial')}>
+                                                    Partially Complete First
+                                                </DropdownMenuItem>
+                                                <DropdownMenuItem onClick={() => handleSortAllDocuments('missing')}>
+                                                    All Missing First
+                                                </DropdownMenuItem>
+                                                <DropdownMenuSeparator />
+                                                <DropdownMenuItem onClick={() => handleSort(null)}>
+                                                    Reset Sort
+                                                </DropdownMenuItem>
+                                            </DropdownMenuContent>
+                                        </DropdownMenu>
+                                    </div>
+                                );
+                            }
+
+                            return (
+                                <TableHead
+                                    key={column.key}
+                                    className={`text-white
+                                        ${column.key === 'index' ? 'w-10' : ''} 
+                                        ${column.key === 'companyName' ? 'w-40 max-w-[150px] truncate' : ''} 
+                                        ${column.documentType || ['readyToFile', 'allTaxSlips', 'email', 'whatsapp', 'actions'].includes(column.key) ? 'w-20 text-center' : ''}
+                                    `}
+                                >
+                                    {content}
+                                </TableHead>
+                            );
+                        })}
                     </TableRow>
 
-                    {/* Complete Records Row */}
-                    <TableRow className="bg-green-50 text-green-800 border-b border-gray-300">
-                        {columnVisibility?.index !== false && (
-                            <TableHead className="text-center text-sm font-semibold">Complete</TableHead>
-                        )}
-                        {columnVisibility?.companyName !== false && (
-                            <TableHead className="text-center text-sm font-semibold">
-                                {sortedRecords.filter(r => r?.status?.status === 'completed' || allDocumentsUploaded(r)).length}
-                            </TableHead>
-                        )}
-                        {columnVisibility?.readyToFile !== false && (
-                            <TableHead className="text-center text-sm font-semibold">-</TableHead>
-                        )}
-                        {columnVisibility?.payeAcknowledgment !== false && (
-                            <TableHead className="text-center text-sm font-semibold">
-                                {sortedRecords.filter(r => (r?.status?.status === 'completed' || allDocumentsUploaded(r)) && r?.payment_slips_documents?.paye_acknowledgment).length}
-                            </TableHead>
-                        )}
-                        {columnVisibility?.payeSlip !== false && (
-                            <TableHead className="text-center text-sm font-semibold">
-                                {sortedRecords.filter(r => (r?.status?.status === 'completed' || allDocumentsUploaded(r)) && r?.payment_slips_documents?.paye_slip).length}
-                            </TableHead>
-                        )}
-                        {columnVisibility?.housingLevy !== false && (
-                            <TableHead className="text-center text-sm font-semibold">
-                                {sortedRecords.filter(r => (r?.status?.status === 'completed' || allDocumentsUploaded(r)) && r?.payment_slips_documents?.housing_levy_slip).length}
-                            </TableHead>
-                        )}
-                        {columnVisibility?.nita !== false && (
-                            <TableHead className="text-center text-sm font-semibold">
-                                {sortedRecords.filter(r => (r?.status?.status === 'completed' || allDocumentsUploaded(r)) && r?.payment_slips_documents?.nita_slip).length}
-                            </TableHead>
-                        )}
-                        {columnVisibility?.shif !== false && (
-                            <TableHead className="text-center text-sm font-semibold">
-                                {sortedRecords.filter(r => (r?.status?.status === 'completed' || allDocumentsUploaded(r)) && r?.payment_slips_documents?.shif_slip).length}
-                            </TableHead>
-                        )}
-                        {columnVisibility?.nssf !== false && (
-                            <TableHead className="text-center text-sm font-semibold">
-                                {sortedRecords.filter(r => (r?.status?.status === 'completed' || allDocumentsUploaded(r)) && r?.payment_slips_documents?.nssf_slip).length}
-                            </TableHead>
-                        )}
-                        {columnVisibility?.allTaxSlips !== false && (
-                            <TableHead className="text-center text-sm font-semibold">
-                                {sortedRecords.filter(r => allDocumentsUploaded(r)).length}
-                            </TableHead>
-                        )}
-                        {/* {columnVisibility?.emailStatus !== false && (
-                            <TableHead className="text-center text-sm font-semibold">-</TableHead>
-                        )} */}
-                        {columnVisibility?.email !== false && (
-                            <TableHead className="text-center text-sm font-semibold">-</TableHead>
-                        )}
-                        {columnVisibility?.whatsapp !== false && (
-                            <TableHead className="text-center text-sm font-semibold">-</TableHead>
-                        )}
-                        {columnVisibility?.actions !== false && (
-                            <TableHead className="text-center text-sm font-semibold">-</TableHead>
-                        )}
-                    </TableRow>
+                    {/* Summary headers - conditionally rendered based on showSummaryHeaders */}
+                    {showSummaryHeaders && (
+                        <>
+                            {/* Total Records Row */}
+                            <TableRow className="bg-blue-100 border-b border-gray-300 hover:bg-blue-200 h-8">
+                                {summaryColumns.map((column, idx) => {
+                                    if (columnVisibility?.[column.key] === false) return null;
 
-                    {/* Pending Records Row */}
-                    <TableRow className="bg-yellow-50 text-yellow-800 border-b border-gray-300">
-                        {columnVisibility?.index !== false && (
-                            <TableHead className="text-center text-sm font-semibold">Pending</TableHead>
-                        )}
-                        {columnVisibility?.companyName !== false && (
-                            <TableHead className="text-center text-sm font-semibold">
-                                {sortedRecords.filter(r => 
-                                    r?.status?.status !== 'completed' && 
-                                    !allDocumentsUploaded(r) &&
-                                    !(r?.status?.verification_date?.includes('NIL'))
-                                ).length}
-                            </TableHead>
-                        )}
-                        {columnVisibility?.readyToFile !== false && (
-                            <TableHead className="text-center text-sm font-semibold">-</TableHead>
-                        )}
-                        {columnVisibility?.payeAcknowledgment !== false && (
-                            <TableHead className="text-center text-sm font-semibold">
-                                {sortedRecords.filter(r => 
-                                    r?.status?.status !== 'completed' && 
-                                    !allDocumentsUploaded(r) &&
-                                    !(r?.status?.verification_date?.includes('NIL')) && 
-                                    !r?.payment_slips_documents?.paye_acknowledgment
-                                ).length}
-                            </TableHead>
-                        )}
-                        {columnVisibility?.payeSlip !== false && (
-                            <TableHead className="text-center text-sm font-semibold">
-                                {sortedRecords.filter(r => 
-                                    r?.status?.status !== 'completed' && 
-                                    !allDocumentsUploaded(r) &&
-                                    !(r?.status?.verification_date?.includes('NIL')) && 
-                                    !r?.payment_slips_documents?.paye_slip
-                                ).length}
-                            </TableHead>
-                        )}
-                        {columnVisibility?.housingLevy !== false && (
-                            <TableHead className="text-center text-sm font-semibold">
-                                {sortedRecords.filter(r => 
-                                    r?.status?.status !== 'completed' && 
-                                    !allDocumentsUploaded(r) &&
-                                    !(r?.status?.verification_date?.includes('NIL')) && 
-                                    !r?.payment_slips_documents?.housing_levy_slip
-                                ).length}
-                            </TableHead>
-                        )}
-                        {columnVisibility?.nita !== false && (
-                            <TableHead className="text-center text-sm font-semibold">
-                                {sortedRecords.filter(r => 
-                                    r?.status?.status !== 'completed' && 
-                                    !allDocumentsUploaded(r) &&
-                                    !(r?.status?.verification_date?.includes('NIL')) && 
-                                    !r?.payment_slips_documents?.nita_slip
-                                ).length}
-                            </TableHead>
-                        )}
-                        {columnVisibility?.shif !== false && (
-                            <TableHead className="text-center text-sm font-semibold">
-                                {sortedRecords.filter(r => 
-                                    r?.status?.status !== 'completed' && 
-                                    !allDocumentsUploaded(r) &&
-                                    !(r?.status?.verification_date?.includes('NIL')) && 
-                                    !r?.payment_slips_documents?.shif_slip
-                                ).length}
-                            </TableHead>
-                        )}
-                        {columnVisibility?.nssf !== false && (
-                            <TableHead className="text-center text-sm font-semibold">
-                                {sortedRecords.filter(r => 
-                                    r?.status?.status !== 'completed' && 
-                                    !allDocumentsUploaded(r) &&
-                                    !(r?.status?.verification_date?.includes('NIL')) && 
-                                    !r?.payment_slips_documents?.nssf_slip
-                                ).length}
-                            </TableHead>
-                        )}
-                        {columnVisibility?.allTaxSlips !== false && (
-                            <TableHead className="text-center text-sm font-semibold">-</TableHead>
-                        )}
-                        {/* {columnVisibility?.emailStatus !== false && (
-                            <TableHead className="text-center text-sm font-semibold">-</TableHead>
-                        )} */}
-                        {columnVisibility?.email !== false && (
-                            <TableHead className="text-center text-sm font-semibold">-</TableHead>
-                        )}
-                        {columnVisibility?.whatsapp !== false && (
-                            <TableHead className="text-center text-sm font-semibold">-</TableHead>
-                        )}
-                        {columnVisibility?.actions !== false && (
-                            <TableHead className="text-center text-sm font-semibold">-</TableHead>
-                        )}
-                    </TableRow>
+                                    // Merge first two columns
+                                    if (column.key === 'index') {
+                                        return (
+                                            <TableHead
+                                                key={column.key}
+                                                className="text-left text-black text-sm font-semibold pl-3 pr-1 py-1"
+                                                colSpan={2}
+                                            >
+                                                Total Records
+                                            </TableHead>
+                                        );
+                                    }
+                                    if (column.key === 'companyName') {
+                                        return null; // Skip this cell as we merged it with index
+                                    }
+                                    if (column.documentType) {
+                                        return (
+                                            <TableHead key={column.key} className="text-center text-black text-sm font-semibold py-1 px-2">
+                                                {counts.documentTypes[column.documentType]?.total || 0}
+                                            </TableHead>
+                                        );
+                                    }
+                                    if (column.key === 'allTaxSlips') {
+                                        return (
+                                            <TableHead key={column.key} className="text-center text-black text-sm font-semibold py-1 px-2">
+                                                -
+                                            </TableHead>
+                                        );
+                                    }
+                                    if (column.key === 'readyToFile' || column.key === 'email' || column.key === 'whatsapp') {
+                                        return (
+                                            <TableHead key={column.key} className="text-center text-black text-sm font-semibold py-1 px-2">
+                                                {counts.total}
+                                            </TableHead>
+                                        );
+                                    }
 
-                    {/* NIL Records Row */}
-                    <TableRow className="bg-purple-50 text-purple-800 border-b border-gray-300">
-                        {columnVisibility?.index !== false && (
-                            <TableHead className="text-center text-sm font-semibold">NIL Records</TableHead>
-                        )}
-                        {columnVisibility?.companyName !== false && (
-                            <TableHead className="text-center text-sm font-semibold">
-                                {sortedRecords.filter(r => r?.status?.verification_date?.includes('NIL')).length}
-                            </TableHead>
-                        )}
-                        {columnVisibility?.readyToFile !== false && (
-                            <TableHead className="text-center text-sm font-semibold">-</TableHead>
-                        )}
-                        {columnVisibility?.payeAcknowledgment !== false && (
-                            <TableHead className="text-center text-sm font-semibold">-</TableHead>
-                        )}
-                        {columnVisibility?.payeSlip !== false && (
-                            <TableHead className="text-center text-sm font-semibold">-</TableHead>
-                        )}
-                        {columnVisibility?.housingLevy !== false && (
-                            <TableHead className="text-center text-sm font-semibold">-</TableHead>
-                        )}
-                        {columnVisibility?.nita !== false && (
-                            <TableHead className="text-center text-sm font-semibold">-</TableHead>
-                        )}
-                        {columnVisibility?.shif !== false && (
-                            <TableHead className="text-center text-sm font-semibold">-</TableHead>
-                        )}
-                        {columnVisibility?.nssf !== false && (
-                            <TableHead className="text-center text-sm font-semibold">-</TableHead>
-                        )}
-                        {columnVisibility?.allTaxSlips !== false && (
-                            <TableHead className="text-center text-sm font-semibold">-</TableHead>
-                        )}
-                        {/* {columnVisibility?.emailStatus !== false && (
-                            <TableHead className="text-center text-sm font-semibold">-</TableHead>
-                        )} */}
-                        {columnVisibility?.email !== false && (
-                            <TableHead className="text-center text-sm font-semibold">-</TableHead>
-                        )}
-                        {columnVisibility?.whatsapp !== false && (
-                            <TableHead className="text-center text-sm font-semibold">-</TableHead>
-                        )}
-                        {columnVisibility?.actions !== false && (
-                            <TableHead className="text-center text-sm font-semibold">-</TableHead>
-                        )}
-                    </TableRow>
+                                    return <TableHead key={column.key} className="text-center text-black text-sm font-semibold py-1 px-2">-</TableHead>;
+                                })}
+                            </TableRow>
 
-                    {/* Original column headers */}
-                    <TableRow className="bg-blue-500 text-white">
-                        {columnVisibility?.index !== false && (
-                            <TableHead className="text-white font-semibold" scope="col">#</TableHead>
-                        )}
-                        {columnVisibility?.companyName !== false && (
-                            <TableHead className="text-white font-semibold" scope="col">Company Name</TableHead>
-                        )}
-                        {columnVisibility?.readyToFile !== false && (
-                            <TableHead className="text-white font-semibold" scope="col">Ready to File</TableHead>
-                        )}
-                        {columnVisibility?.payeAcknowledgment !== false && (
-                            <TableHead className="text-white font-semibold" scope="col">PAYE Ack.</TableHead>
-                        )}
-                        {columnVisibility?.payeSlip !== false && (
-                            <TableHead className="text-white font-semibold" scope="col">PAYE Slip</TableHead>
-                        )}
-                        {columnVisibility?.housingLevy !== false && (
-                            <TableHead className="text-white font-semibold" scope="col">Housing Levy</TableHead>
-                        )}
-                        {columnVisibility?.nita !== false && (
-                            <TableHead className="text-white font-semibold" scope="col">NITA</TableHead>
-                        )}
-                        {columnVisibility?.shif !== false && (
-                            <TableHead className="text-white font-semibold" scope="col">SHIF</TableHead>
-                        )}
-                        {columnVisibility?.nssf !== false && (
-                            <TableHead className="text-white font-semibold" scope="col">NSSF</TableHead>
-                        )}
-                        {columnVisibility?.allTaxSlips !== false && (
-                            <TableHead className="text-white font-semibold" scope="col">All Tax Slips</TableHead>
-                        )}
-                        {/* {columnVisibility?.emailStatus !== false && (
-                            <TableHead className="text-white font-semibold" scope="col">Email Status</TableHead>
-                        )} */}
-                        {columnVisibility?.email !== false && (
-                            <TableHead className="text-white font-semibold" scope="col">Email</TableHead>
-                        )}
-                        {columnVisibility?.whatsapp !== false && (
-                            <TableHead className="text-white font-semibold" scope="col">WhatsApp</TableHead>
-                        )}
-                        {columnVisibility?.actions !== false && (
-                            <TableHead className="text-white font-semibold" scope="col">Actions</TableHead>
-                        )}
-                    </TableRow>
+                            {/* Complete Records Row */}
+                            <TableRow className="bg-green-100 border-b border-gray-300 hover:bg-green-200 h-8">
+                                {summaryColumns.map(column => {
+                                    if (columnVisibility?.[column.key] === false) return null;
+
+                                    if (column.key === 'index') {
+                                        return (
+                                            <TableHead
+                                                key={column.key}
+                                                className="text-left text-black text-sm font-semibold pl-3 pr-1 py-1"
+                                                colSpan={2}
+                                            >
+                                                Complete
+                                            </TableHead>
+                                        );
+                                    }
+                                    if (column.key === 'companyName') {
+                                        return null; // Skip this cell as we merged it with index
+                                    }
+                                    if (column.documentType) {
+                                        return (
+                                            <TableHead key={column.key} className="text-center text-black text-sm font-semibold py-1 px-2">
+                                                {counts.documentTypes[column.documentType]?.complete || 0}
+                                            </TableHead>
+                                        );
+                                    }
+                                    if (column.key === 'allTaxSlips') {
+                                        return (
+                                            <TableHead key={column.key} className="text-center text-black text-sm font-semibold py-1 px-2">
+                                                -
+                                            </TableHead>
+                                        );
+                                    }
+                                    if (column.key === 'readyToFile' || column.key === 'email' || column.key === 'whatsapp') {
+                                        return (
+                                            <TableHead key={column.key} className="text-center text-black text-sm font-semibold py-1 px-2">
+                                                {counts.complete}
+                                            </TableHead>
+                                        );
+                                    }
+
+                                    return <TableHead key={column.key} className="text-center text-black text-sm font-semibold py-1 px-2">-</TableHead>;
+                                })}
+                            </TableRow>
+
+                            {/* Pending Records Row */}
+                            <TableRow className="bg-yellow-100 border-b border-gray-300 hover:bg-yellow-200 h-8">
+                                {summaryColumns.map(column => {
+                                    if (columnVisibility?.[column.key] === false) return null;
+
+                                    if (column.key === 'index') {
+                                        return (
+                                            <TableHead
+                                                key={column.key}
+                                                className="text-left text-black text-sm font-semibold pl-3 pr-1 py-1"
+                                                colSpan={2}
+                                            >
+                                                Pending
+                                            </TableHead>
+                                        );
+                                    }
+                                    if (column.key === 'companyName') {
+                                        return null; // Skip this cell as we merged it with index
+                                    }
+                                    if (column.documentType) {
+                                        return (
+                                            <TableHead key={column.key} className="text-center text-black text-sm font-semibold py-1 px-2">
+                                                {counts.documentTypes[column.documentType]?.pending || 0}
+                                            </TableHead>
+                                        );
+                                    }
+                                    if (column.key === 'allTaxSlips') {
+                                        return (
+                                            <TableHead key={column.key} className="text-center text-black text-sm font-semibold py-1 px-2">
+                                                -
+                                            </TableHead>
+                                        );
+                                    }
+                                    if (column.key === 'readyToFile' || column.key === 'email' || column.key === 'whatsapp') {
+                                        return (
+                                            <TableHead key={column.key} className="text-center text-black text-sm font-semibold py-1 px-2">
+                                                {counts.total - counts.complete - counts.nil}
+                                            </TableHead>
+                                        );
+                                    }
+
+                                    return <TableHead key={column.key} className="text-center text-black text-sm font-semibold py-1 px-2">-</TableHead>;
+                                })}
+                            </TableRow>
+
+                            {/* NIL Records Row */}
+                            <TableRow className="bg-purple-100 border-b border-gray-300 hover:bg-purple-200 h-8">
+                                {summaryColumns.map(column => {
+                                    if (columnVisibility?.[column.key] === false) return null;
+
+                                    if (column.key === 'index') {
+                                        return (
+                                            <TableHead
+                                                key={column.key}
+                                                className="text-left text-black text-sm font-semibold pl-3 pr-1 py-1"
+                                                colSpan={2}
+                                            >
+                                                NIL Records
+                                            </TableHead>
+                                        );
+                                    }
+                                    if (column.key === 'companyName') {
+                                        return null; // Skip this cell as we merged it with index
+                                    }
+                                    if (column.documentType) {
+                                        return <TableHead key={column.key} className="text-center text-black text-sm font-semibold py-1 px-2">{counts.nil}</TableHead>;
+                                    }
+                                    if (column.key === 'allTaxSlips') {
+                                        return <TableHead key={column.key} className="text-center text-black text-sm font-semibold py-1 px-2">-</TableHead>;
+                                    }
+                                    if (column.key === 'readyToFile' || column.key === 'email' || column.key === 'whatsapp') {
+                                        return <TableHead key={column.key} className="text-center text-black text-sm font-semibold py-1 px-2">{counts.nil}</TableHead>;
+                                    }
+
+                                    return <TableHead key={column.key} className="text-center text-black text-sm font-semibold py-1 px-2">-</TableHead>;
+                                })}
+                            </TableRow>
+                        </>
+                    )}
                 </TableHeader>
                 <TableBody>
                     {loading ? (
@@ -1006,7 +1215,7 @@ export function TaxPaymentTable({
                     ) : sortedRecords.length === 0 ? (
                         <TableRow>
                             <TableCell colSpan={Object.values(columnVisibility || {}).filter(Boolean).length} className="text-center py-8 border">
-                                No records found.
+                                No valid records found
                             </TableCell>
                         </TableRow>
                     ) : (
@@ -1226,35 +1435,39 @@ export function TaxPaymentTable({
                                         </div>
                                     </TableCell>
                                 )} */}
+{/* // In the TaxPaymentTable component, update the Email and WhatsApp cells */}
+
                                 {columnVisibility?.email !== false && (
                                     <TableCell>
                                         <div className="flex items-center gap-2">
                                             <TooltipProvider>
                                                 <Tooltip>
-                                                    <TooltipTrigger>
-                                                        <WhatsAppModal
-                                                            trigger={
-                                                                <Button
-                                                                    size="sm"
-                                                                    variant="ghost"
-                                                                    className="h-8 w-8 p-0 relative"
-                                                                >
-                                                                    <MessageSquare className="h-4 w-4" />
-                                                                    {record.whatsapp_history?.length > 0 && (
-                                                                        <Badge
-                                                                            className="absolute -top-2 -right-2 h-5 w-5 rounded-full bg-green-500"
-                                                                            variant="secondary"
-                                                                        >
-                                                                            {record.whatsapp_history.length}
-                                                                        </Badge>
-                                                                    )}
-                                                                </Button>
-                                                            }
-                                                            companyName={record.company?.company_name || ''}
-                                                            companyPhone={record.company?.phone_number || ''}
-                                                            documents={getDocumentsForUpload(record)}
-                                                            onMessageSent={(data) => handleMessageSent(record.id, data)}
-                                                        />
+                                                    <TooltipTrigger asChild>
+                                                        <div className="inline-block"> {/* Use div instead of directly wrapping WhatsAppModal */}
+                                                            <WhatsAppModal
+                                                                trigger={
+                                                                    <Button
+                                                                        size="sm"
+                                                                        variant="ghost"
+                                                                        className="h-8 w-8 p-0 relative"
+                                                                    >
+                                                                        <MessageSquare className="h-4 w-4" />
+                                                                        {record.whatsapp_history?.length > 0 && (
+                                                                            <Badge
+                                                                                className="absolute -top-2 -right-2 h-5 w-5 rounded-full bg-green-500"
+                                                                                variant="secondary"
+                                                                            >
+                                                                                {record.whatsapp_history.length}
+                                                                            </Badge>
+                                                                        )}
+                                                                    </Button>
+                                                                }
+                                                                companyName={record.company?.company_name || ''}
+                                                                companyPhone={record.company?.phone_number || ''}
+                                                                documents={getDocumentsForUpload(record)}
+                                                                onMessageSent={(data) => handleMessageSent(record.id, data)}
+                                                            />
+                                                        </div>
                                                     </TooltipTrigger>
                                                     <TooltipContent>
                                                         {record.whatsapp_history?.length > 0 ? (
@@ -1276,35 +1489,38 @@ export function TaxPaymentTable({
                                         </div>
                                     </TableCell>
                                 )}
+
                                 {columnVisibility?.whatsapp !== false && (
                                     <TableCell>
                                         <div className="flex items-center gap-2">
                                             <TooltipProvider>
                                                 <Tooltip>
                                                     <TooltipTrigger asChild>
-                                                        <ContactModal
-                                                            trigger={
-                                                                <Button
-                                                                    variant="outline"
-                                                                    size="icon"
-                                                                    className="relative"
-                                                                >
-                                                                    <Mail className="h-4 w-4" />
-                                                                    {record.email_history?.length > 0 && (
-                                                                        <Badge
-                                                                            className="absolute -top-2 -right-2 h-5 w-5 rounded-full bg-green-500"
-                                                                            variant="secondary"
-                                                                        >
-                                                                            {record.email_history.length}
-                                                                        </Badge>
-                                                                    )}
-                                                                </Button>
-                                                            }
-                                                            companyName={record.company?.company_name || ''}
-                                                            companyEmail={record.company?.email}
-                                                            documents={getDocumentsForUpload(record)}
-                                                            onEmailSent={(data) => handleEmailSent(record.id, data)}
-                                                        />
+                                                        <div className="inline-block"> {/* Use div to wrap ContactModal */}
+                                                            <ContactModal
+                                                                trigger={
+                                                                    <Button
+                                                                        variant="outline"
+                                                                        size="icon"
+                                                                        className="relative"
+                                                                    >
+                                                                        <Mail className="h-4 w-4" />
+                                                                        {record.email_history?.length > 0 && (
+                                                                            <Badge
+                                                                                className="absolute -top-2 -right-2 h-5 w-5 rounded-full bg-green-500"
+                                                                                variant="secondary"
+                                                                            >
+                                                                                {record.email_history.length}
+                                                                            </Badge>
+                                                                        )}
+                                                                    </Button>
+                                                                }
+                                                                companyName={record.company?.company_name || ''}
+                                                                companyEmail={record.company?.email}
+                                                                documents={getDocumentsForUpload(record)}
+                                                                onEmailSent={(data) => handleEmailSent(record.id, data)}
+                                                            />
+                                                        </div>
                                                     </TooltipTrigger>
                                                     <TooltipContent>
                                                         {record.email_history?.length > 0 ? (

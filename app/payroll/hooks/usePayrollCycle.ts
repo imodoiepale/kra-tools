@@ -21,6 +21,9 @@ export const usePayrollCycle = () => {
     const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth())
     const [searchTerm, setSearchTerm] = useState('')
     const [loading, setLoading] = useState(false)
+    // Shared filter states across all tabs
+    const [selectedCategories, setSelectedCategories] = useState<string[]>(['acc_status_active'])
+    const [selectedObligations, setSelectedObligations] = useState<string[]>(['active'])
     const { toast } = useToast()
 
     const selectedMonthYear = `${selectedYear}-${(selectedMonth + 1).toString().padStart(2, '0')}`
@@ -1626,6 +1629,11 @@ export const usePayrollCycle = () => {
         setSelectedMonth,
         searchTerm,
         setSearchTerm,
+        // Shared filter states
+        selectedCategories,
+        setSelectedCategories,
+        selectedObligations,
+        setSelectedObligations,
         fetchOrCreatePayrollCycle,
         handleDocumentUpload,
         handleDocumentDelete,

@@ -39,6 +39,11 @@ interface PayslipPaymentReceiptsProps {
     handleStatusUpdate: (recordId: string, statusUpdate: Partial<CompanyPayrollRecord['status']>) => Promise<void>
     setPayrollRecords: React.Dispatch<React.SetStateAction<CompanyPayrollRecord[]>>
     setLoading: React.Dispatch<React.SetStateAction<boolean>>
+    // Shared filter states
+    selectedCategories: string[]
+    setSelectedCategories: (categories: string[]) => void
+    selectedObligations: string[]
+    setSelectedObligations: (obligations: string[]) => void
 }
 
 export default function PayslipPaymentReceipts({
@@ -54,10 +59,13 @@ export default function PayslipPaymentReceipts({
     handleDocumentDelete,
     handleStatusUpdate,
     setPayrollRecords,
-    setLoading
+    setLoading,
+    // Use shared filter states from hook
+    selectedCategories,
+    setSelectedCategories,
+    selectedObligations,
+    setSelectedObligations
 }: PayslipPaymentReceiptsProps) {
-    const [selectedCategories, setSelectedCategories] = useState<string[]>(['acc']);
-    const [selectedObligations, setSelectedObligations] = useState<string[]>(['active']);
     const [bulkUploadDialogOpen, setBulkUploadDialogOpen] = useState(false);
     const [showSummaryHeaders, setShowSummaryHeaders] = useState(true);
     const { toast } = useToast();
@@ -367,62 +375,93 @@ export default function PayslipPaymentReceipts({
         }
     };
 
-    // Filter records based on search term and selected categories
+    // Filter records based on search term, categories, and obligations
     const filteredRecords = useMemo(() => {
         return payrollRecords.filter(record => {
             // Check if record and company exist
             if (!record || !record.company) return false;
 
+            // Search term filter
             const matchesSearch = record.company.company_name?.toLowerCase().includes(searchTerm.toLowerCase()) ?? false;
+            if (!matchesSearch) return false;
 
-            // Check category filters
-            let matchesCategory = true;
+            const currentDate = new Date();
+
+            // Category filters - if no categories selected, show all
+            let matchesCategory = selectedCategories.length === 0;
+
             if (selectedCategories.length > 0) {
-                matchesCategory = selectedCategories.some(category => {
-                    const currentDate = new Date();
-                    
-                    // Extract the base category without status suffix
-                    const baseCategory = category.split('_status_')[0];
-                    const status = category.includes('_status_') 
-                        ? category.split('_status_')[1] as 'active' | 'inactive'
-                        : 'active'; // Default to active status if not specified
-                    
+                matchesCategory = selectedCategories.some(categoryString => {
+                    // Parse the category string
+                    let baseCategory, status;
+
+                    if (categoryString.includes('_status_')) {
+                        [baseCategory, status] = categoryString.split('_status_');
+                    } else {
+                        baseCategory = categoryString;
+                        status = 'all';
+                    }
+
+                    // Determine if the record is in this category and has the right status
                     let isInCategory = false;
                     let isActive = false;
-                    
+
                     switch (baseCategory) {
                         case 'acc':
-                            isInCategory = true;
-                            isActive = isDateInRange(currentDate, record.company.acc_client_effective_from, record.company.acc_client_effective_to);
+                            isInCategory = record.company.acc_client_effective_from || record.company.acc_client_effective_to;
+                            isActive = isDateInRange(
+                                currentDate,
+                                record.company.acc_client_effective_from,
+                                record.company.acc_client_effective_to
+                            );
                             break;
                         case 'audit_tax':
-                            isInCategory = true;
-                            isActive = isDateInRange(currentDate, record.company.audit_tax_client_effective_from, record.company.audit_tax_client_effective_to);
+                            isInCategory = record.company.audit_tax_client_effective_from || record.company.audit_tax_client_effective_to;
+                            isActive = isDateInRange(
+                                currentDate,
+                                record.company.audit_tax_client_effective_from,
+                                record.company.audit_tax_client_effective_to
+                            );
                             break;
                         case 'cps_sheria':
-                            isInCategory = true;
-                            isActive = isDateInRange(currentDate, record.company.cps_sheria_client_effective_from, record.company.cps_sheria_client_effective_to);
+                            isInCategory = record.company.cps_sheria_client_effective_from || record.company.cps_sheria_client_effective_to;
+                            isActive = isDateInRange(
+                                currentDate,
+                                record.company.cps_sheria_client_effective_from,
+                                record.company.cps_sheria_client_effective_to
+                            );
                             break;
                         case 'imm':
-                            isInCategory = true;
-                            isActive = isDateInRange(currentDate, record.company.imm_client_effective_from, record.company.imm_client_effective_to);
+                            isInCategory = record.company.imm_client_effective_from || record.company.imm_client_effective_to;
+                            isActive = isDateInRange(
+                                currentDate,
+                                record.company.imm_client_effective_from,
+                                record.company.imm_client_effective_to
+                            );
                             break;
                         default:
                             return false;
                     }
-                    
-                    // If status is 'all', return whether it's in the category
+
+                    // Check if this record matches the status filter
                     if (status === 'all') {
                         return isInCategory;
+                    } else if (status === 'active') {
+                        return isInCategory && isActive;
+                    } else if (status === 'inactive') {
+                        return isInCategory && !isActive;
                     }
-                    
-                    // Otherwise, check if the active status matches the requested status
-                    return isInCategory && ((status === 'active' && isActive) || (status === 'inactive' && !isActive));
+
+                    return false;
                 });
             }
 
-            // Check obligation filters
-            let matchesObligation = true;
+            // If it doesn't match the category filter, exclude it
+            if (!matchesCategory) return false;
+
+            // Obligation filters - if no obligations selected, show all
+            let matchesObligation = selectedObligations.length === 0;
+
             if (selectedObligations.length > 0) {
                 const obligationStatus = record.pin_details?.paye_status?.toLowerCase() || '';
                 const effectiveFrom = record.pin_details?.paye_effective_from || '';
@@ -441,7 +480,7 @@ export default function PayslipPaymentReceipts({
                     !isDormant;
 
                 // Match against selected filters
-                matchesObligation = selectedObligations.length === 0 || (
+                matchesObligation = (
                     (selectedObligations.includes('active') && hasActiveDate) ||
                     (selectedObligations.includes('cancelled') && isCancelled) ||
                     (selectedObligations.includes('dormant') && isDormant) ||
@@ -450,7 +489,8 @@ export default function PayslipPaymentReceipts({
                 );
             }
 
-            return matchesSearch && matchesCategory && matchesObligation;
+            // Return true only if the record matches both category and obligation filters
+            return matchesObligation;
         });
     }, [payrollRecords, searchTerm, selectedCategories, selectedObligations]);
 
@@ -476,7 +516,7 @@ export default function PayslipPaymentReceipts({
                         selectedObligations={selectedObligations}
                     />
                     <CategoryFilters
-                        companyDates={filteredRecords[0]?.company}
+                        payrollRecords={payrollRecords} // Pass the full records array
                         onFilterChange={handleFilterChange}
                         selectedCategories={selectedCategories}
                     />

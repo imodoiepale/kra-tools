@@ -37,6 +37,11 @@ interface TaxPaymentSlipsProps {
     handlePaymentSlipsDocumentUpload: (recordId: string, file: File, documentType: DocumentType, subFolder: string) => Promise<string | undefined>
     handlePaymentSlipsDocumentDelete: (recordId: string, documentType: DocumentType) => Promise<void>
     handleBulkExport: (records: CompanyPayrollRecord[]) => Promise<void>
+    // Shared filter states
+    selectedCategories: string[]
+    setSelectedCategories: (categories: string[]) => void
+    selectedObligations: string[]
+    setSelectedObligations: (obligations: string[]) => void
 }
 
 export default function TaxPaymentSlips({
@@ -49,14 +54,17 @@ export default function TaxPaymentSlips({
     setSelectedMonth,
     setSearchTerm,
     handleDocumentUpload,
-    handleDocumentDelete,
+    handleDocumentDelete,   
     handleStatusUpdate,
     handlePaymentSlipsDocumentUpload,
     handlePaymentSlipsDocumentDelete,
-    handleBulkExport
+    handleBulkExport,
+    // Use shared filter states from hook
+    selectedCategories,
+    setSelectedCategories,
+    selectedObligations,
+    setSelectedObligations
 }: TaxPaymentSlipsProps) {
-    const [selectedCategories, setSelectedCategories] = useState<string[]>(['acc']);
-    const [selectedObligations, setSelectedObligations] = useState<string[]>(['active']);
     const [bulkUploadDialogOpen, setBulkUploadDialogOpen] = useState(false);
     const [showSummaryHeaders, setShowSummaryHeaders] = useState(true);
     const { toast } = useToast();
@@ -101,6 +109,10 @@ export default function TaxPaymentSlips({
         return visibility;
     }, [visibleColumns]);
 
+    const handleDocumentUploadWithFolder = (recordId: string, file: File, documentType: DocumentType) => {
+        return handlePaymentSlipsDocumentUpload(recordId, file, documentType, 'payment-slips')
+    }
+
     const handleFilterChange = useCallback((categories: string[]) => {
         setSelectedCategories(categories);
     }, []);
@@ -109,15 +121,22 @@ export default function TaxPaymentSlips({
         setSelectedObligations(obligations);
     }, []);
 
-    const handleDocumentUploadWithFolder = (recordId: string, file: File, documentType: DocumentType) => {
-        return handlePaymentSlipsDocumentUpload(recordId, file, documentType, 'payment-slips')
-    }
-
     const isDateInRange = (date: Date, from?: string | null, to?: string | null): boolean => {
         if (!from || !to) return false;
         try {
-            const fromDate = new Date(from.split('/').reverse().join('-'));
-            const toDate = new Date(to.split('/').reverse().join('-'));
+            // Handle both formats: DD/MM/YYYY and YYYY-MM-DD
+            const parseDate = (dateStr: string) => {
+                if (dateStr.includes('/')) {
+                    const [day, month, year] = dateStr.split('/').map(Number);
+                    return new Date(year, month - 1, day);
+                } else {
+                    return new Date(dateStr);
+                }
+            };
+
+            const fromDate = parseDate(from);
+            const toDate = parseDate(to);
+
             return date >= fromDate && date <= toDate;
         } catch (error) {
             console.error('Error parsing dates:', error);
@@ -125,62 +144,114 @@ export default function TaxPaymentSlips({
         }
     }
 
-    // Filter records based on search term and selected categories
+    // Filter records based on search term, categories, and obligations
     const filteredRecords = useMemo(() => {
         return payrollRecords.filter(record => {
             // Check if record and company exist
             if (!record || !record.company) return false;
 
+            // Search term filter
             const matchesSearch = record.company.company_name?.toLowerCase().includes(searchTerm.toLowerCase()) ?? false;
+            if (!matchesSearch) return false;
 
-            // Check category filters
-            let matchesCategory = true;
+            const currentDate = new Date();
+
+            // Helper function to check if a date is in range
+            const isDateInRange = (fromDate, toDate) => {
+                if (!fromDate || !toDate) return false;
+
+                try {
+                    // Handle both formats: DD/MM/YYYY and YYYY-MM-DD
+                    const parseDate = (dateStr) => {
+                        if (dateStr.includes('/')) {
+                            const [day, month, year] = dateStr.split('/').map(Number);
+                            return new Date(year, month - 1, day);
+                        } else {
+                            return new Date(dateStr);
+                        }
+                    };
+
+                    const from = parseDate(fromDate);
+                    const to = parseDate(toDate);
+
+                    return currentDate >= from && currentDate <= to;
+                } catch (error) {
+                    console.error('Error parsing dates:', error);
+                    return false;
+                }
+            };
+
+            // Category filters - if no categories selected, show all
+            let matchesCategory = selectedCategories.length === 0;
+
             if (selectedCategories.length > 0) {
-                matchesCategory = selectedCategories.some(category => {
-                    const currentDate = new Date();
-                    
-                    // Extract the base category without status suffix
-                    const baseCategory = category.split('_status_')[0];
-                    const status = category.includes('_status_') 
-                        ? category.split('_status_')[1] as 'active' | 'inactive'
-                        : 'active'; // Default to active status if not specified
-                    
+                matchesCategory = selectedCategories.some(categoryString => {
+                    // Parse the category string
+                    let baseCategory, status;
+
+                    if (categoryString.includes('_status_')) {
+                        [baseCategory, status] = categoryString.split('_status_');
+                    } else {
+                        baseCategory = categoryString;
+                        status = 'all';
+                    }
+
+                    // Determine if the record is in this category and has the right status
                     let isInCategory = false;
                     let isActive = false;
-                    
+
                     switch (baseCategory) {
                         case 'acc':
-                            isInCategory = true;
-                            isActive = isDateInRange(currentDate, record.company.acc_client_effective_from, record.company.acc_client_effective_to);
+                            isInCategory = record.company.acc_client_effective_from || record.company.acc_client_effective_to;
+                            isActive = isDateInRange(
+                                record.company.acc_client_effective_from,
+                                record.company.acc_client_effective_to
+                            );
                             break;
                         case 'audit_tax':
-                            isInCategory = true;
-                            isActive = isDateInRange(currentDate, record.company.audit_tax_client_effective_from, record.company.audit_tax_client_effective_to);
+                            isInCategory = record.company.audit_tax_client_effective_from || record.company.audit_tax_client_effective_to;
+                            isActive = isDateInRange(
+                                record.company.audit_tax_client_effective_from,
+                                record.company.audit_tax_client_effective_to
+                            );
                             break;
                         case 'cps_sheria':
-                            isInCategory = true;
-                            isActive = isDateInRange(currentDate, record.company.cps_sheria_client_effective_from, record.company.cps_sheria_client_effective_to);
+                            isInCategory = record.company.cps_sheria_client_effective_from || record.company.cps_sheria_client_effective_to;
+                            isActive = isDateInRange(
+                                record.company.cps_sheria_client_effective_from,
+                                record.company.cps_sheria_client_effective_to
+                            );
                             break;
                         case 'imm':
-                            isInCategory = true;
-                            isActive = isDateInRange(currentDate, record.company.imm_client_effective_from, record.company.imm_client_effective_to);
+                            isInCategory = record.company.imm_client_effective_from || record.company.imm_client_effective_to;
+                            isActive = isDateInRange(
+                                record.company.imm_client_effective_from,
+                                record.company.imm_client_effective_to
+                            );
                             break;
                         default:
                             return false;
                     }
-                    
-                    // If status is 'all', return whether it's in the category
+
+                    // Check if this record matches the status filter
                     if (status === 'all') {
                         return isInCategory;
+                    } else if (status === 'active') {
+                        return isInCategory && isActive;
+                    } else if (status === 'inactive') {
+                        return isInCategory && !isActive;
                     }
-                    
-                    // Otherwise, check if the active status matches the requested status
-                    return isInCategory && ((status === 'active' && isActive) || (status === 'inactive' && !isActive));
+
+                    return false;
                 });
             }
 
-            // Check obligation filters
-            let matchesObligation = true;
+            // If it doesn't match the category filter, exclude it
+            if (!matchesCategory) return false;
+
+            // Obligation filters - if no obligations selected, show all
+            let matchesObligation = selectedObligations.length === 0;
+
             if (selectedObligations.length > 0) {
                 const obligationStatus = record.pin_details?.paye_status?.toLowerCase() || '';
                 const effectiveFrom = record.pin_details?.paye_effective_from || '';
@@ -199,7 +270,7 @@ export default function TaxPaymentSlips({
                     !isDormant;
 
                 // Match against selected filters
-                matchesObligation = selectedObligations.length === 0 || (
+                matchesObligation = (
                     (selectedObligations.includes('active') && hasActiveDate) ||
                     (selectedObligations.includes('cancelled') && isCancelled) ||
                     (selectedObligations.includes('dormant') && isDormant) ||
@@ -208,7 +279,8 @@ export default function TaxPaymentSlips({
                 );
             }
 
-            return matchesSearch && matchesCategory && matchesObligation;
+            // Return true only if the record matches both category and obligation filters
+            return matchesObligation;
         });
     }, [payrollRecords, searchTerm, selectedCategories, selectedObligations]);
 
@@ -253,7 +325,7 @@ export default function TaxPaymentSlips({
                         selectedObligations={selectedObligations}
                     />
                     <CategoryFilters
-                        companyDates={filteredRecords[0]?.company}
+                        payrollRecords={payrollRecords} // Pass the entire records array
                         onFilterChange={handleFilterChange}
                         selectedCategories={selectedCategories}
                     />
@@ -317,7 +389,7 @@ export default function TaxPaymentSlips({
 
             <TaxPaymentTable
                 records={filteredRecords}
-                onDocumentUpload={handleDocumentUploadWithFolder}
+                onDocumentUpload={handlePaymentSlipsDocumentUpload}
                 onDocumentDelete={handlePaymentSlipsDocumentDelete}
                 onStatusUpdate={handleStatusUpdate}
                 loading={loading}
