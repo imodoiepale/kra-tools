@@ -72,6 +72,7 @@ export default function PayrollManagementWingu({
     const [extractDialogOpen, setExtractDialogOpen] = useState(false)
     const [exportDialogOpen, setExportDialogOpen] = useState(false)
     const [bulkFilingDialogOpen, setBulkFilingDialogOpen] = useState(false)
+    const [showSummaryHeaders, setShowSummaryHeaders] = useState(true)
 
     const handleFilterChange = useCallback((categories: string[]) => {
         setSelectedCategories(categories);
@@ -333,14 +334,15 @@ export default function PayrollManagementWingu({
                         <Download className="h-4 w-4" />
                         Export Docs
                     </Button>
-                    <Button 
-                        onClick={() => setBulkFilingDialogOpen(true)}
-                        className="h-8 px-2 bg-purple-500 text-white hover:bg-purple-600 flex items-center gap-1"
+                    <Button
+                        onClick={() => setShowSummaryHeaders(prev => !prev)}
                         size="sm"
+                        variant="outline"
+                        className="flex items-center gap-1"
                     >
-                        <FileText className="h-4 w-4" />
-                        Bulk Filing
+                        {showSummaryHeaders ? "Hide Counts" : "Show Counts"}
                     </Button>
+
                 </div>
             </div>
 
@@ -381,6 +383,8 @@ export default function PayrollManagementWingu({
                 loading={loading}
                 setPayrollRecords={setPayrollRecords}
                 columnVisibility={columnVisibility}
+                showSummaryHeaders={showSummaryHeaders}
+                onToggleSummaryHeaders={() => setShowSummaryHeaders(prev => !prev)}
             />
         </div>
     )

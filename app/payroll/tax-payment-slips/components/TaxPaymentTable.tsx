@@ -1123,7 +1123,7 @@ export function TaxPaymentTable({
                             </TableRow>
 
                             {/* Pending Records Row */}
-                            <TableRow className="bg-yellow-100 border-b border-gray-300 hover:bg-yellow-200 h-8">
+                            <TableRow className="bg-red-100 border-b border-gray-300 hover:bg-red-200 h-8">
                                 {summaryColumns.map(column => {
                                     if (columnVisibility?.[column.key] === false) return null;
 

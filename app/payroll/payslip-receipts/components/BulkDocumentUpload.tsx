@@ -38,7 +38,7 @@ interface BulkDocumentUploadProps {
 
 interface FileWithCompany {
     file: File;
-    companyId: string;
+    companyId: string | null;
     companyName: string;
     documentType: DocumentType;
 }
@@ -90,7 +90,7 @@ export function BulkDocumentUpload({
                 // If no match found, add to unmatched files
                 newFiles.push({
                     file,
-                    companyId: '',
+                    companyId: null,
                     companyName: 'Unmatched',
                     documentType: selectedDocumentType
                 });
@@ -119,7 +119,7 @@ export function BulkDocumentUpload({
             return;
         }
 
-        const filesToUpload = files.filter(file => file.companyId);
+        const filesToUpload = files.filter(file => file.companyId !== null);
         
         if (filesToUpload.length === 0) {
             toast({
@@ -221,7 +221,7 @@ export function BulkDocumentUpload({
                     const progress = Math.round(((i + 1) / uploadTasks.length) * 100);
                     setUploadProgress(progress);
                     
-                    if (result.success) {
+                    if (result && result.success) {
                         successCount++;
                     } else {
                         errorCount++;
@@ -243,7 +243,7 @@ export function BulkDocumentUpload({
             // After all uploads are complete, update the UI state
             if (results.length > 0) {
                 // Group successful results by company ID
-                const successfulUploads = results.filter(r => r.success);
+                const successfulUploads = results.filter(r => r && r.success);
                 
                 if (successfulUploads.length > 0) {
                     // Get the latest records to ensure we have the most up-to-date data
@@ -251,7 +251,7 @@ export function BulkDocumentUpload({
                     
                     // Update our local state with the uploaded documents
                     for (const record of updatedRecords) {
-                        const companyUploads = successfulUploads.filter(r => r.companyId === record.id);
+                        const companyUploads = successfulUploads.filter(r => r?.companyId === record.id);
                         
                         if (companyUploads.length > 0) {
                             // Get current document paths or initialize empty object
@@ -292,7 +292,7 @@ export function BulkDocumentUpload({
                     // Keep only failed files
                     const successfulFileIds = new Set();
                     results.forEach(result => {
-                        if (result.success) {
+                        if (result && result.success) {
                             const fileIndex = filesToUpload.findIndex(
                                 f => f.companyId === result.companyId && f.documentType === result.documentType
                             );
@@ -399,7 +399,7 @@ export function BulkDocumentUpload({
                                         <div className="flex-1 truncate">
                                             <span className="font-medium">{file.file.name}</span>
                                             <div className="text-sm text-gray-500 flex items-center">
-                                                {file.companyId ? (
+                                                {file.companyId !== null ? (
                                                     <>
                                                         <CheckCircle className="h-3 w-3 text-green-500 mr-1" />
                                                         Matched: {file.companyName}
@@ -456,7 +456,7 @@ export function BulkDocumentUpload({
                     </Button>
                     <Button
                         onClick={handleUpload}
-                        disabled={files.length === 0 || isUploading || !files.some(f => f.companyId)}
+                        disabled={files.length === 0 || isUploading || !files.some(f => f.companyId !== null)}
                         className="bg-green-500 hover:bg-green-600 text-white"
                     >
                         {isUploading ? (
@@ -467,7 +467,7 @@ export function BulkDocumentUpload({
                         ) : (
                             <>
                                 <Upload className="mr-2 h-4 w-4" />
-                                Upload {files.filter(f => f.companyId).length} Files
+                                Upload {files.filter(f => f.companyId !== null).length} Files
                             </>
                         )}
                     </Button>

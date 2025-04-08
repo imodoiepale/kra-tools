@@ -13,12 +13,18 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 
 interface ObligationFiltersProps {
-    onFilterChange: (selectedObligations: string[]) => void;
-    selectedObligations: string[];
-    payrollRecords: any[]; // Replace with your record type
+    setSelectedObligations?: (selectedObligations: string[]) => void;
+    selectedObligations?: string[];
+    payrollRecords?: any[]; // Replace with your record type
 }
 
-export function ObligationFilters({ onFilterChange, selectedObligations, payrollRecords }: ObligationFiltersProps) {
+export function ObligationFilters({ setSelectedObligations, selectedObligations = [], payrollRecords = [] }: ObligationFiltersProps) {
+    // Create a safe version of setSelectedObligations that won't throw errors if undefined
+    const safeSetSelectedObligations = (obligations: string[]) => {
+        if (setSelectedObligations) {
+            setSelectedObligations(obligations);
+        }
+    };
     // Calculate counts for each obligation type
     const obligationCounts = useMemo(() => {
         const counts = {
@@ -69,7 +75,7 @@ export function ObligationFilters({ onFilterChange, selectedObligations, payroll
     const handleFilterChange = (key: string) => {
         if (key === 'all') {
             // All - clear obligation filters
-            onFilterChange([]);
+            safeSetSelectedObligations([]);
             return;
         }
 
@@ -84,7 +90,7 @@ export function ObligationFilters({ onFilterChange, selectedObligations, payroll
         }
 
         // Always pass the complete set of filters, not just the new one
-        onFilterChange(newSelectedObligations);
+        safeSetSelectedObligations(newSelectedObligations);
     };
 
     const obligations = [

@@ -1,4 +1,4 @@
-// @ts-nocheck
+// CategoryFilters.tsx
 import React, { useState, useCallback, useMemo } from 'react';
 import {
     DropdownMenu,
@@ -19,13 +19,34 @@ import { Badge } from "@/components/ui/badge";
 
 export type CategoryStatus = 'all' | 'active' | 'inactive';
 
-interface CategoryFiltersProps {
-    onFilterChange: (selectedCategories: string[]) => void;
-    selectedCategories: string[];
-    payrollRecords: any[]; // Add this prop
+interface CategoryCounts {
+    active: number;
+    inactive: number;
+    total: number;
 }
 
-export function CategoryFilters({ onFilterChange, selectedCategories, payrollRecords = [] }: CategoryFiltersProps) {
+interface Category {
+    label: string;
+    key: string;
+    selected: boolean;
+    count?: number;
+    counts?: CategoryCounts;
+    status?: CategoryStatus;
+}
+
+interface CategoryFiltersProps {
+    setSelectedCategories?: (selectedCategories: string[]) => void;
+    selectedCategories?: string[];
+    payrollRecords?: any[]; // Optional prop with better typing
+}
+
+export function CategoryFilters({ setSelectedCategories, selectedCategories = [], payrollRecords = [] }: CategoryFiltersProps) {
+    // Create a safe version of setSelectedCategories that won't throw errors if undefined
+    const safeSetSelectedCategories = (categories: string[]) => {
+        if (setSelectedCategories) {
+            setSelectedCategories(categories);
+        }
+    };
     const currentDate = new Date();
 
     // Keep track of selected status for each category
@@ -46,6 +67,7 @@ export function CategoryFilters({ onFilterChange, selectedCategories, payrollRec
             total: 0
         };
 
+        // Safety checks to ensure arrays are properly initialized
         if (!payrollRecords || !Array.isArray(payrollRecords)) {
             return counts;
         }
@@ -146,7 +168,7 @@ export function CategoryFilters({ onFilterChange, selectedCategories, payrollRec
     const handleFilterChange = (key: string) => {
         if (key === 'all') {
             // If All is selected, clear all filters and reset status
-            onFilterChange([]);
+            safeSetSelectedCategories([]);
             // Reset all statuses to active
             setCategoryStatuses({
                 acc: 'active',
@@ -160,14 +182,21 @@ export function CategoryFilters({ onFilterChange, selectedCategories, payrollRec
         // Get the true category key without any status suffix
         const baseCategory = key.split('_status_')[0];
 
+        // Safety check for selectedCategories
+        const safeSelectedCategories = selectedCategories || [];
+        
         // Check if this category is already selected
-        const existingIndex = selectedCategories.findIndex(cat =>
+        const existingIndex = safeSelectedCategories.findIndex(cat =>
             cat.startsWith(baseCategory + '_status_') || cat === baseCategory
         );
 
-        let newSelectedCategories = [...selectedCategories];
+        // Create a new array safely, ensuring it's always initialized
+        let newSelectedCategories = safeSelectedCategories ? [...safeSelectedCategories] : [];
 
         if (existingIndex >= 0) {
+            // Update the status of the existing category
+            const existingCategory = safeSelectedCategories[existingIndex];
+
             // Remove this category
             newSelectedCategories.splice(existingIndex, 1);
 
@@ -181,7 +210,7 @@ export function CategoryFilters({ onFilterChange, selectedCategories, payrollRec
             newSelectedCategories.push(`${baseCategory}_status_${categoryStatuses[baseCategory]}`);
         }
 
-        onFilterChange(newSelectedCategories);
+        safeSetSelectedCategories(newSelectedCategories);
     };
 
     // Handle status selection for a category
@@ -192,12 +221,16 @@ export function CategoryFilters({ onFilterChange, selectedCategories, payrollRec
             [category]: status
         }));
 
+        // Safety check for selectedCategories
+        const safeSelectedCategories = selectedCategories || [];
+        
         // Find if this category is already in the selections
-        const existingIndex = selectedCategories.findIndex(cat =>
+        const existingIndex = safeSelectedCategories.findIndex(cat =>
             cat.startsWith(category + '_status_') || cat === category
         );
 
-        let newSelectedCategories = [...selectedCategories];
+        // Create a safe copy of the array
+        let newSelectedCategories = safeSelectedCategories ? [...safeSelectedCategories] : [];
 
         // Remove the existing entry if it exists
         if (existingIndex >= 0) {
@@ -208,57 +241,78 @@ export function CategoryFilters({ onFilterChange, selectedCategories, payrollRec
         if (status !== 'all') {
             newSelectedCategories.push(`${category}_status_${status}`);
         } else {
-            // For 'all' status, just add the base category
+            // For 'all', we just push the base category
             newSelectedCategories.push(category);
         }
 
-        onFilterChange(newSelectedCategories);
+        safeSetSelectedCategories(newSelectedCategories);
     };
 
-    const categories = [
+    const categories: Category[] = [
         {
             label: 'All Categories',
             key: 'all',
-            selected: selectedCategories.length === 0,
+            selected: !selectedCategories || selectedCategories.length === 0,
             count: categoryCounts.total
         },
         {
             label: 'Accounting',
             key: 'acc',
-            selected: selectedCategories.some(cat => cat === 'acc' || cat.startsWith('acc_status_')),
+            selected: selectedCategories ? selectedCategories.some(cat => cat === 'acc' || cat.startsWith('acc_status_')) : false,
             counts: categoryCounts.acc,
             status: categoryStatuses.acc
         },
         {
             label: 'Audit Tax',
             key: 'audit_tax',
-            selected: selectedCategories.some(cat => cat === 'audit_tax' || cat.startsWith('audit_tax_status_')),
+            selected: selectedCategories ? selectedCategories.some(cat => cat === 'audit_tax' || cat.startsWith('audit_tax_status_')) : false,
             counts: categoryCounts.audit_tax,
             status: categoryStatuses.audit_tax
         },
         {
             label: 'Sheria',
             key: 'cps_sheria',
-            selected: selectedCategories.some(cat => cat === 'cps_sheria' || cat.startsWith('cps_sheria_status_')),
+            selected: selectedCategories ? selectedCategories.some(cat => cat === 'cps_sheria' || cat.startsWith('cps_sheria_status_')) : false,
             counts: categoryCounts.cps_sheria,
             status: categoryStatuses.cps_sheria
         },
         {
             label: 'Immigration',
             key: 'imm',
-            selected: selectedCategories.some(cat => cat === 'imm' || cat.startsWith('imm_status_')),
+            selected: selectedCategories ? selectedCategories.some(cat => cat === 'imm' || cat.startsWith('imm_status_')) : false,
             counts: categoryCounts.imm,
             status: categoryStatuses.imm
         }
     ];
 
-    const selectedCount = selectedCategories.length;
+    const selectedCount = selectedCategories ? selectedCategories.length : 0;
 
     // Get status badge text
     const getStatusBadgeText = (category: string): string => {
         const status = categoryStatuses[category];
         return status.charAt(0).toUpperCase() + status.slice(1);
     };
+
+    const badgeCount = useMemo(() => selectedCategories ? selectedCategories.length : 0, [selectedCategories]);
+    const selectedStatusBadges = useMemo(() => {
+        // Count how many categories are selected with each status
+        const statusCounts = { active: 0, inactive: 0, all: 0 };
+        
+        // Safely handle undefined selectedCategories
+        if (!selectedCategories) return statusCounts;
+        
+        selectedCategories.forEach(cat => {
+            if (cat.includes('_status_active')) {
+                statusCounts.active++;
+            } else if (cat.includes('_status_inactive')) {
+                statusCounts.inactive++;
+            } else if (!cat.includes('_status_')) {
+                statusCounts.all++;
+            }
+        });
+        
+        return statusCounts;
+    }, [selectedCategories]);
 
     return (
         <DropdownMenu>

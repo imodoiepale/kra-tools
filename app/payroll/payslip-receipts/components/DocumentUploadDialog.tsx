@@ -958,7 +958,7 @@ export function DocumentUploadDialog({
         if (!allDocuments) return [];
         
         // Filter for documents that are pending (not uploaded)
-        const pendingDocs = allDocuments.filter(doc => doc.status === 'pending');
+        const pendingDocs = allDocuments.filter(doc => doc.status !== null && doc.status === 'pending');
         
         // Add labels to the documents for display
         return pendingDocs.map(doc => ({
@@ -970,14 +970,14 @@ export function DocumentUploadDialog({
     // Get the count of uploaded documents
     const uploadedDocumentCount = useMemo(() => {
         if (!allDocuments) return 0;
-        return allDocuments.filter(doc => doc.status === 'uploaded').length;
+        return allDocuments.filter(doc => doc.status !== null && doc.status === 'uploaded').length;
     }, [allDocuments]);
 
     // Generate email content with document list
     const emailContent = useMemo(() => {
         // Get list of ready documents
         const readyDocs = allDocuments
-            .filter(doc => doc.status === 'uploaded')
+            .filter(doc => doc.status !== null && doc.status === 'uploaded')
             .map(doc => DOCUMENT_LABELS[doc.type] || 'Unknown Document')
             .filter(Boolean); // Filter out any undefined values
         

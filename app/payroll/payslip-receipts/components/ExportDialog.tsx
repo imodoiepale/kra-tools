@@ -242,7 +242,7 @@ export function ExportDialog({
       // Check company filters
       let matchesCompany = true;
       if (filterCompanies) {
-        matchesCompany = selectedCompanies.includes(record.company.id);
+        matchesCompany = selectedCompanies.includes(record.company?.id || '');
       }
 
       return matchesCategory && matchesObligation && matchesCompany;
@@ -356,14 +356,14 @@ export function ExportDialog({
 
   const getFilteredCompanies = () => {
     if (filterCompanies) {
-      return payrollRecords.filter(record => selectedCompanies.includes(record.company.id));
+      return payrollRecords.filter(record => selectedCompanies.includes(record.company?.id || ''));
     }
     return payrollRecords;
   };
 
   const searchResults = useMemo(() => {
     if (!companySearchTerm) return payrollRecords;
-    return payrollRecords.filter(record => record.company.company_name.toLowerCase().includes(companySearchTerm.toLowerCase()));
+    return payrollRecords.filter(record => record.company?.company_name.toLowerCase().includes(companySearchTerm.toLowerCase()));
   }, [companySearchTerm, payrollRecords]);
 
   const toggleCompany = (companyId: string, checked: boolean) => {
@@ -430,38 +430,38 @@ export function ExportDialog({
 
               {filterCompanies && (
                 <div className="mt-3 p-3 bg-white rounded border border-blue-100">
-                  <Input
-                    placeholder="Search companies..."
-                    value={companySearchTerm}
-                    onChange={(e) => setCompanySearchTerm(e.target.value)}
-                    className="mb-2"
-                    disabled={exportInProgress}
-                  />
-                  <div className="max-h-40 overflow-y-auto space-y-1 pr-1">
-                    {filteredCompanies.map((record) => (
-                      <div key={record.id} className="flex items-center space-x-2">
-                        <Checkbox
-                          id={`company-${record.id}`}
-                          checked={selectedCompanies.includes(record.id)}
-                          onCheckedChange={(checked) => {
-                            if (checked) {
-                              setSelectedCompanies((prev) => [...prev, record.id]);
-                            } else {
-                              setSelectedCompanies((prev) => prev.filter((id) => id !== record.id));
-                            }
-                          }}
-                          disabled={exportInProgress}
-                        />
-                        <Label
-                          htmlFor={`company-${record.id}`}
-                          className="text-sm cursor-pointer truncate"
-                        >
-                          {record.company?.company_name || "Unknown Company"}
-                        </Label>
-                      </div>
-                    ))}
-                  </div>
+                <Input
+                  placeholder="Search companies..."
+                  value={companySearchTerm}
+                  onChange={(e) => setCompanySearchTerm(e.target.value)}
+                  className="mb-2"
+                  disabled={exportInProgress}
+                />
+                <div className="max-h-40 overflow-y-auto space-y-1 pr-1">
+                  {filteredCompanies.map((record) => (
+                    <div key={record.id} className="flex items-center space-x-2">
+                      <Checkbox
+                        id={`company-${record.id}`}
+                        checked={selectedCompanies.includes(record.company?.id || '')}
+                        onCheckedChange={(checked) => {
+                          if (checked) {
+                            setSelectedCompanies((prev) => [...prev, record.company?.id || '']);
+                          } else {
+                            setSelectedCompanies((prev) => prev.filter((id) => id !== record.company?.id));
+                          }
+                        }}
+                        disabled={exportInProgress}
+                      />
+                      <Label
+                        htmlFor={`company-${record.id}`}
+                        className="text-sm cursor-pointer truncate"
+                      >
+                        {record.company?.company_name || "Unknown Company"}
+                      </Label>
+                    </div>
+                  ))}
                 </div>
+              </div>
               )}
             </div>
           </div>

@@ -58,7 +58,7 @@ export function ContactModal({
   trigger,
   companyName,
   companyEmail: initialCompanyEmail,
-  documents,
+  documents = [],
   onEmailSent
 }: ContactModalProps) {
   const { toast } = useToast();

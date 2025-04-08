@@ -46,7 +46,7 @@ export function WhatsAppModal({
   trigger,
   companyName,
   companyPhone: initialCompanyPhone,
-  documents,
+  documents = [],
   onMessageSent,
 }: WhatsAppModalProps) {
   const { toast } = useToast();

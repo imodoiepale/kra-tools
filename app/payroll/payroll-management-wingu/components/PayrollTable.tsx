@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { useState, useMemo } from "react"
+import { useState, useMemo, useCallback, useRef,useEffect } from "react"
 import { formatDate } from '../utils/payrollUtils';
 import {
     MoreHorizontal,
@@ -79,6 +79,8 @@ interface PayrollTableProps {
     loading: boolean
     setPayrollRecords: (records: CompanyPayrollRecord[]) => void
     columnVisibility: Record<string, boolean>
+    showSummaryHeaders?: boolean
+    onToggleSummaryHeaders?: () => void
 }
 
 const getDocumentsForUpload = (record: CompanyPayrollRecord) => {
@@ -99,7 +101,9 @@ export function PayrollTable({
     onDocumentDelete,
     loading,
     setPayrollRecords,
-    columnVisibility
+    columnVisibility,
+    showSummaryHeaders = true,
+    onToggleSummaryHeaders
 }: PayrollTableProps) {
     const { toast } = useToast();
     const {
@@ -164,14 +168,144 @@ export function PayrollTable({
     };
 
     // Memoize sorted records for performance
+    // State for showing/hiding summary headers locally if not controlled externally
+    const [_showSummaryHeaders, _setShowSummaryHeaders] = useState(showSummaryHeaders);
+
+    useEffect(() => {
+        _setShowSummaryHeaders(showSummaryHeaders);
+    }, [showSummaryHeaders]);
+
     const sortedRecords = useMemo(() =>
         [...records].sort((a, b) => {
-            const nameA = a?.company?.company_name || '';
-            const nameB = b?.company?.company_name || '';
+            const nameA = a?.company?.company_name?.toLowerCase() || '';
+            const nameB = b?.company?.company_name?.toLowerCase() || '';
             return nameA.localeCompare(nameB);
         }),
         [records]
     );
+    
+    // Calculate document statistics based on filtered/visible records only
+    const getDocumentCounts = useCallback(() => {
+        // Use all filtered records
+        const records = sortedRecords;
+        const totalCount = records.length;
+
+        // Count NIL records
+        const nilRecords = records.filter(record => record.status?.finalization_date === 'NIL');
+        const nilCount = nilRecords.length;
+
+        // Define complete and pending records
+        const nonNilRecords = records.filter(record => record.status?.finalization_date !== 'NIL');
+        const completeRecords = nonNilRecords.filter(record => allDocumentsUploaded(record));
+        const completeCount = completeRecords.length;
+
+        // Pending records - those that are not NIL and not complete
+        const pendingRecords = nonNilRecords.filter(record => !allDocumentsUploaded(record));
+        const pendingCount = pendingRecords.length;
+
+        // Count records with finalization date
+        const finalizedRecords = records.filter(record => record.status?.finalization_date && record.status?.finalization_date !== 'NIL');
+        const finalizedCount = finalizedRecords.length;
+
+        // Count records with finalization date split by category
+        const finalizedComplete = completeRecords.filter(record => record.status?.finalization_date && record.status?.finalization_date !== 'NIL').length;
+        const finalizedPending = pendingRecords.filter(record => record.status?.finalization_date && record.status?.finalization_date !== 'NIL').length;
+        const finalizedNil = nilRecords.length; // All NIL records are finalized by definition
+
+        // Count records with KRA PIN missing
+        const kraPinMissingCount = records.filter(record =>
+            !record.company?.kra_pin && !record.pin_details?.kra_pin
+        ).length;
+
+        // Count records with Ready to File status
+        const readyToFileRecords = records.filter(record => record.status?.ready_to_file || record.status?.filing?.filingDate);
+        const readyToFileCount = readyToFileRecords.length;
+        const readyToFileComplete = completeRecords.filter(record => record.status?.ready_to_file || record.status?.filing?.filingDate).length;
+        const readyToFilePending = pendingRecords.filter(record => record.status?.ready_to_file || record.status?.filing?.filingDate).length;
+        const readyToFileNil = nilRecords.filter(record => record.status?.ready_to_file || record.status?.filing?.filingDate).length;
+
+        // Helper to count documents by status
+        const countDocumentsByStatus = (docType, recordList) => {
+            return recordList.filter(record => record.documents[docType] && record.documents[docType].trim() !== '').length;
+        };
+
+        // Document counts - across all records
+        const payeCsv = countDocumentsByStatus('paye_csv', records);
+        const hslevyCsv = countDocumentsByStatus('hslevy_csv', records);
+        const shifExl = countDocumentsByStatus('shif_exl', records);
+        const nssfExl = countDocumentsByStatus('nssf_exl', records);
+        const zipFileKra = countDocumentsByStatus('zip_file_kra', records);
+        const allCsv = records.filter(r => Object.values(r.documents).some(v => v && v.trim() !== '')).length;
+
+        // Document counts - complete records
+        const payeCsvComplete = countDocumentsByStatus('paye_csv', completeRecords);
+        const hslevyCsvComplete = countDocumentsByStatus('hslevy_csv', completeRecords);
+        const shifExlComplete = countDocumentsByStatus('shif_exl', completeRecords);
+        const nssfExlComplete = countDocumentsByStatus('nssf_exl', completeRecords);
+        const zipFileKraComplete = countDocumentsByStatus('zip_file_kra', completeRecords);
+        const allCsvComplete = completeRecords.filter(r => Object.values(r.documents).some(v => v && v.trim() !== '')).length;
+
+        // Document counts - pending records
+        const payeCsvPending = countDocumentsByStatus('paye_csv', pendingRecords);
+        const hslevyCsvPending = countDocumentsByStatus('hslevy_csv', pendingRecords);
+        const shifExlPending = countDocumentsByStatus('shif_exl', pendingRecords);
+        const nssfExlPending = countDocumentsByStatus('nssf_exl', pendingRecords);
+        const zipFileKraPending = countDocumentsByStatus('zip_file_kra', pendingRecords);
+        const allCsvPending = pendingRecords.filter(r => Object.values(r.documents).some(v => v && v.trim() !== '')).length;
+
+        // For NIL records, all document counts should match the NIL count
+        // since NIL records don't require documents
+
+        return {
+            // Basic counts
+            total: totalCount,
+            complete: completeCount,
+            nil: nilCount,
+            pending: pendingCount,
+
+            // Finalization date counts
+            finalized: finalizedCount + nilCount,  // Both standard finalized and NIL records
+            finalizedComplete,
+            finalizedPending,
+            finalizedNil,
+
+            // KRA PIN counts
+            kraPinMissing: kraPinMissingCount,
+
+            // Ready to file counts
+            readyToFile: readyToFileCount,
+            readyToFileComplete,
+            readyToFilePending,
+            readyToFileNil,
+
+            // Document counts - totals
+            payeCsv,
+            hslevyCsv,
+            shifExl,
+            nssfExl,
+            zipFileKra,
+            allCsv,
+
+            // Document counts - complete records
+            payeCsvComplete,
+            hslevyCsvComplete,
+            shifExlComplete,
+            nssfExlComplete,
+            zipFileKraComplete,
+            allCsvComplete,
+
+            // Document counts - pending records
+            payeCsvPending,
+            hslevyCsvPending,
+            shifExlPending,
+            nssfExlPending,
+            zipFileKraPending,
+            allCsvPending
+        };
+    }, [sortedRecords, allDocumentsUploaded]);
+    
+    // Memoize the counts
+    const counts = useMemo(() => getDocumentCounts(), [getDocumentCounts]);
 
     return (
         <div className="rounded-md border h-[calc(100vh-240px)] overflow-auto">
@@ -195,6 +329,139 @@ export function PayrollTable({
                         {columnVisibility.assignedTo && <TableHead className="text-white font-semibold" scope="col">Assigned To</TableHead>}
                         {columnVisibility.actions && <TableHead className="text-white font-semibold" scope="col">Actions</TableHead>}
                     </TableRow>
+                    
+                    {/* Summary headers - conditionally rendered based on showSummaryHeaders */}
+                    {_showSummaryHeaders && (
+                        <>
+                            {/* Total Records Row */}
+                            <TableRow className="bg-gray-200 border-b border-gray-300 hover:bg-gray-300 h-8">
+                                {columnVisibility.index && (
+                                    <TableHead
+                                        className="text-left text-black text-sm font-semibold pl-3 pr-1 py-1"
+                                        colSpan={columnVisibility.companyName ? 2 : 1}
+                                    >
+                                        Total Records
+                                    </TableHead>
+                                )}
+                                {!columnVisibility.index && columnVisibility.companyName && (
+                                    <TableHead className="text-left text-black text-sm font-semibold pl-3 pr-1 py-1">
+                                        Total Records
+                                    </TableHead>
+                                )}
+                                {columnVisibility.companyName && columnVisibility.index && null}
+                                {columnVisibility.kraPin && <TableHead className="text-center text-black text-sm font-semibold py-1 px-2">{counts.total}</TableHead>}
+                                {columnVisibility.obligationDate && <TableHead className="text-center text-black text-sm font-semibold py-1 px-2">{counts.total}</TableHead>}
+                                {columnVisibility.numberOfEmployees && <TableHead className="text-center text-black text-sm font-semibold py-1 px-2">{counts.total}</TableHead>}
+                                {columnVisibility.numberOfEmployeesBcl && <TableHead className="text-center text-black text-sm font-semibold py-1 px-2">{counts.total}</TableHead>}
+                                {columnVisibility.finalizationDate && <TableHead className="text-center text-black text-sm font-semibold py-1 px-2">{counts.finalized}</TableHead>}
+                                {columnVisibility.payeCsv && <TableHead className="text-center text-black text-sm font-semibold py-1 px-2">{counts.payeCsv}</TableHead>}
+                                {columnVisibility.hslevyCsv && <TableHead className="text-center text-black text-sm font-semibold py-1 px-2">{counts.hslevyCsv}</TableHead>}
+                                {columnVisibility.zipFileKra && <TableHead className="text-center text-black text-sm font-semibold py-1 px-2">{counts.zipFileKra}</TableHead>}
+                                {columnVisibility.shifExl && <TableHead className="text-center text-black text-sm font-semibold py-1 px-2">{counts.shifExl}</TableHead>}
+                                {columnVisibility.nssfExl && <TableHead className="text-center text-black text-sm font-semibold py-1 px-2">{counts.nssfExl}</TableHead>}
+                                {columnVisibility.allCsv && <TableHead className="text-center text-black text-sm font-semibold py-1 px-2">{counts.allCsv}</TableHead>}
+                                {columnVisibility.readyToFile && <TableHead className="text-center text-black text-sm font-semibold py-1 px-2">{counts.readyToFile}</TableHead>}
+                                {columnVisibility.assignedTo && <TableHead className="text-center text-black text-sm font-semibold py-1 px-2">{counts.total}</TableHead>}
+                                {columnVisibility.actions && <TableHead className="text-center text-black text-sm font-semibold py-1 px-2">-</TableHead>}
+                            </TableRow>
+
+                            {/* Complete Records Row */}
+                            <TableRow className="bg-emerald-200 border-b border-gray-300 hover:bg-emerald-300 h-8">
+                                {columnVisibility.index && (
+                                    <TableHead
+                                        className="text-left text-black text-sm font-semibold pl-3 pr-1 py-1"
+                                        colSpan={columnVisibility.companyName ? 2 : 1}
+                                    >
+                                        Complete
+                                    </TableHead>
+                                )}
+                                {!columnVisibility.index && columnVisibility.companyName && (
+                                    <TableHead className="text-left text-black text-sm font-semibold pl-3 pr-1 py-1">
+                                        Complete
+                                    </TableHead>
+                                )}
+                                {columnVisibility.companyName && columnVisibility.index && null}
+                                {columnVisibility.kraPin && <TableHead className="text-center text-black text-sm font-semibold py-1 px-2">{counts.complete}</TableHead>}
+                                {columnVisibility.obligationDate && <TableHead className="text-center text-black text-sm font-semibold py-1 px-2">{counts.complete}</TableHead>}
+                                {columnVisibility.numberOfEmployees && <TableHead className="text-center text-black text-sm font-semibold py-1 px-2">{counts.complete}</TableHead>}
+                                {columnVisibility.numberOfEmployeesBcl && <TableHead className="text-center text-black text-sm font-semibold py-1 px-2">{counts.complete}</TableHead>}
+                                {columnVisibility.finalizationDate && <TableHead className="text-center text-black text-sm font-semibold py-1 px-2">{counts.finalizedComplete}</TableHead>}
+                                {columnVisibility.payeCsv && <TableHead className="text-center text-black text-sm font-semibold py-1 px-2">{counts.payeCsvComplete}</TableHead>}
+                                {columnVisibility.hslevyCsv && <TableHead className="text-center text-black text-sm font-semibold py-1 px-2">{counts.hslevyCsvComplete}</TableHead>}
+                                {columnVisibility.zipFileKra && <TableHead className="text-center text-black text-sm font-semibold py-1 px-2">{counts.zipFileKraComplete}</TableHead>}
+                                {columnVisibility.shifExl && <TableHead className="text-center text-black text-sm font-semibold py-1 px-2">{counts.shifExlComplete}</TableHead>}
+                                {columnVisibility.nssfExl && <TableHead className="text-center text-black text-sm font-semibold py-1 px-2">{counts.nssfExlComplete}</TableHead>}
+                                {columnVisibility.allCsv && <TableHead className="text-center text-black text-sm font-semibold py-1 px-2">{counts.allCsvComplete}</TableHead>}
+                                {columnVisibility.readyToFile && <TableHead className="text-center text-black text-sm font-semibold py-1 px-2">{counts.readyToFileComplete}</TableHead>}
+                                {columnVisibility.assignedTo && <TableHead className="text-center text-black text-sm font-semibold py-1 px-2">{counts.complete}</TableHead>}
+                                {columnVisibility.actions && <TableHead className="text-center text-black text-sm font-semibold py-1 px-2">-</TableHead>}
+                            </TableRow>
+
+                            {/* Pending Records Row */}
+                            <TableRow className="bg-red-200 border-b border-gray-300 hover:bg-red-300 h-8">
+                                {columnVisibility.index && (
+                                    <TableHead
+                                        className="text-left text-black text-sm font-semibold pl-3 pr-1 py-1"
+                                        colSpan={columnVisibility.companyName ? 2 : 1}
+                                    >
+                                        Pending
+                                    </TableHead>
+                                )}
+                                {!columnVisibility.index && columnVisibility.companyName && (
+                                    <TableHead className="text-left text-black text-sm font-semibold pl-3 pr-1 py-1">
+                                        Pending
+                                    </TableHead>
+                                )}
+                                {columnVisibility.companyName && columnVisibility.index && null}
+                                {columnVisibility.kraPin && <TableHead className="text-center text-black text-sm font-semibold py-1 px-2">{counts.pending}</TableHead>}
+                                {columnVisibility.obligationDate && <TableHead className="text-center text-black text-sm font-semibold py-1 px-2">{counts.pending}</TableHead>}
+                                {columnVisibility.numberOfEmployees && <TableHead className="text-center text-black text-sm font-semibold py-1 px-2">{counts.pending}</TableHead>}
+                                {columnVisibility.numberOfEmployeesBcl && <TableHead className="text-center text-black text-sm font-semibold py-1 px-2">{counts.pending}</TableHead>}
+                                {columnVisibility.finalizationDate && <TableHead className="text-center text-black text-sm font-semibold py-1 px-2">{counts.finalizedPending}</TableHead>}
+                                {columnVisibility.payeCsv && <TableHead className="text-center text-black text-sm font-semibold py-1 px-2">{counts.payeCsvPending}</TableHead>}
+                                {columnVisibility.hslevyCsv && <TableHead className="text-center text-black text-sm font-semibold py-1 px-2">{counts.hslevyCsvPending}</TableHead>}
+                                {columnVisibility.zipFileKra && <TableHead className="text-center text-black text-sm font-semibold py-1 px-2">{counts.zipFileKraPending}</TableHead>}
+                                {columnVisibility.shifExl && <TableHead className="text-center text-black text-sm font-semibold py-1 px-2">{counts.shifExlPending}</TableHead>}
+                                {columnVisibility.nssfExl && <TableHead className="text-center text-black text-sm font-semibold py-1 px-2">{counts.nssfExlPending}</TableHead>}
+                                {columnVisibility.allCsv && <TableHead className="text-center text-black text-sm font-semibold py-1 px-2">{counts.allCsvPending}</TableHead>}
+                                {columnVisibility.readyToFile && <TableHead className="text-center text-black text-sm font-semibold py-1 px-2">{counts.readyToFilePending}</TableHead>}
+                                {columnVisibility.assignedTo && <TableHead className="text-center text-black text-sm font-semibold py-1 px-2">{counts.pending}</TableHead>}
+                                {columnVisibility.actions && <TableHead className="text-center text-black text-sm font-semibold py-1 px-2">-</TableHead>}
+                            </TableRow> 
+
+                            {/* NIL Records Row */}
+                            <TableRow className="bg-indigo-200 border-b border-gray-300 hover:bg-indigo-300 h-8">
+                                {columnVisibility.index && (
+                                    <TableHead 
+                                        className="text-left text-black text-sm font-semibold pl-3 pr-1 py-1"
+                                        colSpan={columnVisibility.companyName ? 2 : 1}
+                                    >
+                                        NIL Records
+                                    </TableHead>
+                                )}
+                                {!columnVisibility.index && columnVisibility.companyName && (
+                                    <TableHead className="text-left text-black text-sm font-semibold pl-3 pr-1 py-1">
+                                        NIL Records
+                                    </TableHead>
+                                )}
+                                {columnVisibility.companyName && columnVisibility.index && null}
+                                {columnVisibility.kraPin && <TableHead className="text-center text-black text-sm font-semibold py-1 px-2">{counts.nil}</TableHead>}
+                                {columnVisibility.obligationDate && <TableHead className="text-center text-black text-sm font-semibold py-1 px-2">-</TableHead>}
+                                {columnVisibility.numberOfEmployees && <TableHead className="text-center text-black text-sm font-semibold py-1 px-2">-</TableHead>}
+                                {columnVisibility.numberOfEmployeesBcl && <TableHead className="text-center text-black text-sm font-semibold py-1 px-2">-</TableHead>}
+                                {columnVisibility.finalizationDate && <TableHead className="text-center text-black text-sm font-semibold py-1 px-2">{counts.finalizedNil}</TableHead>}
+                                {columnVisibility.payeCsv && <TableHead className="text-center text-black text-sm font-semibold py-1 px-2">{counts.nil}</TableHead>}
+                                {columnVisibility.hslevyCsv && <TableHead className="text-center text-black text-sm font-semibold py-1 px-2">{counts.nil}</TableHead>}
+                                {columnVisibility.shifExl && <TableHead className="text-center text-black text-sm font-semibold py-1 px-2">{counts.nil}</TableHead>}
+                                {columnVisibility.nssfExl && <TableHead className="text-center text-black text-sm font-semibold py-1 px-2">{counts.nil}</TableHead>}
+                                {columnVisibility.zipFileKra && <TableHead className="text-center text-black text-sm font-semibold py-1 px-2">{counts.nil}</TableHead>}
+                                {columnVisibility.allCsv && <TableHead className="text-center text-black text-sm font-semibold py-1 px-2">-</TableHead>}
+                                {columnVisibility.readyToFile && <TableHead className="text-center text-black text-sm font-semibold py-1 px-2">{counts.readyToFileNil}</TableHead>}
+                                {columnVisibility.assignedTo && <TableHead className="text-center text-black text-sm font-semibold py-1 px-2">-</TableHead>}
+                                {columnVisibility.actions && <TableHead className="text-center text-black text-sm font-semibold py-1 px-2">-</TableHead>}
+                            </TableRow>
+                        </>
+                    )}
                 </TableHeader>
                 <TableBody>
                     {loading ? (

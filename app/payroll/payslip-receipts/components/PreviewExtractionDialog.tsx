@@ -211,7 +211,7 @@ export function PreviewExtractionDialog({
             );
 
             // Show final status
-            const successCount = results.filter(r => r.success).length;
+            const successCount = results.filter(r => r !== null && r.success).length;
             if (successCount === docs.length) {
                 toast({
                     title: "Success",
