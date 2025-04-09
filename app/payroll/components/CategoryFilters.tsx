@@ -294,4 +294,4 @@ export function CategoryFilters({ companyDates = {}, onFilterChange, selectedCat
             </DropdownMenuContent>
         </DropdownMenu>
     );
-}
+} 

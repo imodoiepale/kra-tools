@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 
 interface Company {
   id: number;
@@ -44,8 +44,10 @@ const isDateInRange = (currentDate: Date, fromDate?: string | null, toDate?: str
 };
 
 export function useCompanyFilters(companies: Company[]) {
+  // Track total count of filtered companies
+  const [totalFilteredCount, setTotalFilteredCount] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedFilters, setSelectedFilters] = useState<string[]>([]);
+  const [selectedFilters, setSelectedFilters] = useState<string[]>(['acc', 'audit_tax']);
   const currentDate = new Date();
 
   const getFilters = useCallback((): ServiceCategory[] => {
@@ -117,6 +119,11 @@ export function useCompanyFilters(companies: Company[]) {
     });
   }, []);
 
+  // Update total count when filtered companies change
+  useEffect(() => {
+    setTotalFilteredCount(filteredCompanies.length);
+  }, [filteredCompanies]);
+
   return {
     searchQuery,
     setSearchQuery,
@@ -125,6 +132,7 @@ export function useCompanyFilters(companies: Company[]) {
     filteredCompanies,
     getFilters,
     handleFilterChange,
-    isDateInRange
+    isDateInRange,
+    totalFilteredCount
   };
 }

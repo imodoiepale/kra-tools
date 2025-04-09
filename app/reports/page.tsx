@@ -1,29 +1,37 @@
 // @ts-nocheck
-"use client"
-import { useCompanyFilters } from "./hooks/useCompanyFilters"
-import { Card } from "@/components/ui/card"
-import { ScrollArea } from "@/components/ui/scroll-area"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { DataTable } from "./components/data-table"
-import { Input } from "@/components/ui/input"
-import { useCompanyTaxReports } from "./hooks/useCompanyTaxReports"
-import { useState, useEffect, useMemo, useCallback } from "react"
-import * as XLSX from 'xlsx'
-import { Button } from "@/components/ui/button"
+"use client";
+import { useCompanyFilters } from "./hooks/useCompanyFilters";
+import { Card } from "@/components/ui/card";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { DataTable } from "./components/data-table";
+import { Input } from "@/components/ui/input";
+import { useCompanyTaxReports } from "./hooks/useCompanyTaxReports";
+import { useState, useEffect, useMemo, useCallback } from "react";
+import * as XLSX from "xlsx";
+import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger, DropdownMenuCheckboxItem } from "@/components/ui/dropdown-menu"
-import { Checkbox } from "@/components/ui/checkbox"
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { ReactQueryDevtools } from "@tanstack/react-query-devtools"
-import { Filter } from "lucide-react"
-import { Badge } from "@/components/ui/badge"
-import { ChevronDown } from "lucide-react"
+} from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+  DropdownMenuCheckboxItem,
+} from "@/components/ui/dropdown-menu";
+import { Checkbox } from "@/components/ui/checkbox";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
+import { Filter } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { ChevronDown } from "lucide-react";
+import OverallView from "./components/overallview";
 
 // Configure the query client with optimized settings
 const queryClient = new QueryClient({
@@ -37,16 +45,16 @@ const queryClient = new QueryClient({
       keepPreviousData: true,
     },
   },
-})
+});
 
 const taxTypes = [
-  { id: 'all', name: 'All Taxes' },
-  { id: 'paye', name: 'PAYE' },
-  { id: 'housingLevy', name: 'Housing Levy' },
-  { id: 'nita', name: 'NITA' },
-  { id: 'shif', name: 'SHIF' },
-  { id: 'nssf', name: 'NSSF' }
-] as const
+  { id: "all", name: "All Taxes" },
+  { id: "paye", name: "PAYE" },
+  { id: "housingLevy", name: "Housing Levy" },
+  { id: "nita", name: "NITA" },
+  { id: "shif", name: "SHIF" },
+  { id: "nssf", name: "NSSF" },
+] as const;
 
 export default function CompanyReportsWrapper() {
   return (
@@ -54,7 +62,7 @@ export default function CompanyReportsWrapper() {
       <CompanyReports />
       <ReactQueryDevtools initialIsOpen={false} />
     </QueryClientProvider>
-  )
+  );
 }
 
 function CompanyReports() {
@@ -67,9 +75,9 @@ function CompanyReports() {
     selectedColumns,
     setSelectedColumns,
     prefetchCompanyData,
-    clearCache
-  } = useCompanyTaxReports()
-  
+    clearCache,
+  } = useCompanyTaxReports();
+
   const {
     searchQuery,
     setSearchQuery,
@@ -78,20 +86,23 @@ function CompanyReports() {
     filteredCompanies,
     getFilters,
     handleFilterChange,
-    isDateInRange
-  } = useCompanyFilters(companies)
+    isDateInRange,
+  } = useCompanyFilters(companies);
 
-  const selectedCompanyName = companies.find(c => c.id === selectedCompany)?.name || ""
+  const selectedCompanyName =
+    companies.find((c) => c.id === selectedCompany)?.name || "";
 
-  const [selectedSubColumns, setSelectedSubColumns] = useState<("amount" | "date" | "all")[]>(["all"])
-  const [taxDropdownOpen, setTaxDropdownOpen] = useState(false)
-  const [monthDropdownOpen, setMonthDropdownOpen] = useState(false)
-  const [columnDropdownOpen, setColumnDropdownOpen] = useState(false)
-  const [showTotals, setShowTotals] = useState(true)
-  
+  const [selectedSubColumns, setSelectedSubColumns] = useState<
+    ("amount" | "date" | "all")[]
+  >(["all"]);
+  const [taxDropdownOpen, setTaxDropdownOpen] = useState(false);
+  const [monthDropdownOpen, setMonthDropdownOpen] = useState(false);
+  const [columnDropdownOpen, setColumnDropdownOpen] = useState(false);
+  const [showTotals, setShowTotals] = useState(true);
+
   // Store the last valid company data to avoid UI flashing
-  const [stableReportData, setStableReportData] = useState({})
-  
+  const [stableReportData, setStableReportData] = useState({});
+
   // Update stableReportData when reportData changes and has content
   useEffect(() => {
     if (reportData && Object.keys(reportData).length > 0) {
@@ -100,45 +111,50 @@ function CompanyReports() {
   }, [reportData]);
 
   // Enhanced period selection
-  const currentDate = new Date()
-  const currentYear = currentDate.getFullYear()
-  const currentMonth = currentDate.getMonth() + 1
-  
-  const [selectedYear, setSelectedYear] = useState(currentYear)
-  const [selectedMonths, setSelectedMonths] = useState<number[]>([])
-  const [isRangeView, setIsRangeView] = useState(false)
-  const [startYear, setStartYear] = useState(currentYear)
-  const [startMonth, setStartMonth] = useState(1)
-  const [endYear, setEndYear] = useState(currentYear)
-  const [endMonth, setEndMonth] = useState(currentMonth)
+  const currentDate = new Date();
+  const currentYear = currentDate.getFullYear();
+  const currentMonth = currentDate.getMonth() + 1;
+
+  const [selectedYear, setSelectedYear] = useState(currentYear);
+  const [selectedMonths, setSelectedMonths] = useState<number[]>([]);
+  const [isRangeView, setIsRangeView] = useState(false);
+  const [isOverallView, setIsOverallView] = useState(false);
+  const [startYear, setStartYear] = useState(currentYear);
+  const [startMonth, setStartMonth] = useState(1);
+  const [endYear, setEndYear] = useState(currentYear);
+  const [endMonth, setEndMonth] = useState(currentMonth);
 
   // Generate years list (from 2015 to current year)
   const years = useMemo(() => {
-    const yearsList = []
+    const yearsList = [];
     for (let year = currentYear; year >= 2015; year--) {
-      yearsList.push(year)
+      yearsList.push(year);
     }
-    return yearsList
-  }, [currentYear])
+    return yearsList;
+  }, [currentYear]);
 
   // Generate all months
   const months = useMemo(() => {
     return Array.from({ length: 12 }, (_, i) => ({
       value: i + 1,
-      label: new Date(2000, i).toLocaleString('default', { month: 'short' }).toUpperCase()
-    }))
-  }, [])
+      label: new Date(2000, i)
+        .toLocaleString("default", { month: "short" })
+        .toUpperCase(),
+    }));
+  }, []);
 
   // Update period selection UI
   const periodSelectionUI = (
     <div className="space-y-4 mb-4">
       <div className="flex items-center gap-4">
-        <Select value={selectedYear.toString()} onValueChange={(value) => setSelectedYear(Number(value))}>
+        <Select
+          value={selectedYear.toString()}
+          onValueChange={(value) => setSelectedYear(Number(value))}>
           <SelectTrigger className="w-[100px]">
             <SelectValue placeholder="Year" />
           </SelectTrigger>
           <SelectContent>
-            {years.map(year => (
+            {years.map((year) => (
               <SelectItem key={year} value={year.toString()}>
                 {year}
               </SelectItem>
@@ -152,14 +168,14 @@ function CompanyReports() {
             role="combobox"
             aria-expanded={monthDropdownOpen}
             className="w-[200px] justify-between"
-            onClick={() => setMonthDropdownOpen(!monthDropdownOpen)}
-          >
-            {selectedMonths.length === 0 
-              ? "Select months..." 
-              : selectedMonths.length === months.length 
-                ? "All months" 
-                : `${selectedMonths.length} month${selectedMonths.length === 1 ? '' : 's'} selected`
-            }
+            onClick={() => setMonthDropdownOpen(!monthDropdownOpen)}>
+            {selectedMonths.length === 0
+              ? "Select months..."
+              : selectedMonths.length === months.length
+              ? "All months"
+              : `${selectedMonths.length} month${
+                  selectedMonths.length === 1 ? "" : "s"
+                } selected`}
             <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
           </Button>
           {monthDropdownOpen && (
@@ -169,11 +185,16 @@ function CompanyReports() {
                   variant="ghost"
                   className="justify-start font-normal"
                   onClick={() => {
-                    setSelectedMonths(selectedMonths.length === months.length ? [] : months.map(m => m.value))
-                    setMonthDropdownOpen(false)
-                  }}
-                >
-                  {selectedMonths.length === months.length ? "Deselect All" : "Select All"}
+                    setSelectedMonths(
+                      selectedMonths.length === months.length
+                        ? []
+                        : months.map((m) => m.value)
+                    );
+                    setMonthDropdownOpen(false);
+                  }}>
+                  {selectedMonths.length === months.length
+                    ? "Deselect All"
+                    : "Select All"}
                 </Button>
                 {months.map((month) => (
                   <Button
@@ -181,15 +202,14 @@ function CompanyReports() {
                     variant="ghost"
                     className="justify-start font-normal"
                     onClick={() => {
-                      setSelectedMonths(prev => 
+                      setSelectedMonths((prev) =>
                         prev.includes(month.value)
-                          ? prev.filter(m => m !== month.value)
+                          ? prev.filter((m) => m !== month.value)
                           : [...prev, month.value].sort((a, b) => a - b)
-                      )
-                    }}
-                  >
+                      );
+                    }}>
                     <div className="flex items-center gap-2">
-                      <Checkbox 
+                      <Checkbox
                         checked={selectedMonths.includes(month.value)}
                         className="h-4 w-4"
                       />
@@ -202,25 +222,49 @@ function CompanyReports() {
           )}
         </div>
 
-        <Button
-          variant="outline"
-          className="ml-4"
-          onClick={() => setIsRangeView(!isRangeView)}
-        >
-          {isRangeView ? "Single Year View" : "Range View"}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            className={`${!isRangeView && !isOverallView ? "bg-blue-50" : ""}`}
+            onClick={() => {
+              setIsRangeView(false);
+              setIsOverallView(false);
+            }}>
+            Single Year
+          </Button>
+          <Button
+            variant="outline"
+            className={`${isRangeView ? "bg-blue-50" : ""}`}
+            onClick={() => {
+              setIsRangeView(true);
+              setIsOverallView(false);
+            }}>
+            Range View
+          </Button>
+          <Button
+            variant="outline"
+            className={`${isOverallView ? "bg-blue-50" : ""}`}
+            onClick={() => {
+              setIsRangeView(false);
+              setIsOverallView(true);
+            }}>
+            Overall View
+          </Button>
+        </div>
       </div>
 
       {isRangeView && (
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
             <span className="text-sm font-medium">From:</span>
-            <Select value={startYear.toString()} onValueChange={(value) => setStartYear(Number(value))}>
+            <Select
+              value={startYear.toString()}
+              onValueChange={(value) => setStartYear(Number(value))}>
               <SelectTrigger className="w-[100px]">
                 <SelectValue placeholder="Year" />
               </SelectTrigger>
               <SelectContent>
-                {years.map(year => (
+                {years.map((year) => (
                   <SelectItem key={year} value={year.toString()}>
                     {year}
                   </SelectItem>
@@ -228,12 +272,14 @@ function CompanyReports() {
               </SelectContent>
             </Select>
 
-            <Select value={startMonth.toString()} onValueChange={(value) => setStartMonth(Number(value))}>
+            <Select
+              value={startMonth.toString()}
+              onValueChange={(value) => setStartMonth(Number(value))}>
               <SelectTrigger className="w-[100px]">
                 <SelectValue placeholder="Month" />
               </SelectTrigger>
               <SelectContent>
-                {months.map(month => (
+                {months.map((month) => (
                   <SelectItem key={month.value} value={month.value.toString()}>
                     {month.label}
                   </SelectItem>
@@ -244,33 +290,37 @@ function CompanyReports() {
 
           <div className="flex items-center gap-2">
             <span className="text-sm font-medium">To:</span>
-            <Select value={endYear.toString()} onValueChange={(value) => setEndYear(Number(value))}>
+            <Select
+              value={endYear.toString()}
+              onValueChange={(value) => setEndYear(Number(value))}>
               <SelectTrigger className="w-[100px]">
                 <SelectValue placeholder="Year" />
               </SelectTrigger>
               <SelectContent>
-                {years.filter(year => year >= startYear).map(year => (
-                  <SelectItem key={year} value={year.toString()}>
-                    {year}
-                  </SelectItem>
-                ))}
+                {years
+                  .filter((year) => year >= startYear)
+                  .map((year) => (
+                    <SelectItem key={year} value={year.toString()}>
+                      {year}
+                    </SelectItem>
+                  ))}
               </SelectContent>
             </Select>
 
-            <Select 
-              value={endMonth.toString()} 
-              onValueChange={(value) => setEndMonth(Number(value))}
-            >
+            <Select
+              value={endMonth.toString()}
+              onValueChange={(value) => setEndMonth(Number(value))}>
               <SelectTrigger className="w-[100px]">
                 <SelectValue placeholder="Month" />
               </SelectTrigger>
               <SelectContent>
-                {months.map(month => (
-                  <SelectItem 
-                    key={month.value} 
+                {months.map((month) => (
+                  <SelectItem
+                    key={month.value}
                     value={month.value.toString()}
-                    disabled={endYear === currentYear && month.value > currentMonth}
-                  >
+                    disabled={
+                      endYear === currentYear && month.value > currentMonth
+                    }>
                     {month.label}
                   </SelectItem>
                 ))}
@@ -280,21 +330,43 @@ function CompanyReports() {
         </div>
       )}
     </div>
-  )
+  );
 
   // Get data to display with period filtering
   const displayData = useMemo(() => {
-    if (isRangeView) {
+    if (isOverallView) {
+      // Overall view logic - combine data from all available years
+      const yearlyData: Record<string, any[]> = {};
+
+      // Get all available years from both current and stable data
+      const allYears = [
+        ...new Set([
+          ...Object.keys(reportData),
+          ...Object.keys(stableReportData),
+        ]),
+      ].sort();
+
+      allYears.forEach((year) => {
+        const yearData = reportData[year] || stableReportData[year] || [];
+        yearlyData[year] = yearData;
+      });
+
+      return yearlyData;
+    } else if (isRangeView) {
       // Range view logic
       const yearlyData: Record<string, any[]> = {};
-      
+
       // Create entries for all years in range, even if empty
       for (let year = startYear; year <= endYear; year++) {
-        const yearData = reportData[year.toString()] || stableReportData[year.toString()] || [];
-        
-        const filteredData = yearData.filter(entry => {
-          const entryMonth = months.findIndex(m => m.label === entry.month) + 1;
-          
+        const yearData =
+          reportData[year.toString()] ||
+          stableReportData[year.toString()] ||
+          [];
+
+        const filteredData = yearData.filter((entry) => {
+          const entryMonth =
+            months.findIndex((m) => m.label === entry.month) + 1;
+
           if (year === startYear && year === endYear) {
             return entryMonth >= startMonth && entryMonth <= endMonth;
           } else if (year === startYear) {
@@ -304,122 +376,183 @@ function CompanyReports() {
           }
           return true;
         });
-        
+
         // Always include the year in the data, even if empty
         yearlyData[year.toString()] = filteredData;
       }
-      
+
       return yearlyData;
     } else {
       // Single year view logic
-      const yearData = reportData[selectedYear.toString()] || stableReportData[selectedYear.toString()] || [];
-      
+      const yearData =
+        reportData[selectedYear.toString()] ||
+        stableReportData[selectedYear.toString()] ||
+        [];
+
       // If no months are explicitly selected and it's current year,
       // show data up to current month by default
       if (selectedMonths.length === 0 && selectedYear === currentYear) {
-        return yearData.filter(entry => {
-          const entryMonth = months.findIndex(m => m.label === entry.month) + 1;
+        return yearData.filter((entry) => {
+          const entryMonth =
+            months.findIndex((m) => m.label === entry.month) + 1;
           return entryMonth <= currentMonth;
         });
       }
-      
+
       // If specific months are selected, filter by those months
       if (selectedMonths.length > 0) {
-        return yearData.filter(entry => {
-          const entryMonth = months.findIndex(m => m.label === entry.month) + 1;
+        return yearData.filter((entry) => {
+          const entryMonth =
+            months.findIndex((m) => m.label === entry.month) + 1;
           return selectedMonths.includes(entryMonth);
         });
       }
-      
+
       // Otherwise show all data for the selected year
       return yearData;
     }
-  }, [reportData, stableReportData, selectedYear, selectedMonths, months, currentYear, currentMonth,
-      isRangeView, startYear, startMonth, endYear, endMonth]);
+  }, [
+    reportData,
+    stableReportData,
+    selectedYear,
+    selectedMonths,
+    months,
+    currentYear,
+    currentMonth,
+    isRangeView,
+    isOverallView,
+    startYear,
+    startMonth,
+    endYear,
+    endMonth,
+  ]);
 
   const getTruncatedCompanyName = (name: string) => {
-    const words = name.split(' ')
+    const words = name.split(" ");
     return {
-      short: words.slice(0, 2).join(' '),
-      full: name
-    }
-  }
+      short: words.slice(0, 2).join(" "),
+      full: name,
+    };
+  };
 
   const getFilteredColumns = () => {
-    if (selectedColumns.includes('all')) return selectedColumns
-    return ['month', ...selectedColumns]
-  }
+    if (selectedColumns.includes("all")) return selectedColumns;
+    return ["month", ...selectedColumns];
+  };
 
   // Enhanced export function with better error handling and formatting
   const exportToExcel = useCallback(() => {
     try {
       if (!startYear || !reportData[startYear.toString()]) {
-        throw new Error('No data available for selected year');
+        throw new Error("No data available for selected year");
       }
 
-      const data = Object.keys(displayData).map(year => {
-        const yearData = displayData[year].map(entry => {
-          const row: Record<string, string | number> = { Month: entry.month };
+      const data = Object.keys(displayData)
+        .map((year) => {
+          const yearData = displayData[year].map((entry) => {
+            const row: Record<string, string | number> = { Month: entry.month };
 
-          // Helper function to format amount and date
-          const formatTaxData = (taxType: keyof typeof entry) => ({
-            [`${taxTypes.find(t => t.id === taxType)?.name || taxType} Amount`]: 
-              new Intl.NumberFormat('en-KE', { minimumFractionDigits: 2 }).format(entry[taxType].amount),
-            [`${taxTypes.find(t => t.id === taxType)?.name || taxType} Pay Date`]: 
-              entry[taxType].date || '-'
+            // Helper function to format amount and date
+            const formatTaxData = (taxType: keyof typeof entry) => ({
+              [`${
+                taxTypes.find((t) => t.id === taxType)?.name || taxType
+              } Amount`]: new Intl.NumberFormat("en-KE", {
+                minimumFractionDigits: 2,
+              }).format(entry[taxType].amount),
+              [`${
+                taxTypes.find((t) => t.id === taxType)?.name || taxType
+              } Pay Date`]: entry[taxType].date || "-",
+            });
+
+            // Add selected tax columns
+            if (
+              selectedColumns.includes("all") ||
+              selectedColumns.includes("paye")
+            ) {
+              Object.assign(row, formatTaxData("paye"));
+            }
+            if (
+              selectedColumns.includes("all") ||
+              selectedColumns.includes("housingLevy")
+            ) {
+              Object.assign(row, formatTaxData("housingLevy"));
+            }
+            if (
+              selectedColumns.includes("all") ||
+              selectedColumns.includes("nita")
+            ) {
+              Object.assign(row, formatTaxData("nita"));
+            }
+            if (
+              selectedColumns.includes("all") ||
+              selectedColumns.includes("shif")
+            ) {
+              Object.assign(row, formatTaxData("shif"));
+            }
+            if (
+              selectedColumns.includes("all") ||
+              selectedColumns.includes("nssf")
+            ) {
+              Object.assign(row, formatTaxData("nssf"));
+            }
+
+            return row;
           });
 
-          // Add selected tax columns
-          if (selectedColumns.includes('all') || selectedColumns.includes('paye')) {
-            Object.assign(row, formatTaxData('paye'));
-          }
-          if (selectedColumns.includes('all') || selectedColumns.includes('housingLevy')) {
-            Object.assign(row, formatTaxData('housingLevy'));
-          }
-          if (selectedColumns.includes('all') || selectedColumns.includes('nita')) {
-            Object.assign(row, formatTaxData('nita'));
-          }
-          if (selectedColumns.includes('all') || selectedColumns.includes('shif')) {
-            Object.assign(row, formatTaxData('shif'));
-          }
-          if (selectedColumns.includes('all') || selectedColumns.includes('nssf')) {
-            Object.assign(row, formatTaxData('nssf'));
-          }
-
-          return row;
-        });
-
-        return yearData;
-      }).flat();
+          return yearData;
+        })
+        .flat();
 
       const ws = XLSX.utils.json_to_sheet(data);
       const wb = XLSX.utils.book_new();
 
       // Add worksheet name and company details
-      const sheetName = selectedCompanyName.length > 30 
-        ? `${selectedCompanyName.substring(0, 27)}...` 
-        : selectedCompanyName;
-      
+      const sheetName =
+        selectedCompanyName.length > 30
+          ? `${selectedCompanyName.substring(0, 27)}...`
+          : selectedCompanyName;
+
       XLSX.utils.book_append_sheet(wb, ws, sheetName);
 
       // Add some basic styling
-      const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
+      const range = XLSX.utils.decode_range(ws["!ref"] || "A1");
       for (let C = range.s.c; C <= range.e.c; ++C) {
-        const address = XLSX.utils.encode_col(C) + '1';
+        const address = XLSX.utils.encode_col(C) + "1";
         if (!ws[address]) continue;
-        ws[address].s = { font: { bold: true }, fill: { fgColor: { rgb: "EFEFEF" } } };
+        ws[address].s = {
+          font: { bold: true },
+          fill: { fgColor: { rgb: "EFEFEF" } },
+        };
       }
 
       // Generate filename with sanitized company name
-      const sanitizedCompanyName = selectedCompanyName.replace(/[^a-z0-9]/gi, '_');
+      const sanitizedCompanyName = selectedCompanyName.replace(
+        /[^a-z0-9]/gi,
+        "_"
+      );
       const filename = `${sanitizedCompanyName}_${startYear}_${endYear}_tax_report.xlsx`;
 
       XLSX.writeFile(wb, filename);
     } catch (error) {
-      console.error('Error exporting to Excel:', error);
+      console.error("Error exporting to Excel:", error);
       // You can add a toast notification here to show the error
     }
-  }, [startYear, reportData, selectedCompanyName, selectedColumns, displayData]);
+  }, [
+    startYear,
+    reportData,
+    selectedCompanyName,
+    selectedColumns,
+    displayData,
+  ]);
+
+  // When in overall view, render the OverallView component
+  if (isOverallView) {
+    return (
+      <div className="flex-1 p-4 space-y-4 overflow-auto">
+        <OverallView companies={companies} />
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen max-h-screen">
@@ -435,7 +568,10 @@ function CompanyReports() {
             />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="w-full h-8 flex items-center justify-between text-xs">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full h-8 flex items-center justify-between text-xs">
                   <div className="flex items-center">
                     <Filter className="mr-2 h-3 w-3" />
                     Service Categories
@@ -448,16 +584,21 @@ function CompanyReports() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="w-48">
-                <DropdownMenuLabel className="text-xs font-medium">Service Categories</DropdownMenuLabel>
+                <DropdownMenuLabel className="text-xs font-medium">
+                  Service Categories
+                </DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <div className="p-2">
                   {getFilters().map((filter) => (
                     <label
                       key={filter.key}
-                      className="flex items-center space-x-2 mb-2 last:mb-0 cursor-pointer"
-                    >
+                      className="flex items-center space-x-2 mb-2 last:mb-0 cursor-pointer">
                       <Checkbox
-                        checked={filter.key === 'all' ? selectedFilters.length === 0 : filter.selected}
+                        checked={
+                          filter.key === "all"
+                            ? selectedFilters.length === 0
+                            : filter.selected
+                        }
                         onCheckedChange={() => handleFilterChange(filter.key)}
                         className="h-4 w-4"
                       />
@@ -477,25 +618,28 @@ function CompanyReports() {
           {loading && companies.length === 0 ? (
             <div className="flex flex-col items-center justify-center p-8 space-y-4">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-              <p className="text-xs text-muted-foreground">Loading companies...</p>
+              <p className="text-xs text-muted-foreground">
+                Loading companies...
+              </p>
             </div>
           ) : (
             <div className="space-y-0.5">
               {filteredCompanies.map((company, index) => {
-                const { short, full } = getTruncatedCompanyName(company.name)
+                const { short, full } = getTruncatedCompanyName(company.name);
                 return (
                   <div
                     key={company.id}
                     className={`p-1.5 cursor-pointer text-xs transition-all group relative rounded-md ${
-                      selectedCompany === company.id 
-                        ? "bg-blue-500 text-white border border-blue-600" 
+                      selectedCompany === company.id
+                        ? "bg-blue-500 text-white border border-blue-600"
                         : "hover:border hover:border-muted-foreground/20"
                     }`}
                     onClick={() => setSelectedCompany(company.id)}
-                    onMouseEnter={() => prefetchCompanyData(company.id, index)}
-                  >
+                    onMouseEnter={() => prefetchCompanyData(company.id, index)}>
                     <div className="flex items-center gap-1.5">
-                      <span className="text-muted-foreground text-[10px] w-4">{index + 1}.</span>
+                      <span className="text-muted-foreground text-[10px] w-4">
+                        {index + 1}.
+                      </span>
                       <span className="truncate">{short}</span>
                     </div>
                     {full !== short && (
@@ -504,19 +648,18 @@ function CompanyReports() {
                       </div>
                     )}
                   </div>
-                )
+                );
               })}
             </div>
           )}
         </ScrollArea>
-        
+
         {/* Debug button - can be removed in production */}
-        <Button 
-          variant="outline" 
-          size="sm" 
+        <Button
+          variant="outline"
+          size="sm"
           className="mt-4 w-full text-xs hidden" // hidden by default
-          onClick={clearCache}
-        >
+          onClick={clearCache}>
           Clear Cache (Debug)
         </Button>
       </div>
@@ -531,103 +674,117 @@ function CompanyReports() {
           <>
             <div className="flex items-center justify-between">
               <h2 className="text-xl font-bold">{selectedCompanyName}</h2>
-              <Button onClick={exportToExcel} variant="outline" className="ml-auto">
+              <Button
+                onClick={exportToExcel}
+                variant="outline"
+                className="ml-auto">
                 Export to Excel
               </Button>
             </div>
 
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
-                <DropdownMenu open={taxDropdownOpen} onOpenChange={setTaxDropdownOpen}>
+                <DropdownMenu
+                  open={taxDropdownOpen}
+                  onOpenChange={setTaxDropdownOpen}>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="outline" className="w-[180px] justify-between">
+                    <Button
+                      variant="outline"
+                      className="w-[180px] justify-between">
                       Select Taxes
                       <span className="text-xs text-muted-foreground">
                         ({selectedColumns.length - 1} selected)
                       </span>
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent 
+                  <DropdownMenuContent
                     className="w-[180px]"
                     onInteractOutside={(e) => {
                       // Only close if clicking outside both dropdowns
                       if (!e.target.closest('[role="dialog"]')) {
-                        setTaxDropdownOpen(false)
+                        setTaxDropdownOpen(false);
                       }
-                    }}
-                  >
+                    }}>
                     <DropdownMenuLabel className="flex items-center justify-between">
                       Tax Types
-                      <Button 
-                        variant="ghost" 
-                        size="sm" 
+                      <Button
+                        variant="ghost"
+                        size="sm"
                         className="h-6 px-2 text-xs"
                         onClick={() => {
                           if (selectedColumns.length === taxTypes.length) {
-                            setSelectedColumns(['month'])
+                            setSelectedColumns(["month"]);
                           } else {
-                            setSelectedColumns(['month', ...taxTypes.slice(1).map(t => t.id)])
+                            setSelectedColumns([
+                              "month",
+                              ...taxTypes.slice(1).map((t) => t.id),
+                            ]);
                           }
-                        }}
-                      >
-                        {selectedColumns.length === taxTypes.length ? 'Unselect All' : 'Select All'}
+                        }}>
+                        {selectedColumns.length === taxTypes.length
+                          ? "Unselect All"
+                          : "Select All"}
                       </Button>
                     </DropdownMenuLabel>
                     <DropdownMenuSeparator />
-                    {taxTypes.slice(1).map(tax => (
+                    {taxTypes.slice(1).map((tax) => (
                       <DropdownMenuCheckboxItem
                         key={tax.id}
                         checked={selectedColumns.includes(tax.id)}
                         onSelect={(e) => e.preventDefault()}
                         onCheckedChange={(checked) => {
                           if (checked) {
-                            setSelectedColumns([...selectedColumns, tax.id])
+                            setSelectedColumns([...selectedColumns, tax.id]);
                           } else {
-                            setSelectedColumns(selectedColumns.filter(col => col !== tax.id))
+                            setSelectedColumns(
+                              selectedColumns.filter((col) => col !== tax.id)
+                            );
                           }
-                        }}
-                      >
+                        }}>
                         {tax.name}
                       </DropdownMenuCheckboxItem>
                     ))}
                   </DropdownMenuContent>
                 </DropdownMenu>
 
-                <DropdownMenu open={columnDropdownOpen} onOpenChange={setColumnDropdownOpen}>
+                <DropdownMenu
+                  open={columnDropdownOpen}
+                  onOpenChange={setColumnDropdownOpen}>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="outline" className="w-[180px] justify-between">
+                    <Button
+                      variant="outline"
+                      className="w-[180px] justify-between">
                       Column Details
                       <span className="text-xs text-muted-foreground">
-                        {selectedSubColumns.includes("all") 
-                          ? "(All)" 
+                        {selectedSubColumns.includes("all")
+                          ? "(All)"
                           : `(${selectedSubColumns.length} selected)`}
                       </span>
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent 
+                  <DropdownMenuContent
                     className="w-[180px]"
                     onInteractOutside={(e) => {
                       // Only close if clicking outside both dropdowns
                       if (!e.target.closest('[role="dialog"]')) {
-                        setColumnDropdownOpen(false)
+                        setColumnDropdownOpen(false);
                       }
-                    }}
-                  >
+                    }}>
                     <DropdownMenuLabel className="flex items-center justify-between">
-                  
-                      <Button 
-                        variant="ghost" 
-                        size="sm" 
+                      <Button
+                        variant="ghost"
+                        size="sm"
                         className="h-6 px-2 text-xs"
                         onClick={() => {
                           if (selectedSubColumns.includes("all")) {
-                            setSelectedSubColumns(["amount"])
+                            setSelectedSubColumns(["amount"]);
                           } else {
-                            setSelectedSubColumns(["all"])
+                            setSelectedSubColumns(["all"]);
                           }
-                        }}
-                      >
-                        {selectedSubColumns.includes("all") ? 'Show Custom' : 'Show All'}
+                        }}>
+                        {selectedSubColumns.includes("all")
+                          ? "Show Custom"
+                          : "Show All"}
                       </Button>
                     </DropdownMenuLabel>
                     <DropdownMenuSeparator />
@@ -636,50 +793,69 @@ function CompanyReports() {
                       onSelect={(e) => e.preventDefault()}
                       onCheckedChange={(checked) => {
                         if (checked) {
-                          setSelectedSubColumns(["all"])
+                          setSelectedSubColumns(["all"]);
                         } else {
-                          setSelectedSubColumns(["amount"])
+                          setSelectedSubColumns(["amount"]);
                         }
-                      }}
-                    >
+                      }}>
                       All Details
                     </DropdownMenuCheckboxItem>
                     <DropdownMenuCheckboxItem
-                      checked={selectedSubColumns.includes("amount") || selectedSubColumns.includes("all")}
+                      checked={
+                        selectedSubColumns.includes("amount") ||
+                        selectedSubColumns.includes("all")
+                      }
                       onSelect={(e) => e.preventDefault()}
                       onCheckedChange={(checked) => {
                         if (checked) {
-                          setSelectedSubColumns(prev => {
-                            const newSelection = prev.filter(col => col !== "all").concat("amount")
-                            return newSelection.length > 0 ? newSelection : ["amount"]
-                          })
+                          setSelectedSubColumns((prev) => {
+                            const newSelection = prev
+                              .filter((col) => col !== "all")
+                              .concat("amount");
+                            return newSelection.length > 0
+                              ? newSelection
+                              : ["amount"];
+                          });
                         } else {
-                          setSelectedSubColumns(prev => {
-                            const newSelection = prev.filter(col => col !== "amount" && col !== "all")
-                            return newSelection.length > 0 ? newSelection : ["date"]
-                          })
+                          setSelectedSubColumns((prev) => {
+                            const newSelection = prev.filter(
+                              (col) => col !== "amount" && col !== "all"
+                            );
+                            return newSelection.length > 0
+                              ? newSelection
+                              : ["date"];
+                          });
                         }
-                      }}
-                    >
+                      }}>
                       Amount
                     </DropdownMenuCheckboxItem>
                     <DropdownMenuCheckboxItem
-                      checked={selectedSubColumns.includes("date") || selectedSubColumns.includes("all")}
+                      checked={
+                        selectedSubColumns.includes("date") ||
+                        selectedSubColumns.includes("all")
+                      }
                       onSelect={(e) => e.preventDefault()}
                       onCheckedChange={(checked) => {
                         if (checked) {
-                          setSelectedSubColumns(prev => {
-                            const newSelection = prev.filter(col => col !== "all").concat("date")
-                            return newSelection.length > 0 ? newSelection : ["date"]
-                          })
+                          setSelectedSubColumns((prev) => {
+                            const newSelection = prev
+                              .filter((col) => col !== "all")
+                              .concat("date");
+                            return newSelection.length > 0
+                              ? newSelection
+                              : ["date"];
+                          });
                         } else {
-                          setSelectedSubColumns(prev => {
-                            const newSelection = prev.filter(col => col !== "date" && col !== "all")
-                            return newSelection.length > 0 ? newSelection : ["amount"]
-                          })
+                          setSelectedSubColumns((prev) => {
+                            const newSelection = prev.filter(
+                              (col) => col !== "date" && col !== "all"
+                            );
+                            return newSelection.length > 0
+                              ? newSelection
+                              : ["amount"];
+                          });
                         }
-                      }}
-                    >
+                      }}>
                       Pay Date
                     </DropdownMenuCheckboxItem>
                   </DropdownMenuContent>
@@ -690,25 +866,36 @@ function CompanyReports() {
                     variant="outline"
                     size="sm"
                     onClick={() => setShowTotals(!showTotals)}
-                    className="ml-2"
-                  >
+                    className="ml-2">
                     {showTotals ? "Hide Totals" : "Show Totals"}
                   </Button>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
-                {periodSelectionUI}
-              </div>
+              {!isOverallView && (
+                <div className="flex items-center gap-2">
+                  {periodSelectionUI}
+                </div>
+              )}
             </div>
 
             {/* Data table section */}
             <div className="relative">
-              {(isRangeView ? Object.keys(displayData).length > 0 : displayData.length > 0) ? (
-                <DataTable 
+              {(
+                isRangeView
+                  ? Object.keys(displayData).length > 0
+                  : displayData.length > 0
+              ) ? (
+                <DataTable
                   data={isRangeView ? [] : displayData}
                   yearlyData={isRangeView ? displayData : null}
-                  selectedColumns={["paye", "housingLevy", "nita", "shif", "nssf"]}
+                  selectedColumns={[
+                    "paye",
+                    "housingLevy",
+                    "nita",
+                    "shif",
+                    "nssf",
+                  ]}
                   selectedSubColumns={selectedSubColumns}
                   isLoading={loading && selectedCompany !== null}
                   isHorizontalView={isRangeView}
@@ -722,7 +909,9 @@ function CompanyReports() {
                       <p className="text-xs">Loading data...</p>
                     </>
                   ) : (
-                    <p className="text-muted-foreground">No data available for selected period</p>
+                    <p className="text-muted-foreground">
+                      No data available for selected period
+                    </p>
                   )}
                 </div>
               )}
@@ -730,10 +919,12 @@ function CompanyReports() {
           </>
         ) : (
           <div className="flex items-center justify-center h-full">
-            <p className="text-muted-foreground">Select a company to view tax reports</p>
+            <p className="text-muted-foreground">
+              Select a company to view tax reports
+            </p>
           </div>
         )}
       </div>
     </div>
-  )
+  );
 }
