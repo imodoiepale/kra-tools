@@ -6,6 +6,8 @@ import {
   AlertCircle,
   FileText,
   Send,
+  Loader2,
+  X
 } from "lucide-react";
 import {
   Dialog,
@@ -25,6 +27,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/hooks/use-toast";
 import { EmailService } from "@/lib/emailService";
+import { format } from "date-fns";
 
 interface Director {
   fullName: string;
@@ -45,6 +48,7 @@ interface ContactModalProps {
     path: string | null;
   }[];
   onEmailSent?: (data: { date: string; recipients: string[]; }) => void;
+  emailHistory?: { date: string; recipients: string[] }[];
 }
 
 const DOCUMENT_LABELS: Record<string, string> = {
@@ -63,7 +67,8 @@ export function ContactModal({
   month,
   year,
   documents,
-  onEmailSent
+  onEmailSent,
+  emailHistory = []
 }: ContactModalProps) {
   const { toast } = useToast();
   const [isOpen, setIsOpen] = useState(false);
@@ -81,7 +86,7 @@ export function ContactModal({
     }[]
   >([]);
   const [emailData, setEmailData] = useState({
-    subject: `Payment Receipts - ${companyName} - ${month} ${year}`,
+    subject: `Payment Receipts for ${companyName} ${month}, ${year}`,
     message: "",
     cc: "",
     bcc: "",
@@ -242,7 +247,7 @@ export function ContactModal({
                         
                         <p style="color: #374151; margin: 20px 0;">Dear Client,</p>
                         
-                        <h1 style="color: #1e40af; font-size: 18px; margin: 20px 0;">Payment Receipts for ${companyName} - ${month} ${year}</h1>
+                        <h1 style="color: #1e40af; font-size: 18px; margin: 20px 0;">Payment Receipts for ${companyName} ${month}, ${year}</h1>
                         
                         ${
                         emailData.message
@@ -312,15 +317,22 @@ export function ContactModal({
       <div onClick={() => setIsOpen(true)}>{trigger}</div>
 
       <Dialog open={isOpen} onOpenChange={setIsOpen}>
-        <DialogContent className="max-w-6xl bg-white">
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-2xl">
-              <Send className="h-5 w-5 text-blue-600" />
+            <DialogTitle className="flex items-center gap-2">
+              <Send className="h-5 w-5" />
               Send Documents
-              <span className="text-gray-500 text-lg ml-1">
-                • {companyName} • {month} {year}
-              </span>
             </DialogTitle>
+            <DialogDescription>
+              Send documents to company directors via email.
+              {emailHistory && emailHistory.length > 0 && (
+                <div className="mt-2 text-sm">
+                  <span className="font-medium">Last sent:</span>{" "}
+                  {format(new Date(emailHistory[emailHistory.length - 1].date), "dd/MM/yyyy HH:mm")} to{" "}
+                  {emailHistory[emailHistory.length - 1].recipients.join(", ")}
+                </div>
+              )}
+            </DialogDescription>
           </DialogHeader>
 
           <div className="grid grid-cols-2 gap-6 py-4">
@@ -587,13 +599,13 @@ export function ContactModal({
             >
               {isLoading ? (
                 <>
-                  <div className="h-4 w-4 mr-2 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   Sending...
                 </>
               ) : (
                 <>
-                  <Send className="w-4 h-4 mr-2" />
-                  Send Documents
+                  <Mail className="mr-2 h-4 w-4" />
+                  {emailHistory && emailHistory.length > 0 ? "Resend Documents" : "Send Documents"}
                 </>
               )}
             </Button>

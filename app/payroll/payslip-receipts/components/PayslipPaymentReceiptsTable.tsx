@@ -111,6 +111,8 @@ interface PayslipPaymentReceiptsTableProps {
     columnVisibility?: Record<string, boolean>;
     showSummaryHeaders?: boolean;
     onToggleSummaryHeaders?: () => void;
+    selectedMonth?: number;
+    selectedYear?: number;
 }
 
 const BATCH_SIZE = 5;
@@ -134,7 +136,9 @@ export function PayslipPaymentReceiptsTable({
     setPayrollRecords,
     columnVisibility = {},
     showSummaryHeaders = true,
-    onToggleSummaryHeaders
+    onToggleSummaryHeaders,
+    selectedMonth = new Date().getMonth(),
+    selectedYear = new Date().getFullYear()
 }: PayslipPaymentReceiptsTableProps) {
     const [selectedDocumentType, setSelectedDocumentType] = useState<DocumentType | null>(null);
     const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
@@ -451,6 +455,66 @@ export function PayslipPaymentReceiptsTable({
         }
     };
 
+    const handleEmailSent = async (recordId: string, emailData: { date: string; recipients: string[] }) => {
+        try {
+            const record = records.find(r => r.id === recordId);
+            if (!record) return;
+
+            // Fetch current record to get latest email history and status
+            const { data: currentRecord, error: fetchError } = await supabase
+                .from('company_payroll_records')
+                .select('email_history, receipts_status')
+                .eq('id', recordId)
+                .single();
+
+            if (fetchError) throw fetchError;
+
+            const emailHistory = currentRecord.email_history || [];
+            const updatedHistory = [...emailHistory, emailData];
+
+            // Update both email history and email date
+            const { error: updateError } = await supabase
+                .from('company_payroll_records')
+                .update({
+                    email_history: updatedHistory,
+                    receipts_status: {
+                        ...currentRecord.receipts_status,
+                        email_date: emailData.date
+                    }
+                })
+                .eq('id', recordId);
+
+            if (updateError) throw updateError;
+
+            // Update local state
+            setPayrollRecords(records.map(r => {
+                if (r.id === recordId) {
+                    return {
+                        ...r,
+                        email_history: updatedHistory,
+                        receipts_status: {
+                            ...r.receipts_status,
+                            email_date: emailData.date
+                        }
+                    };
+                }
+                return r;
+            }));
+
+            toast({
+                title: "Success",
+                description: "Email sent and history updated successfully"
+            });
+        } catch (error) {
+            console.error('Email history update error:', error);
+            toast({
+                title: "Error",
+                description: "Failed to update email history",
+                variant: "destructive"
+            });
+        }
+    };
+
     const [finalizeDialog, setFinalizeDialog] = useState<{
         isOpen: boolean;
         recordId: string | null;
@@ -642,66 +706,6 @@ export function PayslipPaymentReceiptsTable({
             });
         }
     }, [records, toast]);
-
-    const handleEmailSent = useCallback(async (recordId: string, emailData: { date: string; recipients: string[] }) => {
-        try {
-            const record = records.find(r => r.id === recordId);
-            if (!record) return;
-
-            // Fetch current record to get latest email history and status
-            const { data: currentRecord, error: fetchError } = await supabase
-                .from('company_payroll_records')
-                .select('email_history, receipts_status')
-                .eq('id', recordId)
-                .single();
-
-            if (fetchError) throw fetchError;
-
-            const emailHistory = currentRecord.email_history || [];
-            const updatedHistory = [...emailHistory, emailData];
-
-            // Update both email history and email date
-            const { error: updateError } = await supabase
-                .from('company_payroll_records')
-                .update({
-                    email_history: updatedHistory,
-                    receipts_status: {
-                        ...currentRecord.receipts_status,
-                        email_date: emailData.date
-                    }
-                })
-                .eq('id', recordId);
-
-            if (updateError) throw updateError;
-
-            // Update local state
-            setPayrollRecords(records.map(r => {
-                if (r.id === recordId) {
-                    return {
-                        ...r,
-                        email_history: updatedHistory,
-                        receipts_status: {
-                            ...r.receipts_status,
-                            email_date: emailData.date
-                        }
-                    };
-                }
-                return r;
-            }));
-
-            toast({
-                title: "Success",
-                description: "Email sent and history updated successfully"
-            });
-        } catch (error) {
-            console.error('Email history update error:', error);
-            toast({
-                title: "Error",
-                description: "Failed to update email history",
-                variant: "destructive"
-            });
-        }
-    }, [records, setPayrollRecords, toast]);
 
     const handleFinalize = useCallback((recordId: string) => {
         onStatusUpdate(recordId, {
@@ -1831,6 +1835,27 @@ export function PayslipPaymentReceiptsTable({
                                             <TooltipProvider>
                                                 <Tooltip>
                                                     <TooltipTrigger asChild>
+                                                        <WhatsAppModal
+                                                            trigger={
+                                                                <Button
+                                                                    variant="outline"
+                                                                    size="icon"
+                                                                    className="relative"
+                                                                >
+                                                                    <MessageSquare className="h-4 w-4" />
+                                                                </Button>
+                                                            }
+                                                            companyName={record.company?.company_name || ''}
+                                                            documents={getDocumentsForUpload(record)}
+                                                            month={format(new Date(selectedYear, selectedMonth), 'MMMM')}
+                                                            year={selectedYear.toString()}
+                                                        />
+                                                    </TooltipTrigger>
+                                                </Tooltip>
+                                            </TooltipProvider>
+                                            <TooltipProvider>
+                                                <Tooltip>
+                                                    <TooltipTrigger asChild>
                                                         <ContactModal
                                                             trigger={
                                                                 <Button
@@ -1855,17 +1880,18 @@ export function PayslipPaymentReceiptsTable({
                                                             companyEmail={record.company?.email || ''}
                                                             documents={getDocumentsForUpload(record)}
                                                             onEmailSent={(data) => handleEmailSent(record.id, data)}
+                                                            month={format(new Date(selectedYear, selectedMonth), 'MMMM')}
+                                                            year={selectedYear.toString()}
+                                                            emailHistory={record.email_history || []}
                                                         />
                                                     </TooltipTrigger>
                                                     <TooltipContent>
                                                         {record.email_history?.length > 0 ? (
                                                             <div className="space-y-2">
-                                                                <div className="flex items-center justify-between">
-                                                                    <p className="font-medium">Email History</p>
-                                                                    <Badge variant="outline" className="ml-2">
-                                                                        {record.email_history.length} {record.email_history.length === 1 ? 'time' : 'times'}
-                                                                    </Badge>
-                                                                </div>
+                                                                <p className="font-medium">Email History</p>
+                                                                <Badge variant="outline" className="ml-2">
+                                                                    {record.email_history.length} {record.email_history.length === 1 ? 'time' : 'times'}
+                                                                </Badge>
                                                                 <div className="max-h-48 overflow-y-auto space-y-2">
                                                                     {record.email_history.map((history, i) => (
                                                                         <div key={i} className="text-sm bg-gray-50 p-2 rounded">
