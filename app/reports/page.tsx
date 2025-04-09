@@ -29,6 +29,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { Filter } from "lucide-react";
+import { ClientCategoryFilter } from "./components/client-category-filter";
 import { Badge } from "@/components/ui/badge";
 import { ChevronDown } from "lucide-react";
 import OverallView from "./components/overallview";
@@ -77,6 +78,8 @@ function CompanyReports() {
     prefetchCompanyData,
     clearCache,
   } = useCompanyTaxReports();
+
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
 
   const {
     searchQuery,
@@ -197,10 +200,9 @@ function CompanyReports() {
                     : "Select All"}
                 </Button>
                 {months.map((month) => (
-                  <Button
+                  <div
                     key={month.value}
-                    variant="ghost"
-                    className="justify-start font-normal"
+                    className="flex items-center gap-2 px-2 py-1.5 hover:bg-accent rounded-sm cursor-pointer"
                     onClick={() => {
                       setSelectedMonths((prev) =>
                         prev.includes(month.value)
@@ -208,14 +210,12 @@ function CompanyReports() {
                           : [...prev, month.value].sort((a, b) => a - b)
                       );
                     }}>
-                    <div className="flex items-center gap-2">
-                      <Checkbox
-                        checked={selectedMonths.includes(month.value)}
-                        className="h-4 w-4"
-                      />
-                      {month.label}
-                    </div>
-                  </Button>
+                    <Checkbox
+                      checked={selectedMonths.includes(month.value)}
+                      className="h-4 w-4"
+                    />
+                    <span className="text-sm">{month.label}</span>
+                  </div>
                 ))}
               </div>
             </div>
@@ -566,52 +566,40 @@ function CompanyReports() {
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full text-xs"
             />
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full h-8 flex items-center justify-between text-xs">
-                  <div className="flex items-center">
-                    <Filter className="mr-2 h-3 w-3" />
-                    Service Categories
-                  </div>
-                  {selectedFilters.length > 0 && (
-                    <Badge variant="secondary" className="ml-2">
-                      {selectedFilters.length}
-                    </Badge>
-                  )}
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-48">
-                <DropdownMenuLabel className="text-xs font-medium">
-                  Service Categories
-                </DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <div className="p-2">
-                  {getFilters().map((filter) => (
-                    <label
-                      key={filter.key}
-                      className="flex items-center space-x-2 mb-2 last:mb-0 cursor-pointer">
-                      <Checkbox
-                        checked={
-                          filter.key === "all"
-                            ? selectedFilters.length === 0
-                            : filter.selected
-                        }
-                        onCheckedChange={() => handleFilterChange(filter.key)}
-                        className="h-4 w-4"
-                      />
-                      <div className="flex flex-col">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm">{filter.label}</span>
-                        </div>
-                      </div>
-                    </label>
-                  ))}
-                </div>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full h-8 flex items-center justify-between text-xs"
+              onClick={() => setIsFilterOpen(true)}
+            >
+              <div className="flex items-center">
+                <Filter className="mr-2 h-3 w-3" />
+                Service Categories
+              </div>
+              {selectedFilters.length > 0 && (
+                <Badge variant="secondary" className="ml-2">
+                  {selectedFilters.length}
+                </Badge>
+              )}
+            </Button>
+
+            <ClientCategoryFilter
+              isOpen={isFilterOpen}
+              onClose={() => setIsFilterOpen(false)}
+              onApplyFilters={(filters) => {
+                const selectedCategories = Object.entries(filters)
+                  .filter(([_, value]) => Object.values(value).some(v => v))
+                  .map(([key]) => key);
+                setSelectedFilters(selectedCategories);
+              }}
+              onClearFilters={() => setSelectedFilters([])}
+              selectedFilters={Object.fromEntries(
+                selectedFilters.map(filter => [
+                  filter,
+                  { active: true }
+                ])
+              )}
+            />
           </div>
         </div>
         <ScrollArea className="h-[calc(100vh-8rem)]">

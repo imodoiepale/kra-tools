@@ -15,7 +15,7 @@ export default function PayrollPage() {
   const [filteredCompanies, setFilteredCompanies] = useState(companies);
   
   // Function to generate month range
-  const getMonthsInRange = (start, end) => {
+  const getMonthsInRange = (start: string, end: string) => {
     const startDate = new Date(start + '-01');
     const endDate = new Date(end + '-01');
     const months = [];
