@@ -33,6 +33,8 @@ interface WhatsAppModalProps {
   trigger: React.ReactNode;
   companyName: string;
   companyPhone?: string;
+  month: string;
+  year: string;
   documents: {
     type: string;
     label: string;
@@ -46,6 +48,8 @@ export function WhatsAppModal({
   trigger,
   companyName,
   companyPhone: initialCompanyPhone,
+  month,
+  year,
   documents,
   onMessageSent,
 }: WhatsAppModalProps) {
@@ -58,12 +62,12 @@ export function WhatsAppModal({
   const [directorPhones, setDirectorPhones] = useState<
     {
       id: string;
-      name: string;
+      fullName: string;
       phone: string;
       isSelected: boolean;
     }[]
   >([]);
-  const [messageText, setMessageText] = useState("");
+  const [messageText, setMessageText] = useState(`Dear Client,\n\nPlease find attached the payment receipts for ${companyName} for ${month} ${year}.`);
   const [isLoading, setIsLoading] = useState(false);
   const [showDirectors, setShowDirectors] = useState(false);
 
@@ -92,27 +96,24 @@ export function WhatsAppModal({
 
         if (directorsError) throw directorsError;
 
-        const companyDirectors = individualsData
-          ?.filter((individual) => {
+        // Filter and map directors in one step
+        const companyDirectors = (individualsData || [])
+          .filter((individual) => {
             const directorships = individual.directorship_history || [];
             return directorships.some(
               (d: any) =>
                 d.company_name === companyName && d.position === "Director"
             );
           })
-          .map((director, index) => {
-            const contactDetails = director.contact_details || {};
-            const whatsappNumber = contactDetails.whatsapp || "";
+          .map((director, index) => ({
+            id: `director-${index}`,
+            fullName: director.full_name,
+            phone: director.contact_details?.whatsapp || "",
+            isSelected: false
+          }))
+          .filter((director) => director.phone);
 
-            return {
-              id: `director-${index}`,
-              name: director.full_name,
-              phone: whatsappNumber,
-              isSelected: false,
-            };
-          });
-
-        setDirectorPhones(companyDirectors || []);
+        setDirectorPhones(companyDirectors);
       } catch (error) {
         console.error("Error fetching data:", error);
         toast({
@@ -157,9 +158,11 @@ export function WhatsAppModal({
         },
         body: JSON.stringify({
           recipients: selectedPhones,
-          message: messageText,
+          message: `${messageText}\n\nPeriod: ${month} ${year}`,
           documentPaths: uploadedDocuments,
           companyName,
+          month,
+          year
         }),
       });
 
@@ -206,33 +209,25 @@ export function WhatsAppModal({
               <MessageSquare className="h-6 w-6 text-green-600" />
               Send via WhatsApp
               <span className="text-gray-500 text-lg ml-1">
-                • {companyName}
+                • {companyName} • {month} {year}
               </span>
             </DialogTitle>
           </DialogHeader>
 
           <div className="grid grid-cols-2 gap-6 h-full overflow-hidden">
             {/* Left Column - Recipients */}
-            <div className="bg-white rounded-lg p-4 border">
-              <div className="flex items-center justify-between mb-4">
-                <Label className="text-lg font-semibold">Recipients</Label>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setShowDirectors(!showDirectors)}
-                  className="text-green-600 hover:text-green-700 hover:bg-green-50"
-                >
-                  {showDirectors ? "Hide Directors" : "Show Directors"}
-                </Button>
-              </div>
-
-              {/* Company WhatsApp */}
-              <div className="bg-gray-50 rounded-lg p-4 mb-4">
-                <div className="flex items-center justify-between mb-2">
+            <div className="space-y-4">
+              {/* Recipients Section */}
+              <div className="rounded-xl border border-gray-100 shadow-sm p-5 bg-white">
+                <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2">
-                    <Building2 className="h-5 w-5 text-green-600" />
-                    <span className="font-medium">Company WhatsApp</span>
+                    <Building2 className="h-4 w-4 text-green-600" />
+                    <Label className="font-medium text-gray-700">Recipients</Label>
                   </div>
+                </div>
+
+                {/* Company WhatsApp */}
+                <div className="flex items-center gap-2 p-3 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors">
                   <Checkbox
                     checked={companyPhoneData.isSelected}
                     onCheckedChange={(checked) =>
@@ -241,84 +236,102 @@ export function WhatsAppModal({
                         isSelected: !!checked,
                       }))
                     }
+                    className="border-gray-300"
+                  />
+                  <Building2 className="h-4 w-4 text-gray-500" />
+                  <Input
+                    value={companyPhoneData.phone}
+                    onChange={(e) =>
+                      setCompanyPhoneData((prev) => ({
+                        ...prev,
+                        phone: e.target.value,
+                      }))
+                    }
+                    placeholder="Company WhatsApp"
+                    className="border-0 bg-transparent focus-visible:ring-0"
                   />
                 </div>
-                <Input
-                  value={companyPhoneData.phone}
-                  onChange={(e) =>
-                    setCompanyPhoneData((prev) => ({
-                      ...prev,
-                      phone: e.target.value,
-                    }))
-                  }
-                  placeholder="+254 XXX XXX XXX"
-                  className="border-gray-200"
-                />
               </div>
 
-              {/* Directors - Hidden by default */}
-              {showDirectors && (
-                <div className="space-y-3">
-                  <Label className="text-md font-medium">Directors</Label>
-                  {directorPhones.map((director) => (
-                    <div
-                      key={director.id}
-                      className="bg-gray-50 rounded-lg p-4"
-                    >
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          <User className="h-5 w-5 text-green-600" />
-                          <span className="font-medium">{director.name}</span>
-                        </div>
-                        <Checkbox
-                          checked={director.isSelected}
-                          onCheckedChange={(checked) => {
-                            setDirectorPhones((prev) =>
-                              prev.map((d) =>
-                                d.id === director.id
-                                  ? { ...d, isSelected: !!checked }
-                                  : d
-                              )
-                            );
-                          }}
-                        />
-                      </div>
-                      <Input
-                        value={director.phone}
-                        onChange={(e) => {
-                          setDirectorPhones((prev) =>
-                            prev.map((d) =>
-                              d.id === director.id
-                                ? { ...d, phone: e.target.value }
-                                : d
-                            )
-                          );
-                        }}
-                        placeholder="+254 XXX XXX XXX"
-                        className="border-gray-200"
-                      />
-                    </div>
-                  ))}
+              {/* Directors Section */}
+              <div className="rounded-xl border border-gray-100 shadow-sm p-5 bg-white mt-4">
+                <div className="flex items-center gap-2 mb-4">
+                  <User className="h-4 w-4 text-green-600" />
+                  <Label className="font-medium text-gray-700">Directors</Label>
                 </div>
-              )}
+                <div className="space-y-3 max-h-[250px] overflow-y-auto pr-2">
+                  {directorPhones.length > 0 ? (
+                    directorPhones.map((director) => (
+                      <div
+                        key={director.id}
+                        className="p-3 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors"
+                      >
+                        <div className="flex items-center gap-2">
+                          <Checkbox
+                            checked={director.isSelected}
+                            onCheckedChange={(checked) => {
+                              setDirectorPhones((prev) =>
+                                prev.map((d) =>
+                                  d.id === director.id
+                                    ? { ...d, isSelected: !!checked }
+                                    : d
+                                )
+                              );
+                            }}
+                            className="border-gray-300"
+                          />
+                          <div className="flex-1">
+                            <p className="text-sm font-medium text-gray-700">
+                              {director.fullName}
+                            </p>
+                            <Input
+                              value={director.phone}
+                              onChange={(e) => {
+                                setDirectorPhones((prev) =>
+                                  prev.map((d) =>
+                                    d.id === director.id
+                                      ? { ...d, phone: e.target.value }
+                                      : d
+                                  )
+                                );
+                              }}
+                              className="mt-1 border-0 bg-transparent focus-visible:ring-0"
+                              placeholder="+254 XXX XXX XXX"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <Alert className="bg-yellow-50 text-yellow-800 border-yellow-200">
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertDescription>
+                        No directors found for this company
+                      </AlertDescription>
+                    </Alert>
+                  )}
+                </div>
+              </div>
             </div>
 
             {/* Right Column - Message & Documents */}
-            <div className="overflow-y-auto pr-4 space-y-4">
+            <div className="space-y-4">
               {/* Documents Section */}
-              <div className="bg-white rounded-lg p-4 border">
+              <div className="rounded-xl border border-gray-100 shadow-sm p-5 bg-white">
                 <div className="flex items-center justify-between mb-4">
-                  <Label className="text-lg font-semibold">Documents</Label>
+                  <div className="flex items-center gap-2">
+                    <FileText className="h-4 w-4 text-green-600" />
+                    <Label className="font-medium text-gray-700">Documents</Label>
+                  </div>
                   <Badge className="bg-green-100 text-green-700">
-                    {documents.filter((d) => d.status === "uploaded").length}{" "}
-                    Files Ready
+                    {documents.filter((d) => d.status === "uploaded").length} Files Ready
                   </Badge>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   {documents.map((doc, index) => (
                     <div
                       key={index}
-                      className="flex items-center justify-between p-3 rounded-lg bg-gray-50"
+                      className="flex items-center justify-between p-3 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors"
                     >
                       <div className="flex items-center gap-2">
                         <FileText className="h-4 w-4 text-gray-500" />

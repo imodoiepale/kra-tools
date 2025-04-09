@@ -28,7 +28,7 @@ import { EmailService } from "@/lib/emailService";
 
 interface Director {
   fullName: string;
-  email: string;
+  email: string
   companyName: string;
 }
 
@@ -36,6 +36,8 @@ interface ContactModalProps {
   trigger: React.ReactNode;
   companyName: string;
   companyEmail?: string;
+  month: string;
+  year: string;
   documents: {
     type: string;
     label: string;
@@ -58,6 +60,8 @@ export function ContactModal({
   trigger,
   companyName,
   companyEmail: initialCompanyEmail,
+  month,
+  year,
   documents,
   onEmailSent
 }: ContactModalProps) {
@@ -77,7 +81,7 @@ export function ContactModal({
     }[]
   >([]);
   const [emailData, setEmailData] = useState({
-    subject: `Payment Receipts - ${companyName}`,
+    subject: `Payment Receipts - ${companyName} - ${month} ${year}`,
     message: "",
     cc: "",
     bcc: "",
@@ -110,8 +114,9 @@ export function ContactModal({
 
         if (directorsError) throw directorsError;
 
-        const companyDirectors = individualsData
-          ?.filter((individual) => {
+        // Filter and map directors in one step
+        const companyDirectors = (individualsData || [])
+          .filter((individual) => {
             const directorships = individual.directorship_history || [];
             return directorships.some(
               (d: any) =>
@@ -125,7 +130,9 @@ export function ContactModal({
           }))
           .filter((director) => director.email);
 
-        setDirectors(companyDirectors || []);
+        setDirectors(companyDirectors);
+        
+        // Map to director emails format
         setDirectorEmails(
           companyDirectors.map((director, index) => ({
             id: `director-${index}`,
@@ -229,13 +236,13 @@ export function ContactModal({
         subject: emailData.subject,
         message: `
                     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; text-align: center;">
-                        <img src="/assets/icons/icon-192x192.png" alt="Booksmart Consultancy Limited" style="max-height: 60px; margin: 20px 0 10px;">
+                        <img src="https://assistant.booksmartportals.com/_next/image?url=%2Fbooksmartlogo.png&w=64&q=75" alt="Booksmart Consultancy Limited" style="max-height: 60px; margin: 20px 0 10px;">
                         <div style="color: #1e40af; margin-bottom: 10px;">Booksmart Consultancy Limited</div>
                         <div style="border-bottom: 1px solid #1e40af; margin: 0 auto 30px;"></div>
                         
                         <p style="color: #374151; margin: 20px 0;">Dear Client,</p>
                         
-                        <h1 style="color: #1e40af; font-size: 18px; margin: 20px 0;">Payment Receipts for ${companyName}</h1>
+                        <h1 style="color: #1e40af; font-size: 18px; margin: 20px 0;">Payment Receipts for ${companyName} - ${month} ${year}</h1>
                         
                         ${
                         emailData.message
@@ -270,11 +277,16 @@ export function ContactModal({
         attachments,
       });
 
-      if (onEmailSent) {
-        onEmailSent({
-          date: new Date().toISOString(),
-          recipients: selectedEmails
-        });
+      try {
+        if (onEmailSent) {
+          await onEmailSent({
+            date: new Date().toISOString(),
+            recipients: selectedEmails
+          });
+        }
+      } catch (error) {
+        console.error('Error updating email history:', error);
+        // Continue with success toast since email was sent successfully
       }
 
       toast({
@@ -306,7 +318,7 @@ export function ContactModal({
               <Send className="h-5 w-5 text-blue-600" />
               Send Documents
               <span className="text-gray-500 text-lg ml-1">
-                • {companyName}
+                • {companyName} • {month} {year}
               </span>
             </DialogTitle>
           </DialogHeader>
