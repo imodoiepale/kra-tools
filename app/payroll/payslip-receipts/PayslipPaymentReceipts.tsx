@@ -542,6 +542,8 @@ export default function PayslipPaymentReceipts({
                 columnVisibility={columnVisibility}
                 showSummaryHeaders={showSummaryHeaders}
                 onToggleSummaryHeaders={() => setShowSummaryHeaders(prev => !prev)}
+                selectedMonth={selectedMonth}
+                selectedYear={selectedYear}
             />
 
             {bulkUploadDialogOpen && (

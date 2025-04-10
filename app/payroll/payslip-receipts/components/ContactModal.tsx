@@ -39,8 +39,8 @@ interface ContactModalProps {
   trigger: React.ReactNode;
   companyName: string;
   companyEmail?: string;
-  month: string;
-  year: string;
+  month?: string;
+  year?: string;
   documents: {
     type: string;
     label: string;
@@ -64,8 +64,8 @@ export function ContactModal({
   trigger,
   companyName,
   companyEmail: initialCompanyEmail,
-  month,
-  year,
+  month = format(new Date(), 'MMMM'),
+  year = new Date().getFullYear().toString(),
   documents,
   onEmailSent,
   emailHistory = []
@@ -86,8 +86,16 @@ export function ContactModal({
     }[]
   >([]);
   const [emailData, setEmailData] = useState({
-    subject: `Payment Receipts for ${companyName} ${month}, ${year}`,
-    message: "",
+    subject: `Payment Receipts for ${companyName} - ${month} ${year}`,
+    message: `Dear Client,
+
+We are sending you the following payment receipts for ${month} ${year}:
+${documents.filter(doc => doc.status === "uploaded").map(doc => `- ${DOCUMENT_LABELS[doc.type] || doc.label}`).join('\n')}
+
+Please find them attached to this email.
+
+Best regards,
+Booksmart Consultancy Limited`,
     cc: "",
     bcc: "",
   });
@@ -536,46 +544,7 @@ export function ContactModal({
                 </div>
               </div>
 
-              {/* Preview Section */}
-              <div className="rounded-xl border border-gray-100 shadow-sm p-5 bg-white">
-                <div className="flex items-center gap-2 mb-4">
-                  <Mail className="h-4 w-4 text-blue-600" />
-                  <Label className="font-medium text-gray-700">Preview</Label>
-                </div>
-                <div className="rounded-lg bg-gray-50 p-4">
-                  <div
-                    className="prose prose-sm max-w-none"
-                    dangerouslySetInnerHTML={{
-                      __html: `
-                                          <div style="font-family: Arial, sans-serif; color: #374151;">
-                                              <h1 style="color: #1e40af; font-size: 24px; margin-bottom: 20px;">Payment Receipts for ${companyName}</h1>
-                                              
-                                              ${
-                                                emailData.message
-                                                  ? `<p style="line-height: 1.6;">${emailData.message}</p>`
-                                                  : ""
-                                              }
-                                              
-                                              <p style="margin-top: 20px;">The following documents are attached:</p>
-                                              <ul style="margin: 15px 0;">
-                                                  ${documents
-                                                    .filter(
-                                                      (doc) =>
-                                                        doc.status ===
-                                                        "uploaded"
-                                                    )
-                                                    .map(
-                                                      (doc) =>
-                                                        `<li style="margin-bottom: 8px;">${DOCUMENT_LABELS[doc.type] || doc.label}</li>`
-                                                    )
-                                                    .join("")}
-                                              </ul>
-                                          </div>
-                                      `,
-                    }}
-                  />
-                </div>
-              </div>
+
             </div>
           </div>
 
