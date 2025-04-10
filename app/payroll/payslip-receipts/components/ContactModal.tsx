@@ -317,22 +317,21 @@ export function ContactModal({
       <div onClick={() => setIsOpen(true)}>{trigger}</div>
 
       <Dialog open={isOpen} onOpenChange={setIsOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-6xl bg-white">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Send className="h-5 w-5" />
+            <DialogTitle className="flex items-center gap-2 text-2xl">
+              <Send className="h-5 w-5 text-blue-600" />
               Send Documents
-            </DialogTitle>
-            <DialogDescription>
-              Send documents to company directors via email.
+              <span className="text-gray-500 text-lg ml-1">
+                • {companyName} • {month} {year}
+              </span>
               {emailHistory && emailHistory.length > 0 && (
-                <div className="mt-2 text-sm">
-                  <span className="font-medium">Last sent:</span>{" "}
-                  {format(new Date(emailHistory[emailHistory.length - 1].date), "dd/MM/yyyy HH:mm")} to{" "}
+                <span className="text-sm font-normal text-gray-500 ml-auto">
+                  Last sent: {format(new Date(emailHistory[emailHistory.length - 1].date), "dd/MM/yyyy HH:mm")} to{" "}
                   {emailHistory[emailHistory.length - 1].recipients.join(", ")}
-                </div>
+                </span>
               )}
-            </DialogDescription>
+            </DialogTitle>
           </DialogHeader>
 
           <div className="grid grid-cols-2 gap-6 py-4">

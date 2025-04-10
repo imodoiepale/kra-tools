@@ -1564,7 +1564,7 @@ export function PayslipPaymentReceiptsTable({
                                                 <TooltipContent>
                                                     {record.email_history?.length > 0 ? (
                                                         <div className="space-y-2">
-                                                            <p className="font-medium">Latest Email: {format(new Date(record.email_history[record.email_history.length - 1].date), 'dd/MM/yyyy HH:mm')}</p>
+                                                            <p className="font-medium">Latest Email sent at: {format(new Date(record.email_history[record.email_history.length - 1].date), 'dd/MM/yyyy HH:mm')}</p>
                                                             <p className="text-sm text-gray-500">Click to view full history</p>
                                                         </div>
                                                     ) : (

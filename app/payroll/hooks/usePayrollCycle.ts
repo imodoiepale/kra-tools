@@ -62,7 +62,7 @@ export const usePayrollCycle = () => {
             // Fetch existing payroll records for this cycle
             const { data: existingRecords, error: existingError } = await supabase
                 .from('company_payroll_records')
-                .select('*')
+                .select('*, email_history')
                 .eq('payroll_cycle_id', cycle.id)
 
             if (existingError) throw existingError
@@ -122,6 +122,7 @@ export const usePayrollCycle = () => {
                         assigned_to: null,
                         filing: null
                     },
+                    email_history: existingRecord?.email_history || [],
                     number_of_employees: existingRecord?.number_of_employees || 0,
                     // Include the full company object and pin details
                     company: company,
@@ -234,6 +235,7 @@ export const usePayrollCycle = () => {
                         assigned_to: null,
                         filing: null
                     },
+                    email_history: record?.email_history || [],
                     number_of_employees: record?.number_of_employees || 0,
                     // Include the full company object and pin details
                     company: company,
@@ -286,6 +288,7 @@ export const usePayrollCycle = () => {
                                 assigned_to: null,
                                 filing: null
                             },
+                            email_history: [],
                             number_of_employees: 0
                         }
                     ])
@@ -462,6 +465,7 @@ export const usePayrollCycle = () => {
                                 assigned_to: null,
                                 filing: null
                             },
+                            email_history: [],
                             number_of_employees: 0
                         }
                     ])
@@ -534,6 +538,7 @@ export const usePayrollCycle = () => {
                                 assigned_to: null,
                                 filing: null
                             },
+                            email_history: [],
                             number_of_employees: 0
                         }
                     ])
@@ -778,6 +783,7 @@ export const usePayrollCycle = () => {
                             assigned_to: null,
                             filing: null
                         },
+                        email_history: [],
                         number_of_employees: 0
                     }])
                     .select()
@@ -919,6 +925,7 @@ export const usePayrollCycle = () => {
                                 assigned_to: null,
                                 filing: null
                             },
+                            email_history: [],
                             number_of_employees: 0
                         }
                     ])
@@ -1296,6 +1303,7 @@ export const usePayrollCycle = () => {
                             assigned_to: null,
                             filing: null
                         },
+                        email_history: [],
                         number_of_employees: 0
                     }])
                     .select()
