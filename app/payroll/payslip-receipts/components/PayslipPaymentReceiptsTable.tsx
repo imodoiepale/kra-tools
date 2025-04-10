@@ -1590,10 +1590,9 @@ export function PayslipPaymentReceiptsTable({
                                             companyName={record.company?.company_name || ''}
                                             companyPhone={record.company?.phone_number || ''}
                                             documents={getDocumentsForUpload(record)}
-                                            onMessageSent={(data) => {
-                                                // Update message history if needed
-                                                handleMessageSent(record.id, data);
-                                            }}
+                                            month={format(new Date(selectedYear, selectedMonth), 'MMMM')}
+                                            year={selectedYear.toString()}
+                                            messageHistory={record.message_history || []}
                                         />
                                     </TableCell>
                                 )}
@@ -1849,6 +1848,7 @@ export function PayslipPaymentReceiptsTable({
                                                             documents={getDocumentsForUpload(record)}
                                                             month={format(new Date(selectedYear, selectedMonth), 'MMMM')}
                                                             year={selectedYear.toString()}
+                                                            messageHistory={record.message_history || []}
                                                         />
                                                     </TooltipTrigger>
                                                 </Tooltip>

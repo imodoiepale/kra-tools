@@ -28,13 +28,14 @@ import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/hooks/use-toast";
 import { WhatsAppService, WhatsAppAttachment } from "@/lib/WhatsAppService";
+import { format } from "date-fns";
 
 interface WhatsAppModalProps {
   trigger: React.ReactNode;
   companyName: string;
   companyPhone?: string;
-  month: string;
-  year: string;
+  month?: string;
+  year?: string;
   documents: {
     type: string;
     label: string;
@@ -42,7 +43,17 @@ interface WhatsAppModalProps {
     path: string | null;
   }[];
   onMessageSent?: (data: { date: string; recipients: string[] }) => void;
+  messageHistory?: { date: string; recipients: string[] }[];
 }
+
+const DOCUMENT_LABELS: Record<string, string> = {
+  paye_receipt: "PAYE PAYMENT RECEIPT",
+  housing_levy_receipt: "HOUSING PAYMENT LEVY RECEIPT",
+  nita_receipt: "NITA PAYMENT RECEIPT",
+  shif_receipt: "SHIF PAYMENT RECEIPT",
+  nssf_receipt: "NSSF PAYMENT RECEIPT",
+  all_csv: "All CSV Files"
+};
 
 export function WhatsAppModal({
   trigger,
@@ -52,6 +63,7 @@ export function WhatsAppModal({
   year,
   documents,
   onMessageSent,
+  messageHistory,
 }: WhatsAppModalProps) {
   const { toast } = useToast();
   const [isOpen, setIsOpen] = useState(false);
@@ -67,7 +79,17 @@ export function WhatsAppModal({
       isSelected: boolean;
     }[]
   >([]);
-  const [messageText, setMessageText] = useState(`Dear Client,\n\nPlease find attached the payment receipts for ${companyName} for ${month} ${year}.`);
+  const [messageText, setMessageText] = useState(
+    `Dear Client,
+
+We are sending you the following payment receipts for ${month} ${year}:
+${documents.filter(doc => doc.status === "uploaded").map(doc => `- ${DOCUMENT_LABELS[doc.type] || doc.label}`).join('\n')}
+
+Please find them attached.
+
+Best regards,
+Booksmart Consultancy Limited`
+  );
   const [isLoading, setIsLoading] = useState(false);
   const [showDirectors, setShowDirectors] = useState(false);
 
@@ -200,7 +222,24 @@ export function WhatsAppModal({
 
   return (
     <>
-      <div onClick={() => setIsOpen(true)}>{trigger}</div>
+      <Button
+        variant="outline"
+        size="icon"
+        className="relative"
+        onClick={() => setIsOpen(true)}
+      >
+        <MessageSquare className="h-4 w-4" />
+        {messageHistory?.length > 0 && (
+          <div className="absolute -top-2 -right-2">
+            <Badge
+              className="h-5 w-5 rounded-full bg-green-500 text-white"
+              variant="secondary"
+            >
+              {messageHistory.length}
+            </Badge>
+          </div>
+        )}
+      </Button>
 
       <Dialog open={isOpen} onOpenChange={setIsOpen}>
         <DialogContent className="max-w-[90vw] h-[80vh] bg-white">
@@ -353,6 +392,27 @@ export function WhatsAppModal({
                   ))}
                 </div>
               </div>
+
+              {messageHistory?.length > 0 && (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <MessageSquare className="h-4 w-4 text-blue-600" />
+                    <Label className="font-medium text-gray-700">Message History</Label>
+                  </div>
+                  <div className="space-y-2">
+                    {messageHistory.map((history, index) => (
+                      <div key={index} className="rounded-lg bg-gray-50 p-3">
+                        <p className="text-sm font-medium">
+                          {format(new Date(history.date), 'dd/MM/yyyy HH:mm')}
+                        </p>
+                        <p className="text-sm text-gray-500">
+                          To: {history.recipients.join(', ')}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
