@@ -11,6 +11,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import React, { memo, useMemo } from "react";
+import { Button } from "@/components/ui/button";
 
 export type TaxEntry = {
   month: string;
@@ -50,6 +51,12 @@ interface DataTableProps {
   startDate?: string;
   endDate?: string;
   getMonthsInRange?: (start: string, end: string) => any[];
+  pagination?: {
+    page: number;
+    pageSize: number;
+    total: number;
+  };
+  onPageChange?: (page: number) => void;
 }
 
 // Memoized formatter for better performance
@@ -229,6 +236,8 @@ export const DataTable = memo(
     startDate,
     endDate,
     getMonthsInRange,
+    pagination,
+    onPageChange,
   }: DataTableProps) => {
     // Calculate totals only once for better performance
     const totals = useMemo(() => {
@@ -504,6 +513,41 @@ export const DataTable = memo(
               </div>
             </div>
           )}
+          {pagination && (
+            <div className="flex items-center justify-between px-4 py-3 bg-white border-t border-gray-200">
+              <div className="flex items-center text-sm text-gray-700">
+                <span>
+                  Showing{' '}
+                  <span className="font-medium">
+                    {(pagination.page - 1) * pagination.pageSize + 1}
+                  </span>{' '}
+                  to{' '}
+                  <span className="font-medium">
+                    {Math.min(pagination.page * pagination.pageSize, pagination.total)}
+                  </span>{' '}
+                  of <span className="font-medium">{pagination.total}</span> results
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onPageChange?.(pagination.page - 1)}
+                  disabled={pagination.page === 1}
+                  className="text-sm">
+                  Previous
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onPageChange?.(pagination.page + 1)}
+                  disabled={pagination.page * pagination.pageSize >= pagination.total}
+                  className="text-sm">
+                  Next
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
       );
     }
@@ -631,11 +675,44 @@ export const DataTable = memo(
             </div>
           </div>
         )}
+        {pagination && (
+          <div className="flex items-center justify-between px-4 py-3 bg-white border-t border-gray-200">
+            <div className="flex items-center text-sm text-gray-700">
+              <span>
+                Showing{' '}
+                <span className="font-medium">
+                  {(pagination.page - 1) * pagination.pageSize + 1}
+                </span>{' '}
+                to{' '}
+                <span className="font-medium">
+                  {Math.min(pagination.page * pagination.pageSize, pagination.total)}
+                </span>{' '}
+                of <span className="font-medium">{pagination.total}</span> results
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onPageChange?.(pagination.page - 1)}
+                disabled={pagination.page === 1}
+                className="text-sm">
+                Previous
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onPageChange?.(pagination.page + 1)}
+                disabled={pagination.page * pagination.pageSize >= pagination.total}
+                className="text-sm">
+                Next
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
 );
 
 DataTable.displayName = "DataTable";
-
-

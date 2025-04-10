@@ -31,9 +31,45 @@ export default function OverallView({ companies }: OverallViewProps) {
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' }>({ key: 'name', direction: 'asc' });
   const [selectedFilters, setSelectedFilters] = useState<Record<string, Record<string, boolean>>>({});
   const [filteredCompanies, setFilteredCompanies] = useState(companies);
+  const [pagination, setPagination] = useState({
+    page: 1,
+    pageSize: 50,
+    total: companies.length
+  });
+
+  // Update pagination when companies change
+  useEffect(() => {
+    setPagination(prev => ({
+      ...prev,
+      total: filteredCompanies.length
+    }));
+  }, [filteredCompanies]);
+
+  // Handle page change
+  const handlePageChange = (newPage: number) => {
+    setPagination(prev => ({
+      ...prev,
+      page: newPage
+    }));
+  };
+
+  // Get paginated companies
+  const paginatedCompanies = useMemo(() => {
+    const start = (pagination.page - 1) * pagination.pageSize;
+    const end = start + pagination.pageSize;
+    return filteredCompanies.slice(start, end);
+  }, [filteredCompanies, pagination.page, pagination.pageSize]);
+
+  // Reset pagination when filters change
+  useEffect(() => {
+    setPagination(prev => ({
+      ...prev,
+      page: 1
+    }));
+  }, [selectedFilters, searchQuery]);
+
   // State for date range selection
   const currentYear = new Date().getFullYear();
-
 
   const [isLoading, setIsLoading] = useState(false);
   // Get current month (1-12)
@@ -50,7 +86,6 @@ export default function OverallView({ companies }: OverallViewProps) {
   // Initialize with current year and month
   const [startDate, setStartDate] = useState(`${currentYear}-${currentMonth.toString().padStart(2, '0')}`);
   const [endDate, setEndDate] = useState(`${currentYear}-${currentMonth.toString().padStart(2, '0')}`);
-
 
   // Use company filters hook with default Accounting and Audit filters
   const {
@@ -111,8 +146,6 @@ export default function OverallView({ companies }: OverallViewProps) {
   }, []);
 
   const visibleMonths = React.useMemo(() => getMonthsInRange(startDate, endDate), [startDate, endDate, getMonthsInRange]);
-
-
 
   // Apply date range
   const applyDateRange = () => {
@@ -455,9 +488,9 @@ export default function OverallView({ companies }: OverallViewProps) {
               </tr>
             </thead>
             <tbody>
-              {/* Display sorted and filtered companies */}
+              {/* Display sorted and paginated companies */}
               {useMemo(() => {
-                let sortedCompanies = [...filteredCompanies];
+                let sortedCompanies = [...paginatedCompanies];
                 if (sortConfig.key === 'name') {
                   sortedCompanies.sort((a, b) => {
                     if (sortConfig.direction === 'asc') {
@@ -466,9 +499,8 @@ export default function OverallView({ companies }: OverallViewProps) {
                     return b.name.localeCompare(a.name);
                   });
                 }
-                // Show all companies if showAll is true, otherwise limit to 100
-                return showAll ? sortedCompanies : sortedCompanies.slice(0, 100);
-              }, [filteredCompanies, sortConfig]).map((company, companyIndex) => (
+                return sortedCompanies;
+              }, [paginatedCompanies, sortConfig]).map((company, companyIndex) => (
                 <tr
                   key={company.id}
                   className={
@@ -548,29 +580,45 @@ export default function OverallView({ companies }: OverallViewProps) {
         </div>
       </div>
 
-      {/* Footer */}
+      {/* Footer with pagination */}
       <div className="bg-white shadow-lg p-4 border-t border-gray-200 flex justify-between items-center text-sm text-gray-600">
         <div className="flex items-center gap-4">
           <div className="flex items-center">
             <div className="h-2 w-2 rounded-full bg-green-500 mr-2"></div>
             <span className="font-medium">{totalFilteredCount}</span>{" "}
-            companies • Showing {showAll ? 'all' : 'first 100'}
+            companies
           </div>
-          {filteredCompanies.length > 100 && !showAll && (
-            <button
-              onClick={() => setShowAll(true)}
-              className="text-blue-600 hover:text-blue-800 text-xs font-medium"
-            >
-              Show All ({filteredCompanies.length})
-            </button>
-          )}
         </div>
-        <div className="bg-indigo-50 py-1 px-3 rounded-full text-indigo-700 font-medium text-xs">
-          {visibleMonths.length > 0 && (
-            <>
-              {visibleMonths[0]?.label} to {visibleMonths[visibleMonths.length - 1]?.label}
-            </>
-          )}
+        <div className="flex items-center justify-between gap-8">
+          <div className="bg-indigo-50 py-1 px-3 rounded-full text-indigo-700 font-medium text-xs">
+            {visibleMonths.length > 0 && (
+              <>
+                {visibleMonths[0]?.label} to {visibleMonths[visibleMonths.length - 1]?.label}
+              </>
+            )}
+          </div>
+          {/* Pagination controls */}
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handlePageChange(pagination.page - 1)}
+              disabled={pagination.page === 1}
+              className="text-sm">
+              Previous
+            </Button>
+            <span className="text-sm text-gray-600">
+              Page {pagination.page} of {Math.ceil(pagination.total / pagination.pageSize)}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handlePageChange(pagination.page + 1)}
+              disabled={pagination.page * pagination.pageSize >= pagination.total}
+              className="text-sm">
+              Next
+            </Button>
+          </div>
         </div>
       </div>
     </div>

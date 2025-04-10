@@ -91,9 +91,26 @@ const batchRequests = async (ids, batchSize, fetchFn) => {
   return results;
 };
 
-// Fetch companies function with optimization
-const fetchCompanies = async (searchQuery: string) => {
+// Pagination interface
+interface PaginationState {
+  page: number;
+  pageSize: number;
+  total: number;
+}
+
+// Fetch companies function with pagination
+const fetchCompanies = async (
+  searchQuery: string,
+  pagination?: { page: number; pageSize: number }
+) => {
   console.time("fetchCompanies");
+  
+  // Default pagination values
+  const page = pagination?.page || 1;
+  const pageSize = pagination?.pageSize || 50;
+  const start = (page - 1) * pageSize;
+  const end = start + pageSize - 1;
+
   let query = supabase
     .from("acc_portal_company_duplicate")
     .select(
@@ -108,17 +125,21 @@ const fetchCompanies = async (searchQuery: string) => {
       sheria_client_effective_to,
       imm_client_effective_from,
       imm_client_effective_to
-    `
+    `,
+      { count: 'exact' }
     )
-    .order("company_name");
+    .order("company_name")
+    .range(start, end);
 
   if (searchQuery) {
     query = query.ilike("company_name", `%${searchQuery}%`);
   }
 
-  const { data, error } = await query.limit(100);
+  const { data, error, count } = await query;
 
   if (error) throw error;
+
+  console.log(`Fetched companies ${start + 1} to ${end + 1} of ${count}`);
 
   const companies =
     data?.map((company) => ({
@@ -135,7 +156,15 @@ const fetchCompanies = async (searchQuery: string) => {
     })) || [];
 
   console.timeEnd("fetchCompanies");
-  return companies;
+  
+  return {
+    companies,
+    pagination: {
+      page,
+      pageSize,
+      total: count || 0
+    }
+  };
 };
 
 // Get current year and previous year
