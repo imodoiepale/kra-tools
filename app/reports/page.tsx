@@ -90,10 +90,13 @@ function CompanyReports() {
     getFilters,
     handleFilterChange,
     isDateInRange,
-  } = useCompanyFilters(companies);
+  } = useCompanyFilters(companies || []);  // Provide empty array as fallback
 
-  const selectedCompanyName =
-    companies.find((c) => c.id === selectedCompany)?.name || "";
+  const selectedCompanyName = useMemo(() => {
+    if (!Array.isArray(companies)) return '';
+    const company = companies.find((c) => c?.id === selectedCompany);
+    return company?.name || '';
+  }, [companies, selectedCompany]);
 
   const [selectedSubColumns, setSelectedSubColumns] = useState<
     ("amount" | "date" | "all")[]
@@ -558,7 +561,7 @@ function CompanyReports() {
     <div className="flex h-screen max-h-screen">
       <div className="w-48 border-r p-2">
         <div className="space-y-2 mb-4">
-          <h2 className="font-semibold text-xs">Companies</h2>
+          <h2 className="font-bold text-xs text-blue-700">Filtered Companies {filteredCompanies.length}</h2>
           <div className="space-y-2">
             <Input
               placeholder="Search companies..."

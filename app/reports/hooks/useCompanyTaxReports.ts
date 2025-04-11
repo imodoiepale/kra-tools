@@ -91,26 +91,10 @@ const batchRequests = async (ids, batchSize, fetchFn) => {
   return results;
 };
 
-// Pagination interface
-interface PaginationState {
-  page: number;
-  pageSize: number;
-  total: number;
-}
-
-// Fetch companies function with pagination
-const fetchCompanies = async (
-  searchQuery: string,
-  pagination?: { page: number; pageSize: number }
-) => {
+// Fetch companies function without pagination
+const fetchCompanies = async (searchQuery: string) => {
   console.time("fetchCompanies");
   
-  // Default pagination values
-  const page = pagination?.page || 1;
-  const pageSize = pagination?.pageSize || 50;
-  const start = (page - 1) * pageSize;
-  const end = start + pageSize - 1;
-
   let query = supabase
     .from("acc_portal_company_duplicate")
     .select(
@@ -125,46 +109,33 @@ const fetchCompanies = async (
       sheria_client_effective_to,
       imm_client_effective_from,
       imm_client_effective_to
-    `,
-      { count: 'exact' }
+    `
     )
-    .order("company_name")
-    .range(start, end);
+    .order("company_name");
 
   if (searchQuery) {
     query = query.ilike("company_name", `%${searchQuery}%`);
   }
 
-  const { data, error, count } = await query;
+  const { data, error } = await query;
 
   if (error) throw error;
 
-  console.log(`Fetched companies ${start + 1} to ${end + 1} of ${count}`);
-
-  const companies =
-    data?.map((company) => ({
-      id: Number(company.id),
-      name: company.company_name,
-      acc_client_effective_from: company.acc_client_effective_from,
-      acc_client_effective_to: company.acc_client_effective_to,
-      audit_tax_client_effective_from: company.audit_client_effective_from,
-      audit_tax_client_effective_to: company.audit_client_effective_to,
-      cps_sheria_client_effective_from: company.sheria_client_effective_from,
-      cps_sheria_client_effective_to: company.sheria_client_effective_to,
-      imm_client_effective_from: company.imm_client_effective_from,
-      imm_client_effective_to: company.imm_client_effective_to,
-    })) || [];
+  const companies = data?.map((company) => ({
+    id: Number(company.id),
+    name: company.company_name,
+    acc_client_effective_from: company.acc_client_effective_from,
+    acc_client_effective_to: company.acc_client_effective_to,
+    audit_tax_client_effective_from: company.audit_client_effective_from,
+    audit_tax_client_effective_to: company.audit_client_effective_to,
+    cps_sheria_client_effective_from: company.sheria_client_effective_from,
+    cps_sheria_client_effective_to: company.sheria_client_effective_to,
+    imm_client_effective_from: company.imm_client_effective_from,
+    imm_client_effective_to: company.imm_client_effective_to,
+  })) || [];
 
   console.timeEnd("fetchCompanies");
-  
-  return {
-    companies,
-    pagination: {
-      page,
-      pageSize,
-      total: count || 0
-    }
-  };
+  return companies;
 };
 
 // Get current year and previous year
@@ -466,10 +437,10 @@ const fetchRecordsBatch = async (batchIds: string[], companyId: number) => {
 };
 
 export const useCompanyTaxReports = () => {
+  const queryClient = useQueryClient();
   const [selectedCompany, setSelectedCompany] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedColumns, setSelectedColumns] = useState<string[]>([
-    "month",
     "paye",
     "housingLevy",
     "nita",
@@ -477,30 +448,19 @@ export const useCompanyTaxReports = () => {
     "nssf",
   ]);
 
+  // Track initial load completion
   const [initialLoadComplete, setInitialLoadComplete] = useState(false);
   const prefetchedCompanies = useRef(new Set<number>());
 
-  const queryClient = useQueryClient();
-
-  // Initialize cache from localStorage on first load
-  useEffect(() => {
-    initCacheFromStorage();
-    setInitialLoadComplete(true);
-
-    // Set up periodic cache save
-    const saveInterval = setInterval(saveCacheToStorage, 60000); // Save every minute
-
-    return () => {
-      clearInterval(saveInterval);
-      saveCacheToStorage(); // Save on unmount
-    };
-  }, []);
-
-  // Companies query with optimized stale time
-  const { data: companies = [], isLoading: isLoadingCompanies } = useQuery({
+  // Companies query without pagination
+  const {
+    data: companies = [],
+    isLoading: isLoadingCompanies,
+    error: companiesError,
+  } = useQuery({
     queryKey: ["companies", searchQuery],
     queryFn: () => fetchCompanies(searchQuery),
-    staleTime: 15 * 60 * 1000, // 15 minutes
+    staleTime: 5 * 60 * 1000,
   });
 
   // Company tax data query with seamless loading
@@ -656,6 +616,20 @@ export const useCompanyTaxReports = () => {
     }
 
     return months;
+  }, []);
+
+  // Initialize cache from localStorage on first load
+  useEffect(() => {
+    initCacheFromStorage();
+    setInitialLoadComplete(true);
+
+    // Set up periodic cache save
+    const saveInterval = setInterval(saveCacheToStorage, 60000); // Save every minute
+
+    return () => {
+      clearInterval(saveInterval);
+      saveCacheToStorage(); // Save on unmount
+    };
   }, []);
 
   return {

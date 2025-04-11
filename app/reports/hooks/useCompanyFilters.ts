@@ -86,9 +86,17 @@ export function useCompanyFilters(companies: Company[]) {
   }, [selectedFilters]);
 
   const filteredCompanies = useMemo(() => {
+    // Handle undefined or null companies array
+    if (!Array.isArray(companies)) {
+      return [];
+    }
+
     return companies.filter(company => {
+      // Handle undefined or null company
+      if (!company) return false;
+
       // Apply search filter
-      const matchesSearch = company.name.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesSearch = company.name?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false;
       
       // If no filters selected or "all" is selected, show all that match search
       if (selectedFilters.length === 0) return matchesSearch;
