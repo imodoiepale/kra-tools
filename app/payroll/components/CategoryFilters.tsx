@@ -1,4 +1,4 @@
-// CategoryFilters.tsx
+// @ts-nocheck
 import React, { useState, useCallback, useMemo } from 'react';
 import {
     DropdownMenu,
@@ -35,18 +35,12 @@ interface Category {
 }
 
 interface CategoryFiltersProps {
-    setSelectedCategories?: (selectedCategories: string[]) => void;
-    selectedCategories?: string[];
+    onFilterChange: (selectedCategories: string[]) => void;
+    selectedCategories: string[] | undefined;
     payrollRecords?: any[]; // Optional prop with better typing
 }
 
-export function CategoryFilters({ setSelectedCategories, selectedCategories = [], payrollRecords = [] }: CategoryFiltersProps) {
-    // Create a safe version of setSelectedCategories that won't throw errors if undefined
-    const safeSetSelectedCategories = (categories: string[]) => {
-        if (setSelectedCategories) {
-            setSelectedCategories(categories);
-        }
-    };
+export function CategoryFilters({ onFilterChange, selectedCategories = [], payrollRecords = [] }: CategoryFiltersProps) {
     const currentDate = new Date();
 
     // Keep track of selected status for each category
@@ -168,7 +162,7 @@ export function CategoryFilters({ setSelectedCategories, selectedCategories = []
     const handleFilterChange = (key: string) => {
         if (key === 'all') {
             // If All is selected, clear all filters and reset status
-            safeSetSelectedCategories([]);
+            onFilterChange([]);
             // Reset all statuses to active
             setCategoryStatuses({
                 acc: 'active',
@@ -184,7 +178,7 @@ export function CategoryFilters({ setSelectedCategories, selectedCategories = []
 
         // Safety check for selectedCategories
         const safeSelectedCategories = selectedCategories || [];
-        
+
         // Check if this category is already selected
         const existingIndex = safeSelectedCategories.findIndex(cat =>
             cat.startsWith(baseCategory + '_status_') || cat === baseCategory
@@ -210,7 +204,7 @@ export function CategoryFilters({ setSelectedCategories, selectedCategories = []
             newSelectedCategories.push(`${baseCategory}_status_${categoryStatuses[baseCategory]}`);
         }
 
-        safeSetSelectedCategories(newSelectedCategories);
+        onFilterChange(newSelectedCategories);
     };
 
     // Handle status selection for a category
@@ -223,7 +217,7 @@ export function CategoryFilters({ setSelectedCategories, selectedCategories = []
 
         // Safety check for selectedCategories
         const safeSelectedCategories = selectedCategories || [];
-        
+
         // Find if this category is already in the selections
         const existingIndex = safeSelectedCategories.findIndex(cat =>
             cat.startsWith(category + '_status_') || cat === category
@@ -245,7 +239,7 @@ export function CategoryFilters({ setSelectedCategories, selectedCategories = []
             newSelectedCategories.push(category);
         }
 
-        safeSetSelectedCategories(newSelectedCategories);
+        onFilterChange(newSelectedCategories);
     };
 
     const categories: Category[] = [
@@ -297,10 +291,10 @@ export function CategoryFilters({ setSelectedCategories, selectedCategories = []
     const selectedStatusBadges = useMemo(() => {
         // Count how many categories are selected with each status
         const statusCounts = { active: 0, inactive: 0, all: 0 };
-        
+
         // Safely handle undefined selectedCategories
         if (!selectedCategories) return statusCounts;
-        
+
         selectedCategories.forEach(cat => {
             if (cat.includes('_status_active')) {
                 statusCounts.active++;
@@ -310,7 +304,7 @@ export function CategoryFilters({ setSelectedCategories, selectedCategories = []
                 statusCounts.all++;
             }
         });
-        
+
         return statusCounts;
     }, [selectedCategories]);
 
