@@ -334,7 +334,7 @@ export const DataTable = memo(
       if (subColumns.includes("status")) count++;
       if (subColumns.includes("bank")) count++;
       if (subColumns.includes("payMode")) count++;
-      return count;
+      return count || 1; // Ensure we return at least 1 for empty selections
     };
 
     // Calculate totals only once for better performance
@@ -359,7 +359,7 @@ export const DataTable = memo(
           {title && (
             <h3 className="text-xl font-bold text-gray-800 mb-4">{title}</h3>
           )}
-          <div className="overflow-auto border rounded-lg shadow">
+          <div className="overflow-x-auto border rounded-lg shadow">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -493,7 +493,7 @@ export const DataTable = memo(
               {title}
             </h3>
           )}
-          <div className="rounded-xl border-2 border-slate-300 shadow-md overflow-hidden">
+          <div className="rounded-xl border-2 border-slate-300 shadow-md overflow-x-auto">
             <div className="max-h-[calc(100vh-300px)] overflow-auto relative">
               <Table>
                 <TableHeader className="sticky top-0 z-10">
@@ -561,7 +561,8 @@ export const DataTable = memo(
                       <TableRow className="bg-[#eef6fc]">
                         <TableCell
                           colSpan={
-                            calculateColSpan(selectedSubColumns) * selectedColumns.length + 2
+                            // Calculate total columns: sum of all tax type columns + month column + total column
+                            (selectedColumns.reduce((sum, _) => sum + calculateColSpan(selectedSubColumns), 0)) + 2
                           }
                           className="py-2 px-5 font-bold text-lg text-[#1e4d7b] border-2 border-slate-300 sticky left-0 bg-inherit">
                           {year}
@@ -775,7 +776,7 @@ export const DataTable = memo(
         {title && (
           <h3 className="text-xl font-semibold text-slate-800 px-1">{title}</h3>
         )}
-        <div className="rounded-xl border-2 border-slate-300 shadow-md overflow-hidden">
+        <div className="rounded-xl border-2 border-slate-300 shadow-md overflow-x-auto">
           <Table>
             <TableHeader className="sticky top-0 z-10">
               <TableRow>

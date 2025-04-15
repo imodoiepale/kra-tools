@@ -746,7 +746,7 @@ function CompanyReports() {
                     <Button
                       variant="outline"
                       className="w-[180px] justify-between">
-                      Column Details
+                      Tax Fields
                       <span className="text-xs text-muted-foreground">
                         {selectedSubColumns.includes("all")
                           ? "(All)"

@@ -8,6 +8,8 @@ interface PaymentReceiptExtraction {
   amount?: string;
   payment_mode?: string;
   payment_date?: string;
+  status?: string;
+  bank_name?: string;
 }
 
 interface PaymentReceiptExtractions {
@@ -274,6 +276,9 @@ const loadFullCompanyData = async (
               result[year][monthIdx][mappedTaxType] = {
                 amount: parseAmount(data.amount || "0"),
                 date: parseDate(data.payment_date || null),
+                status: data.status || null,
+                bank: data.bank_name || null,
+                payMode: data.payment_mode || null,
               };
             }
           });
