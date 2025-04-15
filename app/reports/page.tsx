@@ -768,7 +768,7 @@ function CompanyReports() {
                         className="h-6 px-2 text-xs"
                         onClick={() => {
                           if (selectedSubColumns.includes("all")) {
-                            setSelectedSubColumns(["amount"]);
+                            setSelectedSubColumns(["amount", "date"]);
                           } else {
                             setSelectedSubColumns(["all"]);
                           }
@@ -786,7 +786,7 @@ function CompanyReports() {
                         if (checked) {
                           setSelectedSubColumns(["all"]);
                         } else {
-                          setSelectedSubColumns(["amount"]);
+                          setSelectedSubColumns(["amount", "date"]);
                         }
                       }}>
                       All Details
@@ -796,26 +796,18 @@ function CompanyReports() {
                         selectedSubColumns.includes("amount") ||
                         selectedSubColumns.includes("all")
                       }
+                      disabled={selectedSubColumns.includes("all")}
                       onSelect={(e) => e.preventDefault()}
                       onCheckedChange={(checked) => {
+                        if (selectedSubColumns.includes("all")) return;
+                        
                         if (checked) {
-                          setSelectedSubColumns((prev) => {
-                            const newSelection = prev
-                              .filter((col) => col !== "all")
-                              .concat("amount");
-                            return newSelection.length > 0
-                              ? newSelection
-                              : ["amount"];
-                          });
+                          setSelectedSubColumns((prev) => 
+                            [...prev.filter(col => col !== "all" && col !== "amount"), "amount"]
+                          );
                         } else {
-                          setSelectedSubColumns((prev) => {
-                            const newSelection = prev.filter(
-                              (col) => col !== "amount" && col !== "all"
-                            );
-                            return newSelection.length > 0
-                              ? newSelection
-                              : ["date"];
-                          });
+                          const newSelection = selectedSubColumns.filter(col => col !== "amount" && col !== "all");
+                          setSelectedSubColumns(newSelection.length > 0 ? newSelection : ["date"]);
                         }
                       }}>
                       Amount
@@ -825,26 +817,18 @@ function CompanyReports() {
                         selectedSubColumns.includes("date") ||
                         selectedSubColumns.includes("all")
                       }
+                      disabled={selectedSubColumns.includes("all")} 
                       onSelect={(e) => e.preventDefault()}
                       onCheckedChange={(checked) => {
+                        if (selectedSubColumns.includes("all")) return;
+                        
                         if (checked) {
-                          setSelectedSubColumns((prev) => {
-                            const newSelection = prev
-                              .filter((col) => col !== "all")
-                              .concat("date");
-                            return newSelection.length > 0
-                              ? newSelection
-                              : ["date"];
-                          });
+                          setSelectedSubColumns((prev) => 
+                            [...prev.filter(col => col !== "all" && col !== "date"), "date"]
+                          );
                         } else {
-                          setSelectedSubColumns((prev) => {
-                            const newSelection = prev.filter(
-                              (col) => col !== "date" && col !== "all"
-                            );
-                            return newSelection.length > 0
-                              ? newSelection
-                              : ["amount"];
-                          });
+                          const newSelection = selectedSubColumns.filter(col => col !== "date" && col !== "all");
+                          setSelectedSubColumns(newSelection.length > 0 ? newSelection : ["amount"]);
                         }
                       }}>
                       Pay Date

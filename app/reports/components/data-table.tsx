@@ -370,7 +370,7 @@ export const DataTable = memo(
                     {selectedColumns.map((col) => (
                       <TableHead
                         key={col}
-                        colSpan={2}
+                        colSpan={(selectedSubColumns.includes("all") ? 2 : selectedSubColumns.length)}
                         className="text-center font-bold text-white py-4 px-5 border-2 border-slate-300 bg-[#1e4d7b]">
                         {taxColumns.find((t) => t.id === col)?.label ||
                           col.toUpperCase()}
@@ -385,12 +385,18 @@ export const DataTable = memo(
                   <TableRow>
                     {selectedColumns.map((col) => (
                       <React.Fragment key={`${col}-subheaders`}>
-                        <TableHead className="font-semibold text-white text-center py-3 px-3 border-2 border-slate-300 bg-[#2a5a8c]">
-                          Amount
-                        </TableHead>
-                        <TableHead className="font-semibold text-white text-center py-3 px-3 border-2 border-slate-300 bg-[#2a5a8c]">
-                          Pay Date
-                        </TableHead>
+                        {(selectedSubColumns.includes("all") ||
+                          selectedSubColumns.includes("amount")) && (
+                          <TableHead className="font-semibold text-white text-center py-3 px-3 border-2 border-slate-300 bg-[#2a5a8c]">
+                            Amount
+                          </TableHead>
+                        )}
+                        {(selectedSubColumns.includes("all") ||
+                          selectedSubColumns.includes("date")) && (
+                          <TableHead className="font-semibold text-white text-center py-3 px-3 border-2 border-slate-300 bg-[#2a5a8c]">
+                            Pay Date
+                          </TableHead>
+                        )}
                       </React.Fragment>
                     ))}
                   </TableRow>
@@ -400,7 +406,13 @@ export const DataTable = memo(
                     <React.Fragment key={year}>
                       <TableRow className="bg-[#eef6fc]">
                         <TableCell
-                          colSpan={selectedColumns.length * 2 + 2}
+                          colSpan={
+                            (selectedSubColumns.includes("all")
+                              ? 2
+                              : selectedSubColumns.length) *
+                            selectedColumns.length +
+                            2
+                          }
                           className="py-2 px-5 font-bold text-lg text-[#1e4d7b] border-2 border-slate-300 sticky left-0 bg-inherit">
                           {year}
                         </TableCell>
@@ -433,17 +445,23 @@ export const DataTable = memo(
                             </TableCell>
                             {selectedColumns.map((col) => (
                               <React.Fragment key={`${col}-data-${month}`}>
-                                <TableCell className="text-right py-3 px-4 font-medium border-2 border-slate-300 bg-inherit">
-                                  <span className="text-slate-700">
-                                    {formatAmount(entry[col]?.amount || 0)}
-                                  </span>
-                                </TableCell>
-                                <TableCell className="text-center py-3 px-3 border-2 border-slate-300 bg-inherit">
-                                  <span
-                                    className={getDateColor(entry[col]?.date)}>
-                                    {formatDate(entry[col]?.date)}
-                                  </span>
-                                </TableCell>
+                                {(selectedSubColumns.includes("all") ||
+                                  selectedSubColumns.includes("amount")) && (
+                                  <TableCell className="text-right py-3 px-4 font-medium border-2 border-slate-300 bg-inherit">
+                                    <span className="text-slate-700">
+                                      {formatAmount(entry[col]?.amount || 0)}
+                                    </span>
+                                  </TableCell>
+                                )}
+                                {(selectedSubColumns.includes("all") ||
+                                  selectedSubColumns.includes("date")) && (
+                                  <TableCell className="text-center py-3 px-3 border-2 border-slate-300 bg-inherit">
+                                    <span
+                                      className={getDateColor(entry[col]?.date)}>
+                                      {formatDate(entry[col]?.date)}
+                                    </span>
+                                  </TableCell>
+                                )}
                               </React.Fragment>
                             ))}
                             <TableCell className="text-right py-3 px-4 font-medium border-2 border-slate-300 bg-[#eef6fc]">
@@ -467,10 +485,16 @@ export const DataTable = memo(
                               ) || 0;
                             return (
                               <React.Fragment key={`${col}-total`}>
-                                <TableCell className="text-right py-4 px-4 text-[#1e4d7b] font-bold border-2 border-slate-300 bg-inherit">
-                                  {formatAmount(total)}
-                                </TableCell>
-                                <TableCell className="border-2 border-slate-300 bg-inherit" />
+                                {(selectedSubColumns.includes("all") ||
+                                  selectedSubColumns.includes("amount")) && (
+                                  <TableCell className="text-right py-4 px-4 text-[#1e4d7b] font-bold border-2 border-slate-300 bg-inherit">
+                                    {formatAmount(total)}
+                                  </TableCell>
+                                )}
+                                {(selectedSubColumns.includes("all") ||
+                                  selectedSubColumns.includes("date")) && (
+                                  <TableCell className="border-2 border-slate-300 bg-inherit" />
+                                )}
                               </React.Fragment>
                             );
                           })}
@@ -570,7 +594,7 @@ export const DataTable = memo(
                 {selectedColumns.map((col) => (
                   <TableHead
                     key={col}
-                    colSpan={2}
+                    colSpan={(selectedSubColumns.includes("all") ? 2 : selectedSubColumns.length)}
                     className={`text-center font-bold text-white py-4 px-5 border-2 border-slate-300 bg-[#1e4d7b]`}>
                     {taxColumns.find((t) => t.id === col)?.label ||
                       col.toUpperCase()}
@@ -585,12 +609,16 @@ export const DataTable = memo(
               <TableRow>
                 {selectedColumns.map((col) => (
                   <React.Fragment key={`${col}-subheaders`}>
-                    <TableHead className="font-semibold text-white text-center py-3 px-3 border-2 border-slate-300 bg-[#2a5a8c]">
-                      Amount
-                    </TableHead>
-                    <TableHead className="font-semibold text-white text-center py-3 px-3 border-2 border-slate-300 bg-[#2a5a8c]">
-                      Pay Date
-                    </TableHead>
+                    {(selectedSubColumns.includes("all") || selectedSubColumns.includes("amount")) && (
+                      <TableHead className="font-semibold text-white text-center py-3 px-3 border-2 border-slate-300 bg-[#2a5a8c]">
+                        Amount
+                      </TableHead>
+                    )}
+                    {(selectedSubColumns.includes("all") || selectedSubColumns.includes("date")) && (
+                      <TableHead className="font-semibold text-white text-center py-3 px-3 border-2 border-slate-300 bg-[#2a5a8c]">
+                        Pay Date
+                      </TableHead>
+                    )}
                   </React.Fragment>
                 ))}
               </TableRow>
@@ -611,16 +639,20 @@ export const DataTable = memo(
                     </TableCell>
                     {selectedColumns.map((col) => (
                       <React.Fragment key={`${col}-data-${entry.month}`}>
-                        <TableCell className="text-right py-3 px-4 font-medium border-2 border-slate-300 bg-inherit">
-                          <span className="text-slate-700">
-                            {formatAmount(entry[col]?.amount || 0)}
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-center py-3 px-3 border-2 border-slate-300 bg-inherit">
-                          <span className={getDateColor(entry[col]?.date)}>
-                            {formatDate(entry[col]?.date)}
-                          </span>
-                        </TableCell>
+                        {(selectedSubColumns.includes("all") || selectedSubColumns.includes("amount")) && (
+                          <TableCell className="text-right py-3 px-4 font-medium border-2 border-slate-300 bg-inherit">
+                            <span className="text-slate-700">
+                              {formatAmount(entry[col]?.amount || 0)}
+                            </span>
+                          </TableCell>
+                        )}
+                        {(selectedSubColumns.includes("all") || selectedSubColumns.includes("date")) && (
+                          <TableCell className="text-center py-3 px-3 border-2 border-slate-300 bg-inherit">
+                            <span className={getDateColor(entry[col]?.date)}>
+                              {formatDate(entry[col]?.date)}
+                            </span>
+                          </TableCell>
+                        )}
                       </React.Fragment>
                     ))}
                     <TableCell className="text-right py-3 px-4 font-medium border-2 border-slate-300 bg-[#eef6fc]">
@@ -638,10 +670,14 @@ export const DataTable = memo(
                   </TableCell>
                   {selectedColumns.map((col) => (
                     <React.Fragment key={`${col}-total`}>
-                      <TableCell className="text-right py-4 px-4 text-[#1e4d7b] font-bold border-2 border-slate-300 bg-inherit">
-                        {formatAmount(totals[col] || 0)}
-                      </TableCell>
-                      <TableCell className="border-2 border-slate-300 bg-inherit" />
+                      {(selectedSubColumns.includes("all") || selectedSubColumns.includes("amount")) && (
+                        <TableCell className="text-right py-4 px-4 text-[#1e4d7b] font-bold border-2 border-slate-300 bg-inherit">
+                          {formatAmount(totals[col] || 0)}
+                        </TableCell>
+                      )}
+                      {(selectedSubColumns.includes("all") || selectedSubColumns.includes("date")) && (
+                        <TableCell className="border-2 border-slate-300 bg-inherit" />
+                      )}
                     </React.Fragment>
                   ))}
                   <TableCell className="text-right py-4 px-4 font-bold border-2 border-slate-300 bg-[#2a5a8c] text-white">
