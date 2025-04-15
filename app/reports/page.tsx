@@ -880,13 +880,7 @@ function CompanyReports() {
                 <DataTable
                   data={isRangeView ? [] : displayData}
                   yearlyData={isRangeView ? displayData : null}
-                  selectedColumns={[
-                    "paye",
-                    "housingLevy",
-                    "nita",
-                    "shif",
-                    "nssf",
-                  ]}
+                  selectedColumns={selectedColumns.filter(col => col !== "month")}
                   selectedSubColumns={selectedSubColumns}
                   isLoading={loading && selectedCompany !== null}
                   isHorizontalView={isRangeView}
