@@ -181,7 +181,10 @@ Booksmart Consultancy Limited`
         body: JSON.stringify({
           recipients: selectedPhones,
           message: `${messageText}\n\nPeriod: ${month} ${year}`,
-          documentPaths: uploadedDocuments,
+          documentPaths: uploadedDocuments.map(doc => ({
+            path: doc.path,
+            label: DOCUMENT_LABELS[doc.type] || doc.label
+          })),
           companyName,
           month,
           year
