@@ -114,6 +114,40 @@ export default function OverallView({ companies }: OverallViewProps) {
     }
   };
 
+  // Date formatting with placeholder for null dates - standardized to dd/mm/yyyy
+  const formatDate = (date: string | null) => {
+    if (!date) return "—";
+    try {
+      // Handle empty strings or invalid dates
+      if (date === "" || date === "Invalid Date") return "—";
+
+      // If already in dd/mm/yyyy format, validate and ensure proper padding
+      if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(date)) {
+        const [day, month, year] = date.split("/");
+        return `${day.padStart(2, "0")}/${month.padStart(2, "0")}/${year}`;
+      }
+
+      // Handle yyyy-mm-dd format
+      if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(date)) {
+        const [year, month, day] = date.split("-");
+        return `${day.padStart(2, "0")}/${month.padStart(2, "0")}/${year}`;
+      }
+
+      // For any other format, parse and convert to dd/mm/yyyy
+      const dateObj = new Date(date);
+      if (isNaN(dateObj.getTime())) return "—";
+
+      const day = dateObj.getDate().toString().padStart(2, "0");
+      const month = (dateObj.getMonth() + 1).toString().padStart(2, "0");
+      const year = dateObj.getFullYear();
+
+      return `${day}/${month}/${year}`;
+    } catch (e) {
+      console.error("Error formatting date:", date, e);
+      return "—";
+    }
+  };
+
   // Function to truncate company name to first 2 words
   const truncateCompanyName = (name: string): string => {
     const words = name.split(' ');
@@ -153,7 +187,7 @@ export default function OverallView({ companies }: OverallViewProps) {
   };
 
   // Calculate table width based on months
-  const tableWidth = visibleMonths.length * 1000; // 1000px per month as base date range
+  const tableWidth = visibleMonths.length * 2000; // Increased width to accommodate all columns
 
   return (
     <div className="flex flex-col h-screen bg-gray-100">
@@ -403,7 +437,7 @@ export default function OverallView({ companies }: OverallViewProps) {
                 {visibleMonths.map((month, index) => (
                   <th
                     key={index}
-                    colSpan={10}
+                    colSpan={20}
                     className="bg-[#1e4d7b] text-white py-3 px-4 border-2 border-slate-300 text-center">
                     {month.label}
                   </th>
@@ -415,27 +449,27 @@ export default function OverallView({ companies }: OverallViewProps) {
                 {visibleMonths.map((_, monthIndex) => (
                   <React.Fragment key={monthIndex}>
                     <th
-                      colSpan={2}
+                      colSpan={5}
                       className="bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-center">
                       PAYE
                     </th>
                     <th
-                      colSpan={2}
+                      colSpan={5}
                       className="bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-center">
                       Housing Levy
                     </th>
                     <th
-                      colSpan={2}
+                      colSpan={5}
                       className="bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-center">
                       NITA
                     </th>
                     <th
-                      colSpan={2}
+                      colSpan={5}
                       className="bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-center">
-                      SIHF
+                      SHIF
                     </th>
                     <th
-                      colSpan={2}
+                      colSpan={5}
                       className="bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-center">
                       NSSF
                     </th>
@@ -453,16 +487,13 @@ export default function OverallView({ companies }: OverallViewProps) {
                       Pay Date
                     </th>
                     <th className="bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-sm font-medium">
-                      Amount
+                      Status
                     </th>
                     <th className="bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-sm font-medium">
-                      Pay Date
+                      Bank
                     </th>
                     <th className="bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-sm font-medium">
-                      Amount
-                    </th>
-                    <th className="bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-sm font-medium">
-                      Pay Date
+                      Pay Mode
                     </th>
                     <th className="bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-sm font-medium">
                       Amount
@@ -471,10 +502,43 @@ export default function OverallView({ companies }: OverallViewProps) {
                       Pay Date
                     </th>
                     <th className="bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-sm font-medium">
+                      Status
+                    </th>
+                    <th className="bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-sm font-medium">
+                      Bank
+                    </th>
+                    <th className="bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-sm font-medium">
+                      Pay Mode
+                    </th>
+                    <th className="bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-sm font-medium">
                       Amount
                     </th>
                     <th className="bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-sm font-medium">
                       Pay Date
+                    </th>
+                    <th className="bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-sm font-medium">
+                      Status
+                    </th>
+                    <th className="bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-sm font-medium">
+                      Bank
+                    </th>
+                    <th className="bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-sm font-medium">
+                      Pay Mode
+                    </th>
+                    <th className="bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-sm font-medium">
+                      Amount
+                    </th>
+                    <th className="bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-sm font-medium">
+                      Pay Date
+                    </th>
+                    <th className="bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-sm font-medium">
+                      Status
+                    </th>
+                    <th className="bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-sm font-medium">
+                      Bank
+                    </th>
+                    <th className="bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-sm font-medium">
+                      Pay Mode
                     </th>
                   </React.Fragment>
                 ))}
@@ -514,11 +578,51 @@ export default function OverallView({ companies }: OverallViewProps) {
 
                   {/* Generate cells for all months */}
                   {visibleMonths.map((month, monthIndex) => {
+                    // Get company data from reportData
                     const companyData = reportData[company.id];
-                    const monthData = companyData?.find((entry: { month: string; year: string; }) => 
-                      entry.month === month.name.slice(0, 3).toUpperCase() && 
-                      entry.year === month.year.toString()
-                    );
+                    
+                    // Create a default empty tax entry structure
+                    const defaultTaxEntry = {
+                      amount: 0,
+                      date: null,
+                      status: null,
+                      bank: null,
+                      payMode: null
+                    };
+                    
+                    // Initialize empty month data with default tax entries
+                    const emptyMonthData = {
+                      month: month.name.slice(0, 3).toUpperCase(),
+                      year: month.year.toString(),
+                      paye: { ...defaultTaxEntry },
+                      housingLevy: { ...defaultTaxEntry },
+                      nita: { ...defaultTaxEntry },
+                      shif: { ...defaultTaxEntry },
+                      nssf: { ...defaultTaxEntry }
+                    };
+                    
+                    // Get actual month data if available
+                    let monthData = emptyMonthData;
+                    
+                    if (companyData && companyData[month.year.toString()]) {
+                      const monthIndex = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"]
+                        .indexOf(month.name.slice(0, 3).toUpperCase());
+                      
+                      if (monthIndex !== -1 && companyData[month.year.toString()][monthIndex]) {
+                        const foundMonthData = companyData[month.year.toString()][monthIndex];
+                        
+                        // Merge with default structure to ensure all fields exist
+                        monthData = {
+                          month: month.name.slice(0, 3).toUpperCase(),
+                          year: month.year.toString(),
+                          paye: { ...defaultTaxEntry, ...foundMonthData.paye },
+                          housingLevy: { ...defaultTaxEntry, ...foundMonthData.housingLevy },
+                          nita: { ...defaultTaxEntry, ...foundMonthData.nita },
+                          shif: { ...defaultTaxEntry, ...foundMonthData.shif },
+                          nssf: { ...defaultTaxEntry, ...foundMonthData.nssf }
+                        };
+                      }
+                    }
                     
                     const taxTypes = [
                       { key: 'paye', label: 'PAYE' },
@@ -536,7 +640,16 @@ export default function OverallView({ companies }: OverallViewProps) {
                               {monthData?.[tax.key]?.amount?.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) ?? "0.00"}
                             </td>
                             <td className={`py-3 px-3 border-2 border-slate-300 text-center ${monthData?.[tax.key]?.date ? getDateColor(monthData[tax.key].date) : 'text-slate-400'}`}>
-                              {monthData?.[tax.key]?.date ? new Date(monthData[tax.key].date).toLocaleDateString('en-KE') : "—"}
+                              {monthData?.[tax.key]?.date ? formatDate(monthData[tax.key].date) : "—"}
+                            </td>
+                            <td className={`py-3 px-3 border-2 border-slate-300 text-center ${monthData?.[tax.key]?.status ? 'font-medium text-slate-700' : 'text-slate-500'}`}>
+                              {monthData?.[tax.key]?.status ?? "—"}
+                            </td>
+                            <td className={`py-3 px-3 border-2 border-slate-300 text-center ${monthData?.[tax.key]?.bank ? 'font-medium text-slate-700' : 'text-slate-500'}`}>
+                              {monthData?.[tax.key]?.bank ?? "—"}
+                            </td>
+                            <td className={`py-3 px-3 border-2 border-slate-300 text-center ${monthData?.[tax.key]?.payMode ? 'font-medium text-slate-700' : 'text-slate-500'}`}>
+                              {monthData?.[tax.key]?.payMode ?? "—"}
                             </td>
                           </React.Fragment>
                         ))}
@@ -549,7 +662,7 @@ export default function OverallView({ companies }: OverallViewProps) {
               {/* Empty state handling */}
               {filteredCompanies.length === 0 && (
                 <tr>
-                  <td colSpan={visibleMonths.length * 10 + 1} className="text-center py-10 text-gray-500">
+                  <td colSpan={visibleMonths.length * 20 + 1} className="text-center py-10 text-gray-500">
                     No companies found matching your search criteria
                   </td>
                 </tr>
