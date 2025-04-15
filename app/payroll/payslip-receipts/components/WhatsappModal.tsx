@@ -59,11 +59,11 @@ export function WhatsAppModal({
   trigger,
   companyName,
   companyPhone: initialCompanyPhone,
-  month,
-  year,
+  month = format(new Date(), 'MMMM'),
+  year = new Date().getFullYear().toString(),
   documents,
   onMessageSent,
-  messageHistory,
+  messageHistory = [],
 }: WhatsAppModalProps) {
   const { toast } = useToast();
   const [isOpen, setIsOpen] = useState(false);
@@ -198,7 +198,7 @@ Booksmart Consultancy Limited`
       }
 
       if (onMessageSent) {
-        onMessageSent({
+        await onMessageSent({
           date: new Date().toISOString(),
           recipients: selectedPhones,
         });
@@ -225,24 +225,28 @@ Booksmart Consultancy Limited`
 
   return (
     <>
-      <Button
-        variant="outline"
-        size="icon"
-        className="relative"
-        onClick={() => setIsOpen(true)}
-      >
-        <MessageSquare className="h-4 w-4" />
-        {messageHistory?.length > 0 && (
-          <div className="absolute -top-2 -right-2">
-            <Badge
-              className="h-5 w-5 rounded-full bg-green-500 text-white"
-              variant="secondary"
-            >
-              {messageHistory.length}
-            </Badge>
-          </div>
-        )}
-      </Button>
+      {trigger ? (
+        <div onClick={() => setIsOpen(true)}>{trigger}</div>
+      ) : (
+        <Button
+          variant="outline"
+          size="icon"
+          className="relative"
+          onClick={() => setIsOpen(true)}
+        >
+          <MessageSquare className="h-4 w-4" />
+          {messageHistory?.length > 0 && (
+            <div className="absolute -top-2 -right-2">
+              <Badge
+                className="h-5 w-5 rounded-full bg-green-500 text-white"
+                variant="secondary"
+              >
+                {messageHistory.length}
+              </Badge>
+            </div>
+          )}
+        </Button>
+      )}
 
       <Dialog open={isOpen} onOpenChange={setIsOpen}>
         <DialogContent className="max-w-[90vw] h-[80vh] bg-white">
@@ -253,6 +257,12 @@ Booksmart Consultancy Limited`
               <span className="text-gray-500 text-lg ml-1">
                 • {companyName} • {month} {year}
               </span>
+              {messageHistory.length > 0 && (
+                <span className="text-sm font-normal text-gray-500 ml-auto">
+                  Last sent: {format(new Date(messageHistory[messageHistory.length - 1].date), "dd/MM/yyyy HH:mm")} to{" "}
+                  {messageHistory[messageHistory.length - 1].recipients.join(", ")}
+                </span>
+              )}
             </DialogTitle>
           </DialogHeader>
 
@@ -396,13 +406,13 @@ Booksmart Consultancy Limited`
                 </div>
               </div>
 
-              {messageHistory?.length > 0 && (
-                <div className="space-y-4">
-                  <div className="flex items-center gap-2">
-                    <MessageSquare className="h-4 w-4 text-blue-600" />
+              {messageHistory.length > 0 && (
+                <div className="rounded-xl border border-gray-100 shadow-sm p-5 bg-white">
+                  <div className="flex items-center gap-2 mb-4">
+                    <MessageSquare className="h-4 w-4 text-green-600" />
                     <Label className="font-medium text-gray-700">Message History</Label>
                   </div>
-                  <div className="space-y-2">
+                  <div className="space-y-2 max-h-[200px] overflow-y-auto">
                     {messageHistory.map((history, index) => (
                       <div key={index} className="rounded-lg bg-gray-50 p-3">
                         <p className="text-sm font-medium">
@@ -440,7 +450,7 @@ Booksmart Consultancy Limited`
               ) : (
                 <>
                   <Send className="w-4 h-4 mr-2" />
-                  Send via WhatsApp
+                  {messageHistory.length > 0 ? "Resend via WhatsApp" : "Send via WhatsApp"}
                 </>
               )}
             </Button>

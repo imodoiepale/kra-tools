@@ -1585,6 +1585,16 @@ export function PayslipPaymentReceiptsTable({
                                                     className="h-8 w-8 p-0"
                                                 >
                                                     <MessageSquare className="h-4 w-4" />
+                                                    {record.whatsapp_history?.length > 0 && (
+                                                        <div className="absolute -top-2 -right-2">
+                                                            <Badge
+                                                                className="h-5 w-5 rounded-full bg-green-500 text-white"
+                                                                variant="secondary"
+                                                            >
+                                                                {record.whatsapp_history.length}
+                                                            </Badge>
+                                                        </div>
+                                                    )}
                                                 </Button>
                                             }
                                             companyName={record.company?.company_name || ''}
@@ -1592,7 +1602,8 @@ export function PayslipPaymentReceiptsTable({
                                             documents={getDocumentsForUpload(record)}
                                             month={format(new Date(selectedYear, selectedMonth), 'MMMM')}
                                             year={selectedYear.toString()}
-                                            messageHistory={record.message_history || []}
+                                            messageHistory={record.whatsapp_history || []}
+                                            onMessageSent={(data) => handleMessageSent(record.id, data)}
                                         />
                                     </TableCell>
                                 )}
@@ -1842,13 +1853,24 @@ export function PayslipPaymentReceiptsTable({
                                                                     className="relative"
                                                                 >
                                                                     <MessageSquare className="h-4 w-4" />
+                                                                    {record.whatsapp_history?.length > 0 && (
+                                                                        <div className="absolute -top-2 -right-2">
+                                                                            <Badge
+                                                                                className="h-5 w-5 rounded-full bg-green-500 text-white"
+                                                                                variant="secondary"
+                                                                            >
+                                                                                {record.whatsapp_history.length}
+                                                                            </Badge>
+                                                                        </div>
+                                                                    )}
                                                                 </Button>
                                                             }
                                                             companyName={record.company?.company_name || ''}
                                                             documents={getDocumentsForUpload(record)}
                                                             month={format(new Date(selectedYear, selectedMonth), 'MMMM')}
                                                             year={selectedYear.toString()}
-                                                            messageHistory={record.message_history || []}
+                                                            messageHistory={record.whatsapp_history || []}
+                                                            onMessageSent={(data) => handleMessageSent(record.id, data)}
                                                         />
                                                     </TooltipTrigger>
                                                 </Tooltip>

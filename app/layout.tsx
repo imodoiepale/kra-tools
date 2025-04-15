@@ -1,10 +1,10 @@
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
-import { RootLayoutWrapper } from "./RootLayoutWrapper";
 import 'react-toastify/dist/ReactToastify.css';
 import { Toaster } from "@/components/ui/toaster";
-// import { ConvexClientProvider } from "./convex-client";
+import { RootLayoutWrapper } from "./RootLayoutWrapper";
+import AppRootLayoutClient from "./AppRootLayoutClient";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -47,26 +47,10 @@ export const metadata: Metadata = {
     description: APP_DESCRIPTION,
   },
 };
-
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
-  return (
-    <html lang="en">
-      <body className={inter.className}>
-        {/* <ConvexClientProvider> */}
-          <RootLayoutWrapper>
-            {children}
-            <Toaster />
-          </RootLayoutWrapper>
-        {/* </ConvexClientProvider> */}
-      </body>
-    </html>
-  );
-}
-
 export const viewport: Viewport = {
   themeColor: "#FFFFFF",
 };
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return <AppRootLayoutClient inter={inter} children={children} />;
+}
