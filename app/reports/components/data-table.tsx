@@ -18,22 +18,37 @@ export type TaxEntry = {
   paye: {
     amount: number;
     date: string | null;
+    status?: string | null;
+    bank?: string | null;
+    payMode?: string | null;
   };
   housingLevy: {
     amount: number;
     date: string | null;
+    status?: string | null;
+    bank?: string | null;
+    payMode?: string | null;
   };
   nita: {
     amount: number;
     date: string | null;
+    status?: string | null;
+    bank?: string | null;
+    payMode?: string | null;
   };
   shif: {
     amount: number;
     date: string | null;
+    status?: string | null;
+    bank?: string | null;
+    payMode?: string | null;
   };
   nssf: {
     amount: number;
     date: string | null;
+    status?: string | null;
+    bank?: string | null;
+    payMode?: string | null;
   };
 };
 
@@ -44,7 +59,7 @@ interface DataTableProps {
   yearlyData?: Record<string, any[]>;
   isHorizontalView?: boolean;
   selectedColumns?: string[];
-  selectedSubColumns?: ("amount" | "date" | "all")[];
+  selectedSubColumns?: ("amount" | "date" | "status" | "bank" | "payMode" | "all")[];
   isLoading?: boolean;
   showTotals?: boolean;
   viewMode?: "table" | "overall";
@@ -81,31 +96,73 @@ const formatAmount = (amount: number | string): string => {
   );
 };
 
-// Memoize date color calculation
+// Memoize date color calculation for payment deadlines
+// Green (1-9): Paid on time before deadline
+// Red (10+): Paid late after deadline
 const getDateColor = (dateStr: string | null): string => {
-  if (!dateStr) return "text-red-600 font-medium";
+  if (!dateStr || dateStr === "—") return "text-red-600 font-medium";
   try {
-    const [day] = dateStr.split("/");
-    const dayNum = parseInt(day, 10);
-    if (dayNum > 9) return "text-rose-600 font-medium";
-    if (dayNum >= 1 && dayNum <= 9) return "text-emerald-600 font-medium";
-    return "text-slate-900 font-medium";
+    // Check for different date formats
+    let dayNum: number;
+
+    if (dateStr.includes("/")) {
+      // Format: dd/mm/yyyy
+      const [day] = dateStr.split("/");
+      dayNum = parseInt(day, 10);
+    } else if (dateStr.includes("-")) {
+      // Format: yyyy-mm-dd
+      const [_, __, day] = dateStr.split("-");
+      dayNum = parseInt(day, 10);
+    } else {
+      // Unable to parse
+      return "text-slate-900 font-medium";
+    }
+
+    // Check if date is within deadline (1-9 = on time, 10+ = late)
+    if (isNaN(dayNum)) {
+      return "text-slate-900 font-medium";
+    } else if (dayNum >= 1 && dayNum <= 9) {
+      return "text-emerald-600 font-medium"; // Green - paid on time
+    } else {
+      return "text-rose-600 font-medium"; // Red - late payment
+    }
   } catch (e) {
+    console.error("Error parsing date:", e);
     return "text-slate-900 font-medium";
   }
 };
 
-// Date formatting with placeholder for null dates
+// Date formatting with placeholder for null dates - standardized to dd/mm/yyyy
 const formatDate = (date: string | null) => {
   if (!date) return "—";
   try {
-    // Check if date is already in dd/mm/yyyy format
+    // Handle empty strings or invalid dates
+    if (date === "" || date === "Invalid Date") return "—";
+
+    // If already in dd/mm/yyyy format, validate and ensure proper padding
     if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(date)) {
-      return date;
+      const [day, month, year] = date.split("/");
+      return `${day.padStart(2, "0")}/${month.padStart(2, "0")}/${year}`;
     }
-    return format(new Date(date), "dd/MM/yyyy");
+
+    // Handle yyyy-mm-dd format
+    if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(date)) {
+      const [year, month, day] = date.split("-");
+      return `${day.padStart(2, "0")}/${month.padStart(2, "0")}/${year}`;
+    }
+
+    // For any other format, parse and convert to dd/mm/yyyy
+    const dateObj = new Date(date);
+    if (isNaN(dateObj.getTime())) return "—";
+
+    const day = dateObj.getDate().toString().padStart(2, "0");
+    const month = (dateObj.getMonth() + 1).toString().padStart(2, "0");
+    const year = dateObj.getFullYear();
+
+    return `${day}/${month}/${year}`;
   } catch (e) {
-    return date || "—";
+    console.error("Error formatting date:", date, e);
+    return "—";
   }
 };
 
@@ -122,42 +179,78 @@ const DataCell = memo(
   ({
     tax,
     entry,
-    showAmount,
-    showDate,
+    selectedSubColumns,
     isLoading,
   }: {
     tax: (typeof taxColumns)[number];
     entry: TaxEntry;
-    showAmount: boolean;
-    showDate: boolean;
+    selectedSubColumns: ("amount" | "date" | "status" | "bank" | "payMode" | "all")[];
     isLoading: boolean;
-  }) => (
-    <React.Fragment>
-      {showAmount && (
-        <TableCell
-          className={`text-right py-3 px-4 font-medium border-2 border-slate-300 bg-white ${
-            isLoading ? "animate-pulse" : ""
-          }`}>
-          <span className="text-slate-700">
-            {isLoading ? "—" : formatAmount(entry[tax.id].amount)}
-          </span>
-        </TableCell>
-      )}
-      {showDate && (
-        <TableCell
-          className={`text-center py-3 px-3 border-2 border-slate-300 bg-white ${
-            isLoading ? "animate-pulse" : ""
-          }`}>
-          <span
-            className={
-              isLoading ? "text-slate-400" : getDateColor(entry[tax.id].date)
-            }>
-            {isLoading ? "—" : formatDate(entry[tax.id].date)}
-          </span>
-        </TableCell>
-      )}
-    </React.Fragment>
-  )
+  }) => {
+    const showAmount = selectedSubColumns.includes("all") || selectedSubColumns.includes("amount");
+    const showDate = selectedSubColumns.includes("all") || selectedSubColumns.includes("date");
+    const showStatus = selectedSubColumns.includes("all") || selectedSubColumns.includes("status");
+    const showBank = selectedSubColumns.includes("all") || selectedSubColumns.includes("bank");
+    const showPayMode = selectedSubColumns.includes("all") || selectedSubColumns.includes("payMode");
+    
+    return (
+      <React.Fragment>
+        {showAmount && (
+          <TableCell
+            className={`text-right py-3 px-4 font-medium border-2 border-slate-300 bg-white ${
+              isLoading ? "animate-pulse" : ""
+            }`}>
+            <span className="text-slate-700">
+              {isLoading ? "—" : formatAmount(entry[tax.id].amount)}
+            </span>
+          </TableCell>
+        )}
+        {showDate && (
+          <TableCell
+            className={`text-center py-3 px-3 border-2 border-slate-300 bg-white ${
+              isLoading ? "animate-pulse" : ""
+            }`}>
+            <span
+              className={
+                isLoading ? "text-slate-400" : getDateColor(entry[tax.id].date)
+              }>
+              {isLoading ? "—" : formatDate(entry[tax.id].date)}
+            </span>
+          </TableCell>
+        )}
+        {showStatus && (
+          <TableCell
+            className={`text-center py-3 px-3 border-2 border-slate-300 bg-white ${
+              isLoading ? "animate-pulse" : ""
+            }`}>
+            <span className="text-slate-700">
+              {isLoading ? "—" : entry[tax.id].status || "—"}
+            </span>
+          </TableCell>
+        )}
+        {showBank && (
+          <TableCell
+            className={`text-center py-3 px-3 border-2 border-slate-300 bg-white ${
+              isLoading ? "animate-pulse" : ""
+            }`}>
+            <span className="text-slate-700">
+              {isLoading ? "—" : entry[tax.id].bank || "—"}
+            </span>
+          </TableCell>
+        )}
+        {showPayMode && (
+          <TableCell
+            className={`text-center py-3 px-3 border-2 border-slate-300 bg-white ${
+              isLoading ? "animate-pulse" : ""
+            }`}>
+            <span className="text-slate-700">
+              {isLoading ? "—" : entry[tax.id].payMode || "—"}
+            </span>
+          </TableCell>
+        )}
+      </React.Fragment>
+    );
+  }
 );
 
 DataCell.displayName = "DataCell";
@@ -174,15 +267,9 @@ const TableRowMemo = memo(
     entry: TaxEntry;
     idx: number;
     selectedColumns: string[];
-    selectedSubColumns: ("amount" | "date" | "all")[];
+    selectedSubColumns: ("amount" | "date" | "status" | "bank" | "payMode" | "all")[];
     isLoading: boolean;
   }) => {
-    const showAmount =
-      selectedSubColumns.includes("all") ||
-      selectedSubColumns.includes("amount");
-    const showDate =
-      selectedSubColumns.includes("all") || selectedSubColumns.includes("date");
-
     return (
       <TableRow
         className={
@@ -207,8 +294,7 @@ const TableRowMemo = memo(
                 key={`${tax.id}-cell-${entry.month}`}
                 tax={tax}
                 entry={entry}
-                showAmount={showAmount}
-                showDate={showDate}
+                selectedSubColumns={selectedSubColumns}
                 isLoading={isLoading}
               />
             )
@@ -239,6 +325,18 @@ export const DataTable = memo(
     pagination,
     onPageChange,
   }: DataTableProps) => {
+    // Helper function to calculate column spans
+    const calculateColSpan = (subColumns) => {
+      if (subColumns.includes("all")) return 5;
+      let count = 0;
+      if (subColumns.includes("amount")) count++;
+      if (subColumns.includes("date")) count++;
+      if (subColumns.includes("status")) count++;
+      if (subColumns.includes("bank")) count++;
+      if (subColumns.includes("payMode")) count++;
+      return count;
+    };
+
     // Calculate totals only once for better performance
     const totals = useMemo(() => {
       return data.reduce((acc, entry) => {
@@ -271,7 +369,7 @@ export const DataTable = memo(
                   {selectedColumns.map((col) => (
                     <TableHead
                       key={col}
-                      colSpan={2}
+                      colSpan={calculateColSpan(selectedSubColumns)}
                       className="bg-blue-500 text-white py-2 px-3 border text-center">
                       {taxColumns.find((t) => t.id === col)?.label}
                     </TableHead>
@@ -281,12 +379,31 @@ export const DataTable = memo(
                   <TableHead className="sticky left-0 z-20 bg-blue-600 text-white"></TableHead>
                   {selectedColumns.map((col) => (
                     <React.Fragment key={`${col}-subheader`}>
-                      <TableHead className="bg-blue-400 text-white py-2 px-3 border text-sm font-medium">
-                        Amount
-                      </TableHead>
-                      <TableHead className="bg-blue-400 text-white py-2 px-3 border text-sm font-medium">
-                        Pay Date
-                      </TableHead>
+                      {(selectedSubColumns.includes("all") || selectedSubColumns.includes("amount")) && (
+                        <TableHead className="bg-blue-400 text-white py-2 px-3 border text-sm font-medium">
+                          Amount
+                        </TableHead>
+                      )}
+                      {(selectedSubColumns.includes("all") || selectedSubColumns.includes("date")) && (
+                        <TableHead className="bg-blue-400 text-white py-2 px-3 border text-sm font-medium">
+                          Pay Date
+                        </TableHead>
+                      )}
+                      {(selectedSubColumns.includes("all") || selectedSubColumns.includes("status")) && (
+                        <TableHead className="bg-blue-400 text-white py-2 px-3 border text-sm font-medium">
+                          Status
+                        </TableHead>
+                      )}
+                      {(selectedSubColumns.includes("all") || selectedSubColumns.includes("bank")) && (
+                        <TableHead className="bg-blue-400 text-white py-2 px-3 border text-sm font-medium">
+                          Bank
+                        </TableHead>
+                      )}
+                      {(selectedSubColumns.includes("all") || selectedSubColumns.includes("payMode")) && (
+                        <TableHead className="bg-blue-400 text-white py-2 px-3 border text-sm font-medium">
+                          Pay Mode
+                        </TableHead>
+                      )}
                     </React.Fragment>
                   ))}
                 </TableRow>
@@ -314,12 +431,31 @@ export const DataTable = memo(
                       {selectedColumns.map((col) => (
                         <React.Fragment
                           key={`${col}-${month.year}-${month.name}`}>
-                          <TableCell className="py-3 px-3 border text-right">
-                            {formatAmount(entry[col]?.amount || 0)}
-                          </TableCell>
-                          <TableCell className="py-3 px-3 border text-center">
-                            {formatDate(entry[col]?.date)}
-                          </TableCell>
+                          {(selectedSubColumns.includes("all") || selectedSubColumns.includes("amount")) && (
+                            <TableCell className="py-3 px-3 border text-right">
+                              {formatAmount(entry[col]?.amount || 0)}
+                            </TableCell>
+                          )}
+                          {(selectedSubColumns.includes("all") || selectedSubColumns.includes("date")) && (
+                            <TableCell className="py-3 px-3 border text-center">
+                              {formatDate(entry[col]?.date)}
+                            </TableCell>
+                          )}
+                          {(selectedSubColumns.includes("all") || selectedSubColumns.includes("status")) && (
+                            <TableCell className="py-3 px-3 border text-center">
+                              {entry[col]?.status || "—"}
+                            </TableCell>
+                          )}
+                          {(selectedSubColumns.includes("all") || selectedSubColumns.includes("bank")) && (
+                            <TableCell className="py-3 px-3 border text-center">
+                              {entry[col]?.bank || "—"}
+                            </TableCell>
+                          )}
+                          {(selectedSubColumns.includes("all") || selectedSubColumns.includes("payMode")) && (
+                            <TableCell className="py-3 px-3 border text-center">
+                              {entry[col]?.payMode || "—"}
+                            </TableCell>
+                          )}
                         </React.Fragment>
                       ))}
                     </TableRow>
@@ -370,7 +506,7 @@ export const DataTable = memo(
                     {selectedColumns.map((col) => (
                       <TableHead
                         key={col}
-                        colSpan={(selectedSubColumns.includes("all") ? 2 : selectedSubColumns.length)}
+                        colSpan={calculateColSpan(selectedSubColumns)}
                         className="text-center font-bold text-white py-4 px-5 border-2 border-slate-300 bg-[#1e4d7b]">
                         {taxColumns.find((t) => t.id === col)?.label ||
                           col.toUpperCase()}
@@ -397,6 +533,24 @@ export const DataTable = memo(
                             Pay Date
                           </TableHead>
                         )}
+                        {(selectedSubColumns.includes("all") ||
+                          selectedSubColumns.includes("status")) && (
+                          <TableHead className="font-semibold text-white text-center py-3 px-3 border-2 border-slate-300 bg-[#2a5a8c]">
+                            Status
+                          </TableHead>
+                        )}
+                        {(selectedSubColumns.includes("all") ||
+                          selectedSubColumns.includes("bank")) && (
+                          <TableHead className="font-semibold text-white text-center py-3 px-3 border-2 border-slate-300 bg-[#2a5a8c]">
+                            Bank
+                          </TableHead>
+                        )}
+                        {(selectedSubColumns.includes("all") ||
+                          selectedSubColumns.includes("payMode")) && (
+                          <TableHead className="font-semibold text-white text-center py-3 px-3 border-2 border-slate-300 bg-[#2a5a8c]">
+                            Pay Mode
+                          </TableHead>
+                        )}
                       </React.Fragment>
                     ))}
                   </TableRow>
@@ -407,11 +561,7 @@ export const DataTable = memo(
                       <TableRow className="bg-[#eef6fc]">
                         <TableCell
                           colSpan={
-                            (selectedSubColumns.includes("all")
-                              ? 2
-                              : selectedSubColumns.length) *
-                            selectedColumns.length +
-                            2
+                            calculateColSpan(selectedSubColumns) * selectedColumns.length + 2
                           }
                           className="py-2 px-5 font-bold text-lg text-[#1e4d7b] border-2 border-slate-300 sticky left-0 bg-inherit">
                           {year}
@@ -457,8 +607,34 @@ export const DataTable = memo(
                                   selectedSubColumns.includes("date")) && (
                                   <TableCell className="text-center py-3 px-3 border-2 border-slate-300 bg-inherit">
                                     <span
-                                      className={getDateColor(entry[col]?.date)}>
+                                      className={getDateColor(
+                                        entry[col]?.date
+                                      )}>
                                       {formatDate(entry[col]?.date)}
+                                    </span>
+                                  </TableCell>
+                                )}
+                                {(selectedSubColumns.includes("all") ||
+                                  selectedSubColumns.includes("status")) && (
+                                  <TableCell className="text-center py-3 px-3 border-2 border-slate-300 bg-inherit">
+                                    <span className="text-slate-700">
+                                      {entry[col]?.status || "—"}
+                                    </span>
+                                  </TableCell>
+                                )}
+                                {(selectedSubColumns.includes("all") ||
+                                  selectedSubColumns.includes("bank")) && (
+                                  <TableCell className="text-center py-3 px-3 border-2 border-slate-300 bg-inherit">
+                                    <span className="text-slate-700">
+                                      {entry[col]?.bank || "—"}
+                                    </span>
+                                  </TableCell>
+                                )}
+                                {(selectedSubColumns.includes("all") ||
+                                  selectedSubColumns.includes("payMode")) && (
+                                  <TableCell className="text-center py-3 px-3 border-2 border-slate-300 bg-inherit">
+                                    <span className="text-slate-700">
+                                      {entry[col]?.payMode || "—"}
                                     </span>
                                   </TableCell>
                                 )}
@@ -493,6 +669,18 @@ export const DataTable = memo(
                                 )}
                                 {(selectedSubColumns.includes("all") ||
                                   selectedSubColumns.includes("date")) && (
+                                  <TableCell className="border-2 border-slate-300 bg-inherit" />
+                                )}
+                                {(selectedSubColumns.includes("all") ||
+                                  selectedSubColumns.includes("status")) && (
+                                  <TableCell className="border-2 border-slate-300 bg-inherit" />
+                                )}
+                                {(selectedSubColumns.includes("all") ||
+                                  selectedSubColumns.includes("bank")) && (
+                                  <TableCell className="border-2 border-slate-300 bg-inherit" />
+                                )}
+                                {(selectedSubColumns.includes("all") ||
+                                  selectedSubColumns.includes("payMode")) && (
                                   <TableCell className="border-2 border-slate-300 bg-inherit" />
                                 )}
                               </React.Fragment>
@@ -541,15 +729,18 @@ export const DataTable = memo(
             <div className="flex items-center justify-between px-4 py-3 bg-white border-t border-gray-200">
               <div className="flex items-center text-sm text-gray-700">
                 <span>
-                  Showing{' '}
+                  Showing{" "}
                   <span className="font-medium">
                     {(pagination.page - 1) * pagination.pageSize + 1}
-                  </span>{' '}
-                  to{' '}
+                  </span>{" "}
+                  to{" "}
                   <span className="font-medium">
-                    {Math.min(pagination.page * pagination.pageSize, pagination.total)}
-                  </span>{' '}
-                  of <span className="font-medium">{pagination.total}</span> results
+                    {Math.min(
+                      pagination.page * pagination.pageSize,
+                      pagination.total
+                    )}
+                  </span>{" "} of <span className="font-medium">{pagination.total}</span>{" "}
+                  results
                 </span>
               </div>
               <div className="flex items-center gap-2">
@@ -565,7 +756,9 @@ export const DataTable = memo(
                   variant="outline"
                   size="sm"
                   onClick={() => onPageChange?.(pagination.page + 1)}
-                  disabled={pagination.page * pagination.pageSize >= pagination.total}
+                  disabled={
+                    pagination.page * pagination.pageSize >= pagination.total
+                  }
                   className="text-sm">
                   Next
                 </Button>
@@ -594,7 +787,7 @@ export const DataTable = memo(
                 {selectedColumns.map((col) => (
                   <TableHead
                     key={col}
-                    colSpan={(selectedSubColumns.includes("all") ? 2 : selectedSubColumns.length)}
+                    colSpan={calculateColSpan(selectedSubColumns)}
                     className={`text-center font-bold text-white py-4 px-5 border-2 border-slate-300 bg-[#1e4d7b]`}>
                     {taxColumns.find((t) => t.id === col)?.label ||
                       col.toUpperCase()}
@@ -619,6 +812,21 @@ export const DataTable = memo(
                         Pay Date
                       </TableHead>
                     )}
+                    {(selectedSubColumns.includes("all") || selectedSubColumns.includes("status")) && (
+                      <TableHead className="font-semibold text-white text-center py-3 px-3 border-2 border-slate-300 bg-[#2a5a8c]">
+                        Status
+                      </TableHead>
+                    )}
+                    {(selectedSubColumns.includes("all") || selectedSubColumns.includes("bank")) && (
+                      <TableHead className="font-semibold text-white text-center py-3 px-3 border-2 border-slate-300 bg-[#2a5a8c]">
+                        Bank
+                      </TableHead>
+                    )}
+                    {(selectedSubColumns.includes("all") || selectedSubColumns.includes("payMode")) && (
+                      <TableHead className="font-semibold text-white text-center py-3 px-3 border-2 border-slate-300 bg-[#2a5a8c]">
+                        Pay Mode
+                      </TableHead>
+                    )}
                   </React.Fragment>
                 ))}
               </TableRow>
@@ -639,17 +847,43 @@ export const DataTable = memo(
                     </TableCell>
                     {selectedColumns.map((col) => (
                       <React.Fragment key={`${col}-data-${entry.month}`}>
-                        {(selectedSubColumns.includes("all") || selectedSubColumns.includes("amount")) && (
+                        {(selectedSubColumns.includes("all") ||
+                          selectedSubColumns.includes("amount")) && (
                           <TableCell className="text-right py-3 px-4 font-medium border-2 border-slate-300 bg-inherit">
                             <span className="text-slate-700">
                               {formatAmount(entry[col]?.amount || 0)}
                             </span>
                           </TableCell>
                         )}
-                        {(selectedSubColumns.includes("all") || selectedSubColumns.includes("date")) && (
+                        {(selectedSubColumns.includes("all") ||
+                          selectedSubColumns.includes("date")) && (
                           <TableCell className="text-center py-3 px-3 border-2 border-slate-300 bg-inherit">
                             <span className={getDateColor(entry[col]?.date)}>
                               {formatDate(entry[col]?.date)}
+                            </span>
+                          </TableCell>
+                        )}
+                        {(selectedSubColumns.includes("all") ||
+                          selectedSubColumns.includes("status")) && (
+                          <TableCell className="text-center py-3 px-3 border-2 border-slate-300 bg-inherit">
+                            <span className="text-slate-700">
+                              {entry[col]?.status || "—"}
+                            </span>
+                          </TableCell>
+                        )}
+                        {(selectedSubColumns.includes("all") ||
+                          selectedSubColumns.includes("bank")) && (
+                          <TableCell className="text-center py-3 px-3 border-2 border-slate-300 bg-inherit">
+                            <span className="text-slate-700">
+                              {entry[col]?.bank || "—"}
+                            </span>
+                          </TableCell>
+                        )}
+                        {(selectedSubColumns.includes("all") ||
+                          selectedSubColumns.includes("payMode")) && (
+                          <TableCell className="text-center py-3 px-3 border-2 border-slate-300 bg-inherit">
+                            <span className="text-slate-700">
+                              {entry[col]?.payMode || "—"}
                             </span>
                           </TableCell>
                         )}
@@ -670,12 +904,26 @@ export const DataTable = memo(
                   </TableCell>
                   {selectedColumns.map((col) => (
                     <React.Fragment key={`${col}-total`}>
-                      {(selectedSubColumns.includes("all") || selectedSubColumns.includes("amount")) && (
+                      {(selectedSubColumns.includes("all") ||
+                        selectedSubColumns.includes("amount")) && (
                         <TableCell className="text-right py-4 px-4 text-[#1e4d7b] font-bold border-2 border-slate-300 bg-inherit">
                           {formatAmount(totals[col] || 0)}
                         </TableCell>
                       )}
-                      {(selectedSubColumns.includes("all") || selectedSubColumns.includes("date")) && (
+                      {(selectedSubColumns.includes("all") ||
+                        selectedSubColumns.includes("date")) && (
+                        <TableCell className="border-2 border-slate-300 bg-inherit" />
+                      )}
+                      {(selectedSubColumns.includes("all") ||
+                        selectedSubColumns.includes("status")) && (
+                        <TableCell className="border-2 border-slate-300 bg-inherit" />
+                      )}
+                      {(selectedSubColumns.includes("all") ||
+                        selectedSubColumns.includes("bank")) && (
+                        <TableCell className="border-2 border-slate-300 bg-inherit" />
+                      )}
+                      {(selectedSubColumns.includes("all") ||
+                        selectedSubColumns.includes("payMode")) && (
                         <TableCell className="border-2 border-slate-300 bg-inherit" />
                       )}
                     </React.Fragment>
@@ -715,15 +963,19 @@ export const DataTable = memo(
           <div className="flex items-center justify-between px-4 py-3 bg-white border-t border-gray-200">
             <div className="flex items-center text-sm text-gray-700">
               <span>
-                Showing{' '}
+                Showing{" "}
                 <span className="font-medium">
                   {(pagination.page - 1) * pagination.pageSize + 1}
-                </span>{' '}
-                to{' '}
+                </span>{" "}
+                to{" "}
                 <span className="font-medium">
-                  {Math.min(pagination.page * pagination.pageSize, pagination.total)}
-                </span>{' '}
-                of <span className="font-medium">{pagination.total}</span> results
+                  {Math.min(
+                    pagination.page * pagination.pageSize,
+                    pagination.total
+                  )}
+                </span>{" "}
+                of <span className="font-medium">{pagination.total}</span>{" "}
+                results
               </span>
             </div>
             <div className="flex items-center gap-2">
@@ -739,7 +991,9 @@ export const DataTable = memo(
                 variant="outline"
                 size="sm"
                 onClick={() => onPageChange?.(pagination.page + 1)}
-                disabled={pagination.page * pagination.pageSize >= pagination.total}
+                disabled={
+                  pagination.page * pagination.pageSize >= pagination.total
+                }
                 className="text-sm">
                 Next
               </Button>

@@ -99,8 +99,9 @@ function CompanyReports() {
   }, [companies, selectedCompany]);
 
   const [selectedSubColumns, setSelectedSubColumns] = useState<
-    ("amount" | "date" | "all")[]
-  >(["all"]);
+    ("amount" | "date" | "status" | "bank" | "payMode" | "all")[]>([
+    "amount", "date" // By default only show Amount and Pay Date
+  ]);
   const [taxDropdownOpen, setTaxDropdownOpen] = useState(false);
   const [monthDropdownOpen, setMonthDropdownOpen] = useState(false);
   const [columnDropdownOpen, setColumnDropdownOpen] = useState(false);
@@ -832,6 +833,66 @@ function CompanyReports() {
                         }
                       }}>
                       Pay Date
+                    </DropdownMenuCheckboxItem>
+                    <DropdownMenuCheckboxItem
+                      checked={
+                        selectedSubColumns.includes("status") ||
+                        selectedSubColumns.includes("all")
+                      }
+                      disabled={selectedSubColumns.includes("all")} 
+                      onSelect={(e) => e.preventDefault()}
+                      onCheckedChange={(checked) => {
+                        if (selectedSubColumns.includes("all")) return;
+                        
+                        if (checked) {
+                          setSelectedSubColumns((prev) => 
+                            [...prev.filter(col => col !== "all" && col !== "status"), "status"]
+                          );
+                        } else {
+                          setSelectedSubColumns(selectedSubColumns.filter(col => col !== "status" && col !== "all"));
+                        }
+                      }}>
+                      Status
+                    </DropdownMenuCheckboxItem>
+                    <DropdownMenuCheckboxItem
+                      checked={
+                        selectedSubColumns.includes("bank") ||
+                        selectedSubColumns.includes("all")
+                      }
+                      disabled={selectedSubColumns.includes("all")} 
+                      onSelect={(e) => e.preventDefault()}
+                      onCheckedChange={(checked) => {
+                        if (selectedSubColumns.includes("all")) return;
+                        
+                        if (checked) {
+                          setSelectedSubColumns((prev) => 
+                            [...prev.filter(col => col !== "all" && col !== "bank"), "bank"]
+                          );
+                        } else {
+                          setSelectedSubColumns(selectedSubColumns.filter(col => col !== "bank" && col !== "all"));
+                        }
+                      }}>
+                      Bank
+                    </DropdownMenuCheckboxItem>
+                    <DropdownMenuCheckboxItem
+                      checked={
+                        selectedSubColumns.includes("payMode") ||
+                        selectedSubColumns.includes("all")
+                      }
+                      disabled={selectedSubColumns.includes("all")} 
+                      onSelect={(e) => e.preventDefault()}
+                      onCheckedChange={(checked) => {
+                        if (selectedSubColumns.includes("all")) return;
+                        
+                        if (checked) {
+                          setSelectedSubColumns((prev) => 
+                            [...prev.filter(col => col !== "all" && col !== "payMode"), "payMode"]
+                          );
+                        } else {
+                          setSelectedSubColumns(selectedSubColumns.filter(col => col !== "payMode" && col !== "all"));
+                        }
+                      }}>
+                      Pay Mode
                     </DropdownMenuCheckboxItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
