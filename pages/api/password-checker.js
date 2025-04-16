@@ -108,20 +108,28 @@ async function loginToKRA(page, company) {
 
             const extractResult = async () => {
                 const ret = await worker.recognize(imagePath);
-                const text1 = ret.data.text.trim();
-                const numbers = text1.match(/\d+/g);
-
+                // Use the same text processing as in the first code
+                const text1 = ret.data.text.slice(0, -1); // Remove last character
+                const text = text1.slice(0, -1); // Remove another last character
+                console.log("Extracted Text:", text);
+                
+                const numbers = text.match(/\d+/g);
+                console.log("Extracted Numbers:", numbers);
+                
                 if (!numbers || numbers.length < 2) {
                     throw new Error("Invalid captcha format");
                 }
-
-                if (text1.includes("+")) {
+                
+                // Use the same arithmetic detection logic
+                if (text.includes("+")) {
                     result = Number(numbers[0]) + Number(numbers[1]);
-                } else if (text1.includes("-")) {
+                } else if (text.includes("-")) {
                     result = Number(numbers[0]) - Number(numbers[1]);
                 } else {
                     throw new Error("Unsupported operator");
                 }
+                
+                console.log("Result:", result.toString());
             };
 
             let captchaAttempts = 0;
