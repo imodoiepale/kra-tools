@@ -1316,8 +1316,8 @@ export function CompanyView({
                             </div>
                         </div>
                     )}
-                </div>
-
+                    </div>
+                    
                 <DialogFooter>
                     <Button 
                         variant="outline" 
