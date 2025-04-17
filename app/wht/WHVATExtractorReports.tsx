@@ -35,6 +35,8 @@ export function WHVATExtractorReports() {
     const [selectedMonth, setSelectedMonth] = useState('');
     const [selectedYear, setSelectedYear] = useState('');
     const [showAllData, setShowAllData] = useState(false);
+    const [summarySearch, setSummarySearch] = useState('');
+    const [summarySort, setSummarySort] = useState({ column: 'company', direction: 'asc' });
 
     useEffect(() => {
         fetchCompanies();
@@ -155,6 +157,15 @@ export function WHVATExtractorReports() {
             setSortColumn(column);
             setSortDirection('asc');
         }
+    };
+
+    const handleSummarySort = (column) => {
+        setSummarySort((prev) => {
+            if (prev.column === column) {
+                return { column, direction: prev.direction === 'asc' ? 'desc' : 'asc' };
+            }
+            return { column, direction: 'asc' };
+        });
     };
 
     const formatAmount = (amount) => {
@@ -346,6 +357,74 @@ export function WHVATExtractorReports() {
         saveAs(new Blob([buffer]), `${selectedCompany}_WHVAT_Extractions_${range}.xlsx`);
     };
 
+    const exportSummaryToExcel = async () => {
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet('Summary');
+        worksheet.addRow(['#', 'Company', 'Latest Extraction Date', 'Number of Extractions', 'Total Amount']);
+        getFilteredSortedSummary().forEach((company, idx) => {
+            worksheet.addRow([
+                idx + 1,
+                company.company_name,
+                company.latestExtractionDate,
+                company.numberOfExtractions,
+                company.totalAmountRaw
+            ]);
+        });
+        const buffer = await workbook.xlsx.writeBuffer();
+        saveAs(new Blob([buffer]), `WHVAT_Summary.xlsx`);
+    };
+
+    const getFilteredSortedSummary = () => {
+        let data = allCompanyData.map((company) => {
+            const extractionDates = company.extraction_data ? Object.keys(company.extraction_data) : [];
+            const latestExtractionDate = extractionDates.length > 0 ?
+                new Date(Math.max(...extractionDates.map(date => new Date(company.extraction_data[date].extractionDate)))).toLocaleDateString() :
+                'N/A';
+            const totalAmount = calculateOverallTotal(company.extraction_data);
+            return {
+                ...company,
+                latestExtractionDate,
+                numberOfExtractions: extractionDates.length,
+                totalAmount: formatAmount(totalAmount),
+                totalAmountRaw: totalAmount,
+            };
+        });
+        if (summarySearch) {
+            data = data.filter((company) =>
+                company.company_name.toLowerCase().includes(summarySearch.toLowerCase())
+            );
+        }
+        data.sort((a, b) => {
+            const { column, direction } = summarySort;
+            let aVal, bVal;
+            switch (column) {
+                case 'company':
+                    aVal = a.company_name.toLowerCase();
+                    bVal = b.company_name.toLowerCase();
+                    break;
+                case 'latestExtractionDate':
+                    aVal = new Date(a.latestExtractionDate);
+                    bVal = new Date(b.latestExtractionDate);
+                    break;
+                case 'numberOfExtractions':
+                    aVal = a.numberOfExtractions;
+                    bVal = b.numberOfExtractions;
+                    break;
+                case 'totalAmount':
+                    aVal = a.totalAmountRaw;
+                    bVal = b.totalAmountRaw;
+                    break;
+                default:
+                    aVal = a.company_name.toLowerCase();
+                    bVal = b.company_name.toLowerCase();
+            }
+            if (aVal < bVal) return direction === 'asc' ? -1 : 1;
+            if (aVal > bVal) return direction === 'asc' ? 1 : -1;
+            return 0;
+        });
+        return data;
+    };
+
     const renderDetailedView = () => (
         <div className="grid grid-cols-4 gap-4 h-[600px]" >
             <div className="col-span-1">
@@ -526,45 +605,54 @@ export function WHVATExtractorReports() {
     );
 
     const renderSummaryView = () => (
-        <ScrollArea className="h-[650px] overflow-auto">
-            <Table>
-                <TableHeader>
-                    <TableRow>
-                        <TableHead className="font-bold text-center">#</TableHead>
-                        <TableHead onClick={() => handleSummarySort('company')}>
-                            Company <ArrowUpDown className="ml-2 h-4 w-4" />
-                        </TableHead>
-                        <TableHead onClick={() => handleSummarySort('latestExtractionDate')}>
-                            Latest Extraction Date <ArrowUpDown className="ml-2 h-4 w-4" />
-                        </TableHead>
-                        <TableHead onClick={() => handleSummarySort('numberOfExtractions')}>
-                            Number of Extractions <ArrowUpDown className="ml-2 h-4 w-4" />
-                        </TableHead>
-                        <TableHead onClick={() => handleSummarySort('totalAmount')}>
-                            Total Amount <ArrowUpDown className="ml-2 h-4 w-4" />
-                        </TableHead>
-                    </TableRow>
-                </TableHeader>
-                <TableBody>
-                    {allCompanyData.sort((a, b) => a.company_name.localeCompare(b.company_name)).map((company, index) => {
-                        const extractionDates = company.extraction_data ? Object.keys(company.extraction_data) : [];
-                        const latestExtractionDate = extractionDates.length > 0 ?
-                            new Date(Math.max(...extractionDates.map(date => new Date(company.extraction_data[date].extractionDate)))).toLocaleDateString() :
-                            'N/A';
-                        const totalAmount = calculateOverallTotal(company.extraction_data);
-                        return (
+        <>
+            <div className="flex flex-wrap gap-2 items-center mb-2">
+                <Input
+                    placeholder="Search companies..."
+                    value={summarySearch}
+                    onChange={e => setSummarySearch(e.target.value)}
+                    className="w-64"
+                />
+                <Button onClick={exportSummaryToExcel} variant="outline" size="sm">
+                    <Download className="mr-2 h-4 w-4" /> Export to Excel
+                </Button>
+                <div className="ml-auto font-bold text-blue-700">
+                    Total Companies: {getFilteredSortedSummary().length}
+                </div>
+            </div>
+            <ScrollArea className="h-[650px] overflow-auto">
+                <Table>
+                    <TableHeader>
+                        <TableRow>
+                            <TableHead className="font-bold text-center">#</TableHead>
+                            <TableHead onClick={() => handleSummarySort('company')} className="cursor-pointer select-none">
+                                Company <ArrowUpDown className="ml-2 h-4 w-4" />
+                            </TableHead>
+                            <TableHead onClick={() => handleSummarySort('latestExtractionDate')} className="cursor-pointer select-none">
+                                Latest Extraction Date <ArrowUpDown className="ml-2 h-4 w-4" />
+                            </TableHead>
+                            <TableHead onClick={() => handleSummarySort('numberOfExtractions')} className="cursor-pointer select-none">
+                                Number of Extractions <ArrowUpDown className="ml-2 h-4 w-4" />
+                            </TableHead>
+                            <TableHead onClick={() => handleSummarySort('totalAmount')} className="cursor-pointer select-none">
+                                Total Amount <ArrowUpDown className="ml-2 h-4 w-4" />
+                            </TableHead>
+                        </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                        {getFilteredSortedSummary().map((company, index) => (
                             <TableRow key={company.company_name} className={index % 2 === 0 ? 'bg-white' : 'bg-blue-50'}>
                                 <TableCell className="font-bold text-center">{index + 1}</TableCell>
                                 <TableCell>{company.company_name}</TableCell>
-                                <TableCell>{latestExtractionDate}</TableCell>
-                                <TableCell>{extractionDates.length}</TableCell>
-                                <TableCell className="font-bold text-green-600">{formatAmount(totalAmount)}</TableCell>
+                                <TableCell>{company.latestExtractionDate}</TableCell>
+                                <TableCell>{company.numberOfExtractions}</TableCell>
+                                <TableCell className="font-bold text-green-600">{company.totalAmount}</TableCell>
                             </TableRow>
-                        );
-                    })}
-                </TableBody>
-            </Table>
-        </ScrollArea>
+                        ))}
+                    </TableBody>
+                </Table>
+            </ScrollArea>
+        </>
     );
 
     return (
