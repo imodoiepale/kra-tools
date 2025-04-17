@@ -23,13 +23,14 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Download, Search, ArrowUpDown, Send, AlertCircle } from 'lucide-react';
+import { Download, Search, ArrowUpDown, Send, AlertCircle, Filter } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { ClientCategoryFilter } from '@/components/ClientCategoryFilter';
 
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 
@@ -54,6 +55,8 @@ export function AutoLiabilitiesReports() {
     });
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState(null);
+    const [isCategoryFilterOpen, setIsCategoryFilterOpen] = useState(false);
+    const [categoryFilters, setCategoryFilters] = useState({});
     const [extractionHistory, setExtractionHistory] = useState({});
 
     useEffect(() => {
@@ -183,8 +186,37 @@ export function AutoLiabilitiesReports() {
         }))
     ], []);
 
+    // Apply category filters to data
+    const filteredData = useMemo(() => {
+        if (Object.keys(categoryFilters).length === 0) return data;
+        
+        return data.filter(item => {
+            // Check if any category filter is active
+            const hasActiveFilters = Object.values(categoryFilters).some(categoryStatus => 
+                Object.values(categoryStatus as Record<string, boolean>).some(isSelected => isSelected)
+            );
+            
+            if (!hasActiveFilters) return true;
+            
+            // Get the item's category and status
+            const category = item.category || 'all';
+            const status = item.status === 'active' ? 'active' : 'inactive';
+            
+            // Check if this category has any filters
+            const categoryFilter = categoryFilters[category] as Record<string, boolean> | undefined;
+            if (!categoryFilter) {
+                // Check if 'all' category has this status selected
+                const allCategoryFilter = categoryFilters['all'] as Record<string, boolean> | undefined;
+                return allCategoryFilter?.[status] || allCategoryFilter?.['all'];
+            }
+            
+            // Check if this specific status is selected for this category
+            return categoryFilter[status] || categoryFilter['all'];
+        });
+    }, [data, categoryFilters]);
+
     const table = useReactTable({
-        data,
+        data: filteredData,
         columns,
         getCoreRowModel: getCoreRowModel(),
         getPaginationRowModel: getPaginationRowModel(),
@@ -657,12 +689,17 @@ export function AutoLiabilitiesReports() {
             </CardHeader>
             <CardContent>
                 <div className="flex justify-between mb-4">
-                    <Input
-                        placeholder="Search..."
-                        value={globalFilter ?? ""}
-                        onChange={(event) => setGlobalFilter(event.target.value)}
-                        className="max-w-sm"
-                    />
+                    <div className="flex space-x-2">
+                        <Input
+                            placeholder="Search..."
+                            value={globalFilter ?? ""}
+                            onChange={(event) => setGlobalFilter(event.target.value)}
+                            className="max-w-sm"
+                        />
+                        <Button variant="outline" onClick={() => setIsCategoryFilterOpen(true)}>
+                            <Filter className="mr-2 h-4 w-4" /> Categories Filters
+                        </Button>
+                    </div>
                     <div className="space-x-2">
                         {renderExportDialog()}
                         <Dialog>
@@ -684,6 +721,13 @@ export function AutoLiabilitiesReports() {
                         </Dialog>
                     </div>
                 </div>
+                <ClientCategoryFilter 
+                    isOpen={isCategoryFilterOpen} 
+                    onClose={() => setIsCategoryFilterOpen(false)} 
+                    onApplyFilters={(filters) => setCategoryFilters(filters)}
+                    onClearFilters={() => setCategoryFilters({})}
+                    selectedFilters={categoryFilters}
+                />
                 <Tabs defaultValue="summary">
                     <TabsList>
                         <TabsTrigger value="summary">Summary View</TabsTrigger>

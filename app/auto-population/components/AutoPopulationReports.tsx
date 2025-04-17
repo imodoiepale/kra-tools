@@ -7,10 +7,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { ArrowUpDown, Download, MoreHorizontal, Play, RefreshCw } from "lucide-react";
+import { ArrowUpDown, Download, MoreHorizontal, Play, RefreshCw, Filter } from "lucide-react";
 import * as ExcelJS from 'exceljs';
 import { supabase } from '@/lib/supabase';
 import { Checkbox } from '../../../components/ui/checkbox';
+import { ClientCategoryFilter } from '@/components/ClientCategoryFilter';
 
 export function AutoPopulationReports() {
     const [reports, setReports] = useState([]);
@@ -30,6 +31,8 @@ export function AutoPopulationReports() {
     const [selectedReports, setSelectedReports] = useState([]);
     const [downloadFile, setDownloadFile] = useState(null);
     const [isDownloadDialogOpen, setIsDownloadDialogOpen] = useState(false);
+    const [isCategoryFilterOpen, setIsCategoryFilterOpen] = useState(false);
+    const [categoryFilters, setCategoryFilters] = useState({});
 
     useEffect(() => {
         fetchReports();
@@ -151,9 +154,39 @@ export function AutoPopulationReports() {
             return a.companyName.localeCompare(b.companyName);
         });
 
-        return allReports.filter(report =>
+        // Apply search filter
+        let filteredReports = allReports.filter(report =>
             report.companyName.toLowerCase().includes(searchTerm.toLowerCase())
         );
+        
+        // Apply category filters
+        if (Object.keys(categoryFilters).length > 0) {
+            // Check if any category filter is active
+            const hasActiveFilters = Object.values(categoryFilters).some(categoryStatus => 
+                Object.values(categoryStatus as Record<string, boolean>).some(isSelected => isSelected)
+            );
+            
+            if (hasActiveFilters) {
+                filteredReports = filteredReports.filter(report => {
+                    // Get the report's category and status
+                    const category = report.category || 'all';
+                    const status = report.status === 'active' ? 'active' : 'inactive';
+                    
+                    // Check if this category has any filters
+                    const categoryFilter = categoryFilters[category] as Record<string, boolean> | undefined;
+                    if (!categoryFilter) {
+                        // Check if 'all' category has this status selected
+                        const allCategoryFilter = categoryFilters['all'] as Record<string, boolean> | undefined;
+                        return allCategoryFilter?.[status] || allCategoryFilter?.['all'];
+                    }
+                    
+                    // Check if this specific status is selected for this category
+                    return categoryFilter[status] || categoryFilter['all'];
+                });
+            }
+        }
+        
+        return filteredReports;
     };
 
     const sortedReports = [...reports].sort((a, b) => {
@@ -279,12 +312,18 @@ export function AutoPopulationReports() {
             </TabsList>
             <TabsContent value="summary">
                 <div className="flex justify-between mb-4">
-                    <Input
-                        placeholder="Search companies..."
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        className="max-w-sm"
-                    />
+                    <div className="flex space-x-2">
+                        <Input
+                            placeholder="Search companies..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className="max-w-sm"
+                        />
+                        <Button variant="outline" size="sm" onClick={() => setIsCategoryFilterOpen(true)}>
+                            <Filter className="mr-1 h-4 w-4" />
+                            Categories Filters
+                        </Button>
+                    </div>
                     <div className="flex gap-2">
                         <Button onClick={exportToExcel} size="sm" className="px-2 py-1">
                             <Download className="mr-1 h-4 w-4" />
@@ -325,6 +364,13 @@ export function AutoPopulationReports() {
                         </DropdownMenu>
                     </div>
                 </div>
+                <ClientCategoryFilter 
+                    isOpen={isCategoryFilterOpen} 
+                    onClose={() => setIsCategoryFilterOpen(false)} 
+                    onApplyFilters={(filters) => setCategoryFilters(filters)}
+                    onClearFilters={() => setCategoryFilters({})}
+                    selectedFilters={categoryFilters}
+                />
                 <div className="border rounded-md mb-2">
                     <ScrollArea className="h-[60vh]">
                         <Table>

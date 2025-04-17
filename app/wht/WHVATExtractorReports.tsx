@@ -26,7 +26,7 @@ export function WHVATExtractorReports() {
     const [searchTerm, setSearchTerm] = useState('');
     const [activeTab, setActiveTab] = useState('allData');
     const [sortColumn, setSortColumn] = useState('');
-    const [sortDirection, setSortDirection] = useState('asc');
+    const [sortDirection, setSortDirection] = useState('asc'); v 
     const [startMonth, setStartMonth] = useState('');
     const [startYear, setStartYear] = useState('');
     const [endMonth, setEndMonth] = useState('');

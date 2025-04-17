@@ -4,6 +4,7 @@ import React from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { X } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
 
 interface ClientCategoryFilterProps {
   onClearFilters: () => void;
@@ -52,7 +53,7 @@ export function ClientCategoryFilter({ isOpen, onClose, onApplyFilters, onClearF
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <div className="flex items-center justify-between">
             <DialogTitle>Client Category Filter</DialogTitle>
@@ -62,36 +63,37 @@ export function ClientCategoryFilter({ isOpen, onClose, onApplyFilters, onClearF
           </div>
         </DialogHeader>
 
-        <div className="grid">
-          <div className="border rounded-lg">
-            <div className="grid grid-cols-4 gap-0">
-              <div className="p-2 font-semibold bg-blue-500 text-white">Client Category</div>
-              <div className="col-span-3 grid grid-cols-3 gap-0">
-                {statuses.map((status) => (
-                  <div key={status} className="p-2 font-semibold bg-blue-500 text-white text-center">
-                    {status}
-                  </div>
-                ))}
-              </div>
+        <div className="border rounded-md overflow-hidden">
+          {/* Header Row */}
+          <div className="grid grid-cols-4">
+            <div className="p-2 font-semibold bg-blue-500 text-white">Client Category</div>
+            <div className="col-span-3 grid grid-cols-3">
+              {statuses.map((status) => (
+                <div key={status} className="p-2 font-semibold bg-blue-500 text-white text-center">
+                  {status}
+                </div>
+              ))}
             </div>
-            {categories.map((category) => (
-              <div key={category.id} className="grid grid-cols-4 gap-0 border-t">
-                <div className="p-2">{category.label}</div>
-                {statuses.map((status) => (
-                  <div key={status} className="flex items-center justify-center p-2">
-                    <input
-                      type="checkbox"
-                      className="form-checkbox h-4 w-4 text-blue-600"
-                      checked={localFilters[category.id]?.[status.toLowerCase()] || false}
-                      onChange={() => handleCheckboxChange(category.id, status)}
-                    />
-                  </div>
-                ))}
-              </div>
-            ))}
           </div>
+          
+          {/* Category Rows */}
+          {categories.map((category) => (
+            <div key={category.id} className="grid grid-cols-4 border-t border-gray-200">
+              <div className="p-2">{category.label}</div>
+              {statuses.map((status) => (
+                <div key={status} className="flex items-center justify-center p-2">
+                  <Checkbox 
+                    id={`${category.id}-${status.toLowerCase()}`}
+                    checked={localFilters[category.id]?.[status.toLowerCase()] || false}
+                    onCheckedChange={() => handleCheckboxChange(category.id, status)}
+                  />
+                </div>
+              ))}
+            </div>
+          ))}
         </div>
-        <div className="flex justify-between">
+
+        <div className="flex justify-between mt-4">
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           <div className="space-x-2">
             <Button variant="outline" onClick={handleClearAll}>Clear All</Button>
