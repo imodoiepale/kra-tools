@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Download, Search, ArrowUpDown } from "lucide-react";
+import { Download, Search, ArrowUpDown, Filter, Eye, EyeOff } from "lucide-react";
 import {
   Sheet,
   SheetContent,
@@ -69,6 +69,7 @@ export function PasswordCheckerReports() {
   const [clientCategories, setClientCategories] = useState<string[]>([]);
   const [filterDialogOpen, setFilterDialogOpen] = useState(false);
   const [categoryFilters, setCategoryFilters] = useState<any>({});
+  const [showStatsRows, setShowStatsRows] = useState(true);
 
   useEffect(() => {
     const fetchReports = async () => {
@@ -346,6 +347,46 @@ export function PasswordCheckerReports() {
     return "Error";
   };
 
+  // Calculate statistics for complete and missing entries
+  const calculateStats = () => {
+    const stats = {
+      complete: {},
+      missing: {}
+    };
+
+    // Define fields to check for completeness
+    const fieldsToCheck = [
+      'company_name',
+      'kra_pin',
+      'kra_password',
+      'status',
+      'last_checked',
+      'client_category'
+    ];
+
+    // Initialize stats for each field
+    fieldsToCheck.forEach(field => {
+      stats.complete[field] = 0;
+      stats.missing[field] = 0;
+    });
+
+    // Calculate stats for each field individually
+    filteredCompanies.forEach(company => {
+      fieldsToCheck.forEach(field => {
+        const value = company[field as keyof Company];
+        if (value && value.toString().trim() !== '') {
+          stats.complete[field]++;
+        } else {
+          stats.missing[field]++;
+        }
+      });
+    });
+
+    return stats;
+  };
+
+  const stats = calculateStats();
+
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
@@ -362,11 +403,18 @@ export function PasswordCheckerReports() {
               className="pl-8"
             />
           </div>
-          <div>
+          <div className="flex space-x-2">
             <Button variant="outline" onClick={() => setFilterDialogOpen(true)}>
+              <Filter className="h-4 w-4 mr-2" />
               Category Filter
             </Button>
-
+            <Button 
+              variant="outline" 
+              onClick={() => setShowStatsRows(!showStatsRows)}
+            >
+              {showStatsRows ? <EyeOff className="h-4 w-4 mr-2" /> : <Eye className="h-4 w-4 mr-2" />}
+              {showStatsRows ? 'Hide Stats' : 'Show Stats'}
+            </Button>
           </div>
           <Sheet>
             <SheetTrigger asChild>
@@ -482,8 +530,8 @@ export function PasswordCheckerReports() {
             <Table className="text-sm pb-4">
               <TableHeader>
                 <TableRow>
-                  <TableHead className="text-center">Index</TableHead>
-                  <TableHead>
+                  <TableHead className="text-center border-r border-black">Index</TableHead>
+                  <TableHead className="border-r border-black">
                     <button
                       className="flex items-center font-semibold"
                       onClick={() => handleSort("company_name")}
@@ -491,7 +539,7 @@ export function PasswordCheckerReports() {
                       Company Name {getSortIcon("company_name")}
                     </button>
                   </TableHead>
-                  <TableHead className="text-center">
+                  <TableHead className="text-center border-r border-black">
                     <button
                       className="flex items-center font-semibold justify-center"
                       onClick={() => handleSort("kra_pin")}
@@ -499,8 +547,8 @@ export function PasswordCheckerReports() {
                       KRA PIN {getSortIcon("kra_pin")}
                     </button>
                   </TableHead>
-                  <TableHead className="text-center">KRA Password</TableHead>
-                  <TableHead className="text-center">
+                  <TableHead className="text-center border-r border-black">KRA Password</TableHead>
+                  <TableHead className="text-center border-r border-black">
                     <button
                       className="flex items-center font-semibold justify-center"
                       onClick={() => handleSort("status")}
@@ -508,7 +556,7 @@ export function PasswordCheckerReports() {
                       Status {getSortIcon("status")}
                     </button>
                   </TableHead>
-                  <TableHead className="text-center">
+                  <TableHead className="text-center border-r border-black">
                     <button
                       className="flex items-center font-semibold justify-center"
                       onClick={() => handleSort("last_checked")}
@@ -516,7 +564,7 @@ export function PasswordCheckerReports() {
                       Last Checked {getSortIcon("last_checked")}
                     </button>
                   </TableHead>
-                  <TableHead className="text-center">
+                  <TableHead className="text-center border-r border-black">
                     <button
                       className="flex items-center font-semibold justify-center"
                       onClick={() => handleSort("client_category")}
@@ -526,6 +574,78 @@ export function PasswordCheckerReports() {
                   </TableHead>
                   <TableHead className="text-center">Actions</TableHead>
                 </TableRow>
+                {showStatsRows && (
+                  <>
+                    <TableRow className="bg-blue-50">
+                      <TableCell className="text-center text-[10px] font-bold border-r border-black">Complete</TableCell>
+                      <TableCell className="text-center text-[10px] border-r border-black">
+                        <span className={stats.complete.company_name === filteredCompanies.length ? 'text-green-600 font-bold' : ''}>
+                          {stats.complete.company_name}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-center text-[10px] border-r border-black">
+                        <span className={stats.complete.kra_pin === filteredCompanies.length ? 'text-green-600 font-bold' : ''}>
+                          {stats.complete.kra_pin}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-center text-[10px] border-r border-black">
+                        <span className={stats.complete.kra_password === filteredCompanies.length ? 'text-green-600 font-bold' : ''}>
+                          {stats.complete.kra_password}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-center text-[10px] border-r border-black">
+                        <span className={stats.complete.status === filteredCompanies.length ? 'text-green-600 font-bold' : ''}>
+                          {stats.complete.status}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-center text-[10px] border-r border-black">
+                        <span className={stats.complete.last_checked === filteredCompanies.length ? 'text-green-600 font-bold' : ''}>
+                          {stats.complete.last_checked}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-center text-[10px] border-r border-black">
+                        <span className={stats.complete.client_category === filteredCompanies.length ? 'text-green-600 font-bold' : ''}>
+                          {stats.complete.client_category}
+                        </span>
+                      </TableCell>
+                      <TableCell></TableCell>
+                    </TableRow>
+                    <TableRow className="bg-red-50">
+                      <TableCell className="text-center text-[10px] font-bold border-r border-black">Missing</TableCell>
+                      <TableCell className="text-center text-[10px] border-r border-black">
+                        <span className={stats.missing.company_name > 0 ? 'text-red-600 font-bold' : ''}>
+                          {stats.missing.company_name}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-center text-[10px] border-r border-black">
+                        <span className={stats.missing.kra_pin > 0 ? 'text-red-600 font-bold' : ''}>
+                          {stats.missing.kra_pin}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-center text-[10px] border-r border-black">
+                        <span className={stats.missing.kra_password > 0 ? 'text-red-600 font-bold' : ''}>
+                          {stats.missing.kra_password}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-center text-[10px] border-r border-black">
+                        <span className={stats.missing.status > 0 ? 'text-red-600 font-bold' : ''}>
+                          {stats.missing.status}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-center text-[10px] border-r border-black">
+                        <span className={stats.missing.last_checked > 0 ? 'text-red-600 font-bold' : ''}>
+                          {stats.missing.last_checked}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-center text-[10px] border-r border-black">
+                        <span className={stats.missing.client_category > 0 ? 'text-red-600 font-bold' : ''}>
+                          {stats.missing.client_category}
+                        </span>
+                      </TableCell>
+                      <TableCell></TableCell>
+                    </TableRow>
+                  </>
+                )}
               </TableHeader>
               <TableBody>
                 {filteredCompanies.map((company, index) => (
@@ -535,23 +655,23 @@ export function PasswordCheckerReports() {
                       index % 2 === 0 ? "bg-white" : "bg-blue-50"
                     }`}
                   >
-                    <TableCell className="text-center">{index + 1}</TableCell>
-                    <TableCell>
+                    <TableCell className="text-center border-r border-black">{index + 1}</TableCell>
+                    <TableCell className="border-r border-black">
                       {company.company_name || (
                         <span className="font-bold text-red-600">Missing</span>
                       )}
                     </TableCell>
-                    <TableCell className="text-center">
+                    <TableCell className="text-center border-r border-black">
                       {company.kra_pin || (
                         <span className="font-bold text-red-600">Missing</span>
                       )}
                     </TableCell>
-                    <TableCell className="text-center">
+                    <TableCell className="text-center border-r border-black">
                       {company.kra_password || (
                         <span className="font-bold text-red-600">Missing</span>
                       )}
                     </TableCell>
-                    <TableCell className="text-center">
+                    <TableCell className="text-center border-r border-black">
                       <span
                         className={`inline-flex items-center justify-center px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(
                           formatStatusDisplay(company.status)
@@ -560,19 +680,19 @@ export function PasswordCheckerReports() {
                         {formatStatusDisplay(company.status)}
                       </span>
                     </TableCell>
-                    <TableCell className="text-center">
+                    <TableCell className="text-center border-r border-black">
                       {company.last_checked ? (
                         new Date(company.last_checked).toLocaleString()
                       ) : (
                         <span className="font-bold text-red-600">Missing</span>
                       )}
                     </TableCell>
-                    <TableCell className="text-center">
+                    <TableCell className="text-center border-r border-black">
                       {company.client_category || (
                         <span className="text-gray-500">N/A</span>
                       )}
                     </TableCell>
-                    <TableCell className="text-center">
+                    <TableCell className="text-center border-r border-black">
                       <div className="flex justify-center space-x-2">
                         <Dialog>
                           <DialogTrigger asChild>
