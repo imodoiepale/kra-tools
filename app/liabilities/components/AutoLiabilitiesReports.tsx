@@ -23,7 +23,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Download, Search, ArrowUpDown, Send, AlertCircle, Filter } from 'lucide-react';
+import { Download, Search, ArrowUpDown, Send, AlertCircle, Filter, Eye, EyeOff } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
@@ -58,6 +58,7 @@ export function AutoLiabilitiesReports() {
     const [isCategoryFilterOpen, setIsCategoryFilterOpen] = useState(false);
     const [categoryFilters, setCategoryFilters] = useState({});
     const [extractionHistory, setExtractionHistory] = useState({});
+    const [showStats, setShowStats] = useState(false);
 
     useEffect(() => {
         const fetchResults = async () => {
@@ -215,6 +216,58 @@ export function AutoLiabilitiesReports() {
         });
     }, [data, categoryFilters]);
 
+    // Calculate statistics for complete and missing entries
+    const calculateStats = () => {
+        const stats = {
+            complete: {},
+            missing: {}
+        };
+
+        // Define fields to check for completeness
+        const fieldsToCheck = [
+            'company_name',
+            'updated_at',
+            ...TAX_TYPES
+        ];
+
+        // Initialize stats for each field
+        fieldsToCheck.forEach(field => {
+            stats.complete[field] = 0;
+            stats.missing[field] = 0;
+        });
+
+        // Calculate stats for each field individually
+        filteredData.forEach(item => {
+            // Check company name
+            if (item.company_name && item.company_name.trim() !== '') {
+                stats.complete.company_name++;
+            } else {
+                stats.missing.company_name++;
+            }
+            
+            // Check updated_at
+            if (item.updated_at) {
+                stats.complete.updated_at++;
+            } else {
+                stats.missing.updated_at++;
+            }
+            
+            // Check tax types
+            TAX_TYPES.forEach(taxType => {
+                const amount = calculateTotal(item, taxType);
+                if (amount > 0) {
+                    stats.complete[taxType]++;
+                } else {
+                    stats.missing[taxType]++;
+                }
+            });
+        });
+
+        return stats;
+    };
+
+    const stats = calculateStats();
+
     const table = useReactTable({
         data: filteredData,
         columns,
@@ -309,11 +362,11 @@ export function AutoLiabilitiesReports() {
     const renderSummaryView = () => (
         <ScrollArea className="h-[500px]">
             <Table>
-                <TableHeader>
+                <TableHeader className="border-b">
                     {table.getHeaderGroups().map((headerGroup) => (
                         <TableRow key={headerGroup.id}>
                             {headerGroup.headers.map((header) => (
-                                <TableHead key={header.id}>
+                                <TableHead key={header.id} className="border-r last:border-r-0">
                                     {header.isPlaceholder
                                         ? null
                                         : flexRender(
@@ -324,6 +377,45 @@ export function AutoLiabilitiesReports() {
                             ))}
                         </TableRow>
                     ))}
+                    {showStats && (
+                        <>
+                            <TableRow className="bg-blue-50">
+                                <TableHead className="border-r">Complete</TableHead>
+                                {columns.slice(1).map((column, index) => {
+                                    const field = column.accessorKey;
+                                    const count = stats.complete[field] || 0;
+                                    const total = filteredData.length;
+                                    const isComplete = count === total;
+                                    
+                                    return (
+                                        <TableHead 
+                                            key={`complete-${index}`} 
+                                            className={`text-center border-r last:border-r-0 ${isComplete ? 'text-green-600 font-bold' : ''}`}
+                                        >
+                                            {count}
+                                        </TableHead>
+                                    );
+                                })}
+                            </TableRow>
+                            <TableRow className="bg-red-50">
+                                <TableHead className="border-r">Missing</TableHead>
+                                {columns.slice(1).map((column, index) => {
+                                    const field = column.accessorKey;
+                                    const count = stats.missing[field] || 0;
+                                    const hasAny = count > 0;
+                                    
+                                    return (
+                                        <TableHead 
+                                            key={`missing-${index}`} 
+                                            className={`text-center border-r last:border-r-0 ${hasAny ? 'text-red-600 font-bold' : ''}`}
+                                        >
+                                            {count}
+                                        </TableHead>
+                                    );
+                                })}
+                            </TableRow>
+                        </>
+                    )}
                 </TableHeader>
                 <TableBody>
                     {table.getRowModel().rows?.length ? (
@@ -334,7 +426,7 @@ export function AutoLiabilitiesReports() {
                                 className={index % 2 === 0 ? 'bg-white' : 'bg-blue-50'}
                             >
                                 {row.getVisibleCells().map((cell) => (
-                                    <TableCell key={cell.id}>
+                                    <TableCell key={cell.id} className="border-r last:border-r-0">
                                         {flexRender(cell.column.columnDef.cell, cell.getContext())}
                                     </TableCell>
                                 ))}
@@ -690,14 +782,28 @@ export function AutoLiabilitiesReports() {
             <CardContent>
                 <div className="flex justify-between mb-4">
                     <div className="flex space-x-2">
-                        <Input
-                            placeholder="Search..."
-                            value={globalFilter ?? ""}
-                            onChange={(event) => setGlobalFilter(event.target.value)}
-                            className="max-w-sm"
-                        />
+                        <div className="relative max-w-sm">
+                            <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                            <Input
+                                placeholder="Search..."
+                                value={globalFilter ?? ""}
+                                onChange={(event) => setGlobalFilter(event.target.value)}
+                                className="pl-8 max-w-sm"
+                            />
+                        </div>
                         <Button variant="outline" onClick={() => setIsCategoryFilterOpen(true)}>
                             <Filter className="mr-2 h-4 w-4" /> Categories Filters
+                        </Button>
+                        <Button variant="outline" onClick={() => setShowStats(!showStats)}>
+                            {showStats ? (
+                                <>
+                                    <EyeOff className="mr-2 h-4 w-4" /> Hide Statistics
+                                </>
+                            ) : (
+                                <>
+                                    <Eye className="mr-2 h-4 w-4" /> Show Statistics
+                                </>
+                            )}
                         </Button>
                     </div>
                     <div className="space-x-2">

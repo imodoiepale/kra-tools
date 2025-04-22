@@ -13,7 +13,7 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Edit, Lock, Unlock, FileDown, X } from "lucide-react";
+import { Edit, Lock, Unlock, FileDown, X, Eye, EyeOff, Search } from "lucide-react";
 import {
     Dialog,
     DialogContent,
@@ -241,6 +241,7 @@ const EditCompanyDialog = ({ company, onSave, onLockToggle, onDelete }) => {
 export default function CompanyListTable() {
     const [companies, setCompanies] = useState([]);
     const [globalFilter, setGlobalFilter] = useState('');
+    const [showStats, setShowStats] = useState(false);
 
     useEffect(() => {
         fetchCompanies();
@@ -463,15 +464,167 @@ export default function CompanyListTable() {
         URL.revokeObjectURL(url);
     };
 
+    // Calculate statistics for complete and missing entries
+    const calculateStats = () => {
+        const stats = {
+            complete: {},
+            missing: {}
+        };
+
+        // Define fields to check for completeness
+        const fieldsToCheck = [
+            'company_name',
+            'acc_client_effective_from',
+            'acc_client_effective_to',
+            'imm_client_effective_from',
+            'imm_client_effective_to',
+            'audit_tax_client_effective_from',
+            'audit_tax_client_effective_to',
+            'cps_sheria_client_effective_from',
+            'cps_sheria_client_effective_to'
+        ];
+
+        // Initialize stats for each field
+        fieldsToCheck.forEach(field => {
+            stats.complete[field] = 0;
+            stats.missing[field] = 0;
+        });
+
+        // Add status fields
+        ['acc_status', 'imm_status', 'audit_status', 'sheria_status'].forEach(field => {
+            stats.complete[field] = 0;
+            stats.missing[field] = 0;
+        });
+
+        // Calculate stats for each field individually
+        companies.forEach(company => {
+            // Check company name
+            if (company.company_name && company.company_name.trim() !== '') {
+                stats.complete.company_name++;
+            } else {
+                stats.missing.company_name++;
+            }
+            
+            // Check ACC dates
+            if (company.acc_client_effective_from) {
+                stats.complete.acc_client_effective_from++;
+            } else {
+                stats.missing.acc_client_effective_from++;
+            }
+            
+            if (company.acc_client_effective_to) {
+                stats.complete.acc_client_effective_to++;
+            } else {
+                stats.missing.acc_client_effective_to++;
+            }
+            
+            // Check ACC status
+            const accStatus = calculateStatus(company.acc_client_effective_from, company.acc_client_effective_to);
+            if (accStatus === 'Active') {
+                stats.complete.acc_status++;
+            } else {
+                stats.missing.acc_status++;
+            }
+            
+            // Check IMM dates
+            if (company.imm_client_effective_from) {
+                stats.complete.imm_client_effective_from++;
+            } else {
+                stats.missing.imm_client_effective_from++;
+            }
+            
+            if (company.imm_client_effective_to) {
+                stats.complete.imm_client_effective_to++;
+            } else {
+                stats.missing.imm_client_effective_to++;
+            }
+            
+            // Check IMM status
+            const immStatus = calculateStatus(company.imm_client_effective_from, company.imm_client_effective_to);
+            if (immStatus === 'Active') {
+                stats.complete.imm_status++;
+            } else {
+                stats.missing.imm_status++;
+            }
+            
+            // Check Audit dates
+            if (company.audit_tax_client_effective_from) {
+                stats.complete.audit_tax_client_effective_from++;
+            } else {
+                stats.missing.audit_tax_client_effective_from++;
+            }
+            
+            if (company.audit_tax_client_effective_to) {
+                stats.complete.audit_tax_client_effective_to++;
+            } else {
+                stats.missing.audit_tax_client_effective_to++;
+            }
+            
+            // Check Audit status
+            const auditStatus = calculateStatus(company.audit_tax_client_effective_from, company.audit_tax_client_effective_to);
+            if (auditStatus === 'Active') {
+                stats.complete.audit_status++;
+            } else {
+                stats.missing.audit_status++;
+            }
+            
+            // Check Sheria dates
+            if (company.cps_sheria_client_effective_from) {
+                stats.complete.cps_sheria_client_effective_from++;
+            } else {
+                stats.missing.cps_sheria_client_effective_from++;
+            }
+            
+            if (company.cps_sheria_client_effective_to) {
+                stats.complete.cps_sheria_client_effective_to++;
+            } else {
+                stats.missing.cps_sheria_client_effective_to++;
+            }
+            
+            // Check Sheria status
+            const sheriaStatus = calculateStatus(company.cps_sheria_client_effective_from, company.cps_sheria_client_effective_to);
+            if (sheriaStatus === 'Active') {
+                stats.complete.sheria_status++;
+            } else {
+                stats.missing.sheria_status++;
+            }
+        });
+
+        return stats;
+    };
+
+    const stats = calculateStats();
+
     return (
         <div className="space-y-2">
             <div className="flex justify-between items-center">
-                <Input
-                    placeholder="Search companies..."
-                    value={globalFilter}
-                    onChange={(e) => setGlobalFilter(e.target.value)}
-                    className="max-w-sm text-[10px] h-7"
-                />
+                <div className="flex space-x-2 items-center">
+                    <div className="relative max-w-sm">
+                        <Search className="absolute left-2 top-1.5 h-3 w-3 text-muted-foreground" />
+                        <Input
+                            placeholder="Search companies..."
+                            value={globalFilter}
+                            onChange={(e) => setGlobalFilter(e.target.value)}
+                            className="max-w-sm text-[10px] h-7 pl-7"
+                        />
+                    </div>
+                    <Button 
+                        variant="outline" 
+                        onClick={() => setShowStats(!showStats)} 
+                        size="sm" 
+                        className="text-[10px] h-7"
+                    >
+                        {showStats ? (
+                            <>
+                                <EyeOff className="mr-1 h-3 w-3" /> Hide Statistics
+                            </>
+                        ) : (
+                            <>
+                                <Eye className="mr-1 h-3 w-3" /> Show Statistics
+                            </>
+                        )}
+                    </Button>
+                </div>
                 <Button onClick={exportToExcel} size="sm" className="text-[10px] h-7">
                     <FileDown className="mr-1 h-3 w-3" />
                     Export to Excel
@@ -510,6 +663,132 @@ export default function CompanyListTable() {
                                 </React.Fragment>
                             ))}
                         </TableRow>
+                        {showStats && (
+                            <>
+                                <TableRow>
+                                    <TableHead className="bg-blue-50 text-center border border-gray-400 p-1 text-[10px]">Complete</TableHead>
+                                    <TableHead className="bg-blue-50 text-center border border-gray-400 p-1 text-[10px]">
+                                        <span className={stats.complete.company_name === companies.length ? 'text-green-600 font-bold' : ''}>
+                                            {stats.complete.company_name}
+                                        </span>
+                                    </TableHead>
+                                    <TableHead colSpan={3} className="bg-blue-50 text-center border border-gray-400 p-1 text-[10px]">
+                                        <div className="flex justify-around">
+                                            <span className={stats.complete.acc_client_effective_from === companies.length ? 'text-green-600 font-bold' : ''}>
+                                                {stats.complete.acc_client_effective_from}
+                                            </span>
+                                            <span className={stats.complete.acc_client_effective_to === companies.length ? 'text-green-600 font-bold' : ''}>
+                                                {stats.complete.acc_client_effective_to}
+                                            </span>
+                                            <span className={stats.complete.acc_status === companies.length ? 'text-green-600 font-bold' : ''}>
+                                                {stats.complete.acc_status}
+                                            </span>
+                                        </div>
+                                    </TableHead>
+                                    <TableHead colSpan={3} className="bg-blue-50 text-center border border-gray-400 p-1 text-[10px]">
+                                        <div className="flex justify-around">
+                                            <span className={stats.complete.imm_client_effective_from === companies.length ? 'text-green-600 font-bold' : ''}>
+                                                {stats.complete.imm_client_effective_from}
+                                            </span>
+                                            <span className={stats.complete.imm_client_effective_to === companies.length ? 'text-green-600 font-bold' : ''}>
+                                                {stats.complete.imm_client_effective_to}
+                                            </span>
+                                            <span className={stats.complete.imm_status === companies.length ? 'text-green-600 font-bold' : ''}>
+                                                {stats.complete.imm_status}
+                                            </span>
+                                        </div>
+                                    </TableHead>
+                                    <TableHead colSpan={3} className="bg-blue-50 text-center border border-gray-400 p-1 text-[10px]">
+                                        <div className="flex justify-around">
+                                            <span className={stats.complete.audit_tax_client_effective_from === companies.length ? 'text-green-600 font-bold' : ''}>
+                                                {stats.complete.audit_tax_client_effective_from}
+                                            </span>
+                                            <span className={stats.complete.audit_tax_client_effective_to === companies.length ? 'text-green-600 font-bold' : ''}>
+                                                {stats.complete.audit_tax_client_effective_to}
+                                            </span>
+                                            <span className={stats.complete.audit_status === companies.length ? 'text-green-600 font-bold' : ''}>
+                                                {stats.complete.audit_status}
+                                            </span>
+                                        </div>
+                                    </TableHead>
+                                    <TableHead colSpan={3} className="bg-blue-50 text-center border border-gray-400 p-1 text-[10px]">
+                                        <div className="flex justify-around">
+                                            <span className={stats.complete.cps_sheria_client_effective_from === companies.length ? 'text-green-600 font-bold' : ''}>
+                                                {stats.complete.cps_sheria_client_effective_from}
+                                            </span>
+                                            <span className={stats.complete.cps_sheria_client_effective_to === companies.length ? 'text-green-600 font-bold' : ''}>
+                                                {stats.complete.cps_sheria_client_effective_to}
+                                            </span>
+                                            <span className={stats.complete.sheria_status === companies.length ? 'text-green-600 font-bold' : ''}>
+                                                {stats.complete.sheria_status}
+                                            </span>
+                                        </div>
+                                    </TableHead>
+                                    <TableHead className="bg-blue-50 text-center border border-gray-400 p-1 text-[10px]"></TableHead>
+                                </TableRow>
+                                <TableRow>
+                                    <TableHead className="bg-red-50 text-center border border-gray-400 p-1 text-[10px]">Missing/Inactive</TableHead>
+                                    <TableHead className="bg-red-50 text-center border border-gray-400 p-1 text-[10px]">
+                                        <span className={stats.missing.company_name > 0 ? 'text-red-600 font-bold' : ''}>
+                                            {stats.missing.company_name}
+                                        </span>
+                                    </TableHead>
+                                    <TableHead colSpan={3} className="bg-red-50 text-center border border-gray-400 p-1 text-[10px]">
+                                        <div className="flex justify-around">
+                                            <span className={stats.missing.acc_client_effective_from > 0 ? 'text-red-600 font-bold' : ''}>
+                                                {stats.missing.acc_client_effective_from}
+                                            </span>
+                                            <span className={stats.missing.acc_client_effective_to > 0 ? 'text-red-600 font-bold' : ''}>
+                                                {stats.missing.acc_client_effective_to}
+                                            </span>
+                                            <span className={stats.missing.acc_status > 0 ? 'text-red-600 font-bold' : ''}>
+                                                {stats.missing.acc_status}
+                                            </span>
+                                        </div>
+                                    </TableHead>
+                                    <TableHead colSpan={3} className="bg-red-50 text-center border border-gray-400 p-1 text-[10px]">
+                                        <div className="flex justify-around">
+                                            <span className={stats.missing.imm_client_effective_from > 0 ? 'text-red-600 font-bold' : ''}>
+                                                {stats.missing.imm_client_effective_from}
+                                            </span>
+                                            <span className={stats.missing.imm_client_effective_to > 0 ? 'text-red-600 font-bold' : ''}>
+                                                {stats.missing.imm_client_effective_to}
+                                            </span>
+                                            <span className={stats.missing.imm_status > 0 ? 'text-red-600 font-bold' : ''}>
+                                                {stats.missing.imm_status}
+                                            </span>
+                                        </div>
+                                    </TableHead>
+                                    <TableHead colSpan={3} className="bg-red-50 text-center border border-gray-400 p-1 text-[10px]">
+                                        <div className="flex justify-around">
+                                            <span className={stats.missing.audit_tax_client_effective_from > 0 ? 'text-red-600 font-bold' : ''}>
+                                                {stats.missing.audit_tax_client_effective_from}
+                                            </span>
+                                            <span className={stats.missing.audit_tax_client_effective_to > 0 ? 'text-red-600 font-bold' : ''}>
+                                                {stats.missing.audit_tax_client_effective_to}
+                                            </span>
+                                            <span className={stats.missing.audit_status > 0 ? 'text-red-600 font-bold' : ''}>
+                                                {stats.missing.audit_status}
+                                            </span>
+                                        </div>
+                                    </TableHead>
+                                    <TableHead colSpan={3} className="bg-red-50 text-center border border-gray-400 p-1 text-[10px]">
+                                        <div className="flex justify-around">
+                                            <span className={stats.missing.cps_sheria_client_effective_from > 0 ? 'text-red-600 font-bold' : ''}>
+                                                {stats.missing.cps_sheria_client_effective_from}
+                                            </span>
+                                            <span className={stats.missing.cps_sheria_client_effective_to > 0 ? 'text-red-600 font-bold' : ''}>
+                                                {stats.missing.cps_sheria_client_effective_to}
+                                            </span>
+                                            <span className={stats.missing.sheria_status > 0 ? 'text-red-600 font-bold' : ''}>
+                                                {stats.missing.sheria_status}
+                                            </span>
+                                        </div>
+                                    </TableHead>
+                                    <TableHead className="bg-red-50 text-center border border-gray-400 p-1 text-[10px]"></TableHead>
+                                </TableRow>
+                            </>
+                        )}
                     </TableHeader>
                     <TableBody>
                         {table.getRowModel().rows.map(row => (
