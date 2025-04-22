@@ -250,14 +250,26 @@ export function BankStatementUploadDialog({
 
     // Function to detect password and account number from filename
     const detectFileInfoFromFilename = (filename: string) => {
-        // Use the utility function
-        const fileInfo = detectFileInfo(filename);
-        setDetectedPassword(fileInfo.password);
-        setDetectedAccountNumber(fileInfo.accountNumber);
+        if (!filename) return { password: null, accountNumber: null, bankName: null };
+        
+        // Use the utility function if available
+        const fileInfo = detectFileInfo ? detectFileInfo(filename) : {
+            password: null,
+            accountNumber: null,
+            bankName: null
+        };
+        
+        // Update state if values exist
+        if (fileInfo?.password) setDetectedPassword(fileInfo.password);
+        if (fileInfo?.accountNumber) setDetectedAccountNumber(fileInfo.accountNumber);
+        
+        return fileInfo;
     }
 
     // Function to detect password from filename
     const detectPasswordFromFilename = (filename: string): string | null => {
+        if (!filename) return null;
+        
         // Simple pattern matching for common password formats in filenames
         // Examples: "statement_password123.pdf", "statement-pass_123.pdf"
         const passwordPatterns = [
@@ -280,7 +292,7 @@ export function BankStatementUploadDialog({
 
     // In handleFileChange
     const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>, fileType: 'pdf' | 'excel') => {
-        if (!e.target.files || e.target.files.length === 0) return;
+        if (!e.target?.files || e.target.files.length === 0) return;
 
         const selectedFile = e.target.files[0];
 
@@ -295,7 +307,7 @@ export function BankStatementUploadDialog({
             setDetectedAccountNumber(null);
 
             // Get file info including potential password and account number
-            const fileInfo = detectFileInfoFromFilename(selectedFile.name) || {
+            const fileInfo = detectFileInfoFromFilename(selectedFile?.name) || {
                 password: null,
                 accountNumber: null,
                 bankName: null
@@ -313,7 +325,7 @@ export function BankStatementUploadDialog({
 
             try {
                 // Check if PDF is password protected
-                const isProtected = await isPdfPasswordProtected(selectedFile);
+                const isProtected = selectedFile ? await isPdfPasswordProtected(selectedFile) : false;
                 setPdfNeedsPassword(isProtected);
 
                 if (isProtected) {
@@ -337,7 +349,7 @@ export function BankStatementUploadDialog({
                     }
 
                     // If bank password didn't work, try detected password
-                    if (fileInfo.password) {
+                    if (fileInfo?.password) {
                         console.log('Trying detected password:', fileInfo.password);
                         const passwordSuccess = await applyPasswordToFiles(selectedFile, fileInfo.password);
 
@@ -369,7 +381,7 @@ export function BankStatementUploadDialog({
     };
 
     // Function to check if PDF is password protected
-    const checkIfPasswordProtected = async (file: File): Promise<boolean> => {
+    const checkIfPasswordProtected = async (file: File | null): Promise<boolean> => {
         try {
             if (!file) {
                 console.error('No file provided to check for password protection');
@@ -486,12 +498,12 @@ export function BankStatementUploadDialog({
                     setExtractionResults(extractionResult);
 
                     // If extraction succeeded, validate the results
-                    if (extractionResult.success) {
+                    if (extractionResult?.success) {
                         const validationResult = validateExtractedData(extractionResult.extractedData);
                         setValidationResults(validationResult);
 
                         // If validation issues, show validation dialog
-                        if (!validationResult.isValid) {
+                        if (validationResult && !validationResult.isValid) {
                             setShowValidationDialog(true);
                             return;
                         }
@@ -621,22 +633,25 @@ export function BankStatementUploadDialog({
         const mismatches: string[] = [];
 
         // Validate bank name if available
-        if (extractedData.bank_name && !extractedData.bank_name.toLowerCase().includes(bank.bank_name.toLowerCase())) {
+        if (extractedData.bank_name && bank?.bank_name && 
+            !extractedData.bank_name.toLowerCase().includes(bank.bank_name.toLowerCase())) {
             mismatches.push('Bank name mismatch');
         }
 
         // Validate company name if available
-        if (extractedData.company_name && !extractedData.company_name.toLowerCase().includes(bank.company_name.toLowerCase())) {
+        if (extractedData.company_name && bank?.company_name && 
+            !extractedData.company_name.toLowerCase().includes(bank.company_name.toLowerCase())) {
             mismatches.push('Company name mismatch');
         }
 
         // Validate account number if available - using includes to handle formatting differences
-        if (extractedData.account_number && !extractedData.account_number.includes(bank.account_number)) {
+        if (extractedData.account_number && bank?.account_number && 
+            !extractedData.account_number.includes(bank.account_number)) {
             mismatches.push('Account number mismatch');
         }
 
         // Validate currency if available - normalize currency codes
-        if (extractedData.currency) {
+        if (extractedData.currency && bank?.bank_currency) {
             const normalizedExtractedCurrency = normalizeCurrencyCode(extractedData.currency);
             const normalizedBankCurrency = normalizeCurrencyCode(bank.bank_currency);
             
@@ -692,7 +707,7 @@ export function BankStatementUploadDialog({
             description: 'No active payroll cycle found. Please ensure the cycle exists.',
             variant: 'destructive'
         });
-        return;
+        return null; // Add a return value to prevent TypeErrors
     }
 
     // Helper function to parse statement period string into start and end dates
@@ -939,7 +954,7 @@ export function BankStatementUploadDialog({
                 setExtractionResults(extractionResult);
 
                 // Always validate the results
-                if (extractionResult.success) {
+                if (extractionResult?.success) {
                     // Validate against bank details
                     const validationResult = validateExtractedData(extractionResult.extractedData);
                     setValidationResults(validationResult);
@@ -952,9 +967,9 @@ export function BankStatementUploadDialog({
             }
 
             // Upload files to storage
-            let pdfPath = existingStatement?.statement_document.statement_pdf || null;
-            let excelPath = existingStatement?.statement_document.statement_excel || null;
-            let documentSize = existingStatement?.statement_document.document_size || 0;
+            let pdfPath = existingStatement?.statement_document?.statement_pdf || null;
+            let excelPath = existingStatement?.statement_document?.statement_excel || null;
+            let documentSize = existingStatement?.statement_document?.document_size || 0;
 
             // Upload PDF if provided
             if (pdfFile) {
@@ -1083,9 +1098,9 @@ export function BankStatementUploadDialog({
 
         try {
             // Upload files to storage first (this was missing in the original flow)
-            let pdfPath = existingStatement?.statement_document.statement_pdf || null;
-            let excelPath = existingStatement?.statement_document.statement_excel || null;
-            let documentSize = existingStatement?.statement_document.document_size || 0;
+            let pdfPath = existingStatement?.statement_document?.statement_pdf || null;
+            let excelPath = existingStatement?.statement_document?.statement_excel || null;
+            let documentSize = existingStatement?.statement_document?.document_size || 0;
 
             // Upload PDF if provided
             if (pdfFile) {

@@ -335,7 +335,7 @@ export function Sidebar({
       <aside
         className={`bg-gray-800 text-white transition-all duration-300 ease-in-out ${
           isExpanded ? "w-[300px]" : "w-20"
-        } p-3 hidden md:block relative`}>
+        } p-3 hidden md:block relative overflow-y-auto`}>
         <div
           className={`flex items-center mb-6 ${
             isExpanded ? "" : "justify-center"

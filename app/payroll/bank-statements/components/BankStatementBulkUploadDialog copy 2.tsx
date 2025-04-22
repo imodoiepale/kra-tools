@@ -6,7 +6,7 @@ import {
     Loader2, Upload, AlertTriangle, CheckCircle, UploadCloud,
     FileText, Building, Landmark, CreditCard, DollarSign,
     Calendar, X, ArrowRight, FileCheck, FilePlus, FileWarning,
-    ChevronDown, ChevronRight, Save, Eye, CircleDashed, XCircle, FileSearch
+    ChevronDown, ChevronRight, Save, Eye, CircleDashed, XCircle
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/hooks/use-toast'
@@ -55,16 +55,6 @@ import {
     CollapsibleTrigger,
 } from "@/components/ui/collapsible"
 import { PasswordInputDialog } from './PasswordInputDialog'
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from "@/components/ui/select"
-import { Switch } from '@/components/ui/switch';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { HelpCircle } from 'lucide-react';
 
 // Import PDF.js functionality
 import * as pdfjsLib from 'pdfjs-dist';
@@ -173,12 +163,8 @@ export function BankStatementBulkUploadDialog({
 
     // New state for companies
     const [companies, setCompanies] = useState<any[]>([]);
-    const [banks, setBanks] = useState<any[]>([]);
     const [loadingCompanies, setLoadingCompanies] = useState<boolean>(false);
     const [isDragging, setIsDragging] = useState<boolean>(false);
-
-    // New state for random mode
-    const [randomMode, setRandomMode] = useState<boolean>(false);
 
     const fileInputRef = useRef<HTMLInputElement>(null)
     const { toast } = useToast()
@@ -192,33 +178,15 @@ export function BankStatementBulkUploadDialog({
 
     // Fetch companies when dialog opens
     useEffect(() => {
-        let isMounted = true;
-
         const fetchCompanies = async () => {
             if (!isOpen) return;
 
             setLoadingCompanies(true);
             try {
-                console.log("Fetching companies and matching with banks");
-                // First fetch all banks to ensure we have the data
-                const { data: banksData, error: banksError } = await supabase
-                    .from('acc_portal_banks')
-                    .select('id, company_id, bank_name, account_number, company_name, acc_password, bank_currency');
-
-                if (banksError) {
-                    console.error('Error fetching banks:', banksError);
-                    throw banksError;
-                }
-
-                console.log("Available banks:", banksData);
-
-                // Then fetch companies
                 const { data: companiesData, error: companiesError } = await supabase
                     .from('acc_portal_company_duplicate')
                     .select('*')
                     .order('company_name');
-
-                if (!isMounted) return; // Don't update state if component unmounted
 
                 if (companiesError) {
                     console.error('Error fetching companies:', companiesError);
@@ -230,122 +198,30 @@ export function BankStatementBulkUploadDialog({
                     return;
                 }
 
-                // Group banks by company for accurate counting
-                const banksByCompany = {};
-                banksData?.forEach(bank => {
-                    if (bank && bank.company_id) {
-                        if (!banksByCompany[bank.company_id]) {
-                            banksByCompany[bank.company_id] = [];
-                        }
-                        banksByCompany[bank.company_id].push(bank);
-                    }
-                });
-
-                console.log("Banks by company:", banksByCompany);
-
                 // Process companies to include bank count
                 const companiesWithBankCount = (companiesData || []).map(company => {
-                    const companyBanks = banksByCompany[company.id] || [];
+                    const companyBanks = safeBanks.filter(bank => bank.company_id === company.id);
                     return {
                         ...company,
                         bankCount: companyBanks.length
                     };
                 });
 
-                // Sort companies - those with banks first, then alphabetically
-                companiesWithBankCount.sort((a, b) => {
-                    // Companies with banks go first
-                    if (a.bankCount > 0 && b.bankCount === 0) return -1;
-                    if (a.bankCount === 0 && b.bankCount > 0) return 1;
-                    // Then sort alphabetically
-                    return a.company_name.localeCompare(b.company_name);
-                });
-
-                if (isMounted) {
-                    setCompanies(companiesWithBankCount);
-                    setBanks(banksData);
-                }
+                setCompanies(companiesWithBankCount);
             } catch (error) {
                 console.error('Error fetching companies:', error);
-                if (isMounted) {
-                    toast({
-                        title: 'Error',
-                        description: 'Failed to fetch companies',
-                        variant: 'destructive'
-                    });
-                }
+                toast({
+                    title: 'Error',
+                    description: 'Failed to fetch companies',
+                    variant: 'destructive'
+                });
             } finally {
-                if (isMounted) {
-                    setLoadingCompanies(false);
-                }
+                setLoadingCompanies(false);
             }
         };
 
-        // Only fetch companies when the dialog opens
-        if (isOpen) {
-            fetchCompanies();
-        }
-
-        return () => {
-            isMounted = false;
-        };
-    // Only depend on isOpen to avoid endless fetching
-    }, [isOpen]); 
-
-    // Effect to fetch all banks when in random mode
-    useEffect(() => {
-        if (!randomMode) return;
-        
-        const fetchAllBanks = async () => {
-            try {
-                console.log('Fetching all banks for random mode');
-                
-                const { data, error } = await supabase
-                    .from('acc_portal_banks')
-                    .select('*');
-                
-                if (error) {
-                    console.error('Error fetching all banks:', error);
-                    return;
-                }
-                
-                console.log(`Found ${data?.length || 0} total banks for random mode`);
-                setBanks(data || []);
-            } catch (error) {
-                console.error('Error in fetchAllBanks:', error);
-            }
-        };
-        
-        fetchAllBanks();
-    }, [randomMode]);
-
-    // Effect to fetch banks when company changes
-    useEffect(() => {
-        if (!selectedCompanyId) return;
-        
-        const fetchBanksForCompany = async () => {
-            try {
-                console.log(`Fetching banks specifically for company ID: ${selectedCompanyId}`);
-                
-                const { data, error } = await supabase
-                    .from('acc_portal_banks')
-                    .select('*')
-                    .eq('company_id', selectedCompanyId);
-                
-                if (error) {
-                    console.error('Error fetching banks for company:', error);
-                    return;
-                }
-                
-                console.log(`Found ${data?.length || 0} banks for company ${selectedCompanyId}:`, data);
-                setBanks(data || []);
-            } catch (error) {
-                console.error('Error in fetchBanksForCompany:', error);
-            }
-        };
-        
-        fetchBanksForCompany();
-    }, [selectedCompanyId]);
+        fetchCompanies();
+    }, [isOpen, safeBanks]);
 
     // Effect to organize items by company after processing
     useEffect(() => {
@@ -372,11 +248,11 @@ export function BankStatementBulkUploadDialog({
         e.stopPropagation();
         setIsDragging(false);
 
-        if (!randomMode && !selectedCompanyId) {
+        if (!selectedCompanyId) {
             toast({
-                title: "Selection Required",
-                description: "Please select a company or enable random mode",
-                variant: "warning"
+                title: "Company Required",
+                description: "Please select a company before uploading files",
+                variant: "destructive"
             });
             return;
         }
@@ -392,13 +268,13 @@ export function BankStatementBulkUploadDialog({
     };
 
     const handleClick = () => {
-        if (fileInputRef.current && (!randomMode || selectedCompanyId)) {
+        if (fileInputRef.current && selectedCompanyId) {
             fileInputRef.current.click();
-        } else if (!randomMode && !selectedCompanyId) {
+        } else if (!selectedCompanyId) {
             toast({
-                title: "Select a Company",
+                title: "Company Required",
                 description: "Please select a company before uploading files",
-                variant: "warning"
+                variant: "destructive"
             });
         }
     };
@@ -474,124 +350,101 @@ export function BankStatementBulkUploadDialog({
         };
     };
 
-    // Enhanced function to get bank name from filename with fuzzy matching
-    const getBankNameFromFilename = (filename: string) => {
-        // Convert filename to lowercase for case-insensitive matching
+    function detectPasswordFromFilename(filename) {
+        if (!filename) return null;
+
         const lowerFilename = filename.toLowerCase();
-        
-        // Common bank names to check
-        const bankNames = [
-            'kcb', 'equity', 'stanbic', 'standard chartered', 'stanchart', 'absa', 'barclays', 
-            'coop', 'cooperative', 'ncba', 'cba', 'diamond trust', 'dtb', 'family', 'i&m', 'im bank',
-            'gulf', 'uob', 'prime', 'bank of africa', 'boa', 'credit bank', 'eco bank', 'ecobank'
+
+        // Expanded list of password indicators
+        const passwordIndicators = [
+            'pw', 'pwd', 'password', 'passcode', 'pass', 'p w', 'p-w', 'p_w', 'pw-', 'pw - ',
+            'code', 'access', 'key', 'pin', 'secure'
         ];
-        
-        // Try to find any bank name in the filename
-        for (const bank of bankNames) {
+
+        for (const indicator of passwordIndicators) {
+            const regex = new RegExp(`${indicator}[-_:\\s]*([0-9a-zA-Z]{4,12})`, 'i');
+            const match = filename.match(regex);
+            if (match && match[1]) {
+                return match[1]; // Return the first detected password-like pattern
+            }
+        }
+
+        // Exclude common year patterns (like 2024)
+        const accountMatch = filename.match(/\b(?!202[0-9])(\d{6,12})\b(?!.*\d{6,12})/);
+        if (accountMatch && accountMatch[1]) {
+            const acc = accountMatch[1];
+            return acc.length >= 6 ? acc.slice(-6) : acc;
+        }
+
+        // Exclude numbers that look like years (2020-2029)
+        const digitGroups = filename.match(/\b(?!202[0-9])\d{4,8}\b/g);
+        if (digitGroups && digitGroups.length > 0) {
+            return digitGroups[digitGroups.length - 1]; // Last number detected, avoiding years
+        }
+
+        return null;
+    }
+
+    function detectAccountNumberFromFilename(filename) {
+        if (!filename) return null;
+
+        const lowerFilename = filename.toLowerCase();
+
+        // Look for patterns after account indicators
+        const accountIndicators = ['acc', 'account', 'acct', 'a/c', '#', 'no'];
+
+        for (const indicator of accountIndicators) {
+            const indicatorIndex = lowerFilename.indexOf(indicator);
+
+            if (indicatorIndex !== -1) {
+                // Get text after the indicator
+                const afterIndicator = filename.substring(indicatorIndex + indicator.length).trim();
+
+                // Look for digit sequences (6-16 digits is typical for account numbers)
+                const accountMatch = afterIndicator.match(/^[\s-_:\.]*(\d{6,16})/);
+
+                if (accountMatch && accountMatch[1]) {
+                    return accountMatch[1].replace(/[^0-9]/g, ''); // Remove non-digits
+                }
+            }
+        }
+
+        // Look for sequences of 6-16 digits that could be account numbers
+        const digitMatches = filename.match(/\b\d{6,16}\b/g);
+        if (digitMatches && digitMatches.length > 0) {
+            return digitMatches[0].replace(/[^0-9]/g, '');
+        }
+
+        return null;
+    }
+
+    function getBankNameFromFilename(filename) {
+        if (!filename) return null;
+
+        const lowerFilename = filename.toLowerCase();
+
+        // Common bank names to check for
+        const commonBanks = [
+            'barclays', 'hsbc', 'stanchart', 'standard chartered', 'equity',
+            'kcb', 'cooperative', 'coop', 'family', 'absa', 'ncba', 'dtb',
+            'diamond trust', 'citibank', 'citi', 'i&m', 'i and m', 'national',
+            'stanbic', 'bank of africa', 'boa', 'prime', 'spire', 'gulf'
+        ];
+
+        for (const bank of commonBanks) {
             if (lowerFilename.includes(bank)) {
-                return bank;
+                return bank.charAt(0).toUpperCase() + bank.slice(1);
             }
         }
-        
+
         return null;
-    };
-    
-    // Extract account number from filename
-    const getAccountNumberFromFilename = (filename: string) => {
-        // Look for common account number patterns
-        // This regex matches sequences that look like account numbers:
-        // - Groups of digits (at least 5) 
-        // - May contain hyphens or spaces
-        const accountNumberRegex = /[0-9]{5,}|[0-9]{2,}[-\s][0-9]{2,}[-\s][0-9]{2,}/g;
-        const matches = filename.match(accountNumberRegex);
-        
-        return matches ? matches[0] : null;
-    };
-    
-    // Fuzzy match a bank based on filename
-    const fuzzyMatchBank = (filename: string, allBanks: any[]) => {
-        console.log('Attempting fuzzy match for filename:', filename);
-        
-        if (!filename || !allBanks || allBanks.length === 0) {
-            return null;
-        }
-        
-        // Extract potential bank name and account number
-        const detectedBankName = getBankNameFromFilename(filename);
-        const detectedAccountNumber = getAccountNumberFromFilename(filename);
-        
-        console.log('Detected in filename:', { 
-            bankName: detectedBankName, 
-            accountNumber: detectedAccountNumber 
-        });
-        
-        // If we have an account number, it's the strongest match
-        if (detectedAccountNumber) {
-            const normalizedDetectedNumber = detectedAccountNumber.replace(/[-\s]/g, '');
-            
-            // Try to find an exact match for account number
-            const exactMatch = allBanks.find(bank => {
-                const normalizedBankNumber = (bank.account_number || '').replace(/[-\s]/g, '');
-                return normalizedBankNumber === normalizedDetectedNumber;
-            });
-            
-            if (exactMatch) {
-                console.log('Found exact account number match:', exactMatch);
-                return exactMatch;
-            }
-            
-            // Try to find a partial match (account number contains or is contained in)
-            const partialMatch = allBanks.find(bank => {
-                const normalizedBankNumber = (bank.account_number || '').replace(/[-\s]/g, '');
-                return normalizedBankNumber.includes(normalizedDetectedNumber) || 
-                       normalizedDetectedNumber.includes(normalizedBankNumber);
-            });
-            
-            if (partialMatch) {
-                console.log('Found partial account number match:', partialMatch);
-                return partialMatch;
-            }
-        }
-        
-        // If we have a bank name, try to match it
-        if (detectedBankName) {
-            const bankMatch = allBanks.find(bank => {
-                const bankNameLower = (bank.bank_name || '').toLowerCase();
-                return bankNameLower.includes(detectedBankName) || 
-                       detectedBankName.includes(bankNameLower);
-            });
-            
-            if (bankMatch) {
-                console.log('Found bank name match:', bankMatch);
-                return bankMatch;
-            }
-        }
-        
-        // If all else fails, look for any overlap between filename and bank/company name
-        for (const bank of allBanks) {
-            const bankNameLower = (bank.bank_name || '').toLowerCase();
-            const companyNameLower = (bank.company_name || '').toLowerCase();
-            
-            if (bankNameLower && lowerFilename.includes(bankNameLower)) {
-                console.log('Found bank name in filename match:', bank);
-                return bank;
-            }
-            
-            if (companyNameLower && lowerFilename.includes(companyNameLower)) {
-                console.log('Found company name in filename match:', bank);
-                return bank;
-            }
-        }
-        
-        console.log('No matches found for file:', filename);
-        return null;
-    };
+    }
 
     const handleFileSelection = (event: any) => {
-        if (!randomMode && !selectedCompanyId) {
+        if (!selectedCompanyId) {
             toast({
-                title: "Selection Required",
-                description: "Please select a company or enable random mode",
+                title: "Select a Company",
+                description: "Please select a company before uploading files",
                 variant: "warning"
             });
             return;
@@ -611,37 +464,28 @@ export function BankStatementBulkUploadDialog({
             const detectedBankName = getBankNameFromFilename(fileName);
 
             // Find matching bank for this company
+            const companyBanks = safeBanks.filter(bank => bank?.company_id === selectedCompanyId);
+
+            // Enhanced bank matching logic
             let matchedBank = null;
             let matchConfidence = 0;
 
             // Try to match by account number first (highest confidence)
             if (detectedAccountNumber) {
-                if (randomMode) {
-                    matchedBank = fuzzyMatchBank(fileName, banks);
-                    if (matchedBank) matchConfidence = 50;
-                } else {
-                    const companyBanks = banks.filter(bank => bank?.company_id === selectedCompanyId);
-                    matchedBank = companyBanks.find(bank =>
-                        bank?.account_number?.includes(detectedAccountNumber) ||
-                        detectedAccountNumber.includes(bank?.account_number || '')
-                    );
-                    if (matchedBank) matchConfidence = 90;
-                }
+                matchedBank = companyBanks.find(bank =>
+                    bank?.account_number?.includes(detectedAccountNumber) ||
+                    detectedAccountNumber.includes(bank?.account_number || '')
+                );
+                if (matchedBank) matchConfidence = 90;
             }
 
             // If no match by account number, try by bank name (medium confidence)
             if (!matchedBank && detectedBankName) {
-                if (randomMode) {
-                    matchedBank = fuzzyMatchBank(fileName, banks);
-                    if (matchedBank) matchConfidence = 50;
-                } else {
-                    const companyBanks = banks.filter(bank => bank?.company_id === selectedCompanyId);
-                    matchedBank = companyBanks.find(bank =>
-                        bank?.bank_name?.toLowerCase().includes(detectedBankName.toLowerCase()) ||
-                        detectedBankName.toLowerCase().includes(bank?.bank_name?.toLowerCase() || '')
-                    );
-                    if (matchedBank) matchConfidence = 70;
-                }
+                matchedBank = companyBanks.find(bank =>
+                    bank?.bank_name?.toLowerCase().includes(detectedBankName.toLowerCase()) ||
+                    detectedBankName.toLowerCase().includes(bank?.bank_name?.toLowerCase() || '')
+                );
+                if (matchedBank) matchConfidence = 70;
             }
 
             return {
@@ -1429,133 +1273,53 @@ export function BankStatementBulkUploadDialog({
                             <div className="space-y-4">
                                 {/* Company Selection */}
                                 <div className="space-y-2">
-                                    <div className="flex justify-between items-center">
-                                        <Label className="text-sm font-medium">Select Company</Label>
-                                        <div className="flex items-center space-x-2">
-                                            <Switch 
-                                                id="random-mode"
-                                                checked={randomMode}
-                                                onCheckedChange={setRandomMode}
-                                            />
-                                            <Label htmlFor="random-mode" className="text-xs">Random Mode</Label>
-                                            <Tooltip>
-                                                <TooltipTrigger asChild>
-                                                    <span className="cursor-help ml-1">
-                                                        <HelpCircle className="h-3.5 w-3.5 text-gray-500" />
-                                                    </span>
-                                                </TooltipTrigger>
-                                                <TooltipContent className="max-w-xs">
-                                                    <p>Random mode auto-detects company and bank from filenames using fuzzy matching</p>
-                                                </TooltipContent>
-                                            </Tooltip>
-                                        </div>
-                                    </div>
+                                    <Label className="text-sm font-medium">Select Company</Label>
                                     {loadingCompanies ? (
                                         <div className="flex items-center justify-center py-2">
                                             <Loader2 className="h-4 w-4 animate-spin mr-2" />
                                             Loading companies...
                                         </div>
                                     ) : (
-                                        <Select
-                                            value={selectedCompanyId?.toString() || "placeholder"}
-                                            onValueChange={(value) => setSelectedCompanyId(value === "placeholder" ? null : parseInt(value))}
-                                            disabled={loadingCompanies || randomMode}
+                                        <select
+                                            className="w-full p-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                            value={selectedCompanyId || ''}
+                                            onChange={(e) => setSelectedCompanyId(e.target.value ? parseInt(e.target.value) : null)}
+                                            disabled={loadingCompanies}
                                         >
-                                            <SelectTrigger className={`w-full ${randomMode ? 'opacity-50' : ''}`}>
-                                                <SelectValue placeholder={randomMode ? "Auto-detect from filenames" : "Select a company"} />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem value="placeholder">-- Select a Company --</SelectItem>
-                                                {companies.map((company: any) => (
-                                                    <SelectItem key={company.id} value={company.id.toString()}>
-                                                        {company.company_name} {company.bankCount > 0 ? `(${company.bankCount} banks)` : "(No banks)"}
-                                                    </SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
+                                            <option value="">-- Select a Company --</option>
+                                            {companies.map((company: any) => (
+                                                <option key={company.id} value={company.id}>
+                                                    {company.company_name} ({company.bankCount} banks)
+                                                </option>
+                                            ))}
+                                        </select>
                                     )}
                                 </div>
 
                                 {/* Display company's banks when selected */}
-                                {(selectedCompanyId || randomMode) && (
-                                    <div className="border rounded-md p-4 bg-gray-50 space-y-3">
-                                        <div className="flex items-center justify-between">
-                                            <h3 className="font-medium">
-                                                {randomMode ? "Auto-detect Mode Active" : "Available Banks"}
-                                            </h3>
-                                            {!randomMode && selectedCompanyId && (
-                                                <Badge variant="outline" className="bg-blue-50">
-                                                    {banks.length} Banks
-                                                </Badge>
+                                {selectedCompanyId && (
+                                    <div className="border rounded-md p-4 bg-gray-50">
+                                        <h3 className="font-medium mb-2">Available Banks</h3>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                                            {safeBanks
+                                                .filter(bank => bank.company_id === selectedCompanyId)
+                                                .map(bank => (
+                                                    <div key={bank.id} className="bg-white p-3 rounded border shadow-sm">
+                                                        <p className="font-medium">{bank.bank_name}</p>
+                                                        <p className="text-sm font-mono text-gray-600">{bank.account_number}</p>
+                                                        <p className="text-xs mt-1">
+                                                            Password: {bank.acc_password ?
+                                                                <span className="text-green-600 font-medium">{bank.acc_password}</span> :
+                                                                <span className="text-red-500">Not set</span>}
+                                                        </p>
+                                                    </div>
+                                                ))}
+                                            {safeBanks.filter(bank => bank.company_id === selectedCompanyId).length === 0 && (
+                                                <div className="col-span-full text-center text-gray-500 py-4">
+                                                    No banks configured for this company
+                                                </div>
                                             )}
                                         </div>
-
-                                        {randomMode ? (
-                                            <div className="bg-white border rounded-md p-4">
-                                                <div className="flex items-start space-x-3">
-                                                    <div className="bg-blue-50 p-2 rounded-full">
-                                                        <FileSearch className="h-5 w-5 text-blue-600" />
-                                                    </div>
-                                                    <div>
-                                                        <h4 className="font-medium text-sm mb-1">Auto-detect Mode</h4>
-                                                        <p className="text-sm text-gray-600">
-                                                            In this mode, you can upload statements from any company. The system will 
-                                                            automatically try to match each file with the appropriate bank account using:
-                                                        </p>
-                                                        <ul className="text-sm text-gray-600 mt-2 list-disc pl-5 space-y-1">
-                                                            <li>Bank name detection from filename</li>
-                                                            <li>Account number extraction</li>
-                                                            <li>Company name matching</li>
-                                                        </ul>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        ) : selectedCompanyId && banks.length === 0 ? (
-                                            <div className="text-center text-gray-500 py-6 bg-white border rounded-md">
-                                                <Landmark className="h-8 w-8 text-gray-300 mx-auto mb-2" />
-                                                <p>No banks configured for this company</p>
-                                            </div>
-                                        ) : selectedCompanyId ? (
-                                            <div className="border rounded-md overflow-hidden">
-                                                <Table>
-                                                    <TableHeader className="bg-gray-100">
-                                                        <TableRow>
-                                                            <TableHead className="font-medium">#</TableHead>
-                                                            <TableHead className="font-medium">Bank Name</TableHead>
-                                                            <TableHead className="font-medium">Account Number</TableHead>
-                                                            <TableHead className="font-medium">Currency</TableHead>
-                                                            <TableHead className="font-medium">Password</TableHead>
-                                                        </TableRow>
-                                                    </TableHeader>
-                                                    <TableBody>
-                                                        {banks.map((bank, index) => (
-                                                            <TableRow key={bank.id}>
-                                                                <TableCell className="font-mono text-xs">{index + 1}</TableCell>
-                                                                <TableCell className="font-medium">{bank.bank_name}</TableCell>
-                                                                <TableCell className="font-mono text-sm">{bank.account_number}</TableCell>
-                                                                <TableCell>{bank.bank_currency || 'KES'}</TableCell>
-                                                                <TableCell>
-                                                                    {bank.acc_password ? (
-                                                                        <Badge variant="outline" className="bg-green-50 text-green-700">
-                                                                            {bank.acc_password}
-                                                                        </Badge>
-                                                                    ) : (
-                                                                        <Badge variant="outline" className="bg-red-50 text-red-700">
-                                                                            Not Set
-                                                                        </Badge>
-                                                                    )}
-                                                                </TableCell>
-                                                            </TableRow>
-                                                        ))}
-                                                    </TableBody>
-                                                </Table>
-                                            </div>
-                                        ) : (
-                                            <div className="text-center text-gray-500 py-6 bg-white border rounded-md">
-                                                <Landmark className="h-8 w-8 text-gray-300 mx-auto mb-2" />
-                                                <p>Select a company to view available banks</p>
-                                            </div>
-                                        )}
                                     </div>
                                 )}
 
@@ -1569,7 +1333,7 @@ export function BankStatementBulkUploadDialog({
                                                 ? 'border-blue-500 bg-blue-50'
                                                 : 'border-gray-300 hover:border-blue-400 hover:bg-gray-50'
                                             }
-                                            ${!randomMode && !selectedCompanyId ? 'opacity-50 cursor-not-allowed' : ''}
+                                            ${!selectedCompanyId ? 'opacity-50 cursor-not-allowed' : ''}
                                         `}
                                         onDrop={handleDrop}
                                         onDragOver={handleDragOver}
@@ -1595,12 +1359,12 @@ export function BankStatementBulkUploadDialog({
                                             multiple
                                             onChange={handleFileSelection}
                                             className="absolute inset-0 opacity-0 cursor-pointer"
-                                            disabled={!randomMode && !selectedCompanyId}
+                                            disabled={!selectedCompanyId}
                                         />
                                     </div>
                                     <Button
                                         onClick={handleStartProcessing}
-                                        disabled={uploadItems.length === 0 || (!randomMode && !selectedCompanyId) || uploading}
+                                        disabled={uploadItems.length === 0 || !selectedCompanyId || uploading}
                                         className="h-[100px] px-6"
                                     >
                                         {uploading ? (
@@ -1864,11 +1628,11 @@ export function BankStatementBulkUploadDialog({
                                                         </TableCell>
                                                         <TableCell>
                                                             {item.status === 'failed' ? (
-                                                                <div className="text-red-500">{item.error}</div>
+                                                                <div className="text-xs text-red-600">{item.error}</div>
                                                             ) : item.status === 'processing' ? (
-                                                                <div className="text-blue-600">Processing...</div>
+                                                                <div className="text-xs text-blue-600">Processing...</div>
                                                             ) : (
-                                                                <div className="text-muted-foreground">
+                                                                <div className="text-xs text-muted-foreground">
                                                                     {item.extractedData ? 'Data extracted' : 'No data yet'}
                                                                 </div>
                                                             )}
@@ -2283,7 +2047,7 @@ export function BankStatementBulkUploadDialog({
                                                     try {
                                                         const success = await applyPasswordToFiles(item.file, item.password);
                                                         if (success) {
-                                                            // Password applied successfully
+                                                            // Update item with password applied
                                                             setUploadItems(prev => {
                                                                 const updated = [...prev];
                                                                 updated[fileItem.index] = {
@@ -2341,7 +2105,7 @@ export function BankStatementBulkUploadDialog({
                                                                 try {
                                                                     const success = await applyPasswordToFiles(item.file, pwd);
                                                                     if (success) {
-                                                                        // Password applied successfully
+                                                                        // Update item with password applied
                                                                         setUploadItems(prev => {
                                                                             const updated = [...prev];
                                                                             updated[fileItem.index] = {
@@ -2464,27 +2228,21 @@ export function BankStatementBulkUploadDialog({
                         </DialogHeader>
                         <div className="space-y-4 py-3">
                             <Label>Select a bank for this statement</Label>
-                            <Select
-                                value={selectedBankIds[currentManualMatchItem]?.toString() || "placeholder"}
-                                onValueChange={(value) => setSelectedBankIds(prev => ({
+                            <select
+                                className="w-full p-2 border rounded-md"
+                                value={selectedBankIds[currentManualMatchItem] || 0}
+                                onChange={(e) => setSelectedBankIds(prev => ({
                                     ...prev,
-                                    [currentManualMatchItem]: value === "placeholder" ? 0 : parseInt(value)
+                                    [currentManualMatchItem]: parseInt(e.target.value)
                                 }))}
                             >
-                                <SelectTrigger className="w-full">
-                                    <SelectValue placeholder="Select a bank" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="placeholder">-- Select Bank --</SelectItem>
-                                    {banks
-                                        .filter(bank => bank?.company_id === selectedCompanyId)
-                                        .map(bank => (
-                                        <SelectItem key={bank.id} value={bank.id.toString()}>
-                                            {bank.bank_name} - {bank.account_number}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
+                                <option value={0}>-- Select Bank --</option>
+                                {safeBanks.map(bank => (
+                                    <option key={bank.id} value={bank.id}>
+                                        {bank.company_name} / {bank.bank_name} / {bank.account_number}
+                                    </option>
+                                ))}
+                            </select>
 
                             <Input
                                 type="number"
@@ -2510,7 +2268,7 @@ export function BankStatementBulkUploadDialog({
                                     // Apply the manual match
                                     const bankId = selectedBankIds[currentManualMatchItem] || 0;
                                     if (bankId > 0) {
-                                        const matchedBank = banks.find(b => b.id === bankId);
+                                        const matchedBank = safeBanks.find(b => b.id === bankId);
                                         if (matchedBank) {
                                             setUploadItems(items => {
                                                 const updated = [...items];
