@@ -8,11 +8,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { ArrowUpDown, Download, MoreHorizontal, RefreshCw, Upload, Search } from "lucide-react";
+import { ArrowUpDown, Download, MoreHorizontal, RefreshCw, Upload, Search, Filter, Eye, EyeOff } from "lucide-react";
 import * as ExcelJS from 'exceljs';
 import { createClient } from '@supabase/supabase-js';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import FileViewer from '@/components/FileViewer';
+import { ClientCategoryFilter } from "@/components/ClientCategoryFilter";
 
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!);
 const STORAGE_BUCKET = 'pentasoft-reports';
@@ -66,6 +67,9 @@ export function PentasoftExtractionReports() {
     const [companySearchTerm, setCompanySearchTerm] = useState('');
     const [previewDialogOpen, setPreviewDialogOpen] = useState(false);
     const [previewFile, setPreviewFile] = useState<ExtractionFile | null>(null);
+    const [isCategoryFilterOpen, setIsCategoryFilterOpen] = useState(false);
+    const [categoryFilters, setCategoryFilters] = useState({});
+    const [showStatsRows, setShowStatsRows] = useState(true);
 
     // Fetch reports on component mount
     useEffect(() => {
@@ -100,9 +104,38 @@ export function PentasoftExtractionReports() {
         return 0;
     });
 
-    const filteredReports = sortedReports.filter(report =>
-        report.company_name.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    const filteredReports = sortedReports.filter(report => {
+        // Apply search filter
+        const matchesSearch = report.company_name.toLowerCase().includes(searchTerm.toLowerCase());
+        if (!matchesSearch) return false;
+        
+        // Apply category filters
+        if (Object.keys(categoryFilters).length > 0) {
+            // Check if any category filter is active
+            const hasActiveFilters = Object.values(categoryFilters).some(categoryStatus => 
+                Object.values(categoryStatus as Record<string, boolean>).some(isSelected => isSelected)
+            );
+            
+            if (hasActiveFilters) {
+                // Get the report's category and status
+                const category = report.category || 'all';
+                const status = report.status === 'active' ? 'active' : 'inactive';
+                
+                // Check if this category has any filters
+                const categoryFilter = categoryFilters[category] as Record<string, boolean> | undefined;
+                if (!categoryFilter) {
+                    // Check if 'all' category has this status selected
+                    const allCategoryFilter = categoryFilters['all'] as Record<string, boolean> | undefined;
+                    return allCategoryFilter?.[status] || allCategoryFilter?.['all'];
+                }
+                
+                // Check if this specific status is selected for this category
+                return categoryFilter[status] || categoryFilter['all'];
+            }
+        }
+        
+        return true;
+    });
 
     // Export reports to Excel
     const exportToExcel = async () => {
@@ -385,12 +418,27 @@ export function PentasoftExtractionReports() {
             </TabsList>
             <TabsContent value="summary">
                 <div className="flex justify-between mb-4">
-                    <Input
-                        placeholder="Search companies..."
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        className="max-w-sm"
-                    />
+                    <div className="flex space-x-2">
+                        <Input
+                            placeholder="Search companies..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className="max-w-sm"
+                        />
+                        <Button variant="outline" onClick={() => setIsCategoryFilterOpen(true)} size="sm" className="px-2 py-1">
+                            <Filter className="mr-1 h-4 w-4" />
+                            Categories
+                        </Button>
+                        <Button 
+                            variant="outline" 
+                            onClick={() => setShowStatsRows(!showStatsRows)} 
+                            size="sm"
+                            className="px-2 py-1"
+                        >
+                            {showStatsRows ? <EyeOff className="mr-1 h-4 w-4" /> : <Eye className="mr-1 h-4 w-4" />}
+                            {showStatsRows ? 'Hide Stats' : 'Show Stats'}
+                        </Button>
+                    </div>
                     <div className="flex gap-2">
                         <Button onClick={exportToExcel} size="sm" className="px-2 py-1">
                             <Download className="mr-1 h-4 w-4" />
@@ -434,6 +482,14 @@ export function PentasoftExtractionReports() {
                         </DropdownMenu>
                     </div>
                 </div>
+                
+                <ClientCategoryFilter 
+                    isOpen={isCategoryFilterOpen} 
+                    onClose={() => setIsCategoryFilterOpen(false)} 
+                    onApplyFilters={(filters) => setCategoryFilters(filters)}
+                    onClearFilters={() => setCategoryFilters({})}
+                    selectedFilters={categoryFilters}
+                />
                 <div className="border rounded-md mb-2">
                     <ScrollArea className="h-[60vh]">
                         <Table>
@@ -464,6 +520,66 @@ export function PentasoftExtractionReports() {
                                         )
                                     ))}
                                 </TableRow>
+                                {showStatsRows && (
+                                    <>
+                                        <TableRow className="bg-blue-50">
+                                            <TableCell className="text-center text-[10px] font-bold">Complete</TableCell>
+                                            {['company_name', 'updated_at', 'paye', 'nssf', 'nhif', 'nita', 'house_levy'].map((column) => {
+                                                if (!visibleColumns[column]) return null;
+                                                let completeCount = 0;
+                                                
+                                                if (column === 'company_name' || column === 'updated_at') {
+                                                    completeCount = reports.filter(r => r[column] && r[column].toString().trim() !== '').length;
+                                                } else {
+                                                    completeCount = reports.filter(r => {
+                                                        const fileType = column === 'paye' ? 'P10 MONTHLY - PAYE' :
+                                                                     column === 'nssf' ? 'N.S.S.F MONTHLY' :
+                                                                     column === 'nhif' ? 'NHIF MONTHL' :
+                                                                     column === 'nita' ? 'NITA REVIEW' :
+                                                                     'HOUSE LEVY PREVIEW';
+                                                        return findFile(r.files, fileType) !== undefined;
+                                                    }).length;
+                                                }
+                                                
+                                                return (
+                                                    <TableCell key={`complete-${column}`} className="text-center text-[10px]">
+                                                        <span className={completeCount === reports.length ? 'text-green-600 font-bold' : ''}>
+                                                            {completeCount}
+                                                        </span>
+                                                    </TableCell>
+                                                );
+                                            })}
+                                        </TableRow>
+                                        <TableRow className="bg-red-50">
+                                            <TableCell className="text-center text-[10px] font-bold">Missing</TableCell>
+                                            {['company_name', 'updated_at', 'paye', 'nssf', 'nhif', 'nita', 'house_levy'].map((column) => {
+                                                if (!visibleColumns[column]) return null;
+                                                let missingCount = 0;
+                                                
+                                                if (column === 'company_name' || column === 'updated_at') {
+                                                    missingCount = reports.filter(r => !r[column] || r[column].toString().trim() === '').length;
+                                                } else {
+                                                    missingCount = reports.filter(r => {
+                                                        const fileType = column === 'paye' ? 'P10 MONTHLY - PAYE' :
+                                                                     column === 'nssf' ? 'N.S.S.F MONTHLY' :
+                                                                     column === 'nhif' ? 'NHIF MONTHL' :
+                                                                     column === 'nita' ? 'NITA REVIEW' :
+                                                                     'HOUSE LEVY PREVIEW';
+                                                        return findFile(r.files, fileType) === undefined;
+                                                    }).length;
+                                                }
+                                                
+                                                return (
+                                                    <TableCell key={`missing-${column}`} className="text-center text-[10px]">
+                                                        <span className={missingCount > 0 ? 'text-red-600 font-bold' : ''}>
+                                                            {missingCount}
+                                                        </span>
+                                                    </TableCell>
+                                                );
+                                            })}
+                                        </TableRow>
+                                    </>
+                                )}
                             </TableHeader>
                             <TableBody>
                                 {filteredReports.map((report, index) => (

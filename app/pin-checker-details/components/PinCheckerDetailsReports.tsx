@@ -7,8 +7,9 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogClose } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Trash2, Download, RefreshCw, ArrowUpDown, Trash2Icon } from 'lucide-react'
+import { Trash2, Download, RefreshCw, ArrowUpDown, Trash2Icon, Filter, Eye, EyeOff } from 'lucide-react'
 import ExcelJS from 'exceljs'
+import { ClientCategoryFilter } from "@/components/ClientCategoryFilter"
 
 interface PinCheckerDetail {
     id: number;
@@ -43,6 +44,10 @@ export function PinCheckerDetailsReports() {
     const [editingDetail, setEditingDetail] = useState<PinCheckerDetail | null>(null)
     const [sortField, setSortField] = useState<SortField>('company_name')
     const [sortOrder, setSortOrder] = useState<SortOrder>('asc')
+    const [searchTerm, setSearchTerm] = useState('')
+    const [isCategoryFilterOpen, setIsCategoryFilterOpen] = useState(false)
+    const [categoryFilters, setCategoryFilters] = useState({})
+    const [showStatsRows, setShowStatsRows] = useState(true)
 
     useEffect(() => {
         fetchReports()
@@ -286,8 +291,51 @@ export function PinCheckerDetailsReports() {
         return `${day}.${month}.${year}`;
     }
 
+    // Filter details based on search term and category filters
+    const filteredDetails = React.useMemo(() => {
+        return details.filter(detail => {
+            // Apply search filter
+            const matchesSearch = searchTerm === '' || 
+                Object.entries(detail).some(([key, value]) => {
+                    if (value === null || value === undefined) {
+                        return false;
+                    }
+                    return value.toString().toLowerCase().includes(searchTerm.toLowerCase());
+                });
+
+            if (!matchesSearch) return false;
+            
+            // Apply category filters
+            if (Object.keys(categoryFilters).length > 0) {
+                // Check if any category filter is active
+                const hasActiveFilters = Object.values(categoryFilters).some(categoryStatus => 
+                    Object.values(categoryStatus as Record<string, boolean>).some(isSelected => isSelected)
+                );
+                
+                if (hasActiveFilters) {
+                    // Get the detail's category and status
+                    const category = detail.category || 'all';
+                    const status = detail.status === 'active' ? 'active' : 'inactive';
+                    
+                    // Check if this category has any filters
+                    const categoryFilter = categoryFilters[category] as Record<string, boolean> | undefined;
+                    if (!categoryFilter) {
+                        // Check if 'all' category has this status selected
+                        const allCategoryFilter = categoryFilters['all'] as Record<string, boolean> | undefined;
+                        return allCategoryFilter?.[status] || allCategoryFilter?.['all'];
+                    }
+                    
+                    // Check if this specific status is selected for this category
+                    return categoryFilter[status] || categoryFilter['all'];
+                }
+            }
+            
+            return true;
+        });
+    }, [details, searchTerm, categoryFilters]);
+
     const sortedDetails = React.useMemo(() => {
-        return [...details].sort((a, b) => {
+        return [...filteredDetails].sort((a, b) => {
             let aValue: any = a[sortField as keyof PinCheckerDetail];
             let bValue: any = b[sortField as keyof PinCheckerDetail];
 
@@ -314,8 +362,88 @@ export function PinCheckerDetailsReports() {
             if (aValue > bValue) return sortOrder === 'asc' ? 1 : -1;
             return 0;
         });
-    }, [details, sortField, sortOrder]);
+    }, [filteredDetails, sortField, sortOrder]);
 
+
+    // Calculate statistics for complete and missing entries
+    const calculateStats = () => {
+        const stats = {
+            complete: {},
+            missing: {}
+        };
+
+        // Define all fields to check for completeness, including sub-columns
+        const fieldsToCheck = [
+            'company_name',
+            // Income Tax Company fields
+            'income_tax_company_status',
+            'income_tax_company_effective_from',
+            'income_tax_company_effective_to',
+            // VAT fields
+            'vat_status',
+            'vat_effective_from',
+            'vat_effective_to',
+            // PAYE fields
+            'paye_status',
+            'paye_effective_from',
+            'paye_effective_to',
+            // Rent Income (MRI) fields
+            'rent_income_mri_status',
+            'rent_income_mri_effective_from',
+            'rent_income_mri_effective_to',
+            // Resident Individual fields
+            'resident_individual_status',
+            'resident_individual_effective_from',
+            'resident_individual_effective_to',
+            // Turnover Tax fields
+            'turnover_tax_status',
+            'turnover_tax_effective_from',
+            'turnover_tax_effective_to'
+        ];
+
+        // Initialize stats for each field
+        fieldsToCheck.forEach(field => {
+            stats.complete[field] = 0;
+            stats.missing[field] = 0;
+        });
+
+        // Calculate stats for each field individually
+        sortedDetails.forEach(detail => {
+            fieldsToCheck.forEach(field => {
+                const value = detail[field as keyof PinCheckerDetail];
+                // For status fields, 'No Obligation' is considered missing
+                if (field.endsWith('_status')) {
+                    if (value && 
+                        value.toString().trim() !== '' && 
+                        value.toString().toLowerCase() !== 'no obligation') {
+                        stats.complete[field]++;
+                    } else {
+                        stats.missing[field]++;
+                    }
+                } 
+                // For date fields
+                else if (field.endsWith('_from') || field.endsWith('_to')) {
+                    if (value && value.toString().trim() !== '') {
+                        stats.complete[field]++;
+                    } else {
+                        stats.missing[field]++;
+                    }
+                }
+                // For other fields
+                else {
+                    if (value && value.toString().trim() !== '') {
+                        stats.complete[field]++;
+                    } else {
+                        stats.missing[field]++;
+                    }
+                }
+            });
+        });
+
+        return stats;
+    };
+
+    const stats = calculateStats();
 
     const SortableHeader: React.FC<{ field: SortField; children: React.ReactNode }> = ({ field, children }) => (
         <Button variant="ghost" onClick={() => handleSort(field)} className="h-8 px-2">
@@ -341,6 +469,34 @@ export function PinCheckerDetailsReports() {
                     <Button variant="destructive" size="sm" onClick={handleDeleteAll}>Delete All</Button>
                 </div>
             </div>
+            <div className="flex space-x-2">
+                <Input
+                    placeholder="Search details..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="max-w-sm"
+                />
+                <Button variant="outline" onClick={() => setIsCategoryFilterOpen(true)} size="sm">
+                    <Filter className="h-4 w-4 mr-2" />
+                    Categories
+                </Button>
+                <Button 
+                    variant="outline" 
+                    onClick={() => setShowStatsRows(!showStatsRows)} 
+                    size="sm"
+                >
+                    {showStatsRows ? <EyeOff className="h-4 w-4 mr-2" /> : <Eye className="h-4 w-4 mr-2" />}
+                    {showStatsRows ? 'Hide Stats' : 'Show Stats'}
+                </Button>
+            </div>
+            
+            <ClientCategoryFilter 
+                isOpen={isCategoryFilterOpen} 
+                onClose={() => setIsCategoryFilterOpen(false)} 
+                onApplyFilters={(filters) => setCategoryFilters(filters)}
+                onClearFilters={() => setCategoryFilters({})}
+                selectedFilters={categoryFilters}
+            />
             <div className="rounded-md border">
                 <div className="overflow-x-auto">
                     <div className="max-h-[calc(100vh-300px)] overflow-y-auto">
@@ -357,6 +513,236 @@ export function PinCheckerDetailsReports() {
                                     <TableHead className="sticky top-0 bg-white border-r border-black border-b font-bold text-black text-center" colSpan={2}>Last Checked</TableHead>
                                     <TableHead className="sticky top-0 bg-white border-b font-bold text-black text-center">Actions</TableHead>
                                 </TableRow>
+                                {showStatsRows && (
+                                    <>
+                                        <TableRow className="h-6 bg-blue-50">
+                                            <TableCell className="text-center text-[10px] font-bold border-r border-black">Complete</TableCell>
+                                            <TableCell className="text-center text-[10px] border-r border-black">
+                                                <span className={stats.complete.company_name === sortedDetails.length ? 'text-green-600 font-bold' : ''}>
+                                                    {stats.complete.company_name}
+                                                </span>
+                                            </TableCell>
+                                            
+                                            {/* Income Tax Company */}
+                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('income_tax_company')}`}>
+                                                <span className={stats.complete.income_tax_company_status === sortedDetails.length ? 'text-green-600 font-bold' : ''}>
+                                                    {stats.complete.income_tax_company_status}
+                                                </span>
+                                            </TableCell>
+                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('income_tax_company')}`}>
+                                                <span className={stats.complete.income_tax_company_effective_from === sortedDetails.length ? 'text-green-600 font-bold' : ''}>
+                                                    {stats.complete.income_tax_company_effective_from}
+                                                </span>
+                                            </TableCell>
+                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('income_tax_company')}`}>
+                                                <span className={stats.complete.income_tax_company_effective_to === sortedDetails.length ? 'text-green-600 font-bold' : ''}>
+                                                    {stats.complete.income_tax_company_effective_to}
+                                                </span>
+                                            </TableCell>
+                                            
+                                            {/* VAT */}
+                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('vat')}`}>
+                                                <span className={stats.complete.vat_status === sortedDetails.length ? 'text-green-600 font-bold' : ''}>
+                                                    {stats.complete.vat_status}
+                                                </span>
+                                            </TableCell>
+                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('vat')}`}>
+                                                <span className={stats.complete.vat_effective_from === sortedDetails.length ? 'text-green-600 font-bold' : ''}>
+                                                    {stats.complete.vat_effective_from}
+                                                </span>
+                                            </TableCell>
+                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('vat')}`}>
+                                                <span className={stats.complete.vat_effective_to === sortedDetails.length ? 'text-green-600 font-bold' : ''}>
+                                                    {stats.complete.vat_effective_to}
+                                                </span>
+                                            </TableCell>
+                                            
+                                            {/* PAYE */}
+                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('paye')}`}>
+                                                <span className={stats.complete.paye_status === sortedDetails.length ? 'text-green-600 font-bold' : ''}>
+                                                    {stats.complete.paye_status}
+                                                </span>
+                                            </TableCell>
+                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('paye')}`}>
+                                                <span className={stats.complete.paye_effective_from === sortedDetails.length ? 'text-green-600 font-bold' : ''}>
+                                                    {stats.complete.paye_effective_from}
+                                                </span>
+                                            </TableCell>
+                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('paye')}`}>
+                                                <span className={stats.complete.paye_effective_to === sortedDetails.length ? 'text-green-600 font-bold' : ''}>
+                                                    {stats.complete.paye_effective_to}
+                                                </span>
+                                            </TableCell>
+                                            
+                                            {/* Rent Income (MRI) */}
+                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('rent_income_mri')}`}>
+                                                <span className={stats.complete.rent_income_mri_status === sortedDetails.length ? 'text-green-600 font-bold' : ''}>
+                                                    {stats.complete.rent_income_mri_status}
+                                                </span>
+                                            </TableCell>
+                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('rent_income_mri')}`}>
+                                                <span className={stats.complete.rent_income_mri_effective_from === sortedDetails.length ? 'text-green-600 font-bold' : ''}>
+                                                    {stats.complete.rent_income_mri_effective_from}
+                                                </span>
+                                            </TableCell>
+                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('rent_income_mri')}`}>
+                                                <span className={stats.complete.rent_income_mri_effective_to === sortedDetails.length ? 'text-green-600 font-bold' : ''}>
+                                                    {stats.complete.rent_income_mri_effective_to}
+                                                </span>
+                                            </TableCell>
+                                            
+                                            {/* Resident Individual */}
+                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('resident_individual')}`}>
+                                                <span className={stats.complete.resident_individual_status === sortedDetails.length ? 'text-green-600 font-bold' : ''}>
+                                                    {stats.complete.resident_individual_status}
+                                                </span>
+                                            </TableCell>
+                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('resident_individual')}`}>
+                                                <span className={stats.complete.resident_individual_effective_from === sortedDetails.length ? 'text-green-600 font-bold' : ''}>
+                                                    {stats.complete.resident_individual_effective_from}
+                                                </span>
+                                            </TableCell>
+                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('resident_individual')}`}>
+                                                <span className={stats.complete.resident_individual_effective_to === sortedDetails.length ? 'text-green-600 font-bold' : ''}>
+                                                    {stats.complete.resident_individual_effective_to}
+                                                </span>
+                                            </TableCell>
+                                            
+                                            {/* Turnover Tax */}
+                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('turnover_tax')}`}>
+                                                <span className={stats.complete.turnover_tax_status === sortedDetails.length ? 'text-green-600 font-bold' : ''}>
+                                                    {stats.complete.turnover_tax_status}
+                                                </span>
+                                            </TableCell>
+                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('turnover_tax')}`}>
+                                                <span className={stats.complete.turnover_tax_effective_from === sortedDetails.length ? 'text-green-600 font-bold' : ''}>
+                                                    {stats.complete.turnover_tax_effective_from}
+                                                </span>
+                                            </TableCell>
+                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('turnover_tax')}`}>
+                                                <span className={stats.complete.turnover_tax_effective_to === sortedDetails.length ? 'text-green-600 font-bold' : ''}>
+                                                    {stats.complete.turnover_tax_effective_to}
+                                                </span>
+                                            </TableCell>
+                                            
+                                            <TableCell colSpan={2} className="border-r border-black"></TableCell>
+                                            <TableCell></TableCell>
+                                        </TableRow>
+                                        <TableRow className="h-6 bg-red-50">
+                                            <TableCell className="text-center text-[10px] font-bold border-r border-black">Missing</TableCell>
+                                            <TableCell className="text-center text-[10px] border-r border-black">
+                                                <span className={stats.missing.company_name > 0 ? 'text-red-600 font-bold' : ''}>
+                                                    {stats.missing.company_name}
+                                                </span>
+                                            </TableCell>
+                                            
+                                            {/* Income Tax Company */}
+                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('income_tax_company')}`}>
+                                                <span className={stats.missing.income_tax_company_status > 0 ? 'text-red-600 font-bold' : ''}>
+                                                    {stats.missing.income_tax_company_status}
+                                                </span>
+                                            </TableCell>
+                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('income_tax_company')}`}>
+                                                <span className={stats.missing.income_tax_company_effective_from > 0 ? 'text-red-600 font-bold' : ''}>
+                                                    {stats.missing.income_tax_company_effective_from}
+                                                </span>
+                                            </TableCell>
+                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('income_tax_company')}`}>
+                                                <span className={stats.missing.income_tax_company_effective_to > 0 ? 'text-red-600 font-bold' : ''}>
+                                                    {stats.missing.income_tax_company_effective_to}
+                                                </span>
+                                            </TableCell>
+                                            
+                                            {/* VAT */}
+                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('vat')}`}>
+                                                <span className={stats.missing.vat_status > 0 ? 'text-red-600 font-bold' : ''}>
+                                                    {stats.missing.vat_status}
+                                                </span>
+                                            </TableCell>
+                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('vat')}`}>
+                                                <span className={stats.missing.vat_effective_from > 0 ? 'text-red-600 font-bold' : ''}>
+                                                    {stats.missing.vat_effective_from}
+                                                </span>
+                                            </TableCell>
+                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('vat')}`}>
+                                                <span className={stats.missing.vat_effective_to > 0 ? 'text-red-600 font-bold' : ''}>
+                                                    {stats.missing.vat_effective_to}
+                                                </span>
+                                            </TableCell>
+                                            
+                                            {/* PAYE */}
+                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('paye')}`}>
+                                                <span className={stats.missing.paye_status > 0 ? 'text-red-600 font-bold' : ''}>
+                                                    {stats.missing.paye_status}
+                                                </span>
+                                            </TableCell>
+                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('paye')}`}>
+                                                <span className={stats.missing.paye_effective_from > 0 ? 'text-red-600 font-bold' : ''}>
+                                                    {stats.missing.paye_effective_from}
+                                                </span>
+                                            </TableCell>
+                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('paye')}`}>
+                                                <span className={stats.missing.paye_effective_to > 0 ? 'text-red-600 font-bold' : ''}>
+                                                    {stats.missing.paye_effective_to}
+                                                </span>
+                                            </TableCell>
+                                            
+                                            {/* Rent Income (MRI) */}
+                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('rent_income_mri')}`}>
+                                                <span className={stats.missing.rent_income_mri_status > 0 ? 'text-red-600 font-bold' : ''}>
+                                                    {stats.missing.rent_income_mri_status}
+                                                </span>
+                                            </TableCell>
+                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('rent_income_mri')}`}>
+                                                <span className={stats.missing.rent_income_mri_effective_from > 0 ? 'text-red-600 font-bold' : ''}>
+                                                    {stats.missing.rent_income_mri_effective_from}
+                                                </span>
+                                            </TableCell>
+                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('rent_income_mri')}`}>
+                                                <span className={stats.missing.rent_income_mri_effective_to > 0 ? 'text-red-600 font-bold' : ''}>
+                                                    {stats.missing.rent_income_mri_effective_to}
+                                                </span>
+                                            </TableCell>
+                                            
+                                            {/* Resident Individual */}
+                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('resident_individual')}`}>
+                                                <span className={stats.missing.resident_individual_status > 0 ? 'text-red-600 font-bold' : ''}>
+                                                    {stats.missing.resident_individual_status}
+                                                </span>
+                                            </TableCell>
+                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('resident_individual')}`}>
+                                                <span className={stats.missing.resident_individual_effective_from > 0 ? 'text-red-600 font-bold' : ''}>
+                                                    {stats.missing.resident_individual_effective_from}
+                                                </span>
+                                            </TableCell>
+                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('resident_individual')}`}>
+                                                <span className={stats.missing.resident_individual_effective_to > 0 ? 'text-red-600 font-bold' : ''}>
+                                                    {stats.missing.resident_individual_effective_to}
+                                                </span>
+                                            </TableCell>
+                                            
+                                            {/* Turnover Tax */}
+                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('turnover_tax')}`}>
+                                                <span className={stats.missing.turnover_tax_status > 0 ? 'text-red-600 font-bold' : ''}>
+                                                    {stats.missing.turnover_tax_status}
+                                                </span>
+                                            </TableCell>
+                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('turnover_tax')}`}>
+                                                <span className={stats.missing.turnover_tax_effective_from > 0 ? 'text-red-600 font-bold' : ''}>
+                                                    {stats.missing.turnover_tax_effective_from}
+                                                </span>
+                                            </TableCell>
+                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('turnover_tax')}`}>
+                                                <span className={stats.missing.turnover_tax_effective_to > 0 ? 'text-red-600 font-bold' : ''}>
+                                                    {stats.missing.turnover_tax_effective_to}
+                                                </span>
+                                            </TableCell>
+                                            
+                                            <TableCell colSpan={2} className="border-r border-black"></TableCell>
+                                            <TableCell></TableCell>
+                                        </TableRow>
+                                    </>
+                                )}
                                 <TableRow className="h-8">
                                     <TableHead className="sticky top-8 bg-white border-r border-black border-b"></TableHead>
                                     <TableHead className="sticky top-8 bg-white border-r border-black border-b"></TableHead>
