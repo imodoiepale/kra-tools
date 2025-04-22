@@ -9,10 +9,11 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogClose } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Trash2, RefreshCw, Download, Eye, EyeOff } from 'lucide-react'
+import { Trash2, RefreshCw, Download, Eye, EyeOff, Filter } from 'lucide-react'
 import ExcelJS from 'exceljs'
 import { Checkbox } from "@/components/ui/checkbox"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuCheckboxItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { ClientCategoryFilter } from "@/components/ClientCategoryFilter"
 
 interface Manufacturer {
   id: number
@@ -28,6 +29,8 @@ interface Manufacturer {
   po_box: string
   town: string
   desc_addr: string
+  category: string
+  status: string
 }
 
 export function ManufacturersDetailsReports() {
@@ -49,6 +52,9 @@ export function ManufacturersDetailsReports() {
     desc_addr: false,
   })
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'ascending' })
+  const [isCategoryFilterOpen, setIsCategoryFilterOpen] = useState(false)
+  const [categoryFilters, setCategoryFilters] = useState({})
+  const [showStatsRows, setShowStatsRows] = useState(true)
 
   const fetchReports = async () => {
     const { data, error } = await supabase
@@ -98,8 +104,6 @@ export function ManufacturersDetailsReports() {
       setManufacturers(manufacturers.filter(m => m.id !== id))
     }
   }
-
-
 
   const toggleColumnVisibility = (column: string) => {
     setVisibleColumns(prev => ({ ...prev, [column]: !prev[column] }))
@@ -285,12 +289,42 @@ export function ManufacturersDetailsReports() {
   })
 
   const filteredManufacturers = sortedManufacturers.filter(manufacturer => {
-    return Object.entries(manufacturer).some(([key, value]) => {
+    // Apply search filter
+    const matchesSearch = Object.entries(manufacturer).some(([key, value]) => {
       if (value === null || value === undefined) {
         return false;
       }
       return value.toString().toLowerCase().includes(searchTerm.toLowerCase());
     });
+
+    if (!matchesSearch) return false;
+    
+    // Apply category filters
+    if (Object.keys(categoryFilters).length > 0) {
+      // Check if any category filter is active
+      const hasActiveFilters = Object.values(categoryFilters).some(categoryStatus => 
+        Object.values(categoryStatus as Record<string, boolean>).some(isSelected => isSelected)
+      );
+      
+      if (hasActiveFilters) {
+        // Get the manufacturer's category and status
+        const category = manufacturer.category || 'all';
+        const status = manufacturer.status === 'active' ? 'active' : 'inactive';
+        
+        // Check if this category has any filters
+        const categoryFilter = categoryFilters[category] as Record<string, boolean> | undefined;
+        if (!categoryFilter) {
+          // Check if 'all' category has this status selected
+          const allCategoryFilter = categoryFilters['all'] as Record<string, boolean> | undefined;
+          return allCategoryFilter?.[status] || allCategoryFilter?.['all'];
+        }
+        
+        // Check if this specific status is selected for this category
+        return categoryFilter[status] || categoryFilter['all'];
+      }
+    }
+    
+    return true;
   });
 
   const requestSort = (key: string) => {
@@ -333,14 +367,34 @@ export function ManufacturersDetailsReports() {
           {/* <Button variant="destructive" onClick={handleDeleteAll} size="sm">Delete All</Button> */}
         </div>
       </div>
-      <div className="">
+      <div className="flex space-x-2">
         <Input
           placeholder="Search Manufacturers..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           className="max-w-sm"
         />
+        <Button variant="outline" onClick={() => setIsCategoryFilterOpen(true)} size="sm">
+          <Filter className="h-4 w-4 mr-2" />
+          Categories
+        </Button>
+        <Button 
+          variant="outline" 
+          onClick={() => setShowStatsRows(!showStatsRows)} 
+          size="sm"
+        >
+          {showStatsRows ? <EyeOff className="h-4 w-4 mr-2" /> : <Eye className="h-4 w-4 mr-2" />}
+          {showStatsRows ? 'Hide Stats' : 'Show Stats'}
+        </Button>
       </div>
+      
+      <ClientCategoryFilter 
+        isOpen={isCategoryFilterOpen} 
+        onClose={() => setIsCategoryFilterOpen(false)} 
+        onApplyFilters={(filters) => setCategoryFilters(filters)}
+        onClearFilters={() => setCategoryFilters({})}
+        selectedFilters={categoryFilters}
+      />
 
       <div className="rounded-md border">
         <div className="overflow-x-auto">
@@ -365,7 +419,42 @@ export function ManufacturersDetailsReports() {
                   ))}
                   <TableHead className="text-center text-[12px] text-black font-bold">Actions</TableHead>
                 </TableRow>
-                {/* {renderTotalsRow()} */}
+                {showStatsRows && (
+                  <>
+                    <TableRow className="bg-blue-50">
+                      <TableCell className="text-center text-[10px] font-bold">Complete</TableCell>
+                      {Object.entries(visibleColumns).map(([column, isVisible]) => {
+                        if (!isVisible) return null;
+                        const completeCount = manufacturers.filter(m => m[column] && m[column].toString().trim() !== '').length;
+                        const percentage = Math.round((completeCount / manufacturers.length) * 100);
+                        return (
+                          <TableCell key={`complete-${column}`} className="text-center text-[10px]">
+                            <span className={percentage === 100 ? 'text-green-600 font-bold' : ''}>
+                              {completeCount}
+                            </span>
+                          </TableCell>
+                        );
+                      })}
+                      <TableCell></TableCell>
+                    </TableRow>
+                    <TableRow className="bg-red-50">
+                      <TableCell className="text-center text-[10px] font-bold">Missing</TableCell>
+                      {Object.entries(visibleColumns).map(([column, isVisible]) => {
+                        if (!isVisible) return null;
+                        const missingCount = manufacturers.filter(m => !m[column] || m[column].toString().trim() === '').length;
+                        const percentage = Math.round((missingCount / manufacturers.length) * 100);
+                        return (
+                          <TableCell key={`missing-${column}`} className="text-center text-[10px]">
+                            <span className={percentage > 0 ? 'text-red-600 font-bold' : ''}>
+                              {missingCount} 
+                            </span>
+                          </TableCell>
+                        );
+                      })}
+                      <TableCell></TableCell>
+                    </TableRow>
+                  </>
+                )}
               </TableHeader>
               <TableBody>
                 {filteredManufacturers.map((manufacturer, index) => (
