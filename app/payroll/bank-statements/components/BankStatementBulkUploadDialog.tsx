@@ -173,7 +173,7 @@ export function BankStatementBulkUploadDialog({
 
     // New state for companies
     const [companies, setCompanies] = useState<any[]>([]);
-    const [banks, setBanks] = useState<any[]>([]);
+    const [availableBanks, setAvailableBanks] = useState<any[]>([]);
     const [loadingCompanies, setLoadingCompanies] = useState<boolean>(false);
     const [isDragging, setIsDragging] = useState<boolean>(false);
 
@@ -263,7 +263,7 @@ export function BankStatementBulkUploadDialog({
 
                 if (isMounted) {
                     setCompanies(companiesWithBankCount);
-                    setBanks(banksData);
+                    setAvailableBanks(banksData);
                 }
             } catch (error) {
                 console.error('Error fetching companies:', error);
@@ -310,7 +310,7 @@ export function BankStatementBulkUploadDialog({
                 }
                 
                 console.log(`Found ${data?.length || 0} total banks for random mode`);
-                setBanks(data || []);
+                setAvailableBanks(data || []);
             } catch (error) {
                 console.error('Error in fetchAllBanks:', error);
             }
@@ -338,7 +338,7 @@ export function BankStatementBulkUploadDialog({
                 }
                 
                 console.log(`Found ${data?.length || 0} banks for company ${selectedCompanyId}:`, data);
-                setBanks(data || []);
+                setAvailableBanks(data || []);
             } catch (error) {
                 console.error('Error in fetchBanksForCompany:', error);
             }
@@ -617,10 +617,10 @@ export function BankStatementBulkUploadDialog({
             // Try to match by account number first (highest confidence)
             if (detectedAccountNumber) {
                 if (randomMode) {
-                    matchedBank = fuzzyMatchBank(fileName, banks);
+                    matchedBank = fuzzyMatchBank(fileName, availableBanks);
                     if (matchedBank) matchConfidence = 50;
                 } else {
-                    const companyBanks = banks.filter(bank => bank?.company_id === selectedCompanyId);
+                    const companyBanks = availableBanks.filter(bank => bank?.company_id === selectedCompanyId);
                     matchedBank = companyBanks.find(bank =>
                         bank?.account_number?.includes(detectedAccountNumber) ||
                         detectedAccountNumber.includes(bank?.account_number || '')
@@ -632,10 +632,10 @@ export function BankStatementBulkUploadDialog({
             // If no match by account number, try by bank name (medium confidence)
             if (!matchedBank && detectedBankName) {
                 if (randomMode) {
-                    matchedBank = fuzzyMatchBank(fileName, banks);
+                    matchedBank = fuzzyMatchBank(fileName, availableBanks);
                     if (matchedBank) matchConfidence = 50;
                 } else {
-                    const companyBanks = banks.filter(bank => bank?.company_id === selectedCompanyId);
+                    const companyBanks = availableBanks.filter(bank => bank?.company_id === selectedCompanyId);
                     matchedBank = companyBanks.find(bank =>
                         bank?.bank_name?.toLowerCase().includes(detectedBankName.toLowerCase()) ||
                         detectedBankName.toLowerCase().includes(bank?.bank_name?.toLowerCase() || '')
@@ -1485,7 +1485,7 @@ export function BankStatementBulkUploadDialog({
                                             </h3>
                                             {!randomMode && selectedCompanyId && (
                                                 <Badge variant="outline" className="bg-blue-50">
-                                                    {banks.length} Banks
+                                                    {availableBanks.length} Banks
                                                 </Badge>
                                             )}
                                         </div>
@@ -1510,7 +1510,7 @@ export function BankStatementBulkUploadDialog({
                                                     </div>
                                                 </div>
                                             </div>
-                                        ) : selectedCompanyId && banks.length === 0 ? (
+                                        ) : selectedCompanyId && availableBanks.length === 0 ? (
                                             <div className="text-center text-gray-500 py-6 bg-white border rounded-md">
                                                 <Landmark className="h-8 w-8 text-gray-300 mx-auto mb-2" />
                                                 <p>No banks configured for this company</p>
@@ -1528,25 +1528,27 @@ export function BankStatementBulkUploadDialog({
                                                         </TableRow>
                                                     </TableHeader>
                                                     <TableBody>
-                                                        {banks.map((bank, index) => (
-                                                            <TableRow key={bank.id}>
-                                                                <TableCell className="font-mono text-xs">{index + 1}</TableCell>
-                                                                <TableCell className="font-medium">{bank.bank_name}</TableCell>
-                                                                <TableCell className="font-mono text-sm">{bank.account_number}</TableCell>
-                                                                <TableCell>{bank.bank_currency || 'KES'}</TableCell>
-                                                                <TableCell>
-                                                                    {bank.acc_password ? (
-                                                                        <Badge variant="outline" className="bg-green-50 text-green-700">
-                                                                            {bank.acc_password}
-                                                                        </Badge>
-                                                                    ) : (
-                                                                        <Badge variant="outline" className="bg-red-50 text-red-700">
-                                                                            Not Set
-                                                                        </Badge>
-                                                                    )}
-                                                                </TableCell>
-                                                            </TableRow>
-                                                        ))}
+                                                        {availableBanks
+                                                            .filter(bank => bank?.company_id === selectedCompanyId)
+                                                            .map((bank, index) => (
+                                                                <TableRow key={bank.id}>
+                                                                    <TableCell className="font-mono text-xs">{index + 1}</TableCell>
+                                                                    <TableCell className="font-medium">{bank.bank_name}</TableCell>
+                                                                    <TableCell className="font-mono text-sm">{bank.account_number}</TableCell>
+                                                                    <TableCell>{bank.bank_currency || 'KES'}</TableCell>
+                                                                    <TableCell>
+                                                                        {bank.acc_password ? (
+                                                                            <Badge variant="outline" className="bg-green-50 text-green-700">
+                                                                                {bank.acc_password}
+                                                                            </Badge>
+                                                                        ) : (
+                                                                            <Badge variant="outline" className="bg-red-50 text-red-700">
+                                                                                Not Set
+                                                                            </Badge>
+                                                                        )}
+                                                                    </TableCell>
+                                                                </TableRow>
+                                                            ))}
                                                     </TableBody>
                                                 </Table>
                                             </div>
@@ -2476,7 +2478,7 @@ export function BankStatementBulkUploadDialog({
                                 </SelectTrigger>
                                 <SelectContent>
                                     <SelectItem value="placeholder">-- Select Bank --</SelectItem>
-                                    {banks
+                                    {availableBanks
                                         .filter(bank => bank?.company_id === selectedCompanyId)
                                         .map(bank => (
                                         <SelectItem key={bank.id} value={bank.id.toString()}>
@@ -2510,7 +2512,7 @@ export function BankStatementBulkUploadDialog({
                                     // Apply the manual match
                                     const bankId = selectedBankIds[currentManualMatchItem] || 0;
                                     if (bankId > 0) {
-                                        const matchedBank = banks.find(b => b.id === bankId);
+                                        const matchedBank = availableBanks.find(b => b.id === bankId);
                                         if (matchedBank) {
                                             setUploadItems(items => {
                                                 const updated = [...items];
