@@ -104,6 +104,7 @@ interface BulkUploadItem {
         accountNumber?: string;
         bankName?: string;
     }
+    uploadedPdfPath?: string
 }
 
 interface CompanyGroup {
@@ -121,7 +122,7 @@ interface BankStatementBulkUploadDialogProps {
     cycleMonth: number
     cycleYear: number
     statementCycleId: string | null
-    onUploadsComplete: () => void
+    onUploadsComplete?: () => void
 }
 
 export function BankStatementBulkUploadDialog({
@@ -182,6 +183,8 @@ export function BankStatementBulkUploadDialog({
 
     const fileInputRef = useRef<HTMLInputElement>(null)
     const { toast } = useToast()
+
+    const [pdfUrls, setPdfUrls] = useState<Record<string, string>>({});
 
     // Use useEffect to sync with prop changes
     useEffect(() => {
@@ -692,52 +695,28 @@ export function BankStatementBulkUploadDialog({
     };
 
     // Enhanced version of handleStartProcessing to use the new flow
-    const handleStartProcessing = async () => {
-        if (!uploadItems || uploadItems.length === 0) {
-            toast({
-                title: 'No files selected',
-                description: 'Please select bank statement files to upload',
-                variant: 'destructive'
-            });
-            return;
-        }
-
-        // Check if we have a cycle ID
-        if (!localCycleId) {
-            toast({
-                title: 'Error',
-                description: 'No statement cycle ID available',
-                variant: 'destructive'
-            });
-            return;
-        }
-
-        // Check that all items have matched banks
-        const unmatchedItems = uploadItems.filter(item => !item.matchedBank);
-        if (unmatchedItems.length > 0) {
-            toast({
-                title: 'Unmatched Banks',
-                description: `${unmatchedItems.length} file(s) don't have matched banks. Please match all files before proceeding.`,
-                variant: 'destructive'
-            });
-            return;
-        }
-
-        setUploading(true);
+    const handleStartProcessing = () => {
+        // Switch to processing tab automatically
         setActiveTab('processing');
-        setOverallProgress(10);
 
-        // Create a queue of items to process
+        // Filter only files that need processing
         const itemsToProcess = uploadItems
             .map((item, index) => ({ item, index }))
-            .filter(({ item }) => item.status !== 'uploaded' && item.status !== 'vouched')
+            .filter(({ item }) => item.status === 'pending' || item.status === 'unmatched' || item.status === 'matched')
             .map(({ index }) => index);
 
+        // Set up the processing queue
         setProcessingQueue(itemsToProcess);
         setOverallProgress(20);
 
-        // Check for password-protected files first
-        await processPasswordProtectedFiles();
+        // Start processing immediately without waiting
+        setTimeout(() => {
+            processPasswordProtectedFiles();
+            // Ensure we move to processing UI right away
+            if (itemsToProcess.length > 0) {
+                setProcessingIndex(itemsToProcess[0]);
+            }
+        }, 100);
     };
 
     // Function to handle password-protected files
@@ -877,21 +856,21 @@ export function BankStatementBulkUploadDialog({
         }
     };
 
-    const handleFileExtraction = async (itemIndex: number) => {
-        const item = uploadItems[itemIndex];
-        if (!item || !item.file || !item.matchedBank) {
+    // Process the extraction of a file and handle the result
+    const processExtraction = async (file: File, item: BulkUploadItem): Promise<boolean> => {
+        if (!file || !item.matchedBank) {
             console.error('Invalid item for extraction');
-            return;
+            return false;
         }
 
-        setCurrentProcessingItem(item);
-        setCurrentItemIndex(itemIndex);
-        setExtractionResults(null);
-        setValidationResults(null);
-
         try {
+            setCurrentProcessingItem(item);
+            setCurrentItemIndex(uploadItems.findIndex(i => i === item));
+            setExtractionResults(null);
+            setValidationResults(null);
+
             // Create temporary URL for extraction
-            const fileUrl = URL.createObjectURL(item.file);
+            const fileUrl = URL.createObjectURL(file);
 
             // Perform extraction
             const extractionResult = await performBankStatementExtraction(
@@ -913,6 +892,7 @@ export function BankStatementBulkUploadDialog({
 
                 // Show validation dialog
                 setShowValidationDialog(true);
+                return true;
             } else {
                 // If extraction failed, continue with upload anyway
                 toast({
@@ -922,11 +902,9 @@ export function BankStatementBulkUploadDialog({
                 });
 
                 // Proceed with upload without extraction data
-                await handleFileUpload(itemIndex, null);
+                await handleFileUpload(uploadItems.findIndex(i => i === item), null);
+                return true;
             }
-
-            // Clean up URL
-            URL.revokeObjectURL(fileUrl);
         } catch (error) {
             console.error('Extraction error:', error);
             toast({
@@ -936,7 +914,52 @@ export function BankStatementBulkUploadDialog({
             });
 
             // Continue with upload anyway
-            await handleFileUpload(itemIndex, null);
+            await handleFileUpload(uploadItems.findIndex(i => i === item), null);
+            return false;
+        }
+    };
+
+    const handleFileExtraction = async (itemIndex: number) => {
+        try {
+            // Update status
+            setProcessingIndex(itemIndex);
+            const item = uploadItems[itemIndex];
+            if (!item || !item.file) {
+                throw new Error("Invalid file item");
+            }
+
+            setUploadItems(prev => {
+                const updated = [...prev];
+                if (updated[itemIndex]) {
+                    updated[itemIndex].status = 'processing';
+                    updated[itemIndex].uploadProgress = 30;
+                }
+                return updated;
+            });
+
+            // Begin extraction process immediately
+            const extractionStarted = await processExtraction(item.file, item);
+
+            if (!extractionStarted) {
+                throw new Error("Failed to start extraction process");
+            }
+
+            // Don't wait for the extraction to complete here, it will be handled by the callback
+        } catch (error) {
+            console.error("Error during file extraction:", error);
+            setUploadItems(prev => {
+                const updated = [...prev];
+                if (updated[itemIndex]) {
+                    updated[itemIndex] = {
+                        ...updated[itemIndex],
+                        status: 'failed',
+                        error: error.message || "Extraction failed",
+                        uploadProgress: 0
+                    };
+                }
+                return updated;
+            });
+            processNextQueueItem();
         }
     };
 
@@ -981,13 +1004,14 @@ export function BankStatementBulkUploadDialog({
                 const updated = [...prev];
                 if (updated[itemIndex]) {
                     updated[itemIndex].uploadProgress = 75;
+                    updated[itemIndex].uploadedPdfPath = pdfPath;
                 }
                 return updated;
             });
 
-            // Create statement document info
+            // Create statement document info with proper path
             const statementDocumentInfo = {
-                statement_pdf: pdfPath,
+                statement_pdf: pdfPath, // This should be the actual path from upload
                 statement_excel: null,
                 document_size: item.file.size || 0,
                 password: item.passwordApplied ? item.password : null
@@ -1000,8 +1024,8 @@ export function BankStatementBulkUploadDialog({
                 statement_cycle_id: localCycleId,
                 statement_month: cycleMonth,
                 statement_year: cycleYear,
-                has_soft_copy: item.hasSoftCopy || false,
-                statement_document: statementDocumentInfo,
+                has_soft_copy: item.hasSoftCopy || true,
+                statement_document: statementDocumentInfo, // This is properly formatted
                 statement_extractions: extractedData || {
                     bank_name: null,
                     account_number: null,
@@ -1024,29 +1048,24 @@ export function BankStatementBulkUploadDialog({
                 }
             };
 
-            // Check if statement already exists (continued)
-            const { data: existingStatement, error: existingError } = await supabase
+            // Check if statement already exists
+            const { data: existingStatements, error: existingError } = await supabase
                 .from('acc_cycle_bank_statements')
                 .select('id')
                 .eq('bank_id', bank.id)
                 .eq('statement_month', cycleMonth)
-                .eq('statement_year', cycleYear)
-                .single();
+                .eq('statement_year', cycleYear);
 
-            if (existingError && existingError.code !== 'PGRST116') {
-                // If error is not "no rows returned" error, throw it
-                throw existingError;
-            }
-
-            // Update or insert statement record
             let statementResponse;
-            if (existingStatement?.id) {
+            if (existingStatements && existingStatements.length > 0) {
+                // Update existing statement
                 statementResponse = await supabase
                     .from('acc_cycle_bank_statements')
                     .update(statementData)
-                    .eq('id', existingStatement.id)
+                    .eq('id', existingStatements[0].id)
                     .select();
             } else {
+                // Insert new statement - don't include ID
                 statementResponse = await supabase
                     .from('acc_cycle_bank_statements')
                     .insert(statementData)
@@ -1173,6 +1192,11 @@ export function BankStatementBulkUploadDialog({
     const handleExtractionDialogClose = () => {
         setShowExtractionDialog(false);
         processNextQueueItem();
+
+        // Clean up temporary objects
+        if (currentProcessingItem?.file) {
+            URL.revokeObjectURL(URL.createObjectURL(currentProcessingItem.file));
+        }
     };
 
     // Validate extracted data
@@ -1408,7 +1432,7 @@ export function BankStatementBulkUploadDialog({
                     setSelectedCompanyId(null);
                 }
             }}>
-                <DialogContent className="max-w-7xl max-h-[100vh] flex flex-col">
+                <DialogContent className="max-h-[90vh] overflow-hidden flex flex-col sm:max-w-[900px] w-[95vw]">
                     <DialogHeader>
                         <div className="bg-gradient-to-r from-blue-50 via-blue-100 to-blue-50 -mx-6 -mt-6 p-6 rounded-t-lg border-b border-blue-200">
                             <div className="mb-2 flex justify-center">
@@ -1447,7 +1471,7 @@ export function BankStatementBulkUploadDialog({
                             </TabsTrigger>
                         </TabsList>
 
-                        <TabsContent value="upload" className="flex-1 flex flex-col space-y-4 py-4 px-1">
+                        <TabsContent value="upload" className="flex-1 flex flex-col overflow-auto p-2">
                             <div className="space-y-4">
                                 {/* Company Selection */}
                                 <div className="space-y-2">
@@ -1720,7 +1744,7 @@ export function BankStatementBulkUploadDialog({
                             </div>
                         </TabsContent>
 
-                        <TabsContent value="processing" className="flex-1 flex flex-col space-y-2 py-2 px-2">
+                        <TabsContent value="processing" className="flex-1 flex flex-col overflow-auto p-2">
                             <div className="space-y-6">
                                 <Card>
                                     <CardHeader className="pb-2">
@@ -1913,8 +1937,8 @@ export function BankStatementBulkUploadDialog({
                             </div>
                         </TabsContent>
 
-                        <TabsContent value="review" className="flex-1 flex flex-col overflow-hidden">
-                            <div className="border rounded-md overflow-hidden flex-1">
+                        <TabsContent value="review" className="flex-1 flex flex-col overflow-auto p-2">
+                            <div className="border rounded-md overflow-hidden">
                                 <div className="max-h-[calc(90vh-420px)] overflow-y-auto">
                                     <Table className="min-w-full">
                                         <TableHeader className="sticky top-0 bg-white z-10 shadow">
@@ -2026,8 +2050,8 @@ export function BankStatementBulkUploadDialog({
                             </div>
                         </TabsContent>
 
-                        <TabsContent value="vouching" className="flex-1 flex flex-col overflow-hidden">
-                            <div className="h-full overflow-y-auto p-1">
+                        <TabsContent value="vouching" className="flex-1 flex flex-col overflow-auto p-2">
+                            <div className="h-full overflow-y-auto">
                                 {companyGroups.length === 0 ? (
                                     <div className="flex items-center justify-center h-40 text-muted-foreground">
                                         No statements available for vouching
@@ -2202,7 +2226,7 @@ export function BankStatementBulkUploadDialog({
                                     variant="default"
                                     onClick={() => {
                                         onClose();
-                                        onUploadsComplete();
+                                        onUploadsComplete?.();
                                     }}
                                 >
                                     Complete Vouching
@@ -2236,12 +2260,11 @@ export function BankStatementBulkUploadDialog({
                     onClose={handleExtractionDialogClose}
                     bank={currentProcessingItem.matchedBank}
                     statement={{
-                        id: "temp-id",
                         bank_id: currentProcessingItem.matchedBank.id,
                         statement_month: cycleMonth,
                         statement_year: cycleYear,
                         statement_document: {
-                            statement_pdf: null,
+                            statement_pdf: currentProcessingItem.uploadedPdfPath || null,
                             statement_excel: null,
                             document_size: currentProcessingItem.file?.size || 0
                         },

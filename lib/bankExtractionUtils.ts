@@ -142,24 +142,34 @@ async function getPdfPageCount(fileUrl, password = null) {
   try {
     // If fileUrl is a string URL
     if (typeof fileUrl === 'string') {
-      const canvas = await getCanvas();
-      const loadingTask = pdfjsLib.getDocument({
-        url: fileUrl,
-        password: password,
-        canvasFactory: canvas.createCanvas,
-      });
-      const pdf = await loadingTask.promise;
-      return { success: true, numPages: pdf.numPages, pdf };
+      if (fileUrl.startsWith('blob:')) {
+        // Handle blob URLs by fetching them first
+        const response = await fetch(fileUrl);
+        const arrayBuffer = await response.arrayBuffer();
+
+        const loadingTask = pdfjsLib.getDocument({
+          data: new Uint8Array(arrayBuffer),
+          password: password,
+        });
+        const pdf = await loadingTask.promise;
+        return { success: true, numPages: pdf.numPages, pdf };
+      } else {
+        // Regular URL handling
+        const loadingTask = pdfjsLib.getDocument({
+          url: fileUrl,
+          password: password,
+        });
+        const pdf = await loadingTask.promise;
+        return { success: true, numPages: pdf.numPages, pdf };
+      }
     }
 
     // If fileUrl is a File object
     if (fileUrl instanceof File) {
       const arrayBuffer = await fileUrl.arrayBuffer();
-      const canvas = await getCanvas();
       const loadingTask = pdfjsLib.getDocument({
         data: new Uint8Array(arrayBuffer),
         password: password,
-        canvasFactory: canvas.createCanvas,
       });
       const pdf = await loadingTask.promise;
       return { success: true, numPages: pdf.numPages, pdf };
@@ -349,7 +359,7 @@ function createExtractionQueries() {
     { field: 'currency', query: "What currency is used in this statement?" },
     { field: 'statement_period', query: "What is the statement period? Include start and end dates." },
     // { field: 'opening_balance', query: "What is the opening balance of the account?" },
-    // { field: 'closing_balance', query: "What is the closing balance of the account?" },
+    { field: 'closing_balance', query: "What is the closing balance of the account?" },
     { field: 'monthly_balances', query: "List all monthly balances including month, year, opening and closing balances." }
   ];
 }
@@ -379,7 +389,7 @@ You are analyzing a bank statement. Extract the following information from the t
 4. Currency: The currency code or name used in the statement
 5. Statement Period: The exact date range covered in dd/mm/yyyy format always
 // 6. Opening Balance: The starting balance
-// 7. Closing Balance: The final balance
+7. Closing Balance: The final balance
 6. Monthly Balances: Any balances for specific months mentioned
 
 For the specific month ${params.month}/${params.year}, find exact opening and closing balances if available.
@@ -392,7 +402,7 @@ Return your analysis in this JSON format:
   "currency": "Currency Code",
   "statement_period": "Start Date - End Date",
   // "opening_balance": number,
-  // "closing_balance": number,
+  "closing_balance": number,
   "monthly_balances": [
     {
       "month": month_number,
@@ -509,7 +519,7 @@ function extractFallbackData(text, params) {
       currency: null,
       statement_period: null,
       // opening_balance: null,
-      // closing_balance: null,
+      closing_balance: null,
       monthly_balances: []
     };
     
@@ -560,7 +570,7 @@ function normalizeExtractedData(extractedData, params) {
         month: balance.month,
         year: balance.year,
         // opening_balance: parseCurrencyAmount(balance.opening_balance),
-        // closing_balance: parseCurrencyAmount(balance.closing_balance),
+        closing_balance: parseCurrencyAmount(balance.closing_balance),
         statement_page: balance.statement_page || 1,
         highlight_coordinates: null,
         is_verified: false,
@@ -579,7 +589,7 @@ function normalizeExtractedData(extractedData, params) {
         month: params.month,
         year: params.year,
         // opening_balance: parseCurrencyAmount(extractedData.opening_balance),
-        // closing_balance: parseCurrencyAmount(extractedData.closing_balance),
+        closing_balance: parseCurrencyAmount(extractedData.closing_balance),
         statement_page: 1,
         highlight_coordinates: null,
         is_verified: false,
@@ -598,7 +608,7 @@ function normalizeExtractedData(extractedData, params) {
     currency: extractedData.currency ? normalizeCurrencyCode(extractedData.currency) : null,
     statement_period: extractedData.statement_period || null,
     // opening_balance: parseCurrencyAmount(extractedData.opening_balance),
-    // closing_balance: parseCurrencyAmount(extractedData.closing_balance),
+    closing_balance: parseCurrencyAmount(extractedData.closing_balance),
     monthly_balances: processMonthlyBalances()
   };
 }
@@ -687,12 +697,12 @@ export async function performBankStatementExtraction(
         currency: null,
         statement_period: null,
         // opening_balance: null,
-        // closing_balance: null,
+        closing_balance: null,
         monthly_balances: [{
           month: params.month,
           year: params.year,
           // opening_balance: null,
-          // closing_balance: null,
+          closing_balance: null,
           statement_page: 1,
           highlight_coordinates: null,
           is_verified: false,
