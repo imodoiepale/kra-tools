@@ -7,7 +7,8 @@ import {
     FileCheck, DollarSign, Building, Calendar,
     FileTextIcon, Download ,
     ZoomOut,
-    ZoomIn
+    ZoomIn,
+    Calculator
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/hooks/use-toast'
@@ -333,18 +334,35 @@ export function BankExtractionDialog({
         return null;
     }
 
-    const [activeTab, setActiveTab] = useState<string>('overview')
-    const[pdfUrl, setPdfUrl] = useState<string | null>(null);
-    const [currentPage, setCurrentPage] = useState<number>(1)
-    const [totalPages, setTotalPages] = useState<number>(1)
-    const [pdfScale, setPdfScale] = useState<number>(1.0) // Scale for PDF view
+    // Add compatibility for both statement_extractions and extraction_data
+    const extractionsData = statement?.statement_extractions || statement?.extraction_data || {
+        bank_name: null,
+        account_number: null,
+        currency: null,
+        statement_period: null,
+        opening_balance: null,
+        closing_balance: null,
+        monthly_balances: []
+    };
+
+    // Setup state variables
+    const [activeTab, setActiveTab] = useState<string>('overview');
+    const [saving, setSaving] = useState<boolean>(false);
+    const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+    const [pdfLoading, setPdfLoading] = useState<boolean>(true);
+    const [pdfError, setPdfError] = useState<string | null>(null);
+    const [pdfContent, setPdfContent] = useState<string | null>(null);
+    const [pdfDocument, setPdfDocument] = useState<PDFDocumentProxy | null>(null);
+    const [numPages, setNumPages] = useState<number>(0);
+    const [totalPages, setTotalPages] = useState<number>(0);
+    const [currentPage, setCurrentPage] = useState<number>(1);
+    const [scale, setScale] = useState<number>(1.3);
+    const [renderedPages, setRenderedPages] = useState<boolean[]>([]);
     const [documentSize, setDocumentSize] = useState<number | null>(null)
     const [loading, setLoading] = useState<boolean>(true)
-    const [saving, setSaving] = useState<boolean>(false)
     const [deleting, setDeleting] = useState<boolean>(false)
     const [selectedMonth, setSelectedMonth] = useState<number>(statement.statement_month)
     const [selectedYear, setSelectedYear] = useState<number>(statement.statement_year)
-    const [pdfDocument, setPdfDocument] = useState<PDFDocumentProxy | null>(null)
     const [pdfText, setPdfText] = useState<string>('')
     const [selectedText, setSelectedText] = useState<string>('')
     const [allPagesRendered, setAllPagesRendered] = useState<boolean[]>([])
@@ -357,7 +375,7 @@ export function BankExtractionDialog({
     const [applyingPassword, setApplyingPassword] = useState<boolean>(false);
     const [currentPassword, setCurrentPassword] = useState<string | null>(pdfPassword || null);
     const [pageNumber, setPageNumber] = useState(1);
-    const [numPages, setNumPages] = useState(null);
+    // const [numPages, setNumPages] = useState(null);
 
 
     // Detected periods in PDF
@@ -378,12 +396,12 @@ export function BankExtractionDialog({
     } | null>(null)
 
     // Editable extraction fields
-    const [bankName, setBankName] = useState<string>(statement.statement_extractions.bank_name || '')
-    const [accountNumber, setAccountNumber] = useState<string>(statement.statement_extractions.account_number || '')
-    const [currency, setCurrency] = useState<string>(statement.statement_extractions.currency || '')
-    const [statementPeriod, setStatementPeriod] = useState<string>(statement.statement_extractions.statement_period || '')
+    const [bankName, setBankName] = useState<string>(extractionsData.bank_name || '')
+    const [accountNumber, setAccountNumber] = useState<string>(extractionsData.account_number || '')
+    const [currency, setCurrency] = useState<string>(extractionsData.currency || '')
+    const [statementPeriod, setStatementPeriod] = useState<string>(extractionsData.statement_period || '')
     const [monthlyBalances, setMonthlyBalances] = useState<MonthlyBalance[]>(
-        statement.statement_extractions.monthly_balances || []
+        extractionsData.monthly_balances || []
     )
 
     const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -837,7 +855,7 @@ export function BankExtractionDialog({
                 bank_name: bankName || null,
                 account_number: accountNumber || null,
                 currency: currency || null,
-                statement_period: statementPeriod || statement.statement_extractions.statement_period,
+                statement_period: statementPeriod || extractionsData.statement_period,
                 // Set opening/closing balance based on monthly balances for the selected month/year
                 opening_balance: getMonthlyOpeningBalance(),
                 closing_balance: getMonthlyClosingBalance(),
@@ -1703,7 +1721,7 @@ export function BankExtractionDialog({
                 </DialogHeader>
 
 
-                <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
+                <Tabs value={activeTab} defaultValue="overview" onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
                     <TabsList className="grid w-full grid-cols-2">
                         <TabsTrigger value="overview">Statement Overview</TabsTrigger>
                         <TabsTrigger value="validation">Validation</TabsTrigger>

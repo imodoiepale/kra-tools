@@ -63,7 +63,7 @@ import {
     SelectValue,
 } from "@/components/ui/select"
 import { Switch } from '@/components/ui/switch';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip';
 import { HelpCircle } from 'lucide-react';
 
 // Import PDF.js functionality
@@ -289,61 +289,61 @@ export function BankStatementBulkUploadDialog({
         return () => {
             isMounted = false;
         };
-    // Only depend on isOpen to avoid endless fetching
-    }, [isOpen]); 
+        // Only depend on isOpen to avoid endless fetching
+    }, [isOpen]);
 
     // Effect to fetch all banks when in random mode
     useEffect(() => {
         if (!randomMode) return;
-        
+
         const fetchAllBanks = async () => {
             try {
                 console.log('Fetching all banks for random mode');
-                
+
                 const { data, error } = await supabase
                     .from('acc_portal_banks')
                     .select('*');
-                
+
                 if (error) {
                     console.error('Error fetching all banks:', error);
                     return;
                 }
-                
+
                 console.log(`Found ${data?.length || 0} total banks for random mode`);
                 setAvailableBanks(data || []);
             } catch (error) {
                 console.error('Error in fetchAllBanks:', error);
             }
         };
-        
+
         fetchAllBanks();
     }, [randomMode]);
 
     // Effect to fetch banks when company changes
     useEffect(() => {
         if (!selectedCompanyId) return;
-        
+
         const fetchBanksForCompany = async () => {
             try {
                 console.log(`Fetching banks specifically for company ID: ${selectedCompanyId}`);
-                
+
                 const { data, error } = await supabase
                     .from('acc_portal_banks')
                     .select('*')
                     .eq('company_id', selectedCompanyId);
-                
+
                 if (error) {
                     console.error('Error fetching banks for company:', error);
                     return;
                 }
-                
+
                 console.log(`Found ${data?.length || 0} banks for company ${selectedCompanyId}:`, data);
                 setAvailableBanks(data || []);
             } catch (error) {
                 console.error('Error in fetchBanksForCompany:', error);
             }
         };
-        
+
         fetchBanksForCompany();
     }, [selectedCompanyId]);
 
@@ -478,24 +478,24 @@ export function BankStatementBulkUploadDialog({
     const getBankNameFromFilename = (filename: string) => {
         // Convert filename to lowercase for case-insensitive matching
         const lowerFilename = filename.toLowerCase();
-        
+
         // Common bank names to check
         const bankNames = [
-            'kcb', 'equity', 'stanbic', 'standard chartered', 'stanchart', 'absa', 'barclays', 
+            'kcb', 'equity', 'stanbic', 'standard chartered', 'stanchart', 'absa', 'barclays',
             'coop', 'cooperative', 'ncba', 'cba', 'diamond trust', 'dtb', 'family', 'i&m', 'im bank',
             'gulf', 'uob', 'prime', 'bank of africa', 'boa', 'credit bank', 'eco bank', 'ecobank'
         ];
-        
+
         // Try to find any bank name in the filename
         for (const bank of bankNames) {
             if (lowerFilename.includes(bank)) {
                 return bank;
             }
         }
-        
+
         return null;
     };
-    
+
     // Extract account number from filename
     const getAccountNumberFromFilename = (filename: string) => {
         // Look for common account number patterns
@@ -504,85 +504,108 @@ export function BankStatementBulkUploadDialog({
         // - May contain hyphens or spaces
         const accountNumberRegex = /[0-9]{5,}|[0-9]{2,}[-\s][0-9]{2,}[-\s][0-9]{2,}/g;
         const matches = filename.match(accountNumberRegex);
-        
+
         return matches ? matches[0] : null;
     };
-    
+
+    // Detect password from filename
+    const detectPasswordFromFilename = (filename: string) => {
+        // Common password patterns in filenames
+        // Look for patterns like "pass:1234" or "pwd1234" or "p=1234"
+        const passwordRegex = /(?:pass(?:word)?[:=\s]*)(\d{4,})|(?:p(?:wd)?[:=\s]*)(\d{4,})/i;
+        const match = filename.match(passwordRegex);
+
+        if (match) {
+            return match[1] || match[2] || null;
+        }
+
+        // Alternative approach: check for 4-digit numbers in filename
+        // that might be passwords (simple heuristic)
+        const digitMatch = filename.match(/\b\d{4}\b/);
+        return digitMatch ? digitMatch[0] : null;
+    };
+
+    // Alias function to maintain compatibility with older code
+    const detectAccountNumberFromFilename = getAccountNumberFromFilename;
+
     // Fuzzy match a bank based on filename
     const fuzzyMatchBank = (filename: string, allBanks: any[]) => {
         console.log('Attempting fuzzy match for filename:', filename);
-        
+
         if (!filename || !allBanks || allBanks.length === 0) {
             return null;
         }
-        
+
+        // Convert filename to lowercase for case-insensitive matching
+        const lowerFilename = filename.toLowerCase();
+
         // Extract potential bank name and account number
         const detectedBankName = getBankNameFromFilename(filename);
         const detectedAccountNumber = getAccountNumberFromFilename(filename);
-        
-        console.log('Detected in filename:', { 
-            bankName: detectedBankName, 
-            accountNumber: detectedAccountNumber 
+
+        console.log('Detected in filename:', {
+            bankName: detectedBankName,
+            accountNumber: detectedAccountNumber
         });
-        
+
         // If we have an account number, it's the strongest match
         if (detectedAccountNumber) {
             const normalizedDetectedNumber = detectedAccountNumber.replace(/[-\s]/g, '');
-            
+
             // Try to find an exact match for account number
             const exactMatch = allBanks.find(bank => {
                 const normalizedBankNumber = (bank.account_number || '').replace(/[-\s]/g, '');
                 return normalizedBankNumber === normalizedDetectedNumber;
             });
-            
+
             if (exactMatch) {
                 console.log('Found exact account number match:', exactMatch);
                 return exactMatch;
             }
-            
+
             // Try to find a partial match (account number contains or is contained in)
             const partialMatch = allBanks.find(bank => {
                 const normalizedBankNumber = (bank.account_number || '').replace(/[-\s]/g, '');
-                return normalizedBankNumber.includes(normalizedDetectedNumber) || 
-                       normalizedDetectedNumber.includes(normalizedBankNumber);
+                return normalizedBankNumber.includes(normalizedDetectedNumber) ||
+                    normalizedDetectedNumber.includes(normalizedBankNumber);
             });
-            
+
             if (partialMatch) {
                 console.log('Found partial account number match:', partialMatch);
                 return partialMatch;
             }
         }
-        
+
         // If we have a bank name, try to match it
         if (detectedBankName) {
             const bankMatch = allBanks.find(bank => {
                 const bankNameLower = (bank.bank_name || '').toLowerCase();
-                return bankNameLower.includes(detectedBankName) || 
-                       detectedBankName.includes(bankNameLower);
+                return bankNameLower.includes(detectedBankName) ||
+                    detectedBankName.includes(bankNameLower);
             });
-            
+
             if (bankMatch) {
                 console.log('Found bank name match:', bankMatch);
                 return bankMatch;
             }
         }
-        
+
         // If all else fails, look for any overlap between filename and bank/company name
         for (const bank of allBanks) {
             const bankNameLower = (bank.bank_name || '').toLowerCase();
             const companyNameLower = (bank.company_name || '').toLowerCase();
-            
+
             if (bankNameLower && lowerFilename.includes(bankNameLower)) {
                 console.log('Found bank name in filename match:', bank);
                 return bank;
             }
-            
+
             if (companyNameLower && lowerFilename.includes(companyNameLower)) {
                 console.log('Found company name in filename match:', bank);
                 return bank;
             }
         }
-        
+
         console.log('No matches found for file:', filename);
         return null;
     };
@@ -978,9 +1001,8 @@ export function BankStatementBulkUploadDialog({
                 statement_month: cycleMonth,
                 statement_year: cycleYear,
                 has_soft_copy: item.hasSoftCopy || false,
-                has_hard_copy: item.hasHardCopy || false,
                 statement_document: statementDocumentInfo,
-                statement_extractions: extractedData || {
+                extraction_data: extractedData || {
                     bank_name: null,
                     account_number: null,
                     currency: null,
@@ -1378,7 +1400,7 @@ export function BankStatementBulkUploadDialog({
 
     // Return the JSX component
     return (
-        <>
+        <TooltipProvider>
             <Dialog open={isOpen} onOpenChange={(open) => {
                 if (!open && !uploading) {
                     onClose();
@@ -1432,7 +1454,7 @@ export function BankStatementBulkUploadDialog({
                                     <div className="flex justify-between items-center">
                                         <Label className="text-sm font-medium">Select Company</Label>
                                         <div className="flex items-center space-x-2">
-                                            <Switch 
+                                            <Switch
                                                 id="random-mode"
                                                 checked={randomMode}
                                                 onCheckedChange={setRandomMode}
@@ -1484,7 +1506,7 @@ export function BankStatementBulkUploadDialog({
                                                 {randomMode ? "Auto-detect Mode Active" : "Available Banks"}
                                             </h3>
                                             {!randomMode && selectedCompanyId && (
-                                                <Badge variant="outline" className="bg-blue-50">
+                                                <Badge variant="outline" className="ml-2 bg-blue-50">
                                                     {availableBanks.length} Banks
                                                 </Badge>
                                             )}
@@ -1499,7 +1521,7 @@ export function BankStatementBulkUploadDialog({
                                                     <div>
                                                         <h4 className="font-medium text-sm mb-1">Auto-detect Mode</h4>
                                                         <p className="text-sm text-gray-600">
-                                                            In this mode, you can upload statements from any company. The system will 
+                                                            In this mode, you can upload statements from any company. The system will
                                                             automatically try to match each file with the appropriate bank account using:
                                                         </p>
                                                         <ul className="text-sm text-gray-600 mt-2 list-disc pl-5 space-y-1">
@@ -1562,32 +1584,26 @@ export function BankStatementBulkUploadDialog({
                                 )}
 
                                 {/* Enhanced drag and drop area */}
-                                <div className="flex items-center gap-4">
+                                <div className="flex items-center gap-2">
                                     <div
                                         className={`
-                                            group relative flex-1 border-2 border-dashed rounded-md 
-                                            transition-all duration-200 cursor-pointer
-                                            ${isDragging
-                                                ? 'border-blue-500 bg-blue-50'
-                                                : 'border-gray-300 hover:border-blue-400 hover:bg-gray-50'
-                                            }
-                                            ${!randomMode && !selectedCompanyId ? 'opacity-50 cursor-not-allowed' : ''}
-                                        `}
+      group relative flex-1 border-2 border-dashed rounded-md cursor-pointer 
+      transition-all duration-200 text-center
+      ${isDragging ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-blue-400 hover:bg-gray-50'}
+      ${!randomMode && !selectedCompanyId ? 'opacity-50 cursor-not-allowed' : ''}
+    `}
                                         onDrop={handleDrop}
                                         onDragOver={handleDragOver}
                                         onDragEnter={handleDragEnter}
                                         onDragLeave={handleDragLeave}
                                         onClick={handleClick}
                                     >
-                                        <div className="p-8 flex flex-col items-center justify-center space-y-2">
-                                            <UploadCloud className={`h-10 w-10 ${isDragging ? 'text-blue-500' : 'text-gray-400'}`} />
-                                            <p className="text-center text-gray-500">
-                                                {isDragging
-                                                    ? 'Drop files here...'
-                                                    : 'Drag and drop files here, or click to select files'
-                                                }
+                                        <div className="p-4 flex flex-col items-center justify-center space-y-1">
+                                            <UploadCloud className={`h-6 w-6 ${isDragging ? 'text-blue-500' : 'text-gray-400'}`} />
+                                            <p className="text-sm text-gray-500">
+                                                {isDragging ? 'Drop files here...' : 'Drag or click to upload PDFs'}
                                             </p>
-                                            <p className="text-xs text-gray-400">Only PDF files are accepted</p>
+                                            <p className="text-xs text-gray-400">PDFs only</p>
                                         </div>
                                         <Input
                                             id="pdf-file"
@@ -1600,24 +1616,26 @@ export function BankStatementBulkUploadDialog({
                                             disabled={!randomMode && !selectedCompanyId}
                                         />
                                     </div>
+
                                     <Button
                                         onClick={handleStartProcessing}
                                         disabled={uploadItems.length === 0 || (!randomMode && !selectedCompanyId) || uploading}
-                                        className="h-[100px] px-6"
+                                        className="h-[80px] px-4 text-sm"
                                     >
                                         {uploading ? (
                                             <>
-                                                <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                                                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                                                 Processing...
                                             </>
                                         ) : (
                                             <>
-                                                <FilePlus className="h-5 w-5 mr-2" />
-                                                Process Files ({uploadItems.length})
+                                                <FilePlus className="h-4 w-4 mr-2" />
+                                                Process ({uploadItems.length})
                                             </>
                                         )}
                                     </Button>
                                 </div>
+
 
                                 {/* Files table */}
                                 <div className="border rounded-md overflow-hidden">
@@ -1629,6 +1647,7 @@ export function BankStatementBulkUploadDialog({
                                                     <TableHead>File Name</TableHead>
                                                     <TableHead className="w-[100px]">Size</TableHead>
                                                     <TableHead>Matched Bank</TableHead>
+                                                    <TableHead>Acc Number</TableHead>
                                                     <TableHead className="w-[120px]">Status</TableHead>
                                                     <TableHead className="w-[80px]">Action</TableHead>
                                                 </TableRow>
@@ -1652,9 +1671,19 @@ export function BankStatementBulkUploadDialog({
                                                                 {item.matchedBank ? (
                                                                     <div>
                                                                         <p className="font-medium">{item.matchedBank.bank_name}</p>
-                                                                        <p className="text-xs font-mono text-muted-foreground">
-                                                                            {item.matchedBank.account_number}
-                                                                        </p>
+
+                                                                    </div>
+                                                                ) : (
+                                                                    <Badge variant="outline" className="bg-yellow-50 text-yellow-800">
+                                                                        No match
+                                                                    </Badge>
+                                                                )}
+                                                            </TableCell>
+                                                            <TableCell>
+                                                                {item.matchedBank ? (
+                                                                    <div>
+                                                                        <p className="font-medium">{item.matchedBank.account_number}</p>
+
                                                                     </div>
                                                                 ) : (
                                                                     <Badge variant="outline" className="bg-yellow-50 text-yellow-800">
@@ -2481,10 +2510,10 @@ export function BankStatementBulkUploadDialog({
                                     {availableBanks
                                         .filter(bank => bank?.company_id === selectedCompanyId)
                                         .map(bank => (
-                                        <SelectItem key={bank.id} value={bank.id.toString()}>
-                                            {bank.bank_name} - {bank.account_number}
-                                        </SelectItem>
-                                    ))}
+                                            <SelectItem key={bank.id} value={bank.id.toString()}>
+                                                {bank.bank_name} - {bank.account_number}
+                                            </SelectItem>
+                                        ))}
                                 </SelectContent>
                             </Select>
 
@@ -2539,6 +2568,6 @@ export function BankStatementBulkUploadDialog({
                     </DialogContent>
                 </Dialog>
             )}
-        </>
+        </TooltipProvider>
     );
 }

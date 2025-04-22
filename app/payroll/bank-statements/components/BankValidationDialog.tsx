@@ -184,8 +184,8 @@ export function BankValidationDialog({
                     <div className="mt-4 space-y-2">
                         <h4 className="font-medium">Additional Extracted Information:</h4>
                         <p>Statement Period: {extractedData.statement_period || 'Not detected'}</p>
-                        <p>Opening Balance: {extractedData.opening_balance !== null ? extractedData.opening_balance.toLocaleString() : 'Not detected'}</p>
-                        <p>Closing Balance: {extractedData.closing_balance !== null ? extractedData.closing_balance.toLocaleString() : 'Not detected'}</p>
+                        <p>Opening Balance: {extractedData.opening_balance != null ? extractedData.opening_balance.toLocaleString() : 'Not detected'}</p>
+                        <p>Closing Balance: {extractedData.closing_balance != null ? extractedData.closing_balance.toLocaleString() : 'Not detected'}</p>
                     </div>
                 </div>
 
