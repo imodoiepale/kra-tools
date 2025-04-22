@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { ArrowUpDown, Download, MoreHorizontal, Play, RefreshCw, Filter } from "lucide-react";
+import { ArrowUpDown, Download, MoreHorizontal, Play, RefreshCw, Filter, Eye, EyeOff } from "lucide-react";
 import * as ExcelJS from 'exceljs';
 import { supabase } from '@/lib/supabase';
 import { Checkbox } from '../../../components/ui/checkbox';
@@ -33,6 +33,7 @@ export function AutoPopulationReports() {
     const [isDownloadDialogOpen, setIsDownloadDialogOpen] = useState(false);
     const [isCategoryFilterOpen, setIsCategoryFilterOpen] = useState(false);
     const [categoryFilters, setCategoryFilters] = useState({});
+    const [showStatsRows, setShowStatsRows] = useState(true);
 
     useEffect(() => {
         fetchReports();
@@ -288,6 +289,79 @@ export function AutoPopulationReports() {
             return filePatterns[type].test(fileName);
         });
     };
+    
+    // Calculate statistics for complete and missing entries
+    const calculateStats = () => {
+        const stats = {
+            complete: {},
+            missing: {}
+        };
+
+        // Define fields to check for completeness
+        const fieldsToCheck = [
+            'companyName',
+            'lastUpdated',
+            'vat3',
+            'sec_b_with_vat',
+            'sec_b_without_vat',
+            'sec_f'
+        ];
+
+        // Initialize stats for each field
+        fieldsToCheck.forEach(field => {
+            stats.complete[field] = 0;
+            stats.missing[field] = 0;
+        });
+
+        // Calculate stats for each field individually
+        filteredReports.forEach(report => {
+            const mostRecentExtraction = getMostRecentExtraction(report);
+            const files = mostRecentExtraction?.files || [];
+            
+            // Check company name
+            if (report.companyName && report.companyName.trim() !== '') {
+                stats.complete.companyName++;
+            } else {
+                stats.missing.companyName++;
+            }
+            
+            // Check last updated
+            if (report.lastUpdated) {
+                stats.complete.lastUpdated++;
+            } else {
+                stats.missing.lastUpdated++;
+            }
+            
+            // Check files
+            if (findFile(files, 'vat3')) {
+                stats.complete.vat3++;
+            } else {
+                stats.missing.vat3++;
+            }
+            
+            if (findFile(files, 'sec_b_with_vat')) {
+                stats.complete.sec_b_with_vat++;
+            } else {
+                stats.missing.sec_b_with_vat++;
+            }
+            
+            if (findFile(files, 'sec_b_without_vat')) {
+                stats.complete.sec_b_without_vat++;
+            } else {
+                stats.missing.sec_b_without_vat++;
+            }
+            
+            if (findFile(files, 'sec_f')) {
+                stats.complete.sec_f++;
+            } else {
+                stats.missing.sec_f++;
+            }
+        });
+
+        return stats;
+    };
+
+    const stats = calculateStats();
 
     const renderFileButton = (file, detailed = false) => {
         if (!file) return <span className="text-red-500 font-bold">Missing</span>;
@@ -313,16 +387,31 @@ export function AutoPopulationReports() {
             <TabsContent value="summary">
                 <div className="flex justify-between mb-4">
                     <div className="flex space-x-2">
-                        <Input
-                            placeholder="Search companies..."
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            className="max-w-sm"
-                        />
-                        <Button variant="outline" size="sm" onClick={() => setIsCategoryFilterOpen(true)}>
-                            <Filter className="mr-1 h-4 w-4" />
-                            Categories Filters
-                        </Button>
+                        <div className="relative">
+                            <Input
+                                placeholder="Search companies..."
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                className="max-w-sm pl-8"
+                            />
+                            <div className="absolute left-2 top-2.5">
+                                <Filter className="h-4 w-4 text-muted-foreground" />
+                            </div>
+                        </div>
+                        <div className="flex space-x-2">
+                            <Button variant="outline" size="sm" onClick={() => setIsCategoryFilterOpen(true)}>
+                                <Filter className="mr-1 h-4 w-4" />
+                                Categories Filters
+                            </Button>
+                            <Button 
+                                variant="outline" 
+                                size="sm"
+                                onClick={() => setShowStatsRows(!showStatsRows)}
+                            >
+                                {showStatsRows ? <EyeOff className="mr-1 h-4 w-4" /> : <Eye className="mr-1 h-4 w-4" />}
+                                {showStatsRows ? 'Hide Stats' : 'Show Stats'}
+                            </Button>
+                        </div>
                     </div>
                     <div className="flex gap-2">
                         <Button onClick={exportToExcel} size="sm" className="px-2 py-1">
@@ -376,7 +465,7 @@ export function AutoPopulationReports() {
                         <Table>
                             <TableHeader>
                                 <TableRow>
-                                    <TableHead>
+                                    <TableHead className="border-r border-black">
                                         <Checkbox
                                             checked={selectedReports.length === filteredReports.length}
                                             onCheckedChange={toggleSelectAll}
@@ -392,7 +481,7 @@ export function AutoPopulationReports() {
                                         { key: 'sec_f', label: 'Sec F - Purchase', center: true },
                                     ].map(({ key, label, alwaysVisible, center }) => (
                                         (alwaysVisible || visibleColumns[key]) && (
-                                            <TableHead key={key}>
+                                            <TableHead key={key} className="border-r border-black">
                                                 <div className={`flex items-center ${center ? 'justify-center' : ''}`}>
                                                     {label}
                                                     {!['index', 'vat3', 'sec_b_with_vat', 'sec_b_without_vat', 'sec_f'].includes(key) && (
@@ -406,6 +495,78 @@ export function AutoPopulationReports() {
                                         )
                                     ))}
                                 </TableRow>
+                                {showStatsRows && (
+                                    <>
+                                        <TableRow className="bg-blue-50">
+                                            <TableCell className="border-r border-black"></TableCell>
+                                            <TableCell className="text-center text-[10px] font-bold border-r border-black">Complete</TableCell>
+                                            <TableCell className="text-center text-[10px] border-r border-black">
+                                                <span className={stats.complete.companyName === filteredReports.length ? 'text-green-600 font-bold' : ''}>
+                                                    {stats.complete.companyName}
+                                                </span>
+                                            </TableCell>
+                                            <TableCell className="text-center text-[10px] border-r border-black">
+                                                <span className={stats.complete.lastUpdated === filteredReports.length ? 'text-green-600 font-bold' : ''}>
+                                                    {stats.complete.lastUpdated}
+                                                </span>
+                                            </TableCell>
+                                            <TableCell className="text-center text-[10px] border-r border-black">
+                                                <span className={stats.complete.vat3 === filteredReports.length ? 'text-green-600 font-bold' : ''}>
+                                                    {stats.complete.vat3}
+                                                </span>
+                                            </TableCell>
+                                            <TableCell className="text-center text-[10px] border-r border-black">
+                                                <span className={stats.complete.sec_b_with_vat === filteredReports.length ? 'text-green-600 font-bold' : ''}>
+                                                    {stats.complete.sec_b_with_vat}
+                                                </span>
+                                            </TableCell>
+                                            <TableCell className="text-center text-[10px] border-r border-black">
+                                                <span className={stats.complete.sec_b_without_vat === filteredReports.length ? 'text-green-600 font-bold' : ''}>
+                                                    {stats.complete.sec_b_without_vat}
+                                                </span>
+                                            </TableCell>
+                                            <TableCell className="text-center text-[10px] border-r border-black">
+                                                <span className={stats.complete.sec_f === filteredReports.length ? 'text-green-600 font-bold' : ''}>
+                                                    {stats.complete.sec_f}
+                                                </span>
+                                            </TableCell>
+                                        </TableRow>
+                                        <TableRow className="bg-red-50">
+                                            <TableCell className="border-r border-black"></TableCell>
+                                            <TableCell className="text-center text-[10px] font-bold border-r border-black">Missing</TableCell>
+                                            <TableCell className="text-center text-[10px] border-r border-black">
+                                                <span className={stats.missing.companyName > 0 ? 'text-red-600 font-bold' : ''}>
+                                                    {stats.missing.companyName}
+                                                </span>
+                                            </TableCell>
+                                            <TableCell className="text-center text-[10px] border-r border-black">
+                                                <span className={stats.missing.lastUpdated > 0 ? 'text-red-600 font-bold' : ''}>
+                                                    {stats.missing.lastUpdated}
+                                                </span>
+                                            </TableCell>
+                                            <TableCell className="text-center text-[10px] border-r border-black">
+                                                <span className={stats.missing.vat3 > 0 ? 'text-red-600 font-bold' : ''}>
+                                                    {stats.missing.vat3}
+                                                </span>
+                                            </TableCell>
+                                            <TableCell className="text-center text-[10px] border-r border-black">
+                                                <span className={stats.missing.sec_b_with_vat > 0 ? 'text-red-600 font-bold' : ''}>
+                                                    {stats.missing.sec_b_with_vat}
+                                                </span>
+                                            </TableCell>
+                                            <TableCell className="text-center text-[10px] border-r border-black">
+                                                <span className={stats.missing.sec_b_without_vat > 0 ? 'text-red-600 font-bold' : ''}>
+                                                    {stats.missing.sec_b_without_vat}
+                                                </span>
+                                            </TableCell>
+                                            <TableCell className="text-center text-[10px] border-r border-black">
+                                                <span className={stats.missing.sec_f > 0 ? 'text-red-600 font-bold' : ''}>
+                                                    {stats.missing.sec_f}
+                                                </span>
+                                            </TableCell>
+                                        </TableRow>
+                                    </>
+                                )}
                             </TableHeader>
                             <TableBody>
                                 {filteredReports.map((report, index) => (
@@ -414,13 +575,13 @@ export function AutoPopulationReports() {
                                         className={`${index % 2 === 0 ? 'bg-white' : 'bg-blue-50'} ${report.isMissing ? 'bg-red-100' : ''
                                             }`}
                                     >
-                                        <TableCell>
+                                        <TableCell className="border-r border-black">
                                             <Checkbox
                                                 checked={selectedReports.includes(report.id)}
                                                 onCheckedChange={() => toggleSelectReport(report.id)}
                                             />
                                         </TableCell>
-                                        <TableCell>{index + 1}</TableCell>
+                                        <TableCell className="border-r border-black">{index + 1}</TableCell>
                                         {visibleColumns.company_name && <TableCell>{report.companyName}</TableCell>}
                                         {visibleColumns.last_updated && <TableCell>{new Date(report.lastUpdated).toLocaleString()}</TableCell>}
                                         {visibleColumns.vat3 && (
