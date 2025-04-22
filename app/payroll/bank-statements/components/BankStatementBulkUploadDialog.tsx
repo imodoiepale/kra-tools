@@ -11,7 +11,7 @@ import {
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/hooks/use-toast'
 import { format } from 'date-fns'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle,DialogDescription , DialogFooter } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
@@ -356,6 +356,38 @@ export function BankStatementBulkUploadDialog({
             organizeByCompany();
         }
     }, [activeTab, uploadItems]);
+
+    // Update the company vouched status based on individual statement vouching
+    useEffect(() => {
+        // Get all statements grouped by company
+        const companies = {};
+        
+        // Group statements by company ID
+        uploadItems.forEach(item => {
+            if (item.matchedBank?.company_id) {
+                const companyId = item.matchedBank.company_id;
+                if (!companies[companyId]) {
+                    companies[companyId] = [];
+                }
+                companies[companyId].push(item);
+            }
+        });
+        
+        // Check each company's statements
+        Object.keys(companies).forEach(companyId => {
+            const statements = companies[companyId];
+            const allVouched = statements.every(item => item.isVouched);
+            
+            // Update company group vouched status
+            setCompanyGroups(prev => 
+                prev.map(group => 
+                    group.companyId === parseInt(companyId) 
+                        ? { ...group, isVouched: allVouched }
+                        : group
+                )
+            );
+        });
+    }, [uploadItems]);
 
     // Drag and drop handlers
     const handleDragEnter = (e: React.DragEvent<HTMLDivElement>) => {
@@ -1321,7 +1353,7 @@ export function BankStatementBulkUploadDialog({
             if (!startDate || !endDate) return false;
 
             if (startDate.year < cycleYear && endDate.year > cycleYear) return true;
-            if (startDate.year > cycleYear || endDate.year < cycleYear) return false;
+            if (endDate.year < cycleYear || startDate.year > cycleYear) return false;
 
             if (startDate.year === cycleYear && cycleMonth < startDate.month) return false;
             if (endDate.year === cycleYear && cycleMonth > endDate.month) return false;
@@ -1432,7 +1464,7 @@ export function BankStatementBulkUploadDialog({
                     setSelectedCompanyId(null);
                 }
             }}>
-                <DialogContent className="max-h-[90vh] overflow-hidden flex flex-col sm:max-w-[900px] w-[95vw]">
+                <DialogContent className="max-h-[90vh] overflow-hidden flex flex-col sm:max-w-6xl w-[95vw]">
                     <DialogHeader>
                         <div className="bg-gradient-to-r from-blue-50 via-blue-100 to-blue-50 -mx-6 -mt-6 p-6 rounded-t-lg border-b border-blue-200">
                             <div className="mb-2 flex justify-center">
@@ -2104,48 +2136,89 @@ export function BankStatementBulkUploadDialog({
 
                                                             {/* Statement details for vouching */}
                                                             <div className="space-y-3 py-2 px-3 bg-slate-50 rounded-md border border-slate-200">
-                                                                <div className="grid grid-cols-2 gap-4">
-                                                                    <div className="space-y-1">
-                                                                        <Label className="text-xs text-slate-500">Statement Details</Label>
-                                                                        <div className="text-sm">
-                                                                            <p><span className="font-medium">Bank Name:</span> {statement.matchedBank?.bank_name || 'Not detected'}</p>
-                                                                            <p><span className="font-medium">Account Number:</span> {statement.matchedBank?.account_number || 'Not detected'}</p>
-                                                                            <p><span className="font-medium">Currency:</span> {statement.matchedBank?.bank_currency || 'Not detected'}</p>
-                                                                            <p><span className="font-medium">Period:</span> {statement.extractedData?.statement_period || format(new Date(cycleYear, cycleMonth), 'MMMM yyyy')}</p>
-                                                                        </div>
-                                                                    </div>
+                                                                <Table>
+                                                                    <TableHeader>
+                                                                        <TableRow>
+                                                                            <TableHead className="w-[50px]">Vouch</TableHead>
+                                                                            <TableHead>Bank Name</TableHead>
+                                                                            <TableHead>Account Number</TableHead>
+                                                                            <TableHead>Period</TableHead>
+                                                                            <TableHead>Closing Balance</TableHead>
+                                                                            <TableHead>Notes</TableHead>
+                                                                            <TableHead className="w-[100px]">Actions</TableHead>
+                                                                        </TableRow>
+                                                                    </TableHeader>
+                                                                    <TableBody>
+                                                                        {group.statements.map((statement, idx) => (
+                                                                            <TableRow key={idx}>
+                                                                                <TableCell>
+                                                                                    <Checkbox
+                                                                                        checked={vouchingChecked[statement.file.name] || false}
+                                                                                        onCheckedChange={(checked) => {
+                                                                                            setVouchingChecked(prev => ({
+                                                                                                ...prev,
+                                                                                                [statement.file.name]: !!checked
+                                                                                            }));
+                                                                                            // Update the uploadItems with vouched status
+                                                                                            setUploadItems(items => {
+                                                                                                const updated = [...items];
+                                                                                                const index = items.findIndex(i => i === statement);
+                                                                                                if (index >= 0) {
+                                                                                                    updated[index] = {
+                                                                                                        ...updated[index],
+                                                                                                        isVouched: !!checked,
+                                                                                                        status: checked ? 'vouched' : 'uploaded',
+                                                                                                        vouchNotes: vouchingNotes[statement.file.name] || ''
+                                                                                                    };
+                                                                                                }
+                                                                                                return updated;
+                                                                                            });
+                                                                                        }}
+                                                                                    />
+                                                                                </TableCell>
+                                                                                <TableCell>{statement.matchedBank?.bank_name}</TableCell>
+                                                                                <TableCell className="font-mono text-sm">
+                                                                                    {statement.matchedBank?.account_number}
+                                                                                </TableCell>
+                                                                                <TableCell>
+                                                                                    {statement.extractedData?.statement_period ||
+                                                                                        format(new Date(cycleYear, cycleMonth), 'MMMM yyyy')}
+                                                                                </TableCell>
+                                                                                <TableCell>
+                                                                                    {statement.extractedData?.closing_balance?.toLocaleString() || '-'}
+                                                                                </TableCell>
+                                                                                <TableCell>
+                                                                                    <Input
+                                                                                        placeholder="Add notes..."
+                                                                                        value={vouchingNotes[statement.file.name] || ''}
+                                                                                        onChange={(e) => setVouchingNotes(prev => ({
+                                                                                            ...prev,
+                                                                                            [statement.file.name]: e.target.value
+                                                                                        }))}
+                                                                                        className="h-8"
+                                                                                    />
+                                                                                </TableCell>
+                                                                                <TableCell>
+                                                                                    <Button
+                                                                                        variant="outline"
+                                                                                        size="sm"
+                                                                                        onClick={() => {
+                                                                                            setCurrentProcessingItem(statement);
+                                                                                            setFileUrl(pdfUrls[idx.toString()]);
+                                                                                            setShowExtractionDialog(true);
+                                                                                        }}
+                                                                                        className="h-8 px-2"
+                                                                                    >
+                                                                                        <Eye className="h-3.5 w-3.5 mr-1.5" />
+                                                                                        View
+                                                                                    </Button>
+                                                                                </TableCell>
+                                                                            </TableRow>
+                                                                        ))}
+                                                                    </TableBody>
+                                                                </Table>
 
-                                                                    <div className="space-y-1">
-                                                                        <Label className="text-xs text-slate-500">Balance Information</Label>
-                                                                        <div className="text-sm">
-                                                                            <p><span className="font-medium">Opening Balance:</span> {statement.extractedData?.opening_balance ?? 'Not extracted'}</p>
-                                                                            <p><span className="font-medium">Closing Balance:</span> {statement.extractedData?.closing_balance ?? 'Not extracted'}</p>
-                                                                        </div>
-                                                                    </div>
-                                                                </div>
-
-                                                                <div className="space-y-1">
-                                                                    <Label className="text-xs text-slate-500">Vouching Notes</Label>
-                                                                    <Input
-                                                                        placeholder="Add notes about this statement verification..."
-                                                                        value={vouchingNotes[statement.file.name] || ''}
-                                                                        onChange={(e) => {
-                                                                            setVouchingNotes(prev => ({ ...prev, [statement.file.name]: e.target.value }));
-
-                                                                            // Also update the uploadItems
-                                                                            setUploadItems(items => {
-                                                                                const updated = [...items];
-                                                                                const index = items.findIndex(i => i === statement);
-                                                                                if (index >= 0) {
-                                                                                    updated[index].vouchNotes = e.target.value;
-                                                                                }
-                                                                                return updated;
-                                                                            });
-                                                                        }}
-                                                                    />
-                                                                </div>
-
-                                                                <div className="flex justify-between items-center pt-2">
+                                                                {/* <div className="flex justify-between items-center pt-2">
                                                                     <div className="flex items-center space-x-2">
                                                                         <Checkbox
                                                                             id={`vouched-${statementIdx}`}
@@ -2186,7 +2259,9 @@ export function BankStatementBulkUploadDialog({
                                                                             View
                                                                         </Button>
                                                                     </div>
-                                                                </div>
+                                                                </div> */}
+
+                                                                
                                                             </div>
                                                         </div>
                                                     ))}
@@ -2293,7 +2368,7 @@ export function BankStatementBulkUploadDialog({
             {/* Password Dialog */}
             {showPasswordDialog && passwordProtectedFiles.length > 0 && (
                 <Dialog open={showPasswordDialog} onOpenChange={setShowPasswordDialog}>
-                    <DialogContent className="sm:max-w-md">
+                    <DialogContent className="sm:max-w-4xl">
                         <DialogHeader>
                             <DialogTitle>Password Required</DialogTitle>
                             <DialogDescription>
@@ -2306,7 +2381,7 @@ export function BankStatementBulkUploadDialog({
                                 <div key={idx} className="border rounded-md p-3 bg-slate-50">
                                     <div className="font-medium text-sm mb-2 flex items-center">
                                         <FileText className="h-4 w-4 mr-2 text-blue-600" />
-                                        <span className="truncate max-w-[260px]" title={fileItem.fileName}>
+                                        <span className="" title={fileItem.fileName}>
                                             {fileItem.fileName}
                                         </span>
                                     </div>

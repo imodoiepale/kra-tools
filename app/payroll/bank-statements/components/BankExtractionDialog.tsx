@@ -1927,105 +1927,104 @@ export function BankExtractionDialog({
                                         <CardHeader className="py-2">
                                             <CardTitle className="text-base">Account Details</CardTitle>
                                         </CardHeader>
-                                        <CardContent className="space-y-3">
-                                            <div className="space-y-1">
-                                                <Label htmlFor="bank-name">Bank Name</Label>
-                                                <div className="flex items-center gap-2">
-                                                    <Input
-                                                        id="bank-name"
-                                                        value={bankName}
-                                                        onChange={(e) => setBankName(e.target.value)}
-                                                        placeholder="Enter bank name"
-                                                        className={
-                                                            bankName && !bankName.toLowerCase().includes(bank.bank_name.toLowerCase())
-                                                                ? "border-yellow-500 focus-visible:ring-yellow-500"
-                                                                : ""
-                                                        }
-                                                    />
-                                                    {bankName && (
-                                                        bankName.toLowerCase().includes(bank.bank_name.toLowerCase()) ? (
-                                                            <Badge variant="outline" className="bg-green-50 text-green-700 border-green-300">
-                                                                <Check className="h-3 w-3 mr-1" />
-                                                                Match
-                                                            </Badge>
-                                                        ) : (
-                                                            <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-300">
-                                                                <AlertTriangle className="h-3 w-3 mr-1" />
-                                                                Mismatch
-                                                            </Badge>
-                                                        )
-                                                    )}
+                                        <CardContent className="space-y-">
+                                            <div className="flex grid grid-cols-2 gap-4">
+                                                <div className="space-y-1">
+                                                    <Label htmlFor="bank-name">Bank Name</Label>
+                                                    <div className="flex items-center gap-2">
+                                                        <Input
+                                                            id="bank-name"
+                                                            value={bankName}
+                                                            onChange={(e) => setBankName(e.target.value)}
+                                                            placeholder="Enter bank name"
+                                                            className={
+                                                                bankName && !bankName.toLowerCase().includes(bank.bank_name.toLowerCase())
+                                                                    ? "border-yellow-500 focus-visible:ring-yellow-500"
+                                                                    : ""
+                                                            }
+                                                        />
+                                                        {bankName && (
+                                                            bankName.toLowerCase().includes(bank.bank_name.toLowerCase()) ? (
+                                                                <Badge variant="outline" className="bg-green-50 text-green-700 border-green-300">
+                                                                    <Check className="h-3 w-3 mr-1" />
+                                                                    Match
+                                                                </Badge>
+                                                            ) : (
+                                                                <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-300">
+                                                                    <AlertTriangle className="h-3 w-3 mr-1" />
+                                                                    Mismatch
+                                                                </Badge>
+                                                            )
+                                                        )}
+                                                    </div>
                                                 </div>
-                                            </div>
-
-                                            <div className="space-y-1">
-                                                <Label htmlFor="account-number">Account Number</Label>
-                                                <div className="flex items-center gap-2">
-                                                    <Input
-                                                        id="account-number"
-                                                        value={accountNumber}
-                                                        onChange={(e) => setAccountNumber(e.target.value)}
-                                                        placeholder="Enter account number"
-                                                        className={
-                                                            accountNumber && !accountNumber.includes(bank.account_number)
-                                                                ? "border-yellow-500 focus-visible:ring-yellow-500"
-                                                                : ""
-                                                        }
-                                                    />
-                                                    {accountNumber && (
-                                                        accountNumber.includes(bank.account_number) ? (
-                                                            <Badge variant="outline" className="bg-green-50 text-green-700 border-green-300">
-                                                                <Check className="h-3 w-3 mr-1" />
-                                                                Match
-                                                            </Badge>
-                                                        ) : (
-                                                            <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-300">
-                                                                <AlertTriangle className="h-3 w-3 mr-1" />
-                                                                Mismatch
-                                                            </Badge>
-                                                        )
-                                                    )}
+                                                <div className="space-y-1">
+                                                    <Label htmlFor="account-number">Account Number</Label>
+                                                    <div className="flex items-center gap-2">
+                                                        <Input
+                                                            id="account-number"
+                                                            value={accountNumber}
+                                                            onChange={(e) => setAccountNumber(e.target.value)}
+                                                            placeholder="Enter account number"
+                                                            className={
+                                                                accountNumber && !accountNumber.includes(bank.account_number)
+                                                                    ? "border-yellow-500 focus-visible:ring-yellow-500"
+                                                                    : ""
+                                                            }
+                                                        />
+                                                        {accountNumber && (
+                                                            accountNumber.includes(bank.account_number) ? (
+                                                                <Badge variant="outline" className="bg-green-50 text-green-700 border-green-300">
+                                                                    <Check className="h-3 w-3 mr-1" />
+                                                                    Match
+                                                                </Badge>
+                                                            ) : (
+                                                                <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-300">
+                                                                    <AlertTriangle className="h-3 w-3 mr-1" />
+                                                                    Mismatch
+                                                                </Badge>
+                                                            )
+                                                        )}
+                                                    </div>
                                                 </div>
-                                            </div>
-
-                                            <div className="space-y-1">
-                                                <Label htmlFor="currency">Currency</Label>
-                                                <div className="flex items-center gap-2">
-                                                    <Input
-                                                        id="currency"
-                                                        value={currency}
-                                                        onChange={(e) => setCurrency(e.target.value)}
-                                                        placeholder="Enter currency"
-                                                        className={
-                                                            currency && normalizeCurrencyCode(currency) !== normalizeCurrencyCode(bank.bank_currency)
-                                                                ? "border-yellow-500 focus-visible:ring-yellow-500"
-                                                                : ""
-                                                        }
-                                                    />
-                                                    {currency && (
-                                                        normalizeCurrencyCode(currency) === normalizeCurrencyCode(bank.bank_currency) ? (
-                                                            <Badge variant="outline" className="bg-green-50 text-green-700 border-green-300">
-                                                                <Check className="h-3 w-3 mr-1" />
-                                                                Match
-                                                            </Badge>
-                                                        ) : (
-                                                            <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-300">
-                                                                <AlertTriangle className="h-3 w-3 mr-1" />
-                                                                Mismatch
-                                                            </Badge>
-                                                        )
-                                                    )}
+                                                <div className="space-y-1">
+                                                    <Label htmlFor="currency">Currency</Label>
+                                                    <div className="flex items-center gap-2">
+                                                        <Input
+                                                            id="currency"
+                                                            value={currency}
+                                                            onChange={(e) => setCurrency(e.target.value)}
+                                                            placeholder="Enter currency"
+                                                            className={
+                                                                currency && normalizeCurrencyCode(currency) !== normalizeCurrencyCode(bank.bank_currency)
+                                                                    ? "border-yellow-500 focus-visible:ring-yellow-500"
+                                                                    : ""
+                                                            }
+                                                        />
+                                                        {currency && (
+                                                            normalizeCurrencyCode(currency) === normalizeCurrencyCode(bank.bank_currency) ? (
+                                                                <Badge variant="outline" className="bg-green-50 text-green-700 border-green-300">
+                                                                    <Check className="h-3 w-3 mr-1" />
+                                                                    Match
+                                                                </Badge>
+                                                            ) : (
+                                                                <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-300">
+                                                                    <AlertTriangle className="h-3 w-3 mr-1" />
+                                                                    Mismatch
+                                                                </Badge>
+                                                            )
+                                                        )}
+                                                    </div>
                                                 </div>
-                                            </div>
-
-                                            <div className="space-y-1">
-                                                <Label htmlFor="statement-period">Statement Period</Label>
-                                                <Input
-                                                    id="statement-period"
-                                                    value={statementPeriod}
-                                                    onChange={(e) => setStatementPeriod(e.target.value)}
-                                                    placeholder="E.g., 01/01/2024 - 31/01/2024"
-                                                />
+                                                <div className="space-y-1">
+                                                    <Label htmlFor="statement-period">Statement Period</Label>
+                                                    <Input
+                                                        id="statement-period"
+                                                        value={statementPeriod}
+                                                        onChange={(e) => setStatementPeriod(e.target.value)}
+                                                        placeholder="E.g., 01/01/2024 - 31/01/2024"
+                                                    />
+                                                </div>
                                             </div>
                                         </CardContent>
                                     </Card>
@@ -2361,9 +2360,9 @@ export function BankExtractionDialog({
                                     <CardHeader className="py-3 bg-blue-50">
                                         <CardTitle className="text-base">Monthly Balances Summary</CardTitle>
                                     </CardHeader>
-                                    <CardContent className="p-0">
+                                    <CardContent className="p-0 h-[200px]">
                                         <Table>
-                                            <TableHeader className="bg-gray-50">
+                                            <TableHeader className="bg-gray-50 ">
                                                 <TableRow>
                                                     <TableHead>Period</TableHead>
                                                     <TableHead>Closing Balance</TableHead>

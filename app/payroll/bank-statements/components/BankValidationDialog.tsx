@@ -106,7 +106,7 @@ export function BankValidationDialog({
                                     </span>
                                 </TableCell>
                             </TableRow>
-                            <TableRow>
+                            {/* <TableRow>
                                 <TableCell className="font-medium">Bank Name</TableCell>
                                 <TableCell>{bank.bank_name}</TableCell>
                                 <TableCell>{extractedData.bank_name || 'Not detected'}</TableCell>
@@ -123,7 +123,7 @@ export function BankValidationDialog({
                                             : "Mismatch"}
                                     </span>
                                 </TableCell>
-                            </TableRow>
+                            </TableRow> */}
                             <TableRow>
                                 <TableCell className="font-medium">Account Number</TableCell>
                                 <TableCell>{bank.account_number}</TableCell>
@@ -142,7 +142,7 @@ export function BankValidationDialog({
                                     </span>
                                 </TableCell>
                             </TableRow>
-                            <TableRow>
+                            {/* <TableRow>
                                 <TableCell className="font-medium">Currency</TableCell>
                                 <TableCell>{bank.bank_currency}</TableCell>
                                 <TableCell>{extractedData.currency || 'Not detected'}</TableCell>
@@ -159,7 +159,7 @@ export function BankValidationDialog({
                                             : "Mismatch"}
                                     </span>
                                 </TableCell>
-                            </TableRow>
+                            </TableRow> */}
                             <TableRow>
                                 <TableCell className="font-medium">Period</TableCell>
                                 <TableCell>{extractedData.statement_period}</TableCell>
@@ -184,7 +184,7 @@ export function BankValidationDialog({
                     <div className="mt-4 space-y-2">
                         <h4 className="font-medium">Additional Extracted Information:</h4>
                         <p>Statement Period: {extractedData.statement_period || 'Not detected'}</p>
-                        <p>Opening Balance: {extractedData.opening_balance != null ? extractedData.opening_balance.toLocaleString() : 'Not detected'}</p>
+                        {/* <p>Opening Balance: {extractedData.opening_balance != null ? extractedData.opening_balance.toLocaleString() : 'Not detected'}</p> */}
                         <p>Closing Balance: {extractedData.closing_balance != null ? extractedData.closing_balance.toLocaleString() : 'Not detected'}</p>
                     </div>
                 </div>
