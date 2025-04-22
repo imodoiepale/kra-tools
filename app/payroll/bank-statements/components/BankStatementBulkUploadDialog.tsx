@@ -1002,7 +1002,7 @@ export function BankStatementBulkUploadDialog({
                 statement_year: cycleYear,
                 has_soft_copy: item.hasSoftCopy || false,
                 statement_document: statementDocumentInfo,
-                extraction_data: extractedData || {
+                statement_extractions: extractedData || {
                     bank_name: null,
                     account_number: null,
                     currency: null,
