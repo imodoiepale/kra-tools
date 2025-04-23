@@ -3,12 +3,13 @@
 
 import React, { useState, useEffect, useMemo } from "react";
 import { useCompanyFilters } from "../hooks/useCompanyFilters";
-import { Filter } from "lucide-react";
+import { Filter, Download, LayoutGrid } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ClientCategoryFilter } from "./client-category-filter";
 import { ColumnFilter } from "./column-filter";
 import { Badge } from "@/components/ui/badge";
 import { useCompanyTaxReports } from "../hooks/useCompanyTaxReports";
+import { DataTable } from "./data-table";
 
 interface OverallViewProps {
   companies: Array<{
@@ -53,7 +54,9 @@ export default function OverallView({
   );
   const [showDetails, setShowDetails] = useState(true);
   const [showTotals, setShowTotals] = useState(true);
-  const [viewMode, setViewMode] = useState<"table" | "overall">("table");
+  const [viewMode, setViewMode] = useState<"table" | "overall" | "company">(
+    "table"
+  );
   const { reportData, loading: taxDataLoading } = useCompanyTaxReports();
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [sortConfig, setSortConfig] = useState<{
@@ -396,6 +399,165 @@ export default function OverallView({
     });
   }, [companies, filteredCompanies]);
 
+  // Function to handle export to Excel
+  const handleExport = () => {
+    try {
+      const headers = ["Company"];
+      const dataRows = [];
+
+      // Add column headers based on selected columns and subcolumns
+      selectedColumns.forEach((col) => {
+        if (
+          selectedSubColumns.includes("all") ||
+          selectedSubColumns.includes("amount")
+        ) {
+          headers.push(`${col} Amount`);
+        }
+        if (
+          selectedSubColumns.includes("all") ||
+          selectedSubColumns.includes("date")
+        ) {
+          headers.push(`${col} Date`);
+        }
+        if (
+          selectedSubColumns.includes("all") ||
+          selectedSubColumns.includes("status")
+        ) {
+          headers.push(`${col} Status`);
+        }
+        if (
+          selectedSubColumns.includes("all") ||
+          selectedSubColumns.includes("bank")
+        ) {
+          headers.push(`${col} Bank`);
+        }
+        if (
+          selectedSubColumns.includes("all") ||
+          selectedSubColumns.includes("payMode")
+        ) {
+          headers.push(`${col} Pay Mode`);
+        }
+      });
+
+      // Add data rows
+      filteredCompanies.forEach((company) => {
+        const row = [company.name];
+
+        visibleMonths.forEach((month) => {
+          const monthData = getMonthData(company, month);
+          selectedColumns.forEach((col) => {
+            if (
+              selectedSubColumns.includes("all") ||
+              selectedSubColumns.includes("amount")
+            ) {
+              row.push(monthData[col]?.amount?.toString() || "0");
+            }
+            if (
+              selectedSubColumns.includes("all") ||
+              selectedSubColumns.includes("date")
+            ) {
+              row.push(monthData[col]?.date || "-");
+            }
+            if (
+              selectedSubColumns.includes("all") ||
+              selectedSubColumns.includes("status")
+            ) {
+              row.push(monthData[col]?.status || "-");
+            }
+            if (
+              selectedSubColumns.includes("all") ||
+              selectedSubColumns.includes("bank")
+            ) {
+              row.push(monthData[col]?.bank || "-");
+            }
+            if (
+              selectedSubColumns.includes("all") ||
+              selectedSubColumns.includes("payMode")
+            ) {
+              row.push(monthData[col]?.payMode || "-");
+            }
+          });
+        });
+
+        dataRows.push(row);
+      });
+
+      // Create CSV content
+      const csvContent = [
+        headers.join(","),
+        ...dataRows.map((row) => row.join(",")),
+      ].join("\n");
+
+      // Create and trigger download
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const link = document.createElement("a");
+      const url = URL.createObjectURL(blob);
+      link.setAttribute("href", url);
+      link.setAttribute(
+        "download",
+        `payroll_report_${startDate}_${endDate}.csv`
+      );
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (error) {
+      console.error("Error exporting to Excel:", error);
+      // You may want to show an error toast here
+    }
+  };
+
+  // Function to get month data for a company
+  const getMonthData = (company, month) => {
+    const companyData = reportData[company.id];
+    const defaultTaxEntry = {
+      amount: 0,
+      date: null,
+      status: null,
+      bank: null,
+      payMode: null,
+    };
+
+    if (!companyData || !companyData[month.year.toString()]) {
+      return {
+        month: month.name.slice(0, 3).toUpperCase(),
+        year: month.year.toString(),
+        paye: { ...defaultTaxEntry },
+        housingLevy: { ...defaultTaxEntry },
+        nita: { ...defaultTaxEntry },
+        shif: { ...defaultTaxEntry },
+        nssf: { ...defaultTaxEntry },
+      };
+    }
+
+    const monthIndex = [
+      "JAN",
+      "FEB",
+      "MAR",
+      "APR",
+      "MAY",
+      "JUN",
+      "JUL",
+      "AUG",
+      "SEP",
+      "OCT",
+      "NOV",
+      "DEC",
+    ].indexOf(month.name.slice(0, 3).toUpperCase());
+
+    if (monthIndex === -1) return defaultTaxEntry;
+
+    const foundMonthData = companyData[month.year.toString()][monthIndex];
+    return {
+      month: month.name.slice(0, 3).toUpperCase(),
+      year: month.year.toString(),
+      paye: { ...defaultTaxEntry, ...foundMonthData?.paye },
+      housingLevy: { ...defaultTaxEntry, ...foundMonthData?.housingLevy },
+      nita: { ...defaultTaxEntry, ...foundMonthData?.nita },
+      shif: { ...defaultTaxEntry, ...foundMonthData?.shif },
+      nssf: { ...defaultTaxEntry, ...foundMonthData?.nssf },
+    };
+  };
+
   return (
     <div className="flex flex-col h-screen bg-gray-100">
       {/* Header with title and controls */}
@@ -406,9 +568,9 @@ export default function OverallView({
               <h1 className="font-bold text-gray-800 text-lg">
                 Payroll Report Overview
               </h1>
-              {/* Company counts */}
             </div>
             <div className="flex items-center gap-4">
+              {/* Search input */}
               <div className="relative flex-grow max-w-md">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                   <svg
@@ -671,6 +833,39 @@ export default function OverallView({
                   )}
                 </button>
               </div>
+
+              {/* Export and View Mode buttons */}
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleExport}
+                  className="flex items-center gap-2">
+                  <Download className="h-4 w-4" />
+                  Export
+                </Button>
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const nextMode =
+                      viewMode === "table"
+                        ? "overall"
+                        : viewMode === "overall"
+                        ? "company"
+                        : "table";
+                    setViewMode(nextMode);
+                  }}
+                  className="flex items-center gap-2">
+                  <LayoutGrid className="h-4 w-4" />
+                  {viewMode === "table"
+                    ? "Overall View"
+                    : viewMode === "overall"
+                    ? "Company View"
+                    : "Table View"}
+                </Button>
+              </div>
             </div>
           </div>
 
@@ -699,365 +894,382 @@ export default function OverallView({
 
       {/* Table container with horizontal scrolling */}
       <div className="flex-grow overflow-auto relative">
-        <div
-          style={{ minWidth: `${tableWidth}px`, maxWidth: "100%" }}
-          className="h-full relative">
-          <table className="w-full border-collapse bg-white">
-            <thead className="sticky top-0 z-50">
-              <tr>
-                <th className="sticky top-0 left-0 z-50 py-1 px-1.5 border border-slate-300 w-[40px] text-center bg-[#1e4d7b]">
-                  <div className="flex flex-col items-center justify-center">
-                    <span className="text-[10px] font-normal text-white">
-                      #
-                    </span>
-                    <span className="text-[10px] font-normal text-white">
-                      ({filteredCompanies.length})
-                    </span>
-                  </div>
-                </th>
-                <th
-                  className="sticky top-0 left-[40px] z-50 py-1 px-1.5 border border-slate-300 min-w-[100px] max-w-[100px] text-left cursor-pointer hover:bg-[#2a5a8c] transition-colors bg-[#1e4d7b]"
-                  onClick={() => {
-                    setSortConfig({
-                      key: "name",
-                      direction:
-                        sortConfig.key === "name" &&
-                        sortConfig.direction === "asc"
-                          ? "desc"
-                          : "asc",
-                    });
-                  }}>
-                  <div className="flex items-center gap-1">
-                    <span className="text-[10px] text-white">Company</span>
-                    {sortConfig.key === "name" && (
-                      <span className="text-[10px] text-white">
-                        {sortConfig.direction === "asc" ? "↑" : "↓"}
-                      </span>
-                    )}
-                  </div>
-                </th>
-                {visibleMonths.map((month, index) => (
-                  <th
-                    key={index}
-                    colSpan={selectedColumns.reduce(
-                      (sum, _) => sum + calculateColSpan(selectedSubColumns),
-                      0
-                    )}
-                    className={`sticky top-0 z-50 text-white py-3 px-4 border border-slate-300 text-center ${
-                      index % 2 === 0 ? "bg-[#1e4d7b]" : "bg-[#2a5a8c]"
-                    }`}>
-                    {month.label}
-                  </th>
-                ))}
-              </tr>
-              <tr>
-                <th className="sticky top-[32px] left-0 z-50 bg-[#1e4d7b] text-white py-1 px-1.5 border border-slate-300"></th>
-                <th className="sticky top-[32px] left-[40px] z-50 bg-[#1e4d7b] text-white py-1 px-1.5 border border-slate-300"></th>
-                {visibleMonths.map((_, monthIndex) => (
-                  <React.Fragment key={monthIndex}>
-                    {selectedColumns.map((column) => (
-                      <th
-                        key={column}
-                        colSpan={calculateColSpan(selectedSubColumns)}
-                        className="sticky top-[35px] z-50 bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-center">
-                        {column === "paye"
-                          ? "PAYE"
-                          : column === "housingLevy"
-                          ? "Housing Levy"
-                          : column === "nita"
-                          ? "NITA"
-                          : column === "shif"
-                          ? "SHIF"
-                          : column === "nssf"
-                          ? "NSSF"
-                          : column}
-                      </th>
-                    ))}
-                  </React.Fragment>
-                ))}
-              </tr>
-              <tr>
-                <th className="sticky top-[64px] left-0 z-50 bg-[#1e4d7b] text-white py-1 px-1.5 border border-slate-300"></th>
-                <th className="sticky top-[64px] left-[40px] z-50 bg-[#1e4d7b] text-white py-1 px-1.5 border border-slate-300"></th>
-                {visibleMonths.map((_, monthIndex) => (
-                  <React.Fragment key={monthIndex}>
-                    {selectedColumns.map((column) => (
-                      <React.Fragment key={column}>
-                        {selectedSubColumns.map((subColumn) =>
-                          subColumn === "all" ? null : (
-                            <th
-                              key={`${column}-${subColumn}`}
-                              className="sticky top-[70px] z-50 bg-[#2a5a8c] text-white py-1.5 px-2 border border-slate-300 text-[11px] font-medium">
-                              {subColumn === "amount"
-                                ? "Amount"
-                                : subColumn === "date"
-                                ? "Pay Date"
-                                : subColumn === "status"
-                                ? "Status"
-                                : subColumn === "bank"
-                                ? "Bank"
-                                : subColumn === "payMode"
-                                ? "Pay Mode"
-                                : subColumn}
-                            </th>
-                          )
-                        )}
-                        {selectedSubColumns.includes("all") && (
-                          <>
-                            <th className="sticky top-[70px] z-50 bg-[#2a5a8c] text-white py-1.5 px-2 border border-slate-300 text-[11px] font-medium">
-                              Amount
-                            </th>
-                            <th className="sticky top-[70px] z-50 bg-[#2a5a8c] text-white py-1.5 px-2 border border-slate-300 text-[11px] font-medium">
-                              Pay Date
-                            </th>
-                            <th className="sticky top-[70px] z-50 bg-[#2a5a8c] text-white py-1.5 px-2 border border-slate-300 text-[11px] font-medium">
-                              Status
-                            </th>
-                            <th className="sticky top-[70px] z-50 bg-[#2a5a8c] text-white py-1.5 px-2 border border-slate-300 text-[11px] font-medium">
-                              Bank
-                            </th>
-                            <th className="sticky top-[70px] z-50 bg-[#2a5a8c] text-white py-1.5 px-2 border border-slate-300 text-[11px] font-medium">
-                              Pay Mode
-                            </th>
-                          </>
-                        )}
-                      </React.Fragment>
-                    ))}
-                  </React.Fragment>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {/* Display sorted companies */}
-              {useMemo(() => {
-                let sortedCompanies = [...filteredCompanies];
-                if (sortConfig.key === "name") {
-                  sortedCompanies.sort((a, b) => {
-                    if (sortConfig.direction === "asc") {
-                      return a.name.localeCompare(b.name);
-                    }
-                    return b.name.localeCompare(a.name);
-                  });
-                }
-                return sortedCompanies;
-              }, [filteredCompanies, sortConfig]).map(
-                (company, companyIndex) => (
-                  <tr
-                    key={company.id}
-                    className={
-                      companyIndex % 2 === 0
-                        ? "bg-white hover:bg-blue-50"
-                        : "bg-gray-50 hover:bg-blue-50"
-                    }>
-                    <td
-                      className="sticky left-0 z-40 py-1 px-1.5 border border-slate-300 text-center text-[10px] text-slate-700"
-                      style={{
-                        backgroundColor:
-                          companyIndex % 2 === 0 ? "white" : "#f9fafb",
-                      }}>
-                      {companyIndex + 1}
-                    </td>
-                    <td
-                      className="sticky left-[40px] z-40 py-1 px-1.5 border border-slate-300 font-medium text-[10px] text-slate-700 cursor-help group"
-                      style={{
-                        backgroundColor:
-                          companyIndex % 2 === 0 ? "white" : "#f9fafb",
-                      }}>
-                      <span className="block truncate w-[85px]">
-                        {truncateCompanyName(company.name)}
-                      </span>
-                      <div
-                        className="fixed z-[9999] invisible group-hover:visible bg-slate-900 text-white p-1.5 rounded shadow-lg text-[10px] max-w-xs whitespace-normal break-words"
-                        style={{ transform: "translateY(-100%)" }}>
-                        {company.name}
-                      </div>
-                    </td>
-
-                    {/* Generate cells for all months */}
-                    {visibleMonths.map((month, monthIndex) => {
-                      // Get company data from reportData
-                      const companyData = reportData[company.id];
-
-                      // Create a default empty tax entry structure
-                      const defaultTaxEntry = {
-                        amount: 0,
-                        date: null,
-                        status: null,
-                        bank: null,
-                        payMode: null,
-                      };
-
-                      // Initialize empty month data with default tax entries
-                      const emptyMonthData = {
-                        month: month.name.slice(0, 3).toUpperCase(),
-                        year: month.year.toString(),
-                        paye: { ...defaultTaxEntry },
-                        housingLevy: { ...defaultTaxEntry },
-                        nita: { ...defaultTaxEntry },
-                        shif: { ...defaultTaxEntry },
-                        nssf: { ...defaultTaxEntry },
-                      };
-
-                      // Get actual month data if available
-                      let monthData = emptyMonthData;
-
-                      if (companyData && companyData[month.year.toString()]) {
-                        const monthIndex = [
-                          "JAN",
-                          "FEB",
-                          "MAR",
-                          "APR",
-                          "MAY",
-                          "JUN",
-                          "JUL",
-                          "AUG",
-                          "SEP",
-                          "OCT",
-                          "NOV",
-                          "DEC",
-                        ].indexOf(month.name.slice(0, 3).toUpperCase());
-
-                        if (
-                          monthIndex !== -1 &&
-                          companyData[month.year.toString()][monthIndex]
-                        ) {
-                          const foundMonthData =
-                            companyData[month.year.toString()][monthIndex];
-
-                          // Merge with default structure to ensure all fields exist
-                          monthData = {
-                            month: month.name.slice(0, 3).toUpperCase(),
-                            year: month.year.toString(),
-                            paye: {
-                              ...defaultTaxEntry,
-                              ...foundMonthData.paye,
-                            },
-                            housingLevy: {
-                              ...defaultTaxEntry,
-                              ...foundMonthData.housingLevy,
-                            },
-                            nita: {
-                              ...defaultTaxEntry,
-                              ...foundMonthData.nita,
-                            },
-                            shif: {
-                              ...defaultTaxEntry,
-                              ...foundMonthData.shif,
-                            },
-                            nssf: {
-                              ...defaultTaxEntry,
-                              ...foundMonthData.nssf,
-                            },
-                          };
-                        }
-                      }
-
-                      const taxTypes = [
-                        { key: "paye", label: "PAYE" },
-                        { key: "housingLevy", label: "Housing Levy" },
-                        { key: "nita", label: "NITA" },
-                        { key: "shif", label: "SHIF" },
-                        { key: "nssf", label: "NSSF" },
-                      ];
-
-                      return (
-                        <React.Fragment key={monthIndex}>
-                          {taxTypes
-                            .filter((tax) => selectedColumns.includes(tax.key))
-                            .map((tax) => (
-                              <React.Fragment key={tax.key}>
-                                {(selectedSubColumns.includes("all") ||
-                                  selectedSubColumns.includes("amount")) && (
-                                  <td
-                                    className={`py-1.5 px-2 border border-slate-300 text-right text-[11px] ${
-                                      monthData?.[tax.key]?.amount
-                                        ? "font-medium text-slate-700"
-                                        : "text-slate-500"
-                                    }`}>
-                                    {monthData?.[
-                                      tax.key
-                                    ]?.amount?.toLocaleString("en-KE", {
-                                      minimumFractionDigits: 2,
-                                      maximumFractionDigits: 2,
-                                    }) ?? "0.00"}
-                                  </td>
-                                )}
-                                {(selectedSubColumns.includes("all") ||
-                                  selectedSubColumns.includes("date")) && (
-                                  <td
-                                    className={`py-1.5 px-2 border border-slate-300 text-center text-[11px] ${
-                                      monthData?.[tax.key]?.date
-                                        ? getDateColor(monthData[tax.key].date)
-                                        : "text-slate-400"
-                                    }`}>
-                                    {monthData?.[tax.key]?.date
-                                      ? formatDate(monthData[tax.key].date)
-                                      : "—"}
-                                  </td>
-                                )}
-                                {(selectedSubColumns.includes("all") ||
-                                  selectedSubColumns.includes("status")) && (
-                                  <td
-                                    className={`py-1.5 px-2 border border-slate-300 text-center text-[11px] ${
-                                      monthData?.[tax.key]?.status
-                                        ? "font-medium text-slate-700"
-                                        : "text-slate-500"
-                                    }`}>
-                                    {monthData?.[tax.key]?.status ?? "—"}
-                                  </td>
-                                )}
-                                {(selectedSubColumns.includes("all") ||
-                                  selectedSubColumns.includes("bank")) && (
-                                  <td
-                                    className={`py-1.5 px-2 border border-slate-300 text-center text-[11px] ${
-                                      monthData?.[tax.key]?.bank
-                                        ? "font-medium text-slate-700"
-                                        : "text-slate-500"
-                                    }`}>
-                                    {monthData?.[tax.key]?.bank ?? "—"}
-                                  </td>
-                                )}
-                                {(selectedSubColumns.includes("all") ||
-                                  selectedSubColumns.includes("payMode")) && (
-                                  <td
-                                    className={`py-1.5 px-2 border border-slate-300 text-center text-[11px] ${
-                                      monthData?.[tax.key]?.payMode
-                                        ? "font-medium text-slate-700"
-                                        : "text-slate-500"
-                                    }`}>
-                                    {monthData?.[tax.key]?.payMode ?? "—"}
-                                  </td>
-                                )}
-                              </React.Fragment>
-                            ))}
-                        </React.Fragment>
-                      );
-                    })}
-                  </tr>
-                )
-              )}
-
-              {/* Empty state handling */}
-              {filteredCompanies.length === 0 && (
+        {viewMode === "table" ? (
+          <div className="h-full relative" style={{ minWidth: `${tableWidth}px`, maxWidth: "100%" }}>
+            <table className="w-full border-collapse bg-white">
+              <thead className="sticky top-0 z-50">
                 <tr>
-                  <td
-                    colSpan={
-                      visibleMonths.length *
-                        selectedColumns.reduce(
-                          (sum, _) =>
-                            sum + calculateColSpan(selectedSubColumns),
-                          0
-                        ) +
-                      2
-                    }
-                    className="text-center py-10 text-gray-500">
-                    No companies found matching your search criteria
-                  </td>
+                  <th className="sticky top-0 left-0 z-50 py-1 px-1.5 border border-slate-300 w-[40px] text-center bg-[#1e4d7b]">
+                    <div className="flex flex-col items-center justify-center">
+                      <span className="text-[10px] font-normal text-white">
+                        #
+                      </span>
+                      <span className="text-[10px] font-normal text-white">
+                        ({filteredCompanies.length})
+                      </span>
+                    </div>
+                  </th>
+                  <th
+                    className="sticky top-0 left-[40px] z-50 py-1 px-1.5 border border-slate-300 min-w-[100px] max-w-[100px] text-left cursor-pointer hover:bg-[#2a5a8c] transition-colors bg-[#1e4d7b]"
+                    onClick={() => {
+                      setSortConfig({
+                        key: "name",
+                        direction:
+                          sortConfig.key === "name" &&
+                          sortConfig.direction === "asc"
+                            ? "desc"
+                            : "asc",
+                      });
+                    }}>
+                    <div className="flex items-center gap-1">
+                      <span className="text-[10px] text-white">Company</span>
+                      {sortConfig.key === "name" && (
+                        <span className="text-[10px] text-white">
+                          {sortConfig.direction === "asc" ? "↑" : "↓"}
+                        </span>
+                      )}
+                    </div>
+                  </th>
+                  {visibleMonths.map((month, index) => (
+                    <th
+                      key={index}
+                      colSpan={selectedColumns.reduce(
+                        (sum, _) => sum + calculateColSpan(selectedSubColumns),
+                        0
+                      )}
+                      className={`sticky top-0 z-50 text-white py-3 px-4 border border-slate-300 text-center ${
+                        index % 2 === 0 ? "bg-[#1e4d7b]" : "bg-[#2a5a8c]"
+                      }`}>
+                      {month.label}
+                    </th>
+                  ))}
                 </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+                <tr>
+                  <th className="sticky top-[32px] left-0 z-50 bg-[#1e4d7b] text-white py-1 px-1.5 border border-slate-300"></th>
+                  <th className="sticky top-[32px] left-[40px] z-50 bg-[#1e4d7b] text-white py-1 px-1.5 border border-slate-300"></th>
+                  {visibleMonths.map((_, monthIndex) => (
+                    <React.Fragment key={monthIndex}>
+                      {selectedColumns.map((column) => (
+                        <th
+                          key={column}
+                          colSpan={calculateColSpan(selectedSubColumns)}
+                          className="sticky top-[35px] z-50 bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-center">
+                          {column === "paye"
+                            ? "PAYE"
+                            : column === "housingLevy"
+                            ? "Housing Levy"
+                            : column === "nita"
+                            ? "NITA"
+                            : column === "shif"
+                            ? "SHIF"
+                            : column === "nssf"
+                            ? "NSSF"
+                            : column}
+                        </th>
+                      ))}
+                    </React.Fragment>
+                  ))}
+                </tr>
+                <tr>
+                  <th className="sticky top-[64px] left-0 z-50 bg-[#1e4d7b] text-white py-1 px-1.5 border border-slate-300"></th>
+                  <th className="sticky top-[64px] left-[40px] z-50 bg-[#1e4d7b] text-white py-1 px-1.5 border border-slate-300"></th>
+                  {visibleMonths.map((_, monthIndex) => (
+                    <React.Fragment key={monthIndex}>
+                      {selectedColumns.map((column) => (
+                        <React.Fragment key={column}>
+                          {selectedSubColumns.map((subColumn) =>
+                            subColumn === "all" ? null : (
+                              <th
+                                key={`${column}-${subColumn}`}
+                                className="sticky top-[70px] z-50 bg-[#2a5a8c] text-white py-1.5 px-2 border border-slate-300 text-[11px] font-medium">
+                                {subColumn === "amount"
+                                  ? "Amount"
+                                  : subColumn === "date"
+                                  ? "Pay Date"
+                                  : subColumn === "status"
+                                  ? "Status"
+                                  : subColumn === "bank"
+                                  ? "Bank"
+                                  : subColumn === "payMode"
+                                  ? "Pay Mode"
+                                  : subColumn}
+                              </th>
+                            )
+                          )}
+                          {selectedSubColumns.includes("all") && (
+                            <>
+                              <th className="sticky top-[70px] z-50 bg-[#2a5a8c] text-white py-1.5 px-2 border border-slate-300 text-[11px] font-medium">
+                                Amount
+                              </th>
+                              <th className="sticky top-[70px] z-50 bg-[#2a5a8c] text-white py-1.5 px-2 border border-slate-300 text-[11px] font-medium">
+                                Pay Date
+                              </th>
+                              <th className="sticky top-[70px] z-50 bg-[#2a5a8c] text-white py-1.5 px-2 border border-slate-300 text-[11px] font-medium">
+                                Status
+                              </th>
+                              <th className="sticky top-[70px] z-50 bg-[#2a5a8c] text-white py-1.5 px-2 border border-slate-300 text-[11px] font-medium">
+                                Bank
+                              </th>
+                              <th className="sticky top-[70px] z-50 bg-[#2a5a8c] text-white py-1.5 px-2 border border-slate-300 text-[11px] font-medium">
+                                Pay Mode
+                              </th>
+                            </>
+                          )}
+                        </React.Fragment>
+                      ))}
+                    </React.Fragment>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {/* Display sorted companies */}
+                {useMemo(() => {
+                  let sortedCompanies = [...filteredCompanies];
+                  if (sortConfig.key === "name") {
+                    sortedCompanies.sort((a, b) => {
+                      if (sortConfig.direction === "asc") {
+                        return a.name.localeCompare(b.name);
+                      }
+                      return b.name.localeCompare(a.name);
+                    });
+                  }
+                  return sortedCompanies;
+                }, [filteredCompanies, sortConfig]).map(
+                  (company, companyIndex) => (
+                    <tr
+                      key={company.id}
+                      className={
+                        companyIndex % 2 === 0
+                          ? "bg-white hover:bg-blue-50"
+                          : "bg-gray-50 hover:bg-blue-50"
+                      }>
+                      <td
+                        className="sticky left-0 z-40 py-1 px-1.5 border border-slate-300 text-center text-[10px] text-slate-700"
+                        style={{
+                          backgroundColor:
+                            companyIndex % 2 === 0 ? "white" : "#f9fafb",
+                        }}>
+                        {companyIndex + 1}
+                      </td>
+                      <td
+                        className="sticky left-[40px] z-40 py-1 px-1.5 border border-slate-300 font-medium text-[10px] text-slate-700 cursor-help group"
+                        style={{
+                          backgroundColor:
+                            companyIndex % 2 === 0 ? "white" : "#f9fafb",
+                        }}>
+                        <span className="block truncate w-[85px]">
+                          {truncateCompanyName(company.name)}
+                        </span>
+                        <div
+                          className="fixed z-[9999] invisible group-hover:visible bg-slate-900 text-white p-1.5 rounded shadow-lg text-[10px] max-w-xs whitespace-normal break-words"
+                          style={{ transform: "translateY(-100%)" }}>
+                          {company.name}
+                        </div>
+                      </td>
+
+                      {/* Generate cells for all months */}
+                      {visibleMonths.map((month, monthIndex) => {
+                        // Get company data from reportData
+                        const companyData = reportData[company.id];
+
+                        // Create a default empty tax entry structure
+                        const defaultTaxEntry = {
+                          amount: 0,
+                          date: null,
+                          status: null,
+                          bank: null,
+                          payMode: null,
+                        };
+
+                        // Initialize empty month data with default tax entries
+                        const emptyMonthData = {
+                          month: month.name.slice(0, 3).toUpperCase(),
+                          year: month.year.toString(),
+                          paye: { ...defaultTaxEntry },
+                          housingLevy: { ...defaultTaxEntry },
+                          nita: { ...defaultTaxEntry },
+                          shif: { ...defaultTaxEntry },
+                          nssf: { ...defaultTaxEntry },
+                        };
+
+                        // Get actual month data if available
+                        let monthData = emptyMonthData;
+
+                        if (companyData && companyData[month.year.toString()]) {
+                          const monthIndex = [
+                            "JAN",
+                            "FEB",
+                            "MAR",
+                            "APR",
+                            "MAY",
+                            "JUN",
+                            "JUL",
+                            "AUG",
+                            "SEP",
+                            "OCT",
+                            "NOV",
+                            "DEC",
+                          ].indexOf(month.name.slice(0, 3).toUpperCase());
+                          if (
+                            monthIndex !== -1 &&
+                            companyData[month.year.toString()][monthIndex]
+                          ) {
+                            const foundMonthData =
+                              companyData[month.year.toString()][monthIndex];
+
+                            // Merge with default structure to ensure all fields exist
+                            monthData = {
+                              month: month.name.slice(0, 3).toUpperCase(),
+                              year: month.year.toString(),
+                              paye: {
+                                ...defaultTaxEntry,
+                                ...foundMonthData.paye,
+                              },
+                              housingLevy: {
+                                ...defaultTaxEntry,
+                                ...foundMonthData.housingLevy,
+                              },
+                              nita: {
+                                ...defaultTaxEntry,
+                                ...foundMonthData.nita,
+                              },
+                              shif: {
+                                ...defaultTaxEntry,
+                                ...foundMonthData.shif,
+                              },
+                              nssf: {
+                                ...defaultTaxEntry,
+                                ...foundMonthData.nssf,
+                              },
+                            };
+                          }
+                        }
+
+                        const taxTypes = [
+                          { key: "paye", label: "PAYE" },
+                          { key: "housingLevy", label: "Housing Levy" },
+                          { key: "nita", label: "NITA" },
+                          { key: "shif", label: "SHIF" },
+                          { key: "nssf", label: "NSSF" },
+                        ];
+
+                        return (
+                          <React.Fragment key={monthIndex}>
+                            {taxTypes
+                              .filter((tax) =>
+                                selectedColumns.includes(tax.key)
+                              )
+                              .map((tax) => (
+                                <React.Fragment key={tax.key}>
+                                  {(selectedSubColumns.includes("all") ||
+                                    selectedSubColumns.includes("amount")) && (
+                                    <td
+                                      className={`py-1.5 px-2 border border-slate-300 text-right text-[11px] ${
+                                        monthData?.[tax.key]?.amount
+                                          ? "font-medium text-slate-700"
+                                          : "text-slate-500"
+                                      }`}>
+                                      {monthData?.[
+                                        tax.key
+                                      ]?.amount?.toLocaleString("en-KE", {
+                                        minimumFractionDigits: 2,
+                                        maximumFractionDigits: 2,
+                                      }) ?? "0.00"}
+                                    </td>
+                                  )}
+                                  {(selectedSubColumns.includes("all") ||
+                                    selectedSubColumns.includes("date")) && (
+                                    <td
+                                      className={`py-1.5 px-2 border border-slate-300 text-center text-[11px] ${
+                                        monthData?.[tax.key]?.date
+                                          ? getDateColor(
+                                              monthData[tax.key].date
+                                            )
+                                          : "text-slate-400"
+                                      }`}>
+                                      {monthData?.[tax.key]?.date
+                                        ? formatDate(monthData[tax.key].date)
+                                        : "—"}
+                                    </td>
+                                  )}
+                                  {(selectedSubColumns.includes("all") ||
+                                    selectedSubColumns.includes("status")) && (
+                                    <td
+                                      className={`py-1.5 px-2 border border-slate-300 text-center text-[11px] ${
+                                        monthData?.[tax.key]?.status
+                                          ? "font-medium text-slate-700"
+                                          : "text-slate-500"
+                                      }`}>
+                                      {monthData?.[tax.key]?.status ?? "—"}
+                                    </td>
+                                  )}
+                                  {(selectedSubColumns.includes("all") ||
+                                    selectedSubColumns.includes("bank")) && (
+                                    <td
+                                      className={`py-1.5 px-2 border border-slate-300 text-center text-[11px] ${
+                                        monthData?.[tax.key]?.bank
+                                          ? "font-medium text-slate-700"
+                                          : "text-slate-500"
+                                      }`}>
+                                      {monthData?.[tax.key]?.bank ?? "—"}
+                                    </td>
+                                  )}
+                                  {(selectedSubColumns.includes("all") ||
+                                    selectedSubColumns.includes("payMode")) && (
+                                    <td
+                                      className={`py-1.5 px-2 border border-slate-300 text-center text-[11px] ${
+                                        monthData?.[tax.key]?.payMode
+                                          ? "font-medium text-slate-700"
+                                          : "text-slate-500"
+                                      }`}>
+                                      {monthData?.[tax.key]?.payMode ?? "—"}
+                                    </td>
+                                  )}
+                                </React.Fragment>
+                              ))}
+                          </React.Fragment>
+                        );
+                      })}
+                    </tr>
+                  )
+                )}
+
+                {/* Empty state handling */}
+                {filteredCompanies.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan={
+                        visibleMonths.length *
+                          selectedColumns.reduce(
+                            (sum, _) =>
+                              sum + calculateColSpan(selectedSubColumns),
+                            0
+                          ) +
+                        2
+                      }
+                      className="text-center py-10 text-gray-500">
+                      No companies found matching your search criteria
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <DataTable 
+            data={filteredCompanies}
+            selectedColumns={selectedColumns}
+            selectedSubColumns={selectedSubColumns}
+            viewMode={viewMode}
+            showTotals={showTotals}
+            startDate={startDate}
+            endDate={endDate}
+            getMonthsInRange={getMonthsInRange}
+            isLoading={isLoading}
+            yearlyData={reportData}
+            isHorizontalView={viewMode === "company"}
+          />
+        )}
       </div>
 
       {/* Footer */}
