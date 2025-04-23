@@ -1257,6 +1257,7 @@ export function BankStatementBulkUploadDialog({
         try {
             // Check each file for password protection
             const passwordItems = [];
+            const readyForProcessing = [];
 
             for (let i = 0; i < uploadItems.length; i++) {
                 const item = uploadItems[i];
@@ -1306,6 +1307,9 @@ export function BankStatementBulkUploadDialog({
                                     }
                                     return updated;
                                 });
+                                
+                                // Add to ready for processing list
+                                readyForProcessing.push(i);
                                 continue;
                             }
                         } catch (error) {
@@ -1331,6 +1335,9 @@ export function BankStatementBulkUploadDialog({
                                     }
                                     return updated;
                                 });
+                                
+                                // Add to ready for processing list
+                                readyForProcessing.push(i);
                                 continue;
                             }
                         } catch (error) {
@@ -1348,6 +1355,9 @@ export function BankStatementBulkUploadDialog({
                             item.matchedBank?.acc_password
                         ].filter(Boolean)
                     });
+                } else {
+                    // Not password protected, add to ready for processing
+                    readyForProcessing.push(i);
                 }
             }
 
@@ -1359,14 +1369,15 @@ export function BankStatementBulkUploadDialog({
                 return; // Halt processing until passwords are provided
             }
 
-            // If no password-protected files, proceed with the document processing queue
-            if (processingQueue.length > 0) {
-                const firstItemIndex = processingQueue[0];
-                const updatedQueue = processingQueue.slice(1);
-                setProcessingQueue(updatedQueue);
-
+            // Process ready files in batch if possible
+            if (readyForProcessing.length > 0) {
+                // Update processing queue with ready items
+                setProcessingQueue(readyForProcessing);
+                
                 // Start processing the first item
-                handleFileExtraction(firstItemIndex);
+                if (readyForProcessing.length > 0) {
+                    handleFileExtraction(readyForProcessing[0]);
+                }
             } else {
                 // No items to process
                 setUploading(false);
@@ -1377,7 +1388,6 @@ export function BankStatementBulkUploadDialog({
                     variant: 'default'
                 });
             }
-
         } catch (error) {
             console.error('Error processing password-protected files:', error);
             toast({
@@ -1402,43 +1412,17 @@ export function BankStatementBulkUploadDialog({
             setExtractionResults(null);
             setValidationResults(null);
 
-            // Create a cache key based on file name and size
-            const cacheKey = `${file.name}-${file.size}`;
+            // Define extraction options
+            const extractionOptions = {
+                month: cycleMonth,
+                year: cycleYear,
+                password: item.passwordApplied ? item.password : null
+            };
 
-            // Create temporary URL for extraction
-            const fileUrl = URL.createObjectURL(file);
-
-            // Check if we have cached extraction results
-            if (extractionCache[cacheKey]) {
-                console.log('Using cached extraction result for:', cacheKey);
-                setExtractionResults(extractionCache[cacheKey]);
-
-                // Validate cached results
-                if (extractionCache[cacheKey]?.success) {
-                    const validationResult = validateExtractedData(extractionCache[cacheKey].extractedData, item.matchedBank);
-                    setValidationResults(validationResult);
-                    // Show validation dialog
-                    setShowValidationDialog(true);
-                } else {
-                    // If cached result wasn't successful, continue with upload anyway
-                    await handleFileUpload(uploadItems.findIndex(i => i === item), null);
-                }
-
-                return true;
-            }
-
-            // Perform extraction only if not cached
-            const extractionResult = await performBankStatementExtraction(
-                fileUrl,
-                {
-                    month: cycleMonth,
-                    year: cycleYear,
-                    password: item.passwordApplied ? item.password : null
-                }
-            );
-
-            // Store results in cache
-            setExtractionCache(prev => ({ ...prev, [cacheKey]: extractionResult }));
+            // Use ExtractionsService to get extraction (will use cache if available)
+            const extractionResult = await ExtractionsService.getExtraction(file, extractionOptions);
+            
+            console.log('Extraction result:', extractionResult?.success ? 'Success' : 'Failed');
 
             // Store results
             setExtractionResults(extractionResult);
@@ -1455,7 +1439,9 @@ export function BankStatementBulkUploadDialog({
                 // If extraction failed, continue with upload anyway
                 toast({
                     title: "Extraction Warning",
-                    description: "Could not extract data from the statement. Continuing with upload.",
+                    description: extractionResult.requiresPassword 
+                        ? "PDF is password protected. Please provide a password." 
+                        : "Could not extract data from the statement. Continuing with upload.",
                     variant: "warning"
                 });
 
@@ -1474,11 +1460,6 @@ export function BankStatementBulkUploadDialog({
             // Continue with upload anyway even if there's an error
             await handleFileUpload(uploadItems.findIndex(i => i === item), null);
             return false;
-        } finally {
-            // Clean up the temporary URL
-            if (fileUrl) {
-                URL.revokeObjectURL(fileUrl);
-            }
         }
     };
 
@@ -1500,14 +1481,48 @@ export function BankStatementBulkUploadDialog({
                 return updated;
             });
 
-            // Begin extraction process immediately
-            const extractionStarted = await processExtraction(item.file, item);
+            // Set up current processing item for UI
+            setCurrentProcessingItem(item);
+            setCurrentItemIndex(itemIndex);
+            setExtractionResults(null);
+            setValidationResults(null);
 
-            if (!extractionStarted) {
-                throw new Error("Failed to start extraction process");
+            // Define extraction options
+            const extractionOptions = {
+                month: cycleMonth,
+                year: cycleYear,
+                password: item.passwordApplied ? item.password : null
+            };
+
+            // Use ExtractionsService directly (handles caching and URL cleanup internally)
+            const extractionResult = await ExtractionsService.getExtraction(item.file, extractionOptions);
+            
+            console.log('Extraction result:', extractionResult?.success ? 'Success' : 'Failed');
+
+            // Store results
+            setExtractionResults(extractionResult);
+
+            // Validate the results if extraction successful
+            if (extractionResult?.success) {
+                const validationResult = validateExtractedData(extractionResult.extractedData, item.matchedBank);
+                setValidationResults(validationResult);
+
+                // Show validation dialog
+                setShowValidationDialog(true);
+            } else {
+                // If extraction failed, continue with upload anyway
+                toast({
+                    title: "Extraction Warning",
+                    description: extractionResult.requiresPassword 
+                        ? "PDF is password protected. Please provide a password." 
+                        : "Could not extract data from the statement. Continuing with upload.",
+                    variant: "warning"
+                });
+
+                // Proceed with upload without extraction data
+                await handleFileUpload(itemIndex, null);
+                processNextQueueItem();
             }
-
-            // Don't wait for the extraction to complete here, it will be handled by the callback
         } catch (error) {
             console.error("Error during file extraction:", error);
             setUploadItems(prev => {
@@ -1526,331 +1541,47 @@ export function BankStatementBulkUploadDialog({
         }
     };
 
-    // Add this function to handle multi-month statements
-    const handleMultiMonthStatements = async (parentId, bank, extractedData, documentInfo) => {
-        if (!extractedData?.statement_period) return;
-
-        // Parse statement period
-        const periodDates = parseStatementPeriod(extractedData.statement_period);
-        if (!periodDates) return;
-
-        const { startMonth, startYear, endMonth, endYear } = periodDates;
-
-        // Generate all months in the range
-        const monthsInRange = generateMonthRange(startMonth, startYear, endMonth, endYear);
-
-        // Skip the current month/year (it's already processed)
-        const otherMonths = monthsInRange.filter(
-            ({ month, year }) => !(month === cycleMonth && year === cycleYear)
-        );
-
-        if (otherMonths.length === 0) return;
-
-        // Create statements for each month
-        for (const { month, year } of otherMonths) {
-            try {
-                // Find the corresponding cycle ID
-                const monthStr = (month + 1).toString().padStart(2, '0');
-                const cycleMonthYear = `${year}-${monthStr}`;
-
-                // Get cycle ID
-                const { data: cycleData, error: cycleError } = await supabase
-                    .from('statement_cycles')
-                    .select('id')
-                    .eq('month_year', cycleMonthYear)
-                    .single();
-
-                if (cycleError) {
-                    console.error(`Error finding cycle for ${cycleMonthYear}:`, cycleError);
-                    continue;
-                }
-
-                const cycleId = cycleData.id;
-
-                // Check if statement already exists
-                const { data: existingStatement, error: existingError } = await supabase
-                    .from('acc_cycle_bank_statements')
-                    .select('id')
-                    .eq('bank_id', bank.id)
-                    .eq('statement_month', month)
-                    .eq('statement_year', year)
-                    .maybeSingle();
-
-                if (existingError && existingError.code !== 'PGRST116') {
-                    console.error(`Error checking for existing statement ${month}/${year}:`, existingError);
-                    continue;
-                }
-
-                // Create statement data for this month
-                const monthlyStatement = {
-                    bank_id: bank.id,
-                    company_id: bank.company_id,
-                    statement_cycle_id: cycleId,
-                    statement_month: month,
-                    statement_year: year,
-                    statement_type: 'range',
-                    has_soft_copy: true,
-                    statement_document: documentInfo,
-                    statement_extractions: {
-                        ...extractedData,
-                        parent_statement_id: parentId
-                    },
-                    validation_status: {
-                        is_validated: false,
-                        validation_date: null,
-                        validated_by: null,
-                        mismatches: []
-                    },
-                    status: {
-                        status: 'pending_validation',
-                        assigned_to: null,
-                        verification_date: null
-                    }
-                };
-
-                if (existingStatement) {
-                    // Update existing statement
-                    await supabase
-                        .from('acc_cycle_bank_statements')
-                        .update(monthlyStatement)
-                        .eq('id', existingStatement.id);
-                } else {
-                    // Create new statement
-                    await supabase
-                        .from('acc_cycle_bank_statements')
-                        .insert(monthlyStatement);
-                }
-
-            } catch (error) {
-                console.error(`Error creating statement for ${month}/${year}:`, error);
-            }
-        }
-    };
-
-    // In BankStatementBulkUploadDialog.tsx
-
-    const handleFileUpload = async (itemIndex: number, extractedData: any, validationResult: any = null) => {
-        const item = uploadItems[itemIndex];
-        if (!item || !item.file || !item.matchedBank) {
-            console.error('Invalid item for upload');
-            return;
-        }
-
-        // Update UI to show upload in progress
-        setUploadItems(prev => {
-            const updated = [...prev];
-            if (updated[itemIndex]) {
-                updated[itemIndex] = {
-                    ...updated[itemIndex],
-                    status: 'processing',
-                    uploadProgress: 50
-                };
-            }
-            return updated;
-        });
-
-        try {
-            // Upload file to storage
-            const bank = item.matchedBank;
-            const pdfFileName = `bank_statement_${bank.company_id || 'unknown'}_${bank.id || 'unknown'}_${cycleYear}_${cycleMonth}.pdf`;
-            const pdfFilePath = `statement_documents/${cycleYear}/${cycleMonth}/${bank.company_name || 'unknown'}/${pdfFileName}`;
-
-            // Only upload if we haven't uploaded this file before
-            let pdfPath = item.uploadedPdfPath;
-            if (!pdfPath) {
-                const { data: pdfUploadData, error: pdfUploadError } = await supabase.storage
-                    .from('Statement-Cycle')
-                    .upload(pdfFilePath, item.file, {
-                        cacheControl: '0',
-                        upsert: true
-                    });
-
-                if (pdfUploadError) throw pdfUploadError;
-                pdfPath = pdfUploadData?.path;
-            }
-
-            // Update UI to show upload progress
-            setUploadItems(prev => {
-                const updated = [...prev];
-                if (updated[itemIndex]) {
-                    updated[itemIndex].uploadProgress = 75;
-                    updated[itemIndex].uploadedPdfPath = pdfPath;
-                }
-                return updated;
-            });
-
-            // Parse statement period to determine if this is a multi-month statement
-            let isMultiMonth = false;
-            let statementPeriod = extractedData?.statement_period || null;
-            let statementType = 'monthly';
-
-            if (statementPeriod) {
-                const periodDates = parseStatementPeriod(statementPeriod);
-                if (periodDates) {
-                    const { startMonth, startYear, endMonth, endYear } = periodDates;
-                    isMultiMonth = !(startMonth === endMonth && startYear === endYear);
-                    statementType = isMultiMonth ? 'range' : 'monthly';
-                }
-            }
-
-            // Create statement document info with proper path
-            const statementDocumentInfo = {
-                statement_pdf: pdfPath,
-                statement_excel: null,
-                document_size: item.file.size || 0,
-                password: item.passwordApplied ? item.password : null,
-                upload_date: new Date().toISOString(),
-                file_name: item.file.name
-            };
-
-            // Create statement data with complete extracted information
-            const statementData = {
-                bank_id: bank.id,
-                company_id: bank.company_id,
-                statement_cycle_id: localCycleId,
-                statement_month: cycleMonth,
-                statement_year: cycleYear,
-                statement_type: statementType,
-                has_soft_copy: item.hasSoftCopy !== undefined ? item.hasSoftCopy : true,
-                has_hard_copy: item.hasHardCopy !== undefined ? item.hasHardCopy : false,
-                statement_document: statementDocumentInfo,
-                statement_extractions: extractedData || {
-                    bank_name: null,
-                    account_number: null,
-                    currency: null,
-                    statement_period: null,
-                    opening_balance: null,
-                    closing_balance: null,
-                    monthly_balances: []
-                },
-                extraction_performed: !!extractedData,
-                extraction_timestamp: extractedData ? new Date().toISOString() : null,
-                validation_status: {
-                    is_validated: validationResult?.isValid || false,
-                    validation_date: validationResult ? new Date().toISOString() : null,
-                    validated_by: null,
-                    mismatches: validationResult?.mismatches || []
-                },
-                status: {
-                    status: validationResult?.isValid ? 'validated' : 'pending_validation',
-                    assigned_to: null,
-                    verification_date: null
-                }
-            };
-
-            // Check if statement already exists
-            const { data: existingStatements, error: existingError } = await supabase
-                .from('acc_cycle_bank_statements')
-                .select('id')
-                .eq('bank_id', bank.id)
-                .eq('statement_month', cycleMonth)
-                .eq('statement_year', cycleYear);
-
-            if (existingError) {
-                console.error('Error checking for existing statements:', existingError);
-                throw existingError;
-            }
-
-            let statementResponse;
-            if (existingStatements && existingStatements.length > 0) {
-                // Update existing statement
-                console.log(`Updating existing statement for ${bank.bank_name} (${cycleMonth}/${cycleYear})`);
-                statementResponse = await supabase
-                    .from('acc_cycle_bank_statements')
-                    .update(statementData)
-                    .eq('id', existingStatements[0].id)
-                    .select();
-            } else {
-                // Insert new statement
-                console.log(`Creating new statement for ${bank.bank_name} (${cycleMonth}/${cycleYear})`);
-                statementResponse = await supabase
-                    .from('acc_cycle_bank_statements')
-                    .insert(statementData)
-                    .select();
-            }
-
-            if (statementResponse.error) {
-                console.error('Error saving statement data:', statementResponse.error);
-                throw statementResponse.error;
-            }
-
-            // Get the statement with ID
-            const createdStatement = statementResponse.data[0];
-            console.log('Statement saved successfully:', createdStatement.id);
-
-            // If this is a multi-month statement, create statements for all months in the range
-            if (statementType === 'range' && statementPeriod) {
-                try {
-                    await handleMultiMonthStatements(
-                        createdStatement.id,
-                        bank,
-                        extractedData,
-                        statementDocumentInfo,
-                        statementPeriod
-                    );
-                } catch (error) {
-                    console.error('Error handling multi-month statements:', error);
-                    // Continue despite error in multi-month handling
-                }
-            }
-
-            // Update UI to show success
-            setUploadItems(prev => {
-                const updated = [...prev];
-                if (updated[itemIndex]) {
-                    updated[itemIndex] = {
-                        ...updated[itemIndex],
-                        status: 'uploaded',
-                        uploadProgress: 100,
-                        extractedData: extractedData,
-                        uploadedStatement: createdStatement,
-                        error: null
-                    };
-                }
-                return updated;
-            });
-
-            return createdStatement;
-        } catch (error) {
-            console.error('Upload error:', error);
-
-            // Update UI to show failure
-            setUploadItems(prev => {
-                const updated = [...prev];
-                if (updated[itemIndex]) {
-                    updated[itemIndex] = {
-                        ...updated[itemIndex],
-                        status: 'failed',
-                        error: error instanceof Error ? error.message : 'Unknown error',
-                        uploadProgress: 0
-                    };
-                }
-                return updated;
-            });
-
-            throw error;
-        }
-    };
-
     // Function to process the next item in the queue
     const processNextQueueItem = () => {
         if (processingQueue.length > 0) {
-            const nextItemIndex = processingQueue[0];
+            // Remove the first item (which was just processed)
             const updatedQueue = processingQueue.slice(1);
             setProcessingQueue(updatedQueue);
 
-            // Process the next item
-            handleFileExtraction(nextItemIndex);
+            // Process the next item if there are any left
+            if (updatedQueue.length > 0) {
+                const nextItemIndex = updatedQueue[0];
+                handleFileExtraction(nextItemIndex);
+            } else {
+                // All items processed
+                setShowValidationDialog(false);
+                setShowExtractionDialog(false);
+                setCurrentProcessingItem(null);
+                setCurrentItemIndex(-1);
+
+                // Show completion toast
+                toast({
+                    title: 'Processing Complete',
+                    description: 'All statements have been processed',
+                    variant: 'default'
+                });
+
+                // Switch to vouching tab
+                setActiveTab('vouching');
+                organizeByCompany();
+            }
         } else {
             // All items processed
             setShowValidationDialog(false);
             setShowExtractionDialog(false);
             setCurrentProcessingItem(null);
             setCurrentItemIndex(-1);
+            setUploading(false);
+            setOverallProgress(100);
 
             // Show completion toast
             toast({
-                title: 'Upload Complete',
+                title: 'Processing Complete',
                 description: 'All statements have been processed',
                 variant: 'default'
             });
@@ -2135,6 +1866,77 @@ export function BankStatementBulkUploadDialog({
                 return <Badge variant="outline" className="bg-purple-100 text-purple-800">Vouched</Badge>;
             default:
                 return <Badge variant="outline">Unknown</Badge>;
+        }
+    };
+
+    // Process a batch of files for extraction
+    const processBatchExtraction = async (items: BulkUploadItem[]): Promise<void> => {
+        if (!items || items.length === 0) {
+            console.log('No items to process in batch');
+            return;
+        }
+
+        try {
+            // Filter items that have files and matched banks
+            const validItems = items.filter(item => item.file && item.matchedBank);
+            
+            if (validItems.length === 0) {
+                console.log('No valid items for batch extraction');
+                return;
+            }
+
+            console.log(`Processing batch extraction for ${validItems.length} files`);
+            
+            // Define extraction options
+            const extractionOptions = {
+                month: cycleMonth,
+                year: cycleYear
+            };
+
+            // Extract files from items
+            const files = validItems.map(item => item.file);
+            
+            // Use ExtractionsService to process batch
+            const batchResults = await ExtractionsService.processBatch(files, extractionOptions);
+            
+            console.log(`Batch extraction completed with ${batchResults.filter(r => r.success).length} successful extractions`);
+
+            // Process each result
+            for (let i = 0; i < validItems.length; i++) {
+                const item = validItems[i];
+                const result = batchResults[i];
+                const itemIndex = uploadItems.findIndex(uploadItem => uploadItem === item);
+                
+                if (itemIndex === -1) continue;
+
+                // Update item with extraction result
+                setUploadItems(prev => {
+                    const updated = [...prev];
+                    if (updated[itemIndex]) {
+                        updated[itemIndex] = {
+                            ...updated[itemIndex],
+                            extractedData: result.success ? result.extractedData : null,
+                            status: result.success ? 'matched' : 'unmatched'
+                        };
+                    }
+                    return updated;
+                });
+
+                // If extraction was successful, proceed with upload
+                if (result.success) {
+                    await handleFileUpload(itemIndex, result.extractedData);
+                } else {
+                    // If extraction failed, continue with upload anyway
+                    await handleFileUpload(itemIndex, null);
+                }
+            }
+        } catch (error) {
+            console.error('Batch extraction error:', error);
+            toast({
+                title: "Batch Extraction Error",
+                description: `Failed to process batch: ${error?.message || 'Unknown error'}`,
+                variant: "destructive"
+            });
         }
     };
 
@@ -2660,13 +2462,13 @@ export function BankStatementBulkUploadDialog({
                                         <TableHeader className="sticky top-0 bg-white z-10 shadow">
                                             <TableRow>
                                                 <TableHead className="w-[40px] text-xs font-semibold">#</TableHead>
-                                                <TableHead className="text-xs font-semibold">Company</TableHead>
-                                                <TableHead className="text-xs font-semibold">Bank Name</TableHead>
-                                                <TableHead className="text-xs font-semibold">Account Number</TableHead>
-                                                <TableHead className="text-xs font-semibold">Status</TableHead>
-                                                <TableHead className="text-xs font-semibold">Extraction</TableHead>
-                                                <TableHead className="text-xs font-semibold">Password</TableHead>
-                                                <TableHead className="text-xs font-semibold">Actions</TableHead>
+                                                <TableHead>Company</TableHead>
+                                                <TableHead>Bank Name</TableHead>
+                                                <TableHead>Account Number</TableHead>
+                                                <TableHead>Status</TableHead>
+                                                <TableHead>Extraction</TableHead>
+                                                <TableHead>Password</TableHead>
+                                                <TableHead>Actions</TableHead>
                                             </TableRow>
                                         </TableHeader>
                                         <TableBody>
@@ -3282,6 +3084,7 @@ export function BankStatementBulkUploadDialog({
                                     ...prev,
                                     [currentManualMatchItem]: value === "placeholder" ? 0 : parseInt(value)
                                 }))}
+                                disabled={loadingCompanies || randomMode}
                             >
                                 <SelectTrigger className="w-full">
                                     <SelectValue placeholder="Select a bank" />
