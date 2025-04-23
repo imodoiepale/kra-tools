@@ -1940,6 +1940,209 @@ export function BankStatementBulkUploadDialog({
         }
     };
 
+    // Handle file upload to storage and database
+    const handleFileUpload = async (itemIndex: number, extractedData: any, validationResult: any = null) => {
+        const item = uploadItems[itemIndex];
+        if (!item || !item.file || !item.matchedBank) {
+            console.error('Invalid item for upload');
+            return;
+        }
+
+        // Update UI to show upload in progress
+        setUploadItems(prev => {
+            const updated = [...prev];
+            if (updated[itemIndex]) {
+                updated[itemIndex] = {
+                    ...updated[itemIndex],
+                    status: 'processing',
+                    uploadProgress: 50
+                };
+            }
+            return updated;
+        });
+
+        try {
+            // Upload file to storage
+            const bank = item.matchedBank;
+            const pdfFileName = `bank_statement_${bank.company_id || 'unknown'}_${bank.id || 'unknown'}_${cycleYear}_${cycleMonth}.pdf`;
+            const pdfFilePath = `statement_documents/${cycleYear}/${cycleMonth}/${bank.company_name || 'unknown'}/${pdfFileName}`;
+
+            // Only upload if we haven't uploaded this file before
+            let pdfPath = item.uploadedPdfPath;
+            if (!pdfPath) {
+                const { data: pdfUploadData, error: pdfUploadError } = await supabase.storage
+                    .from('Statement-Cycle')
+                    .upload(pdfFilePath, item.file, {
+                        cacheControl: '0',
+                        upsert: true
+                    });
+
+                if (pdfUploadError) throw pdfUploadError;
+                pdfPath = pdfUploadData?.path;
+            }
+
+            // Update UI to show upload progress
+            setUploadItems(prev => {
+                const updated = [...prev];
+                if (updated[itemIndex]) {
+                    updated[itemIndex].uploadProgress = 75;
+                    updated[itemIndex].uploadedPdfPath = pdfPath;
+                }
+                return updated;
+            });
+
+            // Parse statement period to determine if this is a multi-month statement
+            let isMultiMonth = false;
+            let statementPeriod = extractedData?.statement_period || null;
+            let statementType = 'monthly';
+
+            if (statementPeriod) {
+                const periodDates = parseStatementPeriod(statementPeriod);
+                if (periodDates) {
+                    const { startMonth, startYear, endMonth, endYear } = periodDates;
+                    isMultiMonth = !(startMonth === endMonth && startYear === endYear);
+                    statementType = isMultiMonth ? 'range' : 'monthly';
+                }
+            }
+
+            // Create statement document info with proper path
+            const statementDocumentInfo = {
+                statement_pdf: pdfPath,
+                statement_excel: null,
+                document_size: item.file.size || 0,
+                password: item.passwordApplied ? item.password : null,
+                upload_date: new Date().toISOString(),
+                file_name: item.file.name
+            };
+
+            // Create statement data with complete extracted information
+            const statementData = {
+                bank_id: bank.id,
+                company_id: bank.company_id,
+                statement_cycle_id: localCycleId,
+                statement_month: cycleMonth,
+                statement_year: cycleYear,
+                statement_type: statementType,
+                has_soft_copy: item.hasSoftCopy !== undefined ? item.hasSoftCopy : true,
+                has_hard_copy: item.hasHardCopy !== undefined ? item.hasHardCopy : false,
+                statement_document: statementDocumentInfo,
+                statement_extractions: extractedData || {
+                    bank_name: null,
+                    account_number: null,
+                    currency: null,
+                    statement_period: null,
+                    opening_balance: null,
+                    closing_balance: null,
+                    monthly_balances: []
+                },
+                extraction_performed: !!extractedData,
+                extraction_timestamp: extractedData ? new Date().toISOString() : null,
+                validation_status: {
+                    is_validated: validationResult?.isValid || false,
+                    validation_date: validationResult ? new Date().toISOString() : null,
+                    validated_by: null,
+                    mismatches: validationResult?.mismatches || []
+                },
+                status: {
+                    status: validationResult?.isValid ? 'validated' : 'pending_validation',
+                    assigned_to: null,
+                    verification_date: null
+                }
+            };
+
+            // Check if statement already exists
+            const { data: existingStatements, error: existingError } = await supabase
+                .from('acc_cycle_bank_statements')
+                .select('id')
+                .eq('bank_id', bank.id)
+                .eq('statement_month', cycleMonth)
+                .eq('statement_year', cycleYear);
+
+            if (existingError) {
+                console.error('Error checking for existing statements:', existingError);
+                throw existingError;
+            }
+
+            let statementResponse;
+            if (existingStatements && existingStatements.length > 0) {
+                // Update existing statement
+                console.log(`Updating existing statement for ${bank.bank_name} (${cycleMonth}/${cycleYear})`);
+                statementResponse = await supabase
+                    .from('acc_cycle_bank_statements')
+                    .update(statementData)
+                    .eq('id', existingStatements[0].id)
+                    .select();
+            } else {
+                // Insert new statement
+                console.log(`Creating new statement for ${bank.bank_name} (${cycleMonth}/${cycleYear})`);
+                statementResponse = await supabase
+                    .from('acc_cycle_bank_statements')
+                    .insert(statementData)
+                    .select();
+            }
+
+            if (statementResponse.error) {
+                console.error('Error saving statement data:', statementResponse.error);
+                throw statementResponse.error;
+            }
+
+            // Get the statement with ID
+            const createdStatement = statementResponse.data[0];
+            console.log('Statement saved successfully:', createdStatement.id);
+
+            // If this is a multi-month statement, create statements for all months in the range
+            if (statementType === 'range' && statementPeriod) {
+                try {
+                    await handleMultiMonthStatements(
+                        createdStatement.id,
+                        bank,
+                        extractedData,
+                        statementDocumentInfo
+                    );
+                } catch (error) {
+                    console.error('Error handling multi-month statements:', error);
+                    // Continue despite error in multi-month handling
+                }
+            }
+
+            // Update UI to show success
+            setUploadItems(prev => {
+                const updated = [...prev];
+                if (updated[itemIndex]) {
+                    updated[itemIndex] = {
+                        ...updated[itemIndex],
+                        status: 'uploaded',
+                        uploadProgress: 100,
+                        extractedData: extractedData,
+                        uploadedStatement: createdStatement,
+                        error: null
+                    };
+                }
+                return updated;
+            });
+
+            return createdStatement;
+        } catch (error) {
+            console.error('Upload error:', error);
+
+            // Update UI to show failure
+            setUploadItems(prev => {
+                const updated = [...prev];
+                if (updated[itemIndex]) {
+                    updated[itemIndex] = {
+                        ...updated[itemIndex],
+                        status: 'failed',
+                        error: error instanceof Error ? error.message : 'Unknown error',
+                        uploadProgress: 0
+                    };
+                }
+                return updated;
+            });
+
+            throw error;
+        }
+    };
+
     // Return the JSX component
     return (
         <TooltipProvider>
