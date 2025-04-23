@@ -59,7 +59,14 @@ interface DataTableProps {
   yearlyData?: Record<string, any[]>;
   isHorizontalView?: boolean;
   selectedColumns?: string[];
-  selectedSubColumns?: ("amount" | "date" | "status" | "bank" | "payMode" | "all")[];
+  selectedSubColumns?: (
+    | "amount"
+    | "date"
+    | "status"
+    | "bank"
+    | "payMode"
+    | "all"
+  )[];
   isLoading?: boolean;
   showTotals?: boolean;
   viewMode?: "table" | "overall";
@@ -184,15 +191,30 @@ const DataCell = memo(
   }: {
     tax: (typeof taxColumns)[number];
     entry: TaxEntry;
-    selectedSubColumns: ("amount" | "date" | "status" | "bank" | "payMode" | "all")[];
+    selectedSubColumns: (
+      | "amount"
+      | "date"
+      | "status"
+      | "bank"
+      | "payMode"
+      | "all"
+    )[];
     isLoading: boolean;
   }) => {
-    const showAmount = selectedSubColumns.includes("all") || selectedSubColumns.includes("amount");
-    const showDate = selectedSubColumns.includes("all") || selectedSubColumns.includes("date");
-    const showStatus = selectedSubColumns.includes("all") || selectedSubColumns.includes("status");
-    const showBank = selectedSubColumns.includes("all") || selectedSubColumns.includes("bank");
-    const showPayMode = selectedSubColumns.includes("all") || selectedSubColumns.includes("payMode");
-    
+    const showAmount =
+      selectedSubColumns.includes("all") ||
+      selectedSubColumns.includes("amount");
+    const showDate =
+      selectedSubColumns.includes("all") || selectedSubColumns.includes("date");
+    const showStatus =
+      selectedSubColumns.includes("all") ||
+      selectedSubColumns.includes("status");
+    const showBank =
+      selectedSubColumns.includes("all") || selectedSubColumns.includes("bank");
+    const showPayMode =
+      selectedSubColumns.includes("all") ||
+      selectedSubColumns.includes("payMode");
+
     return (
       <React.Fragment>
         {showAmount && (
@@ -267,7 +289,14 @@ const TableRowMemo = memo(
     entry: TaxEntry;
     idx: number;
     selectedColumns: string[];
-    selectedSubColumns: ("amount" | "date" | "status" | "bank" | "payMode" | "all")[];
+    selectedSubColumns: (
+      | "amount"
+      | "date"
+      | "status"
+      | "bank"
+      | "payMode"
+      | "all"
+    )[];
     isLoading: boolean;
   }) => {
     return (
@@ -347,6 +376,20 @@ export const DataTable = memo(
       }, {} as Record<string, number>);
     }, [data, selectedColumns]);
 
+    // Calculate table width based on columns
+    const tableWidth = useMemo(() => {
+      const baseWidth = 180; // Base width for month column
+      const columnWidth = 120; // Width per tax column
+      const subColumnWidth = 100; // Width per sub-column
+
+      const totalColumns = selectedColumns.length;
+      const subColumnsPerColumn = selectedSubColumns.includes("all")
+        ? 5
+        : selectedSubColumns.length;
+
+      return baseWidth + totalColumns * columnWidth * subColumnsPerColumn;
+    }, [selectedColumns, selectedSubColumns]);
+
     // If in overall view mode, render the overall table
     if (viewMode === "overall" && getMonthsInRange) {
       const visibleMonths = getMonthsInRange(
@@ -379,27 +422,32 @@ export const DataTable = memo(
                   <TableHead className="sticky left-0 z-20 bg-blue-600 text-white"></TableHead>
                   {selectedColumns.map((col) => (
                     <React.Fragment key={`${col}-subheader`}>
-                      {(selectedSubColumns.includes("all") || selectedSubColumns.includes("amount")) && (
+                      {(selectedSubColumns.includes("all") ||
+                        selectedSubColumns.includes("amount")) && (
                         <TableHead className="bg-blue-400 text-white py-2 px-3 border text-sm font-medium">
                           Amount
                         </TableHead>
                       )}
-                      {(selectedSubColumns.includes("all") || selectedSubColumns.includes("date")) && (
+                      {(selectedSubColumns.includes("all") ||
+                        selectedSubColumns.includes("date")) && (
                         <TableHead className="bg-blue-400 text-white py-2 px-3 border text-sm font-medium">
                           Pay Date
                         </TableHead>
                       )}
-                      {(selectedSubColumns.includes("all") || selectedSubColumns.includes("status")) && (
+                      {(selectedSubColumns.includes("all") ||
+                        selectedSubColumns.includes("status")) && (
                         <TableHead className="bg-blue-400 text-white py-2 px-3 border text-sm font-medium">
                           Status
                         </TableHead>
                       )}
-                      {(selectedSubColumns.includes("all") || selectedSubColumns.includes("bank")) && (
+                      {(selectedSubColumns.includes("all") ||
+                        selectedSubColumns.includes("bank")) && (
                         <TableHead className="bg-blue-400 text-white py-2 px-3 border text-sm font-medium">
                           Bank
                         </TableHead>
                       )}
-                      {(selectedSubColumns.includes("all") || selectedSubColumns.includes("payMode")) && (
+                      {(selectedSubColumns.includes("all") ||
+                        selectedSubColumns.includes("payMode")) && (
                         <TableHead className="bg-blue-400 text-white py-2 px-3 border text-sm font-medium">
                           Pay Mode
                         </TableHead>
@@ -431,27 +479,32 @@ export const DataTable = memo(
                       {selectedColumns.map((col) => (
                         <React.Fragment
                           key={`${col}-${month.year}-${month.name}`}>
-                          {(selectedSubColumns.includes("all") || selectedSubColumns.includes("amount")) && (
+                          {(selectedSubColumns.includes("all") ||
+                            selectedSubColumns.includes("amount")) && (
                             <TableCell className="py-3 px-3 border text-right">
                               {formatAmount(entry[col]?.amount || 0)}
                             </TableCell>
                           )}
-                          {(selectedSubColumns.includes("all") || selectedSubColumns.includes("date")) && (
+                          {(selectedSubColumns.includes("all") ||
+                            selectedSubColumns.includes("date")) && (
                             <TableCell className="py-3 px-3 border text-center">
                               {formatDate(entry[col]?.date)}
                             </TableCell>
                           )}
-                          {(selectedSubColumns.includes("all") || selectedSubColumns.includes("status")) && (
+                          {(selectedSubColumns.includes("all") ||
+                            selectedSubColumns.includes("status")) && (
                             <TableCell className="py-3 px-3 border text-center">
                               {entry[col]?.status || "—"}
                             </TableCell>
                           )}
-                          {(selectedSubColumns.includes("all") || selectedSubColumns.includes("bank")) && (
+                          {(selectedSubColumns.includes("all") ||
+                            selectedSubColumns.includes("bank")) && (
                             <TableCell className="py-3 px-3 border text-center">
                               {entry[col]?.bank || "—"}
                             </TableCell>
                           )}
-                          {(selectedSubColumns.includes("all") || selectedSubColumns.includes("payMode")) && (
+                          {(selectedSubColumns.includes("all") ||
+                            selectedSubColumns.includes("payMode")) && (
                             <TableCell className="py-3 px-3 border text-center">
                               {entry[col]?.payMode || "—"}
                             </TableCell>
@@ -562,7 +615,11 @@ export const DataTable = memo(
                         <TableCell
                           colSpan={
                             // Calculate total columns: sum of all tax type columns + month column + total column
-                            (selectedColumns.reduce((sum, _) => sum + calculateColSpan(selectedSubColumns), 0)) + 2
+                            selectedColumns.reduce(
+                              (sum, _) =>
+                                sum + calculateColSpan(selectedSubColumns),
+                              0
+                            ) + 2
                           }
                           className="py-2 px-5 font-bold text-lg text-[#1e4d7b] border-2 border-slate-300 sticky left-0 bg-inherit">
                           {year}
@@ -740,7 +797,8 @@ export const DataTable = memo(
                       pagination.page * pagination.pageSize,
                       pagination.total
                     )}
-                  </span>{" "} of <span className="font-medium">{pagination.total}</span>{" "}
+                  </span>{" "}
+                  of <span className="font-medium">{pagination.total}</span>{" "}
                   results
                 </span>
               </div>
@@ -770,177 +828,188 @@ export const DataTable = memo(
       );
     }
 
-    // Render vertical view (single year)
     return (
-      <div className="space-y-4">
+      <div className="space-y-4 h-full flex flex-col">
         {title && (
           <h3 className="text-xl font-semibold text-slate-800 px-1">{title}</h3>
         )}
-        <div className="rounded-xl border-2 border-slate-300 shadow-md overflow-x-auto">
-          <Table>
-            <TableHeader className="sticky top-0 z-10">
-              <TableRow>
-                <TableHead
-                  className="w-[120px] font-bold text-white py-4 px-5 border-2 border-slate-300 sticky left-0 bg-[#1e4d7b]"
-                  rowSpan={2}>
-                  Month
-                </TableHead>
-                {selectedColumns.map((col) => (
+        <div className="flex-grow flex flex-col rounded-xl border-2 border-slate-300 shadow-md overflow-hidden">
+          <div className="flex-grow overflow-auto relative">
+            <Table>
+              <TableHeader className="sticky top-0 z-10">
+                <TableRow>
                   <TableHead
-                    key={col}
-                    colSpan={calculateColSpan(selectedSubColumns)}
-                    className={`text-center font-bold text-white py-4 px-5 border-2 border-slate-300 bg-[#1e4d7b]`}>
-                    {taxColumns.find((t) => t.id === col)?.label ||
-                      col.toUpperCase()}
+                    className="w-[120px] font-bold text-white py-4 px-5 border-2 border-slate-300 sticky left-0 bg-[#1e4d7b]"
+                    rowSpan={2}>
+                    Month
                   </TableHead>
-                ))}
-                <TableHead
-                  className="w-[150px] font-bold text-white py-4 px-5 border-2 border-slate-300 bg-[#2a5a8c]"
-                  rowSpan={2}>
-                  Monthly Total
-                </TableHead>
-              </TableRow>
-              <TableRow>
-                {selectedColumns.map((col) => (
-                  <React.Fragment key={`${col}-subheaders`}>
-                    {(selectedSubColumns.includes("all") || selectedSubColumns.includes("amount")) && (
-                      <TableHead className="font-semibold text-white text-center py-3 px-3 border-2 border-slate-300 bg-[#2a5a8c]">
-                        Amount
-                      </TableHead>
-                    )}
-                    {(selectedSubColumns.includes("all") || selectedSubColumns.includes("date")) && (
-                      <TableHead className="font-semibold text-white text-center py-3 px-3 border-2 border-slate-300 bg-[#2a5a8c]">
-                        Pay Date
-                      </TableHead>
-                    )}
-                    {(selectedSubColumns.includes("all") || selectedSubColumns.includes("status")) && (
-                      <TableHead className="font-semibold text-white text-center py-3 px-3 border-2 border-slate-300 bg-[#2a5a8c]">
-                        Status
-                      </TableHead>
-                    )}
-                    {(selectedSubColumns.includes("all") || selectedSubColumns.includes("bank")) && (
-                      <TableHead className="font-semibold text-white text-center py-3 px-3 border-2 border-slate-300 bg-[#2a5a8c]">
-                        Bank
-                      </TableHead>
-                    )}
-                    {(selectedSubColumns.includes("all") || selectedSubColumns.includes("payMode")) && (
-                      <TableHead className="font-semibold text-white text-center py-3 px-3 border-2 border-slate-300 bg-[#2a5a8c]">
-                        Pay Mode
-                      </TableHead>
-                    )}
-                  </React.Fragment>
-                ))}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {data.map((entry, idx) => {
-                const monthlyTotal = selectedColumns.reduce(
-                  (sum, col) => sum + (entry[col]?.amount || 0),
-                  0
-                );
+                  {selectedColumns.map((col) => (
+                    <TableHead
+                      key={col}
+                      colSpan={calculateColSpan(selectedSubColumns)}
+                      className={`text-center font-bold text-white py-4 px-5 border-2 border-slate-300 bg-[#1e4d7b]`}>
+                      {taxColumns.find((t) => t.id === col)?.label ||
+                        col.toUpperCase()}
+                    </TableHead>
+                  ))}
+                  <TableHead
+                    className="w-[150px] font-bold text-white py-4 px-5 border-2 border-slate-300 bg-[#2a5a8c]"
+                    rowSpan={2}>
+                    Monthly Total
+                  </TableHead>
+                </TableRow>
+                <TableRow>
+                  {selectedColumns.map((col) => (
+                    <React.Fragment key={`${col}-subheaders`}>
+                      {(selectedSubColumns.includes("all") ||
+                        selectedSubColumns.includes("amount")) && (
+                        <TableHead className="font-semibold text-white text-center py-3 px-3 border-2 border-slate-300 bg-[#2a5a8c]">
+                          Amount
+                        </TableHead>
+                      )}
+                      {(selectedSubColumns.includes("all") ||
+                        selectedSubColumns.includes("date")) && (
+                        <TableHead className="font-semibold text-white text-center py-3 px-3 border-2 border-slate-300 bg-[#2a5a8c]">
+                          Pay Date
+                        </TableHead>
+                      )}
+                      {(selectedSubColumns.includes("all") ||
+                        selectedSubColumns.includes("status")) && (
+                        <TableHead className="font-semibold text-white text-center py-3 px-3 border-2 border-slate-300 bg-[#2a5a8c]">
+                          Status
+                        </TableHead>
+                      )}
+                      {(selectedSubColumns.includes("all") ||
+                        selectedSubColumns.includes("bank")) && (
+                        <TableHead className="font-semibold text-white text-center py-3 px-3 border-2 border-slate-300 bg-[#2a5a8c]">
+                          Bank
+                        </TableHead>
+                      )}
+                      {(selectedSubColumns.includes("all") ||
+                        selectedSubColumns.includes("payMode")) && (
+                        <TableHead className="font-semibold text-white text-center py-3 px-3 border-2 border-slate-300 bg-[#2a5a8c]">
+                          Pay Mode
+                        </TableHead>
+                      )}
+                    </React.Fragment>
+                  ))}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {data.map((entry, idx) => {
+                  const monthlyTotal = selectedColumns.reduce(
+                    (sum, col) => sum + (entry[col]?.amount || 0),
+                    0
+                  );
 
-                return (
-                  <TableRow
-                    key={entry.month}
-                    className={idx % 2 === 0 ? "bg-white" : "bg-[#f8fbfe]"}>
-                    <TableCell className="font-medium text-slate-700 py-3 px-5 border-2 border-slate-300 sticky left-0 bg-inherit">
-                      {entry.month}
+                  return (
+                    <TableRow
+                      key={entry.month}
+                      className={idx % 2 === 0 ? "bg-white" : "bg-[#f8fbfe]"}>
+                      <TableCell className="font-medium text-slate-700 py-3 px-5 border-2 border-slate-300 sticky left-0 bg-inherit">
+                        {entry.month}
+                      </TableCell>
+                      {selectedColumns.map((col) => (
+                        <React.Fragment key={`${col}-data-${entry.month}`}>
+                          {(selectedSubColumns.includes("all") ||
+                            selectedSubColumns.includes("amount")) && (
+                            <TableCell className="text-right py-3 px-4 font-medium border-2 border-slate-300 bg-inherit">
+                              <span className="text-slate-700">
+                                {formatAmount(entry[col]?.amount || 0)}
+                              </span>
+                            </TableCell>
+                          )}
+                          {(selectedSubColumns.includes("all") ||
+                            selectedSubColumns.includes("date")) && (
+                            <TableCell className="text-center py-3 px-3 border-2 border-slate-300 bg-inherit">
+                              <span className={getDateColor(entry[col]?.date)}>
+                                {formatDate(entry[col]?.date)}
+                              </span>
+                            </TableCell>
+                          )}
+                          {(selectedSubColumns.includes("all") ||
+                            selectedSubColumns.includes("status")) && (
+                            <TableCell className="text-center py-3 px-3 border-2 border-slate-300 bg-inherit">
+                              <span className="text-slate-700">
+                                {entry[col]?.status || "—"}
+                              </span>
+                            </TableCell>
+                          )}
+                          {(selectedSubColumns.includes("all") ||
+                            selectedSubColumns.includes("bank")) && (
+                            <TableCell className="text-center py-3 px-3 border-2 border-slate-300 bg-inherit">
+                              <span className="text-slate-700">
+                                {entry[col]?.bank || "—"}
+                              </span>
+                            </TableCell>
+                          )}
+                          {(selectedSubColumns.includes("all") ||
+                            selectedSubColumns.includes("payMode")) && (
+                            <TableCell className="text-center py-3 px-3 border-2 border-slate-300 bg-inherit">
+                              <span className="text-slate-700">
+                                {entry[col]?.payMode || "—"}
+                              </span>
+                            </TableCell>
+                          )}
+                        </React.Fragment>
+                      ))}
+                      <TableCell className="text-right py-3 px-4 font-medium border-2 border-slate-300 bg-[#eef6fc]">
+                        <span className="text-[#1e4d7b] font-bold">
+                          {formatAmount(monthlyTotal)}
+                        </span>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+                {showTotals && (
+                  <TableRow className="bg-[#eef6fc] font-semibold">
+                    <TableCell className="py-4 px-5 text-[#1e4d7b] border-2 border-slate-300 sticky left-0 bg-inherit">
+                      TOTAL
                     </TableCell>
                     {selectedColumns.map((col) => (
-                      <React.Fragment key={`${col}-data-${entry.month}`}>
+                      <React.Fragment key={`${col}-total`}>
                         {(selectedSubColumns.includes("all") ||
                           selectedSubColumns.includes("amount")) && (
-                          <TableCell className="text-right py-3 px-4 font-medium border-2 border-slate-300 bg-inherit">
-                            <span className="text-slate-700">
-                              {formatAmount(entry[col]?.amount || 0)}
-                            </span>
+                          <TableCell className="text-right py-4 px-4 text-[#1e4d7b] font-bold border-2 border-slate-300 bg-inherit">
+                            {formatAmount(totals[col] || 0)}
                           </TableCell>
                         )}
                         {(selectedSubColumns.includes("all") ||
                           selectedSubColumns.includes("date")) && (
-                          <TableCell className="text-center py-3 px-3 border-2 border-slate-300 bg-inherit">
-                            <span className={getDateColor(entry[col]?.date)}>
-                              {formatDate(entry[col]?.date)}
-                            </span>
-                          </TableCell>
+                          <TableCell className="border-2 border-slate-300 bg-inherit" />
                         )}
                         {(selectedSubColumns.includes("all") ||
                           selectedSubColumns.includes("status")) && (
-                          <TableCell className="text-center py-3 px-3 border-2 border-slate-300 bg-inherit">
-                            <span className="text-slate-700">
-                              {entry[col]?.status || "—"}
-                            </span>
-                          </TableCell>
+                          <TableCell className="border-2 border-slate-300 bg-inherit" />
                         )}
                         {(selectedSubColumns.includes("all") ||
                           selectedSubColumns.includes("bank")) && (
-                          <TableCell className="text-center py-3 px-3 border-2 border-slate-300 bg-inherit">
-                            <span className="text-slate-700">
-                              {entry[col]?.bank || "—"}
-                            </span>
-                          </TableCell>
+                          <TableCell className="border-2 border-slate-300 bg-inherit" />
                         )}
                         {(selectedSubColumns.includes("all") ||
                           selectedSubColumns.includes("payMode")) && (
-                          <TableCell className="text-center py-3 px-3 border-2 border-slate-300 bg-inherit">
-                            <span className="text-slate-700">
-                              {entry[col]?.payMode || "—"}
-                            </span>
-                          </TableCell>
+                          <TableCell className="border-2 border-slate-300 bg-inherit" />
                         )}
                       </React.Fragment>
                     ))}
-                    <TableCell className="text-right py-3 px-4 font-medium border-2 border-slate-300 bg-[#eef6fc]">
-                      <span className="text-[#1e4d7b] font-bold">
-                        {formatAmount(monthlyTotal)}
-                      </span>
+                    <TableCell className="text-right py-4 px-4 font-bold border-2 border-slate-300 bg-[#2a5a8c] text-white">
+                      {formatAmount(
+                        selectedColumns.reduce(
+                          (sum, col) => sum + (totals[col] || 0),
+                          0
+                        )
+                      )}
                     </TableCell>
                   </TableRow>
-                );
-              })}
-              {showTotals && (
-                <TableRow className="bg-[#eef6fc] font-semibold">
-                  <TableCell className="py-4 px-5 text-[#1e4d7b] border-2 border-slate-300 sticky left-0 bg-inherit">
-                    TOTAL
-                  </TableCell>
-                  {selectedColumns.map((col) => (
-                    <React.Fragment key={`${col}-total`}>
-                      {(selectedSubColumns.includes("all") ||
-                        selectedSubColumns.includes("amount")) && (
-                        <TableCell className="text-right py-4 px-4 text-[#1e4d7b] font-bold border-2 border-slate-300 bg-inherit">
-                          {formatAmount(totals[col] || 0)}
-                        </TableCell>
-                      )}
-                      {(selectedSubColumns.includes("all") ||
-                        selectedSubColumns.includes("date")) && (
-                        <TableCell className="border-2 border-slate-300 bg-inherit" />
-                      )}
-                      {(selectedSubColumns.includes("all") ||
-                        selectedSubColumns.includes("status")) && (
-                        <TableCell className="border-2 border-slate-300 bg-inherit" />
-                      )}
-                      {(selectedSubColumns.includes("all") ||
-                        selectedSubColumns.includes("bank")) && (
-                        <TableCell className="border-2 border-slate-300 bg-inherit" />
-                      )}
-                      {(selectedSubColumns.includes("all") ||
-                        selectedSubColumns.includes("payMode")) && (
-                        <TableCell className="border-2 border-slate-300 bg-inherit" />
-                      )}
-                    </React.Fragment>
-                  ))}
-                  <TableCell className="text-right py-4 px-4 font-bold border-2 border-slate-300 bg-[#2a5a8c] text-white">
-                    {formatAmount(
-                      selectedColumns.reduce(
-                        (sum, col) => sum + (totals[col] || 0),
-                        0
-                      )
-                    )}
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
+                )}
+              </TableBody>
+            </Table>
+          </div>
+
+          {/* Horizontal scroll indicator */}
+          <div className="h-3 bg-gray-100 border-t border-gray-200 overflow-x-auto">
+            <div style={{ width: `${tableWidth}px` }} className="h-full"></div>
+          </div>
         </div>
         {isLoading && (
           <div className="absolute inset-0 bg-white/80 backdrop-blur-sm flex items-center justify-center z-10">
