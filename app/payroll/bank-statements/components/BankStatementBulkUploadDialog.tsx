@@ -1475,8 +1475,11 @@ export function BankStatementBulkUploadDialog({
             setUploadItems(prev => {
                 const updated = [...prev];
                 if (updated[itemIndex]) {
-                    updated[itemIndex].status = 'processing';
-                    updated[itemIndex].uploadProgress = 30;
+                    updated[itemIndex] = {
+                        ...updated[itemIndex],
+                        status: 'processing',
+                        uploadProgress: 30
+                    };
                 }
                 return updated;
             });
@@ -2063,6 +2066,69 @@ export function BankStatementBulkUploadDialog({
                 throw existingError;
             }
 
+            // Verify that the statement cycle exists in the correct table
+            if (localCycleId) {
+                const { data: cycleExists, error: cycleCheckError } = await supabase
+                    .from('statement_cycles')
+                    .select('id')
+                    .eq('id', localCycleId)
+                    .maybeSingle();
+                
+                if (cycleCheckError || !cycleExists) {
+                    console.error('Statement cycle does not exist:', localCycleId);
+                    
+                    // Create a new cycle since the existing one doesn't exist
+                    const { data: newCycle, error: newCycleError } = await supabase
+                        .from('statement_cycles')
+                        .insert({
+                            cycle_month: cycleMonth,
+                            cycle_year: cycleYear,
+                            month_year: `${cycleYear}-${(cycleMonth + 1).toString().padStart(2, '0')}`,
+                            status: 'active',
+                            created_by: null
+                        })
+                        .select('id')
+                        .single();
+                    
+                    if (newCycleError) {
+                        console.error('Error creating statement cycle:', newCycleError);
+                        throw new Error(`Failed to create statement cycle: ${newCycleError.message}`);
+                    }
+                    
+                    // Update the local cycle ID with the new one
+                    setLocalCycleId(newCycle.id);
+                    
+                    // Update the statement data with the new cycle ID
+                    statementData.statement_cycle_id = newCycle.id;
+                    console.log('Created new statement cycle:', newCycle.id);
+                }
+            } else {
+                // No cycle ID provided, create a new one
+                const { data: newCycle, error: newCycleError } = await supabase
+                    .from('statement_cycles')
+                    .insert({
+                        cycle_month: cycleMonth,
+                        cycle_year: cycleYear,
+                        month_year: `${cycleYear}-${(cycleMonth + 1).toString().padStart(2, '0')}`,
+                        status: 'active',
+                        created_by: null
+                    })
+                    .select('id')
+                    .single();
+                
+                if (newCycleError) {
+                    console.error('Error creating statement cycle:', newCycleError);
+                    throw new Error(`Failed to create statement cycle: ${newCycleError.message}`);
+                }
+                
+                // Update the local cycle ID with the new one
+                setLocalCycleId(newCycle.id);
+                
+                // Update the statement data with the new cycle ID
+                statementData.statement_cycle_id = newCycle.id;
+                console.log('Created new statement cycle:', newCycle.id);
+            }
+
             let statementResponse;
             if (existingStatements && existingStatements.length > 0) {
                 // Update existing statement
@@ -2615,7 +2681,7 @@ export function BankStatementBulkUploadDialog({
                                 <div className="border rounded-md overflow-hidden" style={{ maxHeight: '400px' }}>
                                     <div className="overflow-y-auto" style={{ maxHeight: '400px' }}>
                                         <Table className="w-full">
-                                            <TableHeader className="sticky top-0 bg-white z-10">
+                                            <TableHeader className="sticky top-0 bg-white z-10 shadow">
                                                 <TableRow>
                                                     <TableHead>#</TableHead>
                                                     <TableHead>File Name</TableHead>
@@ -2730,7 +2796,7 @@ export function BankStatementBulkUploadDialog({
                                                             </Badge>
                                                         )}
                                                     </TableCell>
-                                                    <TableCell className="text-xs">
+                                                    <TableCell>
                                                         {item.status === 'failed' ? (
                                                             <div className="text-red-500">{item.error}</div>
                                                         ) : item.status === 'unmatched' ? (
