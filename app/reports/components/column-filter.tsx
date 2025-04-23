@@ -233,29 +233,7 @@ export function ColumnFilter({
         </DropdownMenuContent>
       </DropdownMenu>
 
-      {/* Show/Hide Totals Button */}
-      <Button
-        variant="outline"
-        onClick={onToggleTotals}
-        className={cn(
-          "bg-[#1e4d7b] text-white hover:bg-[#2a5a8c] hover:text-white",
-          !showTotals && "bg-[#2a5a8c]"
-        )}>
-        {showTotals ? "Hide Totals" : "Show Totals"}
-      </Button>
-
-      {/* View Mode Toggle Button */}
-      <Button
-        variant="outline"
-        onClick={() =>
-          onViewModeChange(viewMode === "table" ? "overall" : "table")
-        }
-        className={cn(
-          "bg-[#1e4d7b] text-white hover:bg-[#2a5a8c] hover:text-white",
-          viewMode === "overall" && "bg-[#2a5a8c]"
-        )}>
-        {viewMode === "table" ? "Overall View" : "Table View"}
-      </Button>
+     
     </div>
   );
 }
