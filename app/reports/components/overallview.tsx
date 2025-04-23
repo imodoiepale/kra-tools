@@ -6,6 +6,7 @@ import { useCompanyFilters } from "../hooks/useCompanyFilters";
 import { Filter } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ClientCategoryFilter } from "./client-category-filter";
+import { ColumnFilter } from "./column-filter";
 import { Badge } from "@/components/ui/badge";
 import { useCompanyTaxReports } from "../hooks/useCompanyTaxReports";
 
@@ -22,9 +23,20 @@ interface OverallViewProps {
     imm_client_effective_from: string | null;
     imm_client_effective_to: string | null;
   }>;
+  selectedColumns?: string[];
+  selectedSubColumns?: ("amount" | "date" | "status" | "bank" | "payMode" | "all")[];
 }
 
-export default function OverallView({ companies }: OverallViewProps) {
+export default function OverallView({ 
+  companies, 
+  selectedColumns: initialSelectedColumns = ["paye", "housingLevy", "nita", "shif", "nssf"],
+  selectedSubColumns: initialSelectedSubColumns = ["all"]
+}: OverallViewProps) {
+  const [selectedColumns, setSelectedColumns] = useState(initialSelectedColumns);
+  const [selectedSubColumns, setSelectedSubColumns] = useState(initialSelectedSubColumns);
+  const [showDetails, setShowDetails] = useState(true);
+  const [showTotals, setShowTotals] = useState(true);
+  const [viewMode, setViewMode] = useState<"table" | "overall">("table");
   const { reportData, loading: taxDataLoading } = useCompanyTaxReports();
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' }>({ key: 'name', direction: 'asc' });
@@ -186,8 +198,21 @@ export default function OverallView({ companies }: OverallViewProps) {
     setIsLoading(false);
   };
 
-  // Calculate table width based on months
-  const tableWidth = visibleMonths.length * 2000; // Increased width to accommodate all columns
+  // Helper function to calculate column spans based on selected subcolumns
+  const calculateColSpan = (subColumns) => {
+    if (subColumns.includes("all")) return 5;
+    let count = 0;
+    if (subColumns.includes("amount")) count++;
+    if (subColumns.includes("date")) count++;
+    if (subColumns.includes("status")) count++;
+    if (subColumns.includes("bank")) count++;
+    if (subColumns.includes("payMode")) count++;
+    return count || 1; // Ensure we return at least 1 for empty selections
+  };
+
+  // Calculate table width based on months and selected columns/subcolumns
+  const totalSubColumns = selectedColumns.reduce((sum, _) => sum + calculateColSpan(selectedSubColumns), 0);
+  const tableWidth = visibleMonths.length * totalSubColumns * 200; // Adjust width based on visible columns
 
   return (
     <div className="flex flex-col h-screen bg-gray-100">
@@ -258,32 +283,55 @@ export default function OverallView({ companies }: OverallViewProps) {
 
                   // Apply the selected filters
                   const filtered = companies.filter(company => {
+                    // Check if any of the selected categories match the company
                     return Object.entries(filters).some(([category, statuses]) => {
+                      // Skip categories where no status is selected
                       if (!Object.values(statuses).some(value => value)) {
-                        return false; // Skip categories where no status is selected
+                        return false;
                       }
 
                       const now = new Date();
                       let isActive = false;
+                      let effectiveFrom = null;
+                      let effectiveTo = null;
                       
+                      // Determine which category we're checking
                       switch(category) {
                         case 'acc':
-                          isActive = company.acc_client_effective_to === null || new Date(company.acc_client_effective_to) > now;
+                          effectiveFrom = company.acc_client_effective_from;
+                          effectiveTo = company.acc_client_effective_to;
                           break;
                         case 'audit':
-                          isActive = company.audit_tax_client_effective_to === null || new Date(company.audit_tax_client_effective_to) > now;
+                          effectiveFrom = company.audit_tax_client_effective_from;
+                          effectiveTo = company.audit_tax_client_effective_to;
                           break;
                         case 'sheria':
-                          isActive = company.cps_sheria_client_effective_to === null || new Date(company.cps_sheria_client_effective_to) > now;
+                          effectiveFrom = company.cps_sheria_client_effective_from;
+                          effectiveTo = company.cps_sheria_client_effective_to;
                           break;
                         case 'imm':
-                          isActive = company.imm_client_effective_to === null || new Date(company.imm_client_effective_to) > now;
+                          effectiveFrom = company.imm_client_effective_from;
+                          effectiveTo = company.imm_client_effective_to;
+                          break;
+                        case 'all':
+                          // For "all" category, check if the company is active in any category
+                          isActive = ['acc', 'audit', 'sheria', 'imm'].some(cat => {
+                            const toField = company[`${cat === 'audit' ? 'audit_tax' : cat}_client_effective_to`];
+                            return toField === null || new Date(toField) > now;
+                          });
                           break;
                       }
                       
+                      // For specific categories, determine if active based on effective dates
+                      if (category !== 'all') {
+                        isActive = effectiveTo === null || new Date(effectiveTo) > now;
+                      }
+                      
+                      // Check if the company's status matches any of the selected statuses
                       return statuses[isActive ? 'active' : 'inactive'];
                     });
                   });
+                  
                   setFilteredCompanies(filtered);
                 }}
                 selectedFilters={selectedFilters}
@@ -398,6 +446,24 @@ export default function OverallView({ companies }: OverallViewProps) {
           </div>
 
           <div className="flex flex-wrap items-center gap-4 justify-between">
+            {/* Column filter controls */}
+            <ColumnFilter
+              columns={[
+                { id: "paye", name: "PAYE" },
+                { id: "housingLevy", name: "Housing Levy" },
+                { id: "nita", name: "NITA" },
+                { id: "shif", name: "SHIF" },
+                { id: "nssf", name: "NSSF" }
+              ]}
+              selectedColumns={selectedColumns}
+              onColumnChange={setSelectedColumns}
+              selectedSubColumns={selectedSubColumns}
+              onSubColumnChange={setSelectedSubColumns}
+              showTotals={showTotals}
+              onToggleTotals={() => setShowTotals(!showTotals)}
+              viewMode={viewMode}
+              onViewModeChange={setViewMode}
+            />
           </div>
         </div>
       </div>
@@ -410,14 +476,14 @@ export default function OverallView({ companies }: OverallViewProps) {
           <table className="w-full border-collapse bg-white" style={{ position: 'relative' }}>
             <thead className="sticky top-0 z-10">
               <tr className="sticky top-0 z-30">
-                <th className="sticky left-0 z-40 bg-[#1e4d7b] text-white py-2 px-3 border-2 border-slate-300 w-[60px] text-center">
+                <th className="sticky left-0 top-0 z-40 bg-[#1e4d7b] text-white py-2 px-3 border-2 border-slate-300 w-[60px] text-center">
                   <div className="flex flex-col items-center justify-center">
                     <span className="text-xs font-normal">#</span>
                     <span className="text-xs font-normal">({filteredCompanies.length})</span>
                   </div>
                 </th>
                 <th 
-                  className="sticky left-[60px] z-40 bg-[#1e4d7b] text-white py-2 px-3 border-2 border-slate-300 min-w-[180px] text-left cursor-pointer hover:bg-[#2a5a8c] transition-colors text-sm"
+                  className="sticky left-[60px] top-0 z-40 bg-[#1e4d7b] text-white py-2 px-3 border-2 border-slate-300 min-w-[180px] text-left cursor-pointer hover:bg-[#2a5a8c] transition-colors text-sm"
                   onClick={() => {
                     setSortConfig({
                       key: 'name',
@@ -427,6 +493,7 @@ export default function OverallView({ companies }: OverallViewProps) {
                 >
                   <div className="flex items-center gap-1">
                     Company {filteredCompanies.length}
+
                     {sortConfig.key === 'name' && (
                       <span className="text-xs">
                         {sortConfig.direction === 'asc' ? '↑' : '↓'}
@@ -437,109 +504,205 @@ export default function OverallView({ companies }: OverallViewProps) {
                 {visibleMonths.map((month, index) => (
                   <th
                     key={index}
-                    colSpan={20}
-                    className="bg-[#1e4d7b] text-white py-3 px-4 border-2 border-slate-300 text-center">
+                    colSpan={selectedColumns.reduce((sum, _) => sum + calculateColSpan(selectedSubColumns), 0)}
+                    className="sticky top-0 z-30 bg-[#1e4d7b] text-white py-3 px-4 border-2 border-slate-300 text-center">
                     {month.label}
                   </th>
                 ))}
               </tr>
               <tr>
-                <th className="sticky left-0 z-20 bg-[#1e4d7b] text-white py-3 px-4 border-2 border-slate-300"></th>
-                <th className="sticky left-[60px] z-20 bg-[#1e4d7b] text-white py-3 px-4 border-2 border-slate-300"></th>
+                <th className="sticky left-0 top-[41px] z-20 bg-[#1e4d7b] text-white py-3 px-4 border-2 border-slate-300"></th>
+                <th className="sticky left-[60px] top-[41px] z-20 bg-[#1e4d7b] text-white py-3 px-4 border-2 border-slate-300"></th>
                 {visibleMonths.map((_, monthIndex) => (
                   <React.Fragment key={monthIndex}>
-                    <th
-                      colSpan={5}
-                      className="bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-center">
-                      PAYE
-                    </th>
-                    <th
-                      colSpan={5}
-                      className="bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-center">
-                      Housing Levy
-                    </th>
-                    <th
-                      colSpan={5}
-                      className="bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-center">
-                      NITA
-                    </th>
-                    <th
-                      colSpan={5}
-                      className="bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-center">
-                      SHIF
-                    </th>
-                    <th
-                      colSpan={5}
-                      className="bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-center">
-                      NSSF
-                    </th>
+                    {selectedColumns.includes("paye") && (
+                      <th
+                        colSpan={calculateColSpan(selectedSubColumns)}
+                        className="sticky top-[41px] z-20 bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-center">
+                        PAYE
+                      </th>
+                    )}
+                    {selectedColumns.includes("housingLevy") && (
+                      <th
+                        colSpan={calculateColSpan(selectedSubColumns)}
+                        className="sticky top-[41px] z-20 bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-center">
+                        Housing Levy
+                      </th>
+                    )}
+                    {selectedColumns.includes("nita") && (
+                      <th
+                        colSpan={calculateColSpan(selectedSubColumns)}
+                        className="sticky top-[41px] z-20 bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-center">
+                        NITA
+                      </th>
+                    )}
+                    {selectedColumns.includes("shif") && (
+                      <th
+                        colSpan={calculateColSpan(selectedSubColumns)}
+                        className="sticky top-[41px] z-20 bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-center">
+                        SHIF
+                      </th>
+                    )}
+                    {selectedColumns.includes("nssf") && (
+                      <th
+                        colSpan={calculateColSpan(selectedSubColumns)}
+                        className="sticky top-[41px] z-20 bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-center">
+                        NSSF
+                      </th>
+                    )}
                   </React.Fragment>
                 ))}
               </tr>
               <tr>
-                <th className="sticky left-0 z-20 bg-[#1e4d7b] text-white py-2 px-4 border-2 border-slate-300"></th>
+                <th className="sticky left-0 top-[82px] z-20 bg-[#1e4d7b] text-white py-2 px-4 border-2 border-slate-300"></th>
+                <th className="sticky left-[60px] top-[82px] z-20 bg-[#1e4d7b] text-white py-2 px-4 border-2 border-slate-300"></th>
                 {visibleMonths.map((_, monthIndex) => (
                   <React.Fragment key={monthIndex}>
-                    <th className="bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-sm font-medium">
-                      Amount
-                    </th>
-                    <th className="bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-sm font-medium">
-                      Pay Date
-                    </th>
-                    <th className="bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-sm font-medium">
-                      Status
-                    </th>
-                    <th className="bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-sm font-medium">
-                      Bank
-                    </th>
-                    <th className="bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-sm font-medium">
-                      Pay Mode
-                    </th>
-                    <th className="bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-sm font-medium">
-                      Amount
-                    </th>
-                    <th className="bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-sm font-medium">
-                      Pay Date
-                    </th>
-                    <th className="bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-sm font-medium">
-                      Status
-                    </th>
-                    <th className="bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-sm font-medium">
-                      Bank
-                    </th>
-                    <th className="bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-sm font-medium">
-                      Pay Mode
-                    </th>
-                    <th className="bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-sm font-medium">
-                      Amount
-                    </th>
-                    <th className="bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-sm font-medium">
-                      Pay Date
-                    </th>
-                    <th className="bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-sm font-medium">
-                      Status
-                    </th>
-                    <th className="bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-sm font-medium">
-                      Bank
-                    </th>
-                    <th className="bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-sm font-medium">
-                      Pay Mode
-                    </th>
-                    <th className="bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-sm font-medium">
-                      Amount
-                    </th>
-                    <th className="bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-sm font-medium">
-                      Pay Date
-                    </th>
-                    <th className="bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-sm font-medium">
-                      Status
-                    </th>
-                    <th className="bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-sm font-medium">
-                      Bank
-                    </th>
-                    <th className="bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-sm font-medium">
-                      Pay Mode
-                    </th>
+                    {selectedColumns.includes("paye") && (
+                      <React.Fragment>
+                        {(selectedSubColumns.includes("all") || selectedSubColumns.includes("amount")) && (
+                          <th className="sticky top-[82px] z-20 bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-sm font-medium">
+                            Amount
+                          </th>
+                        )}
+                        {(selectedSubColumns.includes("all") || selectedSubColumns.includes("date")) && (
+                          <th className="sticky top-[82px] z-20 bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-sm font-medium">
+                            Pay Date
+                          </th>
+                        )}
+                        {(selectedSubColumns.includes("all") || selectedSubColumns.includes("status")) && (
+                          <th className="sticky top-[82px] z-20 bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-sm font-medium">
+                            Status
+                          </th>
+                        )}
+                        {(selectedSubColumns.includes("all") || selectedSubColumns.includes("bank")) && (
+                          <th className="sticky top-[82px] z-20 bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-sm font-medium">
+                            Bank
+                          </th>
+                        )}
+                        {(selectedSubColumns.includes("all") || selectedSubColumns.includes("payMode")) && (
+                          <th className="sticky top-[82px] z-20 bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-sm font-medium">
+                            Pay Mode
+                          </th>
+                        )}
+                      </React.Fragment>
+                    )}
+                    {selectedColumns.includes("housingLevy") && (
+                      <React.Fragment>
+                        {(selectedSubColumns.includes("all") || selectedSubColumns.includes("amount")) && (
+                          <th className="sticky top-[82px] z-20 bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-sm font-medium">
+                            Amount
+                          </th>
+                        )}
+                        {(selectedSubColumns.includes("all") || selectedSubColumns.includes("date")) && (
+                          <th className="sticky top-[82px] z-20 bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-sm font-medium">
+                            Pay Date
+                          </th>
+                        )}
+                        {(selectedSubColumns.includes("all") || selectedSubColumns.includes("status")) && (
+                          <th className="sticky top-[82px] z-20 bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-sm font-medium">
+                            Status
+                          </th>
+                        )}
+                        {(selectedSubColumns.includes("all") || selectedSubColumns.includes("bank")) && (
+                          <th className="sticky top-[82px] z-20 bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-sm font-medium">
+                            Bank
+                          </th>
+                        )}
+                        {(selectedSubColumns.includes("all") || selectedSubColumns.includes("payMode")) && (
+                          <th className="sticky top-[82px] z-20 bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-sm font-medium">
+                            Pay Mode
+                          </th>
+                        )}
+                      </React.Fragment>
+                    )}
+                    {selectedColumns.includes("nita") && (
+                      <React.Fragment>
+                        {(selectedSubColumns.includes("all") || selectedSubColumns.includes("amount")) && (
+                          <th className="sticky top-[82px] z-20 bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-sm font-medium">
+                            Amount
+                          </th>
+                        )}
+                        {(selectedSubColumns.includes("all") || selectedSubColumns.includes("date")) && (
+                          <th className="sticky top-[82px] z-20 bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-sm font-medium">
+                            Pay Date
+                          </th>
+                        )}
+                        {(selectedSubColumns.includes("all") || selectedSubColumns.includes("status")) && (
+                          <th className="sticky top-[82px] z-20 bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-sm font-medium">
+                            Status
+                          </th>
+                        )}
+                        {(selectedSubColumns.includes("all") || selectedSubColumns.includes("bank")) && (
+                          <th className="sticky top-[82px] z-20 bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-sm font-medium">
+                            Bank
+                          </th>
+                        )}
+                        {(selectedSubColumns.includes("all") || selectedSubColumns.includes("payMode")) && (
+                          <th className="sticky top-[82px] z-20 bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-sm font-medium">
+                            Pay Mode
+                          </th>
+                        )}
+                      </React.Fragment>
+                    )}
+                    {selectedColumns.includes("shif") && (
+                      <React.Fragment>
+                        {(selectedSubColumns.includes("all") || selectedSubColumns.includes("amount")) && (
+                          <th className="sticky top-[82px] z-20 bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-sm font-medium">
+                            Amount
+                          </th>
+                        )}
+                        {(selectedSubColumns.includes("all") || selectedSubColumns.includes("date")) && (
+                          <th className="sticky top-[82px] z-20 bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-sm font-medium">
+                            Pay Date
+                          </th>
+                        )}
+                        {(selectedSubColumns.includes("all") || selectedSubColumns.includes("status")) && (
+                          <th className="sticky top-[82px] z-20 bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-sm font-medium">
+                            Status
+                          </th>
+                        )}
+                        {(selectedSubColumns.includes("all") || selectedSubColumns.includes("bank")) && (
+                          <th className="sticky top-[82px] z-20 bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-sm font-medium">
+                            Bank
+                          </th>
+                        )}
+                        {(selectedSubColumns.includes("all") || selectedSubColumns.includes("payMode")) && (
+                          <th className="sticky top-[82px] z-20 bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-sm font-medium">
+                            Pay Mode
+                          </th>
+                        )}
+                      </React.Fragment>
+                    )}
+                    {selectedColumns.includes("nssf") && (
+                      <React.Fragment>
+                        {(selectedSubColumns.includes("all") || selectedSubColumns.includes("amount")) && (
+                          <th className="sticky top-[82px] z-20 bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-sm font-medium">
+                            Amount
+                          </th>
+                        )}
+                        {(selectedSubColumns.includes("all") || selectedSubColumns.includes("date")) && (
+                          <th className="sticky top-[82px] z-20 bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-sm font-medium">
+                            Pay Date
+                          </th>
+                        )}
+                        {(selectedSubColumns.includes("all") || selectedSubColumns.includes("status")) && (
+                          <th className="sticky top-[82px] z-20 bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-sm font-medium">
+                            Status
+                          </th>
+                        )}
+                        {(selectedSubColumns.includes("all") || selectedSubColumns.includes("bank")) && (
+                          <th className="sticky top-[82px] z-20 bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-sm font-medium">
+                            Bank
+                          </th>
+                        )}
+                        {(selectedSubColumns.includes("all") || selectedSubColumns.includes("payMode")) && (
+                          <th className="sticky top-[82px] z-20 bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-sm font-medium">
+                            Pay Mode
+                          </th>
+                        )}
+                      </React.Fragment>
+                    )}
                   </React.Fragment>
                 ))}
               </tr>
@@ -563,11 +726,11 @@ export default function OverallView({ companies }: OverallViewProps) {
                   className={
                     companyIndex % 2 === 0 ? "bg-white hover:bg-blue-50" : "bg-gray-50 hover:bg-blue-50"
                   }>
-                  <td className="sticky left-0 z-10 py-3 px-4 border-2 border-slate-300 bg-[#eef6fc] text-center text-slate-700">
+                  <td className="sticky left-0 top-0 z-10 py-3 px-4 border-2 border-slate-300 bg-[#eef6fc] text-center text-slate-700">
                     {companyIndex + 1}
                   </td>
                   <td 
-                    className="sticky left-[60px] z-10 py-3 px-4 border-2 border-slate-300 bg-[#eef6fc] font-medium text-slate-700 cursor-help group relative"
+                    className="sticky left-[60px] top-0 z-10 py-3 px-4 border-2 border-slate-300 bg-[#eef6fc] font-medium text-slate-700 cursor-help group relative"
                     title={company.name}
                   >
                     <span className="block truncate w-[150px]">{truncateCompanyName(company.name)}</span>
@@ -634,23 +797,33 @@ export default function OverallView({ companies }: OverallViewProps) {
 
                     return (
                       <React.Fragment key={monthIndex}>
-                        {taxTypes.map(tax => (
+                        {taxTypes.filter(tax => selectedColumns.includes(tax.key)).map(tax => (
                           <React.Fragment key={tax.key}>
-                            <td className={`py-3 px-3 border-2 border-slate-300 text-right ${monthData?.[tax.key]?.amount ? 'font-medium text-slate-700' : 'text-slate-500'}`}>
-                              {monthData?.[tax.key]?.amount?.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) ?? "0.00"}
-                            </td>
-                            <td className={`py-3 px-3 border-2 border-slate-300 text-center ${monthData?.[tax.key]?.date ? getDateColor(monthData[tax.key].date) : 'text-slate-400'}`}>
-                              {monthData?.[tax.key]?.date ? formatDate(monthData[tax.key].date) : "—"}
-                            </td>
-                            <td className={`py-3 px-3 border-2 border-slate-300 text-center ${monthData?.[tax.key]?.status ? 'font-medium text-slate-700' : 'text-slate-500'}`}>
-                              {monthData?.[tax.key]?.status ?? "—"}
-                            </td>
-                            <td className={`py-3 px-3 border-2 border-slate-300 text-center ${monthData?.[tax.key]?.bank ? 'font-medium text-slate-700' : 'text-slate-500'}`}>
-                              {monthData?.[tax.key]?.bank ?? "—"}
-                            </td>
-                            <td className={`py-3 px-3 border-2 border-slate-300 text-center ${monthData?.[tax.key]?.payMode ? 'font-medium text-slate-700' : 'text-slate-500'}`}>
-                              {monthData?.[tax.key]?.payMode ?? "—"}
-                            </td>
+                            {(selectedSubColumns.includes("all") || selectedSubColumns.includes("amount")) && (
+                              <td className={`py-3 px-3 border-2 border-slate-300 text-right ${monthData?.[tax.key]?.amount ? 'font-medium text-slate-700' : 'text-slate-500'}`}>
+                                {monthData?.[tax.key]?.amount?.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) ?? "0.00"}
+                              </td>
+                            )}
+                            {(selectedSubColumns.includes("all") || selectedSubColumns.includes("date")) && (
+                              <td className={`py-3 px-3 border-2 border-slate-300 text-center ${monthData?.[tax.key]?.date ? getDateColor(monthData[tax.key].date) : 'text-slate-400'}`}>
+                                {monthData?.[tax.key]?.date ? formatDate(monthData[tax.key].date) : "—"}
+                              </td>
+                            )}
+                            {(selectedSubColumns.includes("all") || selectedSubColumns.includes("status")) && (
+                              <td className={`py-3 px-3 border-2 border-slate-300 text-center ${monthData?.[tax.key]?.status ? 'font-medium text-slate-700' : 'text-slate-500'}`}>
+                                {monthData?.[tax.key]?.status ?? "—"}
+                              </td>
+                            )}
+                            {(selectedSubColumns.includes("all") || selectedSubColumns.includes("bank")) && (
+                              <td className={`py-3 px-3 border-2 border-slate-300 text-center ${monthData?.[tax.key]?.bank ? 'font-medium text-slate-700' : 'text-slate-500'}`}>
+                                {monthData?.[tax.key]?.bank ?? "—"}
+                              </td>
+                            )}
+                            {(selectedSubColumns.includes("all") || selectedSubColumns.includes("payMode")) && (
+                              <td className={`py-3 px-3 border-2 border-slate-300 text-center ${monthData?.[tax.key]?.payMode ? 'font-medium text-slate-700' : 'text-slate-500'}`}>
+                                {monthData?.[tax.key]?.payMode ?? "—"}
+                              </td>
+                            )}
                           </React.Fragment>
                         ))}
                       </React.Fragment>
@@ -662,7 +835,7 @@ export default function OverallView({ companies }: OverallViewProps) {
               {/* Empty state handling */}
               {filteredCompanies.length === 0 && (
                 <tr>
-                  <td colSpan={visibleMonths.length * 20 + 1} className="text-center py-10 text-gray-500">
+                  <td colSpan={visibleMonths.length * selectedColumns.reduce((sum, _) => sum + calculateColSpan(selectedSubColumns), 0) + 2} className="text-center py-10 text-gray-500">
                     No companies found matching your search criteria
                   </td>
                 </tr>

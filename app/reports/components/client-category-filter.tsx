@@ -26,19 +26,43 @@ const statuses = ['All', 'Active', 'Inactive'];
 export function ClientCategoryFilter({ isOpen, onClose, onApplyFilters, onClearFilters, selectedFilters }: ClientCategoryFilterProps) {
   const [localFilters, setLocalFilters] = React.useState(selectedFilters);
 
+  // Update local filters when selectedFilters changes (e.g., when dialog reopens)
+  React.useEffect(() => {
+    setLocalFilters(selectedFilters);
+  }, [selectedFilters, isOpen]);
+
   const handleCheckboxChange = (category: string, status: string) => {
-    setLocalFilters((prev: any) => ({
-      ...prev,
-      [category]: {
-        ...prev[category],
-        [status.toLowerCase()]: !prev[category]?.[status.toLowerCase()]
-      }
-    }));
+    setLocalFilters((prev: any) => {
+      // Initialize the category if it doesn't exist
+      const categoryFilters = prev[category] || {};
+      
+      return {
+        ...prev,
+        [category]: {
+          ...categoryFilters,
+          [status.toLowerCase()]: !categoryFilters[status.toLowerCase()]
+        }
+      };
+    });
   };
 
   const handleApply = () => {
-    onApplyFilters(localFilters);
+    // Filter out empty categories
+    const filteredResult = Object.entries(localFilters).reduce((acc: any, [category, statuses]: [string, any]) => {
+      // Only include categories that have at least one status selected
+      if (Object.values(statuses).some(value => value)) {
+        acc[category] = statuses;
+      }
+      return acc;
+    }, {});
+    
+    onApplyFilters(filteredResult);
     onClose();
+  };
+
+  const handleClearAll = () => {
+    setLocalFilters({});
+    onClearFilters();
   };
 
   return (
@@ -85,7 +109,7 @@ export function ClientCategoryFilter({ isOpen, onClose, onApplyFilters, onClearF
           <div className="flex justify-between">
             <Button variant="outline" onClick={onClose}>Cancel</Button>
             <div className="space-x-2">
-              <Button variant="outline" onClick={() => setLocalFilters({})}>Clear All</Button>
+              <Button variant="outline" onClick={handleClearAll}>Clear All</Button>
               <Button onClick={handleApply}>Apply Filters</Button>
             </div>
           </div>

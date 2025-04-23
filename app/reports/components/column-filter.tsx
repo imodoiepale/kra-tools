@@ -16,13 +16,19 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuCheckboxItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 interface ColumnFilterProps {
   columns: { id: string; name: string }[];
   selectedColumns: string[];
   onColumnChange: (columns: string[]) => void;
-  showDetails?: boolean;
-  onToggleDetails?: () => void;
+  selectedSubColumns: ("amount" | "date" | "status" | "bank" | "payMode" | "all")[];
+  onSubColumnChange: (subColumns: ("amount" | "date" | "status" | "bank" | "payMode" | "all")[]) => void;
   showTotals?: boolean;
   onToggleTotals?: () => void;
   viewMode: "table" | "overall";
@@ -33,20 +39,45 @@ export function ColumnFilter({
   columns,
   selectedColumns,
   onColumnChange,
-  showDetails,
-  onToggleDetails,
+  selectedSubColumns,
+  onSubColumnChange,
   showTotals,
   onToggleTotals,
   viewMode,
   onViewModeChange,
 }: ColumnFilterProps) {
   const [open, setOpen] = React.useState(false);
+  const [detailsOpen, setDetailsOpen] = React.useState(false);
 
   const toggleColumn = (columnId: string) => {
     if (selectedColumns.includes(columnId)) {
       onColumnChange(selectedColumns.filter((id) => id !== columnId));
     } else {
       onColumnChange([...selectedColumns, columnId]);
+    }
+  };
+
+  const toggleSubColumn = (subColumn: "amount" | "date" | "status" | "bank" | "payMode" | "all") => {
+    if (subColumn === "all") {
+      // If "all" is selected, clear other selections and just use "all"
+      onSubColumnChange(["all"]);
+      return;
+    }
+
+    // If "all" is currently selected, remove it and add the clicked item
+    if (selectedSubColumns.includes("all")) {
+      onSubColumnChange([subColumn]);
+      return;
+    }
+
+    // Toggle the subcolumn
+    if (selectedSubColumns.includes(subColumn)) {
+      // Don't allow removing the last item
+      if (selectedSubColumns.length > 1) {
+        onSubColumnChange(selectedSubColumns.filter(col => col !== subColumn));
+      }
+    } else {
+      onSubColumnChange([...selectedSubColumns, subColumn]);
     }
   };
 
@@ -69,6 +100,7 @@ export function ColumnFilter({
 
   return (
     <div className="flex items-center gap-2">
+      {/* Tax Fields Dropdown */}
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <Button
@@ -76,7 +108,7 @@ export function ColumnFilter({
             role="combobox"
             aria-expanded={open}
             className="min-w-[200px] justify-between bg-[#1e4d7b] text-white hover:bg-[#2a5a8c] hover:text-white">
-            Select Taxes ({selectedColumns.length} selected)
+            Tax Fields ({selectedColumns.length} selected)
             <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
           </Button>
         </PopoverTrigger>
@@ -88,7 +120,14 @@ export function ColumnFilter({
               {columns.map((column) => (
                 <CommandItem
                   key={column.id}
-                  onSelect={() => toggleColumn(column.id)}
+                  onSelect={(value) => {
+                    toggleColumn(column.id);
+                    // Prevent closing the dropdown after selection
+                    const event = window.event;
+                    if (event) {
+                      event.preventDefault();
+                    }
+                  }}
                   className={cn(
                     selectedColumns.includes(column.id) &&
                       getButtonColor(column.id)
@@ -109,16 +148,69 @@ export function ColumnFilter({
         </PopoverContent>
       </Popover>
 
-      <Button
-        variant="outline"
-        onClick={onToggleDetails}
-        className={cn(
-          "bg-[#1e4d7b] text-white hover:bg-[#2a5a8c] hover:text-white",
-          showDetails && "bg-[#2a5a8c]"
-        )}>
-        Column Details {showDetails ? "(All)" : "(None)"}
-      </Button>
+      {/* Column Details Dropdown */}
+      <DropdownMenu open={detailsOpen} onOpenChange={setDetailsOpen}>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="outline"
+            className="min-w-[150px] justify-between bg-[#1e4d7b] text-white hover:bg-[#2a5a8c] hover:text-white">
+            Tax Fields ({selectedSubColumns.length} selected)
+            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent className="w-[180px]" onCloseAutoFocus={(e) => e.preventDefault()} onMouseDown={(e) => e.preventDefault()} onTouchStart={(e) => e.preventDefault()}>
+          <div className="px-2 py-1.5 text-sm font-semibold border-b">
+            All Details
+          </div>
+          <DropdownMenuCheckboxItem
+            checked={selectedSubColumns.includes("all")}
+            onCheckedChange={() => toggleSubColumn("all")}
+            onSelect={(e) => e.preventDefault()}
+          >
+            All Details
+          </DropdownMenuCheckboxItem>
+          <div className="px-2 py-1.5 text-sm font-semibold border-b">
+            Individual Fields
+          </div>
+          <DropdownMenuCheckboxItem
+            checked={selectedSubColumns.includes("amount")}
+            onCheckedChange={() => toggleSubColumn("amount")}
+            onSelect={(e) => e.preventDefault()}
+          >
+            Amount
+          </DropdownMenuCheckboxItem>
+          <DropdownMenuCheckboxItem
+            checked={selectedSubColumns.includes("date")}
+            onCheckedChange={() => toggleSubColumn("date")}
+            onSelect={(e) => e.preventDefault()}
+          >
+            Pay Date
+          </DropdownMenuCheckboxItem>
+          <DropdownMenuCheckboxItem
+            checked={selectedSubColumns.includes("status")}
+            onCheckedChange={() => toggleSubColumn("status")}
+            onSelect={(e) => e.preventDefault()}
+          >
+            Status
+          </DropdownMenuCheckboxItem>
+          <DropdownMenuCheckboxItem
+            checked={selectedSubColumns.includes("bank")}
+            onCheckedChange={() => toggleSubColumn("bank")}
+            onSelect={(e) => e.preventDefault()}
+          >
+            Bank
+          </DropdownMenuCheckboxItem>
+          <DropdownMenuCheckboxItem
+            checked={selectedSubColumns.includes("payMode")}
+            onCheckedChange={() => toggleSubColumn("payMode")}
+            onSelect={(e) => e.preventDefault()}
+          >
+            Pay Mode
+          </DropdownMenuCheckboxItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
 
+      {/* Show/Hide Totals Button */}
       <Button
         variant="outline"
         onClick={onToggleTotals}
@@ -129,6 +221,7 @@ export function ColumnFilter({
         {showTotals ? "Hide Totals" : "Show Totals"}
       </Button>
 
+      {/* View Mode Toggle Button */}
       <Button
         variant="outline"
         onClick={() =>
