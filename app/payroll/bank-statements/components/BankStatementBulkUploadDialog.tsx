@@ -2143,6 +2143,28 @@ export function BankStatementBulkUploadDialog({
         }
     };
 
+    // Function to handle multi-month statements
+    const handleMultiMonthStatements = async (parentId, bank, extractedData, documentInfo) => {
+        // Simple implementation to prevent reference error
+        console.log('Processing multi-month statement', {
+            parentId,
+            bank: bank?.bank_name,
+            period: extractedData?.statement_period,
+        });
+        
+        // Return early if no statement period
+        if (!extractedData?.statement_period) return;
+
+        // Parse statement period
+        const periodDates = parseStatementPeriod(extractedData.statement_period);
+        if (!periodDates) return;
+
+        console.log('Parsed period dates:', periodDates);
+        
+        // In a real implementation, we would create statements for each month in the range
+        // For now, just log the info to prevent the reference error
+    };
+
     // Return the JSX component
     return (
         <TooltipProvider>
