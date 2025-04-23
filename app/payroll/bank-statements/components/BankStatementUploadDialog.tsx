@@ -54,6 +54,8 @@ import {
     removePasswordProtection
 } from '@/lib/bankExtractionUtils'
 import { detectFileInfo } from '../utils/fileDetectionUtils'
+import { ExtractionsService } from '@/lib/extractionService';
+
 
 interface Bank {
     id: number
@@ -880,209 +882,136 @@ export function BankStatementUploadDialog({
     };
 
     const handleUpload = async () => {
-        // Validate that the bank is selected
-        if (!bank) {
-            toast({
-                title: 'Bank Required',
-                description: 'Please select a bank first.',
-                variant: 'destructive'
-            })
-            return
-        }
-
-        // Ensure PDF file is present
         if (!pdfFile) {
             toast({
-                title: 'PDF Required',
-                description: 'Please upload a PDF bank statement.',
+                title: 'No File Selected',
+                description: 'Please select a file to upload',
                 variant: 'destructive'
-            })
-            return
-        }
-
-        // If PDF needs password and we haven't applied one yet
-        if (pdfNeedsPassword && !passwordApplied) {
-            // Try bank password first if we haven't tried it yet
-            if (bank?.acc_password && !password) {
-                const passwordSuccess = await applyPasswordToFiles(pdfFile, bank.acc_password);
-                if (passwordSuccess) {
-                    setPassword(bank.acc_password);
-                    setPasswordApplied(true);
-                    setPdfNeedsPassword(false);
-                    toast({
-                        title: "Success",
-                        description: "Bank's stored password applied automatically",
-                    });
-                } else {
-                    // Show password dialog if bank password didn't work
-                    setShowPasswordDialog(true);
-                    return;
-                }
-            } else {
-                setShowPasswordDialog(true);
-                return;
-            }
+            });
+            return;
         }
 
         setUploading(true);
-        setExtractionResults(null);
-        setValidationResults(null);
 
         try {
-            // Create a temporary URL for the PDF file (for extraction)
-            if (fileUrl) {
-                URL.revokeObjectURL(fileUrl);
-            }
-            const localFileUrl = URL.createObjectURL(pdfFile);
-            setFileUrl(localFileUrl);
+            // Upload PDF file first
+            const pdfFileName = `bank_statement_${bank.company_id}_${bank.id}_${cycleYear}_${cycleMonth}.pdf`;
+            const pdfFilePath = `statement_documents/${cycleYear}/${cycleMonth}/${bank.company_name}/${pdfFileName}`;
 
-            // Do extraction first
-            if (localFileUrl) {
-                // Pass the password to the extraction function if it's been applied
-                const extractionParams = {
-                    month: cycleMonth,
-                    year: cycleYear,
-                    password: passwordApplied ? password : null
-                };
+            const { data: pdfUploadData, error: pdfUploadError } = await supabase.storage
+                .from('Statement-Cycle')
+                .upload(pdfFilePath, pdfFile, {
+                    cacheControl: '0',
+                    upsert: true
+                });
 
-                const extractionResult = await performBankStatementExtraction(
-                    localFileUrl,
-                    extractionParams
-                );
+            if (pdfUploadError) throw pdfUploadError;
 
-                // Store extraction results
-                setExtractionResults(extractionResult);
-
-                // Always validate the results
-                if (extractionResult?.success) {
-                    // Validate against bank details
-                    const validationResult = validateExtractedData(extractionResult.extractedData);
-                    setValidationResults(validationResult);
-
-                    // Always show validation dialog
-                    setShowValidationDialog(true);
-                    setUploading(false);
-                    return;
-                }
-            }
-
-            // Upload files to storage
-            let pdfPath = existingStatement?.statement_document?.statement_pdf || null;
-            let excelPath = existingStatement?.statement_document?.statement_excel || null;
-            let documentSize = existingStatement?.statement_document?.document_size || 0;
-
-            // Upload PDF if provided
-            if (pdfFile) {
-                const pdfFileName = `bank_statement_${bank.company_id}_${bank.id}_${cycleYear}_${cycleMonth}.pdf`;
-                const pdfFilePath = `${bank.company_id}/${bank.id}/${cycleYear}/${cycleMonth}/${pdfFileName}`;
-
-                try {
-                    await uploadFileToSupabase(pdfFile, pdfFilePath);
-                    pdfPath = pdfFilePath;
-                    documentSize = pdfFile.size;
-                } catch (error) {
-                    console.error("PDF upload error:", error);
-                    toast({
-                        title: "Error",
-                        description: "Failed to upload PDF file",
-                        variant: "destructive"
-                    });
-                    return;
-                }
-            }
-
-            // Upload Excel if provided
+            // Upload Excel file if available
+            let excelFilePath = null;
             if (excelFile) {
                 const excelFileName = `bank_statement_${bank.company_id}_${bank.id}_${cycleYear}_${cycleMonth}.xlsx`;
-                const excelFilePath = `${bank.company_id}/${bank.id}/${cycleYear}/${cycleMonth}/${excelFileName}`;
-
-                try {
-                    await uploadFileToSupabase(excelFile, excelFilePath);
-                    excelPath = excelFilePath;
-                } catch (excelError) {
-                    console.error("Excel upload error:", excelError);
-                    // Continue with PDF only if Excel upload fails
+                excelFilePath = `statement_documents/${cycleYear}/${cycleMonth}/${bank.company_name}/${excelFileName}`;
+                
+                const { data: excelUploadData, error: excelUploadError } = await supabase.storage
+                    .from('Statement-Cycle')
+                    .upload(excelFilePath, excelFile, {
+                        cacheControl: '0',
+                        upsert: true
+                    });
+                
+                if (excelUploadError) {
+                    console.error('Excel upload error:', excelUploadError);
+                    // Continue without Excel if upload fails
+                    excelFilePath = null;
+                } else {
+                    excelFilePath = excelUploadData.path;
                 }
             }
 
-            // Document paths for database
-            const documentPaths = {
-                statement_pdf: typeof pdfPath === 'string' ? pdfPath : null,
-                statement_excel: typeof excelPath === 'string' ? excelPath : null,
-                document_size: documentSize || 0,
-                password: passwordApplied ? password : null
+            // Extract data using the extraction service rather than direct calls
+            // This will use cached results if available
+            let extractionResults = null;
+
+            try {
+                // Use the service which handles caching
+                extractionResults = await ExtractionsService.getExtraction(pdfFile, {
+                    month: cycleMonth,
+                    year: cycleYear,
+                    password: pdfNeedsPassword ? password : null
+                });
+
+                console.log('Extraction results from service:', extractionResults);
+            } catch (extractionError) {
+                console.error('Error using extraction service:', extractionError);
+                // We continue even if extraction fails
+            }
+
+            // Document info regardless of extraction success
+            const documentInfo = {
+                statement_pdf: pdfUploadData.path,
+                statement_excel: excelFilePath,
+                document_size: pdfFile.size,
+                file_name: pdfFile.name,
+                password: pdfNeedsPassword ? password : null
             };
 
-            // Prepare statement data
-            const baseStatementData = {
+            // Create statement data with whatever extraction results we have
+            const statementData = {
                 bank_id: bank.id,
                 company_id: bank.company_id,
                 statement_cycle_id: statementCycleId,
                 statement_month: cycleMonth,
                 statement_year: cycleYear,
-                statement_document: documentPaths,
-                statement_extractions: extractionResults?.extractedData || null,
-                monthly_balances: [{
-                    month: cycleMonth,
-                    year: cycleYear,
-                    opening_balance: 0,
-                    closing_balance: 0,
-                    statement_page: 1,
-                    closing_date: null,
-                    highlight_coordinates: null,
-                    is_verified: false,
-                    verified_by: null,
-                    verified_at: null
-                }],
-                validation_status: {
-                    is_validated: validationResults?.isValid || false,
-                    validation_date: validationResults ? new Date().toISOString() : null,
-                    validated_by: null,
-                    mismatches: validationResults?.mismatches || []
-                },
+                has_soft_copy: true,
+                has_hard_copy: hasHardCopy,
+                statement_document: documentInfo,
+                statement_extractions: extractionResults?.success ? extractionResults.extractedData : null,
+                extraction_performed: !!extractionResults?.success,
+                extraction_timestamp: extractionResults?.success ? new Date().toISOString() : null,
                 status: {
                     status: 'pending_validation',
                     assigned_to: null,
                     verification_date: null
+                },
+                validation_status: {
+                    is_validated: false,
+                    validation_date: null,
+                    validated_by: null,
+                    mismatches: []
                 }
             };
 
-            // Update or create statement record
-            let statement;
+            // Check for existing statement to update
             if (existingStatement) {
+                // Update existing statement
                 const { data, error } = await supabase
                     .from('acc_cycle_bank_statements')
-                    .update(baseStatementData)
+                    .update(statementData)
                     .eq('id', existingStatement.id)
                     .select('*')
                     .single();
 
                 if (error) throw error;
-                statement = data;
+                onStatementUploaded(data);
             } else {
+                // Create new statement
                 const { data, error } = await supabase
                     .from('acc_cycle_bank_statements')
-                    .insert(baseStatementData)
+                    .insert(statementData)
                     .select('*')
                     .single();
 
                 if (error) throw error;
-                statement = data;
+                onStatementUploaded(data);
             }
 
-            // Success handling
-            setUploadedStatement(statement);
-            onStatementUploaded(statement);
-            setShowExtractionDialog(true);
-            toast({
-                title: "Success",
-                description: "Statement uploaded successfully",
-            });
+            URL.revokeObjectURL(fileUrl);
         } catch (error) {
-            console.error('Upload process error:', error);
+            console.error('Upload error:', error);
             toast({
-                title: 'Upload Failed',
-                description: error instanceof Error ? error.message : 'Failed to upload bank statement',
+                title: 'Upload Error',
+                description: error.message || 'An error occurred during upload',
                 variant: 'destructive'
             });
         } finally {

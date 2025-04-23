@@ -16,54 +16,59 @@ export const useStatementCycle = () => {
     const selectedMonthYear = `${selectedYear}-${(selectedMonth + 1).toString().padStart(2, '0')}`
 
     const fetchOrCreateStatementCycle = useCallback(async () => {
-        setLoading(true)
+        setLoading(true);
         try {
-            // First check if the cycle already exists
-            console.log('Checking for existing cycle with month_year:', selectedMonthYear);
-            const { data: existingCycles, error: checkError } = await supabase
+            console.log('Upserting statement cycle for:', selectedMonthYear);
+
+            // Use upsert operation with "on conflict" handling
+            const { data: cycle, error: upsertError } = await supabase
                 .from('statement_cycles')
-                .select('*')
-                .eq('month_year', selectedMonthYear);
+                .upsert({
+                    month_year: selectedMonthYear,
+                    status: 'active',
+                    created_at: new Date().toISOString()
+                }, {
+                    onConflict: 'month_year',  // Specify the conflict column
+                    ignoreDuplicates: true     // Skip update if the row already exists
+                })
+                .select();
 
-            if (checkError) { 
-                console.error('Error checking for existing cycles:', checkError);
-                throw checkError;
-            }
+            // If upsert didn't return data (because it was ignored), fetch the existing record
+            if ((!cycle || cycle.length === 0) && !upsertError) {
+                console.log('Upsert ignored duplicate, fetching existing cycle');
+                const { data: existingCycle, error: fetchError } = await supabase
+                    .from('statement_cycles')
+                    .select('*')
+                    .eq('month_year', selectedMonthYear)
+                    .single();
 
-            // If cycle exists, use it
-            if (existingCycles && existingCycles.length > 0) {
-                const existingCycle = existingCycles[0]; // Take the first one if multiple exist
+                if (fetchError) {
+                    console.error('Error fetching existing cycle:', fetchError);
+                    throw fetchError;
+                }
+
                 console.log('Found existing cycle:', existingCycle);
                 setStatementCycleId(existingCycle.id);
                 return existingCycle.id;
             }
 
-            // If no existing cycle, create a new one
-            console.log('Creating new statement cycle for:', selectedMonthYear);
-            const { data: newCycle, error: insertError } = await supabase
-                .from('statement_cycles')
-                .insert({
-                    month_year: selectedMonthYear,
-                    status: 'active',
-                    created_at: new Date().toISOString()
-                })
-                .select();
-
-            if (insertError) {
-                console.error('Error creating new cycle:', insertError);
-                throw insertError;
+            if (upsertError) {
+                console.error('Error upserting cycle:', upsertError);
+                throw upsertError;
             }
 
-            if (!newCycle || newCycle.length === 0) {
-                throw new Error('Failed to create cycle: No data returned');
+            // If the upsert returned data, use the first record
+            if (cycle && cycle.length > 0) {
+                const createdCycle = cycle[0];
+                console.log('Successfully upserted cycle:', createdCycle);
+                setStatementCycleId(createdCycle.id);
+                return createdCycle.id;
             }
 
-            const createdCycle = newCycle[0]; // The first item in the array
-            console.log('Successfully created new cycle:', createdCycle);
-            setStatementCycleId(createdCycle.id);
-            return createdCycle.id;
+            throw new Error('Failed to create or find cycle: No data returned');
         } catch (error) {
-            console.error('Failed to initialize statement cycle:', error);
+            console.error('Failed to initialize statement cycle:',
+                error?.message ? { message: error.message, details: error.details, code: error.code } : error);
             const errorMessage = error?.message || error?.details || JSON.stringify(error) || 'Unknown error';
             toast({
                 title: 'Error',

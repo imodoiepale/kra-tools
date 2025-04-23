@@ -180,6 +180,7 @@ export function BankReconciliationTable({
     const [passwordDialogOpen, setPasswordDialogOpen] = useState<boolean>(false)
     const [selectedBankForPassword, setSelectedBankForPassword] = useState<Bank | null>(null)
     const [showPasswords, setShowPasswords] = useState({})
+    const [loadingExtraction, setLoadingExtraction] = useState<boolean>(false)
 
     // const [showDeleteConfirmation, setShowDeleteConfirmation] = useState<boolean>(false);
     // const [statementToDelete, setStatementToDelete] = useState<{ id: string, bankId: number } | null>(null);
@@ -532,27 +533,91 @@ const fetchCompaniesAndBanks = async () => {
             setUploadDialogOpen(true)
         }
     }
-
     const handleViewStatement = (bankId: number) => {
         // Reset all states first
-        setSelectedBank(null)
-        setSelectedStatement(null)
-        setUploadDialogOpen(false)
-        setQuickbooksDialogOpen(false)
-        setExtractionDialogOpen(false)
+        setSelectedBank(null);
+        setSelectedStatement(null);
+        setUploadDialogOpen(false);
+        setQuickbooksDialogOpen(false);
+        setExtractionDialogOpen(false);
 
         // After a brief delay, set the new states
-        setTimeout(() => {
-            const bank = allBanks.find(b => b.id === bankId)
-            const statement = filteredStatements.find(s => s.bank_id === bankId)
+        setTimeout(async () => {
+            const bank = allBanks.find(b => b.id === bankId);
+            const statement = filteredStatements.find(s => s.bank_id === bankId);
 
             if (bank && statement) {
-                setSelectedBank(bank)
-                setSelectedStatement(statement)
-                setExtractionDialogOpen(true)
+                // First check if we need to extract data or already have it
+                const needsExtraction = !statement.statement_extractions ||
+                    !statement.statement_extractions.bank_name ||
+                    !statement.statement_extractions.closing_balance;
+
+                if (needsExtraction && statement.statement_document?.statement_pdf) {
+                    // Pre-extract data to avoid redundant extraction in child component
+                    try {
+                        setLoadingExtraction(true);
+
+                        // Get PDF URL
+                        const pdfUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/Statement-Cycle/${statement.statement_document.statement_pdf}`;
+
+                        // Use extraction service
+                        const extractionResult = await ExtractionsService.getExtraction(pdfUrl, {
+                            month: statement.statement_month,
+                            year: statement.statement_year,
+                            password: statement.statement_document.password || null,
+                            statementId: statement.id
+                        });
+
+                        if (extractionResult.success) {
+                            // Update statement with extracted data
+                            const { data: updatedStatement, error } = await supabase
+                                .from('acc_cycle_bank_statements')
+                                .update({
+                                    statement_extractions: extractionResult.extractedData,
+                                    extraction_performed: true,
+                                    extraction_timestamp: new Date().toISOString()
+                                })
+                                .eq('id', statement.id)
+                                .select('*')
+                                .single();
+
+                            if (!error && updatedStatement) {
+                                // Use updated statement with extracted data
+                                setSelectedBank(bank);
+                                setSelectedStatement(updatedStatement);
+                                setExtractionDialogOpen(true);
+
+                                console.log('Pre-extracted data and updated statement', updatedStatement);
+                            } else {
+                                // Still open dialog with original statement
+                                setSelectedBank(bank);
+                                setSelectedStatement(statement);
+                                setExtractionDialogOpen(true);
+                            }
+                        } else {
+                            // Open dialog with original statement despite extraction failure
+                            setSelectedBank(bank);
+                            setSelectedStatement(statement);
+                            setExtractionDialogOpen(true);
+                        }
+                    } catch (error) {
+                        console.error('Error pre-extracting data:', error);
+                        // Fall back to original behavior on error
+                        setSelectedBank(bank);
+                        setSelectedStatement(statement);
+                        setExtractionDialogOpen(true);
+                    } finally {
+                        setLoadingExtraction(false);
+                    }
+                } else {
+                    // No extraction needed, just open dialog with existing data
+                    setSelectedBank(bank);
+                    setSelectedStatement(statement);
+                    setExtractionDialogOpen(true);
+                }
             }
-        }, 100) // Small delay to ensure state reset
-    }
+        }, 100); // Small delay to ensure state reset
+    };
 
     const handleQuickbooksBalance = (bankId: number) => {
         const bank = allBanks.find(b => b.id === bankId)
@@ -922,21 +987,26 @@ const fetchCompaniesAndBanks = async () => {
                                             {columnVisibility.statement && (
                                                 <TableCell className="border-r border-gray-200 p-1">
                                                     {statement?.statement_document.statement_pdf ? (
-                                                        <Button
-                                                            variant="outline"
-                                                            size="sm"
-                                                            className="relative flex gap-1.5 items-center px-3 py-1.5 border-blue-300 bg-blue-50/50 hover:bg-blue-100/60 hover:border-blue-400 text-blue-700 transition-all duration-200 group overflow-hidden"
-                                                            onClick={() => handleViewStatement(bank.id)}
-                                                        >
-                                                            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-blue-100/30 to-transparent group-hover:via-blue-200/50 -translate-x-full group-hover:translate-x-full transition-transform duration-700 ease-in-out"></div>
-                                                            <Eye className="h-3.5 w-3.5" />
-                                                            <span className="text-xs font-medium">View</span>
-                                                            {getValidationStatusIcon(statement) && (
-                                                                <span className="ml-0.5">
-                                                                    {getValidationStatusIcon(statement)}
-                                                                </span>
-                                                            )}
-                                                        </Button>
+                                                        <div className="flex items-center space-x-2">
+                                                            <Button
+                                                                variant="outline"
+                                                                size="sm"
+                                                                onClick={() => handleViewStatement(bank.id)}
+                                                                disabled={loadingExtraction}
+                                                            >
+                                                                {loadingExtraction ? (
+                                                                    <>
+                                                                        <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                                                                        Extracting...
+                                                                    </>
+                                                                ) : (
+                                                                    <>
+                                                                        <Eye className="h-3.5 w-3.5 mr-1" />
+                                                                        View
+                                                                    </>
+                                                                )}
+                                                            </Button>
+                                                        </div>
                                                     ) : (
                                                         <Button
                                                             variant="outline"

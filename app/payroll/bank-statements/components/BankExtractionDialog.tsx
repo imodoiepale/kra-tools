@@ -10,6 +10,8 @@ import {
     ZoomIn,
     Calculator
 } from 'lucide-react'
+
+import { Checkbox } from '@/components/ui/checkbox'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/hooks/use-toast'
 import { format, parseISO, isValid } from 'date-fns'
@@ -65,6 +67,7 @@ import {
     AlertDialogTitle
 } from "@/components/ui/alert-dialog";
 
+import { ExtractionsService } from '@/lib/extractionService';
 
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
@@ -144,12 +147,14 @@ interface BankStatement {
 }
 
 interface BankExtractionDialogProps {
-    isOpen: boolean
-    onClose: () => void
-    bank: Bank
-    statement: BankStatement
-    pdfPassword?: string | null  // Add this new optional prop
-    onStatementUpdated: (statement: BankStatement) => void
+    isOpen: boolean;
+    onClose: () => void;
+    bank: Bank;
+    statement: BankStatement;
+    pdfPassword?: string | null;
+    skipExtraction?: boolean;  // Add this prop to indicate pre-extracted data
+    preExtractedData?: any;    // Add this prop to pass pre-extracted data
+    onStatementUpdated: (statement: BankStatement) => void;
 }
 
 const normalizeCurrencyCode = (code) => {
@@ -184,48 +189,85 @@ const normalizeCurrencyCode = (code) => {
     return currencyMap[upperCode] || upperCode;
 };
 
-// Parse statement period to get expected months
-// Fix the parseStatementPeriod function to handle month indexing consistently
+// Improved parseStatementPeriod function for BankExtractionDialog.tsx
 function parseStatementPeriod(periodString) {
     if (!periodString) return null;
 
-    // DD/MM/YYYY - DD/MM/YYYY format
-    const dateRangePattern = /(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{4})\s*-\s*(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{4})/;
-    const matches = periodString.match(dateRangePattern);
+    // Enhanced pattern matching for various date formats
 
+    // 1. Standard date range: DD/MM/YYYY - DD/MM/YYYY
+    const dateRangePattern = /(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{4})\s*[-–—]\s*(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{4})/;
+    let matches = periodString.match(dateRangePattern);
     if (matches && matches.length >= 7) {
-        // Extract and correct month indexing (subtract 1 to convert to JS 0-based months)
-        const startMonth = parseInt(matches[2], 10) - 1; // Convert to 0-based
+        // Convert to 0-based months for JS (subtract 1)
+        const startMonth = parseInt(matches[2], 10) - 1;
         const startYear = parseInt(matches[3], 10);
-        const endMonth = parseInt(matches[5], 10) - 1; // Convert to 0-based
+        const endMonth = parseInt(matches[5], 10) - 1;
         const endYear = parseInt(matches[6], 10);
 
         if (!isNaN(startMonth) && !isNaN(startYear) && !isNaN(endMonth) && !isNaN(endYear)) {
+            console.log(`Detected date range: ${startMonth + 1}/${startYear} to ${endMonth + 1}/${endYear}`);
             return { startMonth, startYear, endMonth, endYear };
         }
     }
 
-    // Month name format (e.g., "January - July 2024")
-    const monthNamePattern = /(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(\d{4})\s*-\s*(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(\d{4})/i;
-    const monthMatches = periodString.match(monthNamePattern);
-
-    if (monthMatches && monthMatches.length >= 5) {
+    // 2. Month name format: January - July 2024
+    const sameYearMonthNamePattern = /(\w+)\s*[-–—]\s*(\w+)\s+(\d{4})/i;
+    matches = periodString.match(sameYearMonthNamePattern);
+    if (matches && matches.length >= 4) {
         const monthNames = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 
-        const startMonthName = monthMatches[1].toLowerCase().substring(0, 3);
-        const startYear = parseInt(monthMatches[2], 10);
-        const endMonthName = monthMatches[3].toLowerCase().substring(0, 3);
-        const endYear = parseInt(monthMatches[4], 10);
+        const startMonthName = matches[1].toLowerCase().substring(0, 3);
+        const endMonthName = matches[2].toLowerCase().substring(0, 3);
+        const year = parseInt(matches[3], 10);
 
-        // Convert month names to 0-based index
-        const startMonth = monthNames.indexOf(startMonthName); // Already 0-based
-        const endMonth = monthNames.indexOf(endMonthName); // Already 0-based
+        const startMonth = monthNames.indexOf(startMonthName);
+        const endMonth = monthNames.indexOf(endMonthName);
+
+        if (startMonth >= 0 && endMonth >= 0 && !isNaN(year)) {
+            console.log(`Detected month name range (same year): ${startMonth + 1}/${year} to ${endMonth + 1}/${year}`);
+            return { startMonth, startYear: year, endMonth, endYear: year };
+        }
+    }
+
+    // 3. Different year month ranges: January 2023 - February 2024
+    const diffYearMonthNamePattern = /(\w+)\s+(\d{4})\s*[-–—]\s*(\w+)\s+(\d{4})/i;
+    matches = periodString.match(diffYearMonthNamePattern);
+    if (matches && matches.length >= 5) {
+        const monthNames = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+
+        const startMonthName = matches[1].toLowerCase().substring(0, 3);
+        const startYear = parseInt(matches[2], 10);
+        const endMonthName = matches[3].toLowerCase().substring(0, 3);
+        const endYear = parseInt(matches[4], 10);
+
+        const startMonth = monthNames.indexOf(startMonthName);
+        const endMonth = monthNames.indexOf(endMonthName);
 
         if (startMonth >= 0 && endMonth >= 0 && !isNaN(startYear) && !isNaN(endYear)) {
+            console.log(`Detected month name range (different years): ${startMonth + 1}/${startYear} to ${endMonth + 1}/${endYear}`);
             return { startMonth, startYear, endMonth, endYear };
         }
     }
 
+    // 4. Single month format: January 2024
+    const singleMonthPattern = /(\w+)\s+(\d{4})/i;
+    matches = periodString.match(singleMonthPattern);
+    if (matches && matches.length >= 3) {
+        const monthNames = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+
+        const monthName = matches[1].toLowerCase().substring(0, 3);
+        const year = parseInt(matches[2], 10);
+
+        const month = monthNames.indexOf(monthName);
+
+        if (month >= 0 && !isNaN(year)) {
+            console.log(`Detected single month: ${month + 1}/${year}`);
+            return { startMonth: month, startYear: year, endMonth: month, endYear: year };
+        }
+    }
+
+    console.warn(`Failed to parse period string: ${periodString}`);
     return null;
 }
 
@@ -324,6 +366,8 @@ export function BankExtractionDialog({
     bank,
     statement,
     pdfPassword,
+    skipExtraction,
+    preExtractedData,
     onStatementUpdated
 }: BankExtractionDialogProps) {
     const { toast } = useToast()
@@ -376,6 +420,13 @@ export function BankExtractionDialog({
     const [currentPassword, setCurrentPassword] = useState<string | null>(pdfPassword || null);
     const [pageNumber, setPageNumber] = useState(1);
     // const [numPages, setNumPages] = useState(null);
+
+
+    const [showRangeDeleteConfirmation, setShowRangeDeleteConfirmation] = useState(false);
+    const [rangeDeleteOptions, setRangeDeleteOptions] = useState({
+        deleteAll: true,
+        deleteDocument: true
+    });
 
 
     // Detected periods in PDF
@@ -471,6 +522,32 @@ export function BankExtractionDialog({
             onClose()
         }
     }
+
+    useEffect(() => {
+        // If skipExtraction is true and we have pre-extracted data, use it directly
+        if (skipExtraction && preExtractedData) {
+            console.log('Using pre-extracted data, skipping extraction');
+
+            // Set extraction results
+            setExtractionResults({
+                success: true,
+                extractedData: preExtractedData
+            });
+
+            // Validate pre-extracted data
+            const validationResult = validateExtractedData(preExtractedData);
+            setValidationResults(validationResult);
+
+            // Update local form state with extracted data
+            if (preExtractedData.bank_name) setBankName(preExtractedData.bank_name);
+            if (preExtractedData.account_number) setAccountNumber(preExtractedData.account_number);
+            if (preExtractedData.currency) setCurrency(preExtractedData.currency);
+            if (preExtractedData.statement_period) setStatementPeriod(preExtractedData.statement_period);
+            if (preExtractedData.monthly_balances && Array.isArray(preExtractedData.monthly_balances)) {
+                setMonthlyBalances(preExtractedData.monthly_balances);
+            }
+        }
+    }, [skipExtraction, preExtractedData]);
 
     // Load PDF document
     useEffect(() => {
@@ -932,10 +1009,76 @@ export function BankExtractionDialog({
         }
     }
 
-    // In BankExtractionDialog.tsx
     const handleDeleteStatement = () => {
-        // Show dialog instead of window.confirm
-        setShowDeleteConfirmation(true);
+        // Check if this is a range statement
+        if (statement.statement_type === 'range') {
+            // Prompt with special confirmation for range statements
+            setShowRangeDeleteConfirmation(true);
+        } else {
+            // Standard confirmation for normal statements
+            setShowDeleteConfirmation(true);
+        }
+    };
+
+    // Add this new function to handle range statement deletion
+    const confirmRangeDeleteStatement = async () => {
+        try {
+            setDeleting(true);
+
+            if (rangeDeleteOptions.deleteDocument) {
+                // Delete files from storage if they exist
+                if (statement.statement_document.statement_pdf) {
+                    await supabase.storage
+                        .from('Statement-Cycle')
+                        .remove([statement.statement_document.statement_pdf]);
+                }
+
+                if (statement.statement_document.statement_excel) {
+                    await supabase.storage
+                        .from('Statement-Cycle')
+                        .remove([statement.statement_document.statement_excel]);
+                }
+            }
+
+            if (rangeDeleteOptions.deleteAll) {
+                // Delete all related statements
+                const { error: deleteError } = await supabase
+                    .from('acc_cycle_bank_statements')
+                    .delete()
+                    .eq('statement_extractions->parent_statement_id', statement.id);
+
+                if (deleteError) {
+                    console.error('Error deleting related statements:', deleteError);
+                }
+            }
+
+            // Delete the main statement record
+            const { error } = await supabase
+                .from('acc_cycle_bank_statements')
+                .delete()
+                .eq('id', statement.id);
+
+            if (error) throw error;
+
+            toast({
+                title: 'Success',
+                description: 'Bank statement deleted successfully'
+            });
+
+            // Close dialog and pass null to update parent
+            onClose();
+            onStatementUpdated(null);
+        } catch (error) {
+            console.error('Error deleting statement:', error);
+            toast({
+                title: 'Error',
+                description: 'Failed to delete bank statement',
+                variant: 'destructive'
+            });
+        } finally {
+            setDeleting(false);
+            setShowRangeDeleteConfirmation(false);
+        }
     };
 
     // 3. Add a new function to handle confirmed deletion:
@@ -1274,6 +1417,20 @@ export function BankExtractionDialog({
             const { startMonth, startYear, endMonth, endYear } = periodDates;
             console.log(`Processing statement period: ${startMonth + 1}/${startYear} to ${endMonth + 1}/${endYear}`);
 
+            // If this is a multi-month statement, update its type
+            const isMultiMonth = !(startMonth === endMonth && startYear === endYear);
+            if (isMultiMonth) {
+                // Update the statement type to 'range'
+                const { error: updateError } = await supabase
+                    .from('acc_cycle_bank_statements')
+                    .update({ statement_type: 'range' })
+                    .eq('id', statement.id);
+
+                if (updateError) {
+                    console.error("Error updating statement type:", updateError);
+                }
+            }
+
             // Generate all months in the range
             const monthsInRange = generateMonthRange(startMonth, startYear, endMonth, endYear);
             console.log("Months to process:", monthsInRange.map(m => `${m.month + 1}/${m.year}`).join(", "));
@@ -1321,8 +1478,10 @@ export function BankExtractionDialog({
 
             // Create an array of promises for processing each month
             const processingPromises = monthsInRange
-                // Skip the current statement's month
-                .filter(({ month, year }) => !(month === statement.statement_month && year === statement.statement_year))
+                // Skip the current statement's month if not in range mode
+                .filter(({ month, year }) =>
+                    isMultiMonth || !(month === statement.statement_month && year === statement.statement_year)
+                )
                 .map(async ({ month, year }) => {
                     // Find the corresponding cycle
                     const monthStr = (month + 1).toString().padStart(2, '0');
@@ -1347,7 +1506,7 @@ export function BankExtractionDialog({
                     // Check if a statement already exists
                     const { data: existingStatement, error: checkError } = await supabase
                         .from('acc_cycle_bank_statements')
-                        .select('id')
+                        .select('id, statement_type')
                         .eq('bank_id', bank.id)
                         .eq('statement_month', month)
                         .eq('statement_year', year)
@@ -1365,10 +1524,12 @@ export function BankExtractionDialog({
                         statement_cycle_id: cycle.id,
                         statement_month: month,
                         statement_year: year,
+                        statement_type: isMultiMonth ? 'range' : 'monthly',
                         statement_document: {
                             statement_pdf: statement.statement_document.statement_pdf,
                             statement_excel: statement.statement_document.statement_excel,
-                            document_size: statement.statement_document.document_size
+                            document_size: statement.statement_document.document_size,
+                            password: statement.statement_document.password || null
                         },
                         statement_extractions: {
                             bank_name: bankName,
@@ -1377,7 +1538,8 @@ export function BankExtractionDialog({
                             statement_period: statementPeriod, // Same period for all statements
                             opening_balance: monthBalance.opening_balance,
                             closing_balance: monthBalance.closing_balance,
-                            monthly_balances: allMonthlyBalances // Include ALL monthly balances
+                            monthly_balances: allMonthlyBalances, // Include ALL monthly balances
+                            parent_statement_id: isMultiMonth ? statement.id : null // Link to parent for range statements
                         },
                         has_soft_copy: true,
                         has_hard_copy: false,
@@ -1450,7 +1612,6 @@ export function BankExtractionDialog({
             return false;
         }
     };
-
     // Helper function to format number with commas
     const formatNumberWithCommas = (value) => {
         if (value === '' || value === null || value === undefined) return '';
@@ -1579,21 +1740,88 @@ export function BankExtractionDialog({
 
     // Function to extract data from PDF
     const extractDataFromPdf = async () => {
-        if (!pdfUrl || !pdfDocument) return;
+        if (!pdfUrl || !pdfDocument) {
+            toast({
+                title: "Error",
+                description: "No PDF document available",
+                variant: "destructive"
+            });
+            return;
+        }
 
+        // First check if we already have comprehensive extraction data
+        // to avoid unnecessary extraction
+        const hasComprehensiveData = extractionsData &&
+            extractionsData.bank_name &&
+            extractionsData.account_number &&
+            extractionsData.currency &&
+            extractionsData.closing_balance !== null;
+
+        if (hasComprehensiveData) {
+            console.log('Using existing extraction data instead of re-extracting');
+            toast({
+                title: "Using Existing Data",
+                description: "Using previously extracted statement data",
+                variant: "default"
+            });
+
+            // Use existing data
+            if (setExtractionResults) {
+                setExtractionResults({
+                    success: true,
+                    extractedData: extractionsData
+                });
+            }
+
+            // Simulate validation
+            if (extractionsData) {
+                const validationResult = validateExtractedData(extractionsData);
+                setValidationResults(validationResult);
+
+                if (!validationResult.isValid) {
+                    toast({
+                        title: "Validation Warning",
+                        description: "Some extracted data may need review",
+                        variant: "warning"
+                    });
+                }
+            }
+
+            return extractionsData;
+        }
+
+        // If we don't have comprehensive data, perform extraction
+        console.log('No comprehensive extraction data found, performing extraction');
         setExtracting(true);
+
         try {
             // Get the current password being used
-            const currentPasswordToUse = passwordApplied ? password : null;
+            const currentPasswordToUse = passwordApplied ? password : pdfPassword;
 
-            const extractionResult = await performBankStatementExtraction(
-                pdfUrl,
-                {
+            // Create a cache key
+            const cacheKey = `statement-${statement.id}-${pdfUrl}`;
+
+            // Check if we already have a cached result for this statement
+            let extractionResult;
+
+            try {
+                // Use the extraction service
+                extractionResult = await ExtractionsService.getExtraction(pdfUrl, {
+                    month: statement.statement_month,
+                    year: statement.statement_year,
+                    password: currentPasswordToUse,
+                    statementId: statement.id
+                });
+            } catch (extractionError) {
+                console.error('Error during extraction service call:', extractionError);
+
+                // Fallback to direct extraction if service fails
+                extractionResult = await performBankStatementExtraction(pdfUrl, {
                     month: statement.statement_month,
                     year: statement.statement_year,
                     password: currentPasswordToUse
-                }
-            );
+                });
+            }
 
             if (!extractionResult.success) {
                 if (extractionResult.requiresPassword && !passwordApplied) {
@@ -1604,18 +1832,23 @@ export function BankExtractionDialog({
                         description: "This PDF requires a password for extraction",
                         variant: "warning"
                     });
-                    return;
+                    return null;
                 }
                 throw new Error(extractionResult.error || 'Extraction failed');
             }
 
-            // Update extraction results
-            setExtractionResults(extractionResult);
+            // Update extraction results state
+            if (setExtractionResults) {
+                setExtractionResults(extractionResult);
+            }
 
             // Validate the extracted data
             if (extractionResult.extractedData) {
                 const validationResult = validateExtractedData(extractionResult.extractedData);
-                setValidationResults(validationResult);
+
+                if (setValidationResults) {
+                    setValidationResults(validationResult);
+                }
 
                 if (!validationResult.isValid) {
                     toast({
@@ -1630,9 +1863,13 @@ export function BankExtractionDialog({
                     });
                 }
 
-                // Update statement with extracted data
+                // Update statement with extracted data in the database
                 await updateStatementWithExtraction(extractionResult.extractedData);
+
+                return extractionResult.extractedData;
             }
+
+            return null;
         } catch (error) {
             console.error('Extraction error:', error);
             toast({
@@ -1640,6 +1877,7 @@ export function BankExtractionDialog({
                 description: error instanceof Error ? error.message : "Failed to extract data from PDF",
                 variant: "destructive"
             });
+            return null;
         } finally {
             setExtracting(false);
         }
@@ -1647,26 +1885,54 @@ export function BankExtractionDialog({
 
     // Function to update statement with extracted data
     const updateStatementWithExtraction = async (extractedData: any) => {
+        if (!statement || !statement.id || !extractedData) {
+            console.error('Missing statement ID or extracted data');
+            return;
+        }
+
         try {
+            console.log(`Updating statement ${statement.id} with extracted data`);
+
             const { data: updatedStatement, error } = await supabase
                 .from('acc_cycle_bank_statements')
                 .update({
                     statement_extractions: extractedData,
+                    extraction_performed: true,
+                    extraction_timestamp: new Date().toISOString(),
                     last_extracted_at: new Date().toISOString()
                 })
                 .eq('id', statement.id)
                 .select('*')
                 .single();
 
-            if (error) throw error;
+            if (error) {
+                console.error('Error updating statement with extraction:', error);
+                throw error;
+            }
 
             if (updatedStatement) {
-                onStatementUpdated(updatedStatement);
+                // Update local state if parent component provided a callback
+                if (onStatementUpdated && typeof onStatementUpdated === 'function') {
+                    onStatementUpdated(updatedStatement);
+                }
+
+                console.log('Statement updated with extracted data');
                 toast({
                     title: "Success",
                     description: "Statement updated with extracted data",
                 });
+
+                // Apply extracted data to local state
+                if (extractedData.bank_name) setBankName(extractedData.bank_name);
+                if (extractedData.account_number) setAccountNumber(extractedData.account_number);
+                if (extractedData.currency) setCurrency(extractedData.currency);
+                if (extractedData.statement_period) setStatementPeriod(extractedData.statement_period);
+                if (extractedData.monthly_balances && Array.isArray(extractedData.monthly_balances)) {
+                    setMonthlyBalances(extractedData.monthly_balances);
+                }
             }
+
+            return updatedStatement;
         } catch (error) {
             console.error('Error updating statement:', error);
             toast({
@@ -1674,6 +1940,7 @@ export function BankExtractionDialog({
                 description: "Failed to save extracted data",
                 variant: "destructive"
             });
+            return null;
         }
     };
 
@@ -2504,6 +2771,70 @@ export function BankExtractionDialog({
                                 className="bg-blue-600 hover:bg-blue-700 text-white"
                             >
                                 Submit
+                            </AlertDialogAction>
+                        </AlertDialogFooter>
+                    </AlertDialogContent>
+                </AlertDialog>
+
+
+                {/* Range Delete Confirmation Dialog */}
+                <AlertDialog open={showRangeDeleteConfirmation} onOpenChange={setShowRangeDeleteConfirmation}>
+                    <AlertDialogContent>
+                        <AlertDialogHeader>
+                            <AlertDialogTitle>Delete Multi-Month Statement</AlertDialogTitle>
+                            <AlertDialogDescription>
+                                This is a multi-month statement covering the period {statement?.statement_extractions?.statement_period || 'multiple months'}.
+                                Please select how you want to handle the deletion:
+                            </AlertDialogDescription>
+                        </AlertDialogHeader>
+
+                        <div className="py-4 space-y-4">
+                            <Alert variant="warning" className="bg-amber-50 border-amber-200">
+                                <AlertTriangle className="h-4 w-4 text-amber-600" />
+                                <AlertTitle className="text-amber-800">Warning</AlertTitle>
+                                <AlertDescription className="text-amber-700">
+                                    Deleting a multi-month statement may affect data across several statement cycles.
+                                </AlertDescription>
+                            </Alert>
+
+                            <div className="space-y-3">
+                                <div className="flex items-center space-x-2">
+                                    <Checkbox
+                                        id="delete-all-statements"
+                                        checked={rangeDeleteOptions.deleteAll}
+                                        onCheckedChange={(checked) =>
+                                            setRangeDeleteOptions(prev => ({ ...prev, deleteAll: !!checked }))
+                                        }
+                                    />
+                                    <Label htmlFor="delete-all-statements">
+                                        Delete all related statement entries
+                                    </Label>
+                                </div>
+
+                                <div className="flex items-center space-x-2">
+                                    <Checkbox
+                                        id="delete-document"
+                                        checked={rangeDeleteOptions.deleteDocument}
+                                        onCheckedChange={(checked) =>
+                                            setRangeDeleteOptions(prev => ({ ...prev, deleteDocument: !!checked }))
+                                        }
+                                    />
+                                    <Label htmlFor="delete-document">
+                                        Delete the statement document files
+                                    </Label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <AlertDialogFooter>
+                            <AlertDialogCancel onClick={() => setShowRangeDeleteConfirmation(false)}>
+                                Cancel
+                            </AlertDialogCancel>
+                            <AlertDialogAction
+                                onClick={confirmRangeDeleteStatement}
+                                className="bg-red-600 hover:bg-red-700 text-white"
+                            >
+                                Confirm Delete
                             </AlertDialogAction>
                         </AlertDialogFooter>
                     </AlertDialogContent>

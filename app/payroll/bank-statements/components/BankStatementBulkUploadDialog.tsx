@@ -4,7 +4,7 @@
 import { useState, useRef, useEffect } from 'react'
 import {
     Loader2, Upload, AlertTriangle, CheckCircle, UploadCloud,
-    FileText, Building, Landmark, CreditCard, DollarSign,
+    FileText, Building, Landmark, CreditCard, DollarSign,HelpCircle,
     Calendar, X, ArrowRight, FileCheck, FilePlus, FileWarning,
     ChevronDown, ChevronRight, Save, Eye, CircleDashed, XCircle, FileSearch
 } from 'lucide-react'
@@ -20,6 +20,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { BankValidationDialog } from './BankValidationDialog'
 import { BankExtractionDialog } from './BankExtractionDialog'
+import { StatementCycleConfirmationDialog } from './StatementCycleConfirmationDialog'
 import {
     isPdfPasswordProtected,
     applyPasswordToFiles,
@@ -64,7 +65,7 @@ import {
 } from "@/components/ui/select"
 import { Switch } from '@/components/ui/switch';
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip';
-import { HelpCircle } from 'lucide-react';
+import { ExtractionsService } from '@/lib/extractionService';
 
 // Import PDF.js functionality
 import * as pdfjsLib from 'pdfjs-dist';
@@ -124,6 +125,103 @@ interface BankStatementBulkUploadDialogProps {
     statementCycleId: string | null
     onUploadsComplete?: () => void
 }
+
+// Helper function to parse statement period string into month/year components
+const parseStatementPeriod = (periodString) => {
+    if (!periodString) return null;
+
+    // DD/MM/YYYY - DD/MM/YYYY format
+    const dateRangePattern = /(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{4})\s*[-–—]\s*(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{4})/;
+    let matches = periodString.match(dateRangePattern);
+    if (matches && matches.length >= 7) {
+        // Extract and correct month indexing (subtract 1 to convert to JS 0-based months)
+        const startMonth = parseInt(matches[2], 10) - 1; // Convert to 0-based
+        const startYear = parseInt(matches[3], 10);
+        const endMonth = parseInt(matches[5], 10) - 1; // Convert to 0-based
+        const endYear = parseInt(matches[6], 10);
+
+        if (!isNaN(startMonth) && !isNaN(startYear) && !isNaN(endMonth) && !isNaN(endYear)) {
+            return { startMonth, startYear, endMonth, endYear };
+        }
+    }
+
+    // Month name format (e.g., "January - July 2024")
+    const monthNamePattern = /(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s*[-–—]\s*(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(\d{4})/i;
+    matches = periodString.match(monthNamePattern);
+    if (matches && matches.length >= 4) {
+        const monthNames = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+
+        const startMonthName = matches[1].toLowerCase().substring(0, 3);
+        const endMonthName = matches[2].toLowerCase().substring(0, 3);
+        const year = parseInt(matches[3], 10);
+
+        const startMonth = monthNames.indexOf(startMonthName);
+        const endMonth = monthNames.indexOf(endMonthName);
+
+        if (startMonth >= 0 && endMonth >= 0 && !isNaN(year)) {
+            return { startMonth, startYear: year, endMonth, endYear: year };
+        }
+    }
+
+    // Different year month name format (e.g., "January 2023 - February 2024")
+    const diffYearMonthNamePattern = /(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(\d{4})\s*[-–—]\s*(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(\d{4})/i;
+    matches = periodString.match(diffYearMonthNamePattern);
+    if (matches && matches.length >= 5) {
+        const monthNames = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+
+        const startMonthName = matches[1].toLowerCase().substring(0, 3);
+        const startYear = parseInt(matches[2], 10);
+        const endMonthName = matches[3].toLowerCase().substring(0, 3);
+        const endYear = parseInt(matches[4], 10);
+
+        const startMonth = monthNames.indexOf(startMonthName);
+        const endMonth = monthNames.indexOf(endMonthName);
+
+        if (startMonth >= 0 && endMonth >= 0 && !isNaN(startYear) && !isNaN(endYear)) {
+            return { startMonth, startYear, endMonth, endYear };
+        }
+    }
+
+    // Single month format (e.g., "January 2024")
+    const singleMonthPattern = /(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(\d{4})/i;
+    matches = periodString.match(singleMonthPattern);
+    if (matches && matches.length >= 3) {
+        const monthNames = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+
+        const monthName = matches[1].toLowerCase().substring(0, 3);
+        const year = parseInt(matches[2], 10);
+
+        const month = monthNames.indexOf(monthName);
+
+        if (month >= 0 && !isNaN(year)) {
+            return { startMonth: month, startYear: year, endMonth: month, endYear: year };
+        }
+    }
+
+    return null;
+};
+
+// Helper function to generate month range from start to end
+const generateMonthRange = (startMonth, startYear, endMonth, endYear) => {
+    const months = [];
+    let currentYear = startYear;
+    let currentMonth = startMonth;
+
+    while (currentYear < endYear || (currentYear === endYear && currentMonth <= endMonth)) {
+        months.push({
+            month: currentMonth, // Keep as 0-based internally
+            year: currentYear
+        });
+
+        currentMonth++;
+        if (currentMonth > 11) { // Use 11 as the max month index (December)
+            currentMonth = 0; // Reset to January (0)
+            currentYear++;
+        }
+    }
+
+    return months;
+};
 
 export function BankStatementBulkUploadDialog({
     isOpen,
@@ -185,6 +283,15 @@ export function BankStatementBulkUploadDialog({
     const { toast } = useToast()
 
     const [pdfUrls, setPdfUrls] = useState<Record<string, string>>({});
+
+
+    const [showCycleConfirmation, setShowCycleConfirmation] = useState(false);
+    const [detectedCycles, setDetectedCycles] = useState({ existing: [], toCreate: [] });
+    const [processingFiles, setProcessingFiles] = useState([]);
+
+
+    const [extractionCache, setExtractionCache] = useState<Record<string, any>>({});
+
 
     // Use useEffect to sync with prop changes
     useEffect(() => {
@@ -611,18 +718,19 @@ export function BankStatementBulkUploadDialog({
             }
         }
 
-        // If we have a bank name, try to match it
-        if (detectedBankName) {
-            const bankMatch = allBanks.find(bank => {
-                const bankNameLower = (bank.bank_name || '').toLowerCase();
-                return bankNameLower.includes(detectedBankName) ||
-                    detectedBankName.includes(bankNameLower);
-            });
+        // If no match by account number, try by bank name (medium confidence)
+        if (!detectedBankName) return null;
 
-            if (bankMatch) {
-                console.log('Found bank name match:', bankMatch);
-                return bankMatch;
-            }
+        if (randomMode) {
+            const bankMatch = fuzzyMatchBank(filename, availableBanks);
+            if (bankMatch) return bankMatch;
+        } else {
+            const companyBanks = availableBanks.filter(bank => bank?.company_id === selectedCompanyId);
+            const bankMatch = companyBanks.find(bank =>
+                bank?.bank_name?.toLowerCase().includes(detectedBankName.toLowerCase()) ||
+                detectedBankName.toLowerCase().includes(bank?.bank_name?.toLowerCase() || '')
+            );
+            if (bankMatch) return bankMatch;
         }
 
         // If all else fails, look for any overlap between filename and bank/company name
@@ -645,7 +753,29 @@ export function BankStatementBulkUploadDialog({
         return null;
     };
 
-    const handleFileSelection = (event: any) => {
+    // Function to detect file info from filename
+    const detectFileInfoFromFilename = (filename: string) => {
+        if (!filename) return { password: null, accountNumber: null, bankName: null };
+
+        // Detect password
+        const password = detectPasswordFromFilename(filename);
+
+        // Detect account number
+        const accountNumber = getAccountNumberFromFilename(filename);
+
+        // Detect bank name
+        const bankName = getBankNameFromFilename(filename);
+
+        return {
+            password,
+            accountNumber,
+            bankName
+        };
+    };
+
+
+    // Update this section in handleFileSelection in BankStatementBulkUploadDialog.tsx
+    const handleFileSelection = async (event: any) => {
         if (!randomMode && !selectedCompanyId) {
             toast({
                 title: "Selection Required",
@@ -659,46 +789,105 @@ export function BankStatementBulkUploadDialog({
         if (!files || files.length === 0) return;
 
         const fileArray = Array.from(files);
-        const newItems = fileArray.map((file: File) => {
+        const processedItems = await Promise.all(fileArray.map(async (file: File) => {
             if (!file) return null;
 
             // Detect file information
             const fileName = file.name || '';
-            const detectedPassword = detectPasswordFromFilename(fileName);
-            const detectedAccountNumber = detectAccountNumberFromFilename(fileName);
-            const detectedBankName = getBankNameFromFilename(fileName);
+            const fileInfo = detectFileInfoFromFilename(fileName) || {
+                password: null,
+                accountNumber: null,
+                bankName: null
+            };
 
             // Find matching bank for this company
             let matchedBank = null;
             let matchConfidence = 0;
+            let passwordApplied = false;
+            let appliedPassword = null;
 
             // Try to match by account number first (highest confidence)
-            if (detectedAccountNumber) {
+            if (fileInfo.accountNumber) {
                 if (randomMode) {
                     matchedBank = fuzzyMatchBank(fileName, availableBanks);
                     if (matchedBank) matchConfidence = 50;
                 } else {
                     const companyBanks = availableBanks.filter(bank => bank?.company_id === selectedCompanyId);
                     matchedBank = companyBanks.find(bank =>
-                        bank?.account_number?.includes(detectedAccountNumber) ||
-                        detectedAccountNumber.includes(bank?.account_number || '')
+                        bank?.account_number?.includes(fileInfo.accountNumber) ||
+                        fileInfo.accountNumber.includes(bank?.account_number || '')
                     );
                     if (matchedBank) matchConfidence = 90;
                 }
             }
 
             // If no match by account number, try by bank name (medium confidence)
-            if (!matchedBank && detectedBankName) {
+            if (!matchedBank && fileInfo.bankName) {
                 if (randomMode) {
                     matchedBank = fuzzyMatchBank(fileName, availableBanks);
                     if (matchedBank) matchConfidence = 50;
                 } else {
                     const companyBanks = availableBanks.filter(bank => bank?.company_id === selectedCompanyId);
                     matchedBank = companyBanks.find(bank =>
-                        bank?.bank_name?.toLowerCase().includes(detectedBankName.toLowerCase()) ||
-                        detectedBankName.toLowerCase().includes(bank?.bank_name?.toLowerCase() || '')
+                        bank?.bank_name?.toLowerCase().includes(fileInfo.bankName.toLowerCase()) ||
+                        fileInfo.bankName.toLowerCase().includes(bank?.bank_name?.toLowerCase() || '')
                     );
                     if (matchedBank) matchConfidence = 70;
+                }
+            }
+
+            // Check if PDF is password protected
+            let isProtected = false;
+            try {
+                isProtected = await isPdfPasswordProtected(file);
+            } catch (error) {
+                console.error(`Error checking if file is password protected:`, error);
+                // Assume it might be protected if we can't check
+                isProtected = true;
+            }
+
+            // If protected, try to unlock with passwords
+            if (isProtected) {
+                console.log(`File ${fileName} is password protected`);
+
+                // Try with detected password first
+                if (fileInfo.password) {
+                    try {
+                        const success = await applyPasswordToFiles(file, fileInfo.password);
+                        if (success) {
+                            passwordApplied = true;
+                            appliedPassword = fileInfo.password;
+                        }
+                    } catch (error) {
+                        console.error(`Error applying detected password:`, error);
+                    }
+                }
+
+                // If detected password didn't work, try bank's password
+                if (!passwordApplied && matchedBank?.acc_password) {
+                    try {
+                        const success = await applyPasswordToFiles(file, matchedBank.acc_password);
+                        if (success) {
+                            passwordApplied = true;
+                            appliedPassword = matchedBank.acc_password;
+                        }
+                    } catch (error) {
+                        console.error(`Error applying bank password:`, error);
+                    }
+                }
+
+                // If still not unlocked and we have a company ID, try all company passwords
+                if (!passwordApplied && !randomMode && selectedCompanyId) {
+                    const companyPasswordResult = await tryAllCompanyPasswords(
+                        file,
+                        selectedCompanyId,
+                        fileInfo.bankName
+                    );
+
+                    if (companyPasswordResult.success) {
+                        passwordApplied = true;
+                        appliedPassword = companyPasswordResult.password;
+                    }
                 }
             }
 
@@ -711,44 +900,356 @@ export function BankStatementBulkUploadDialog({
                 error: null,
                 matchConfidence,
                 uploadProgress: 0,
+                passwordApplied,
+                password: appliedPassword,
                 detectedInfo: {
-                    password: detectedPassword,
-                    accountNumber: detectedAccountNumber,
-                    bankName: detectedBankName
+                    password: fileInfo.password,
+                    accountNumber: fileInfo.accountNumber,
+                    bankName: fileInfo.bankName
                 },
                 fileName: formatFileName(file),
                 originalName: file.name || 'Unknown file',
                 hasSoftCopy: true,
                 hasHardCopy: false
             };
-        }).filter(Boolean);
+        }));
 
-        setUploadItems(prevItems => [...prevItems, ...newItems]);
+        const validItems = processedItems.filter(Boolean);
+        setUploadItems(prevItems => [...prevItems, ...validItems]);
     };
 
-    // Enhanced version of handleStartProcessing to use the new flow
-    const handleStartProcessing = () => {
-        // Switch to processing tab automatically
-        setActiveTab('processing');
 
-        // Filter only files that need processing
-        const itemsToProcess = uploadItems
-            .map((item, index) => ({ item, index }))
-            .filter(({ item }) => item.status === 'pending' || item.status === 'unmatched' || item.status === 'matched')
-            .map(({ index }) => index);
+    // Add this function to BankStatementBulkUploadDialog.tsx
+    const tryAllCompanyPasswords = async (file, companyId, detectedBankName = null) => {
+        try {
+            console.log('Attempting to unlock PDF with all company passwords');
 
-        // Set up the processing queue
-        setProcessingQueue(itemsToProcess);
-        setOverallProgress(20);
+            // Get all banks for this company
+            const { data: companyBanks, error: banksError } = await supabase
+                .from('acc_portal_banks')
+                .select('id, bank_name, account_number, acc_password')
+                .eq('company_id', companyId);
 
-        // Start processing immediately without waiting
-        setTimeout(() => {
-            processPasswordProtectedFiles();
-            // Ensure we move to processing UI right away
-            if (itemsToProcess.length > 0) {
-                setProcessingIndex(itemsToProcess[0]);
+            if (banksError) {
+                console.error('Error fetching company banks:', banksError);
+                return { success: false, password: null };
             }
-        }, 100);
+
+            // Filter banks by name if a bank name was detected
+            let banksToTry = companyBanks;
+            if (detectedBankName) {
+                const matchedBanks = companyBanks.filter(bank =>
+                    bank.bank_name.toLowerCase().includes(detectedBankName.toLowerCase()) ||
+                    detectedBankName.toLowerCase().includes(bank.bank_name.toLowerCase())
+                );
+
+                // If we found matching banks, try them first
+                if (matchedBanks.length > 0) {
+                    banksToTry = [...matchedBanks, ...companyBanks.filter(b =>
+                        !matchedBanks.some(mb => mb.id === b.id)
+                    )];
+                }
+            }
+
+            // Collect all unique passwords
+            const uniquePasswords = [...new Set(
+                banksToTry
+                    .filter(bank => bank.acc_password) // Only consider banks with passwords
+                    .map(bank => bank.acc_password)
+            )];
+
+            console.log(`Found ${uniquePasswords.length} unique passwords to try`);
+
+            // Try each password
+            for (const password of uniquePasswords) {
+                try {
+                    const success = await applyPasswordToFiles(file, password);
+                    if (success) {
+                        console.log('Successfully unlocked with password:', password);
+                        return { success: true, password };
+                    }
+                } catch (e) {
+                    console.log(`Password "${password}" failed:`, e);
+                    // Continue to the next password
+                }
+            }
+
+            console.log('None of the company passwords worked');
+            return { success: false, password: null };
+        } catch (error) {
+            console.error('Error in tryAllCompanyPasswords:', error);
+            return { success: false, password: null };
+        }
+    };
+
+
+    // Enhanced version of handleStartProcessing
+    const handleStartProcessing = async () => {
+        setUploading(true);
+        setOverallProgress(10);
+
+        try {
+            // First, detect periods from each file
+            const filesToProcess = uploadItems
+                .filter(item => item.status === 'pending' || item.status === 'unmatched' || item.status === 'matched');
+
+            if (filesToProcess.length === 0) {
+                toast({
+                    title: 'No Files to Process',
+                    description: 'There are no files ready to process',
+                    variant: 'default'
+                });
+                setUploading(false);
+                return;
+            }
+
+            setProcessingFiles(filesToProcess);
+            setOverallProgress(20);
+
+            // Collect all potential statement periods from files
+            const periodPromises = filesToProcess.map(async (item) => {
+                if (!item.file) return null;
+
+                // Create temporary URL for file
+                const fileUrl = URL.createObjectURL(item.file);
+
+                try {
+                    // If the file is password protected, try to apply password
+                    let isProtected = false;
+                    try {
+                        isProtected = await isPdfPasswordProtected(item.file);
+                    } catch (error) {
+                        console.error(`Error checking if file is password protected:`, error);
+                    }
+
+                    if (isProtected && !item.passwordApplied) {
+                        // Try with bank's password first
+                        if (item.matchedBank?.acc_password) {
+                            try {
+                                const success = await applyPasswordToFiles(item.file, item.matchedBank.acc_password);
+                                if (success) {
+                                    item.passwordApplied = true;
+                                    item.password = item.matchedBank.acc_password;
+                                }
+                            } catch (error) {
+                                console.error(`Error applying bank password:`, error);
+                            }
+                        }
+
+                        // Try with detected password
+                        if (!item.passwordApplied && item.detectedInfo?.password) {
+                            try {
+                                const success = await applyPasswordToFiles(item.file, item.detectedInfo.password);
+                                if (success) {
+                                    item.passwordApplied = true;
+                                    item.password = item.detectedInfo.password;
+                                }
+                            } catch (error) {
+                                console.error(`Error applying detected password:`, error);
+                            }
+                        }
+
+                        // If still not applied, try with all company passwords
+                        if (!item.passwordApplied && item.matchedBank?.company_id) {
+                            const result = await tryAllCompanyPasswords(
+                                item.file,
+                                item.matchedBank.company_id,
+                                item.detectedInfo?.bankName
+                            );
+
+                            if (result.success) {
+                                item.passwordApplied = true;
+                                item.password = result.password;
+                            }
+                        }
+                    }
+
+                    // Extract period from document
+                    const extractionParams = {
+                        month: cycleMonth,
+                        year: cycleYear,
+                        password: item.passwordApplied ? item.password : null,
+                        extractPeriodOnly: true // Flag to only extract period information
+                    };
+
+                    // Try to extract just the period information
+                    const periodExtraction = await performBankStatementExtraction(
+                        fileUrl,
+                        extractionParams
+                    );
+
+                    if (periodExtraction?.success && periodExtraction?.extractedData?.statement_period) {
+                        return {
+                            file: item.file,
+                            matchedBank: item.matchedBank,
+                            period: periodExtraction.extractedData.statement_period
+                        };
+                    }
+
+                    return null;
+                } catch (error) {
+                    console.error('Error extracting period from file:', error);
+                    return null;
+                } finally {
+                    // Clean up URL
+                    URL.revokeObjectURL(fileUrl);
+                }
+            });
+
+            // Wait for all period detections to complete
+            const periodResults = await Promise.all(periodPromises);
+            const validPeriods = periodResults.filter(Boolean);
+
+            // Determine cycles needed based on detected periods
+            const allNeededCycles = new Set();
+            const detectedPeriods = [];
+
+            // Process each valid period result
+            for (const result of validPeriods) {
+                const parsedPeriod = parseStatementPeriod(result.period);
+                if (parsedPeriod) {
+                    detectedPeriods.push({
+                        period: result.period,
+                        file: result.file,
+                        matchedBank: result.matchedBank,
+                        ...parsedPeriod
+                    });
+
+                    // Generate all months in this period range
+                    const monthsInRange = generateMonthRange(
+                        parsedPeriod.startMonth,
+                        parsedPeriod.startYear,
+                        parsedPeriod.endMonth,
+                        parsedPeriod.endYear
+                    );
+
+                    // Add each month to the set of needed cycles
+                    for (const { month, year } of monthsInRange) {
+                        const monthStr = (month + 1).toString().padStart(2, '0');
+                        const cycleMonthYear = `${year}-${monthStr}`;
+                        allNeededCycles.add(cycleMonthYear);
+                    }
+                }
+            }
+
+            // Check which cycles already exist and which need to be created
+            const existingCycles = [];
+            const cyclesToCreate = [];
+
+            setOverallProgress(40);
+
+            // Check each needed cycle against database
+            for (const cycleMonthYear of allNeededCycles) {
+                try {
+                    const { data, error } = await supabase
+                        .from('statement_cycles')
+                        .select('id, month_year, status')
+                        .eq('month_year', cycleMonthYear)
+                        .maybeSingle();
+
+                    if (error && error.code !== 'PGRST116') {
+                        console.error(`Error checking cycle ${cycleMonthYear}:`, error);
+                        continue;
+                    }
+
+                    if (data) {
+                        existingCycles.push(data);
+                    } else {
+                        cyclesToCreate.push({
+                            month_year: cycleMonthYear,
+                            status: 'active'
+                        });
+                    }
+                } catch (error) {
+                    console.error(`Error checking cycle ${cycleMonthYear}:`, error);
+                }
+            }
+
+            // Store detected cycles
+            setDetectedCycles({
+                existing: existingCycles,
+                toCreate: cyclesToCreate
+            });
+
+            // Show confirmation dialog
+            setShowCycleConfirmation(true);
+            setOverallProgress(50);
+        } catch (error) {
+            console.error('Error preparing statement processing:', error);
+            toast({
+                title: 'Error',
+                description: 'Failed to analyze statement periods',
+                variant: 'destructive'
+            });
+            setUploading(false);
+        }
+    };
+
+    // New function to handle confirmation
+    const handleCycleConfirmation = async (selectedCycles) => {
+        setShowCycleConfirmation(false);
+        setOverallProgress(60);
+
+        try {
+            // Create new cycles that were selected
+            for (const cycleToCreate of detectedCycles.toCreate) {
+                // Skip if not selected
+                if (!selectedCycles.includes(cycleToCreate.month_year)) continue;
+
+                try {
+                    const { data, error } = await supabase
+                        .from('statement_cycles')
+                        .insert({
+                            month_year: cycleToCreate.month_year,
+                            status: 'active',
+                            created_at: new Date().toISOString()
+                        })
+                        .select();
+
+                    if (error) {
+                        console.error(`Error creating cycle ${cycleToCreate.month_year}:`, error);
+                    } else if (data && data.length > 0) {
+                        console.log(`Created cycle ${cycleToCreate.month_year}:`, data[0]);
+                        // Add to existing cycles since it now exists
+                        detectedCycles.existing.push(data[0]);
+                    }
+                } catch (error) {
+                    console.error(`Error creating cycle ${cycleToCreate.month_year}:`, error);
+                }
+            }
+
+            setOverallProgress(70);
+
+            // Now process the files
+            const itemsToProcess = processingFiles
+                .map((item, index) => ({ item, index }))
+                .filter(({ item }) => item.status === 'pending' || item.status === 'unmatched' || item.status === 'matched')
+                .map(({ index }) => index);
+
+            // Set up the processing queue
+            setProcessingQueue(itemsToProcess);
+
+            // Switch to processing tab automatically
+            setActiveTab('processing');
+
+            // Start processing immediately
+            setTimeout(() => {
+                processPasswordProtectedFiles();
+                // Ensure we move to processing UI right away
+                if (itemsToProcess.length > 0) {
+                    setProcessingIndex(itemsToProcess[0]);
+                }
+            }, 100);
+
+        } catch (error) {
+            console.error('Error confirming cycles:', error);
+            toast({
+                title: 'Error',
+                description: 'Failed to process statement cycles',
+                variant: 'destructive'
+            });
+            setUploading(false);
+        }
     };
 
     // Function to handle password-protected files
@@ -901,10 +1402,32 @@ export function BankStatementBulkUploadDialog({
             setExtractionResults(null);
             setValidationResults(null);
 
+            // Create a cache key based on file name and size
+            const cacheKey = `${file.name}-${file.size}`;
+
             // Create temporary URL for extraction
             const fileUrl = URL.createObjectURL(file);
 
-            // Perform extraction
+            // Check if we have cached extraction results
+            if (extractionCache[cacheKey]) {
+                console.log('Using cached extraction result for:', cacheKey);
+                setExtractionResults(extractionCache[cacheKey]);
+
+                // Validate cached results
+                if (extractionCache[cacheKey]?.success) {
+                    const validationResult = validateExtractedData(extractionCache[cacheKey].extractedData, item.matchedBank);
+                    setValidationResults(validationResult);
+                    // Show validation dialog
+                    setShowValidationDialog(true);
+                } else {
+                    // If cached result wasn't successful, continue with upload anyway
+                    await handleFileUpload(uploadItems.findIndex(i => i === item), null);
+                }
+
+                return true;
+            }
+
+            // Perform extraction only if not cached
             const extractionResult = await performBankStatementExtraction(
                 fileUrl,
                 {
@@ -913,6 +1436,9 @@ export function BankStatementBulkUploadDialog({
                     password: item.passwordApplied ? item.password : null
                 }
             );
+
+            // Store results in cache
+            setExtractionCache(prev => ({ ...prev, [cacheKey]: extractionResult }));
 
             // Store results
             setExtractionResults(extractionResult);
@@ -945,9 +1471,14 @@ export function BankStatementBulkUploadDialog({
                 variant: "destructive"
             });
 
-            // Continue with upload anyway
+            // Continue with upload anyway even if there's an error
             await handleFileUpload(uploadItems.findIndex(i => i === item), null);
             return false;
+        } finally {
+            // Clean up the temporary URL
+            if (fileUrl) {
+                URL.revokeObjectURL(fileUrl);
+            }
         }
     };
 
@@ -995,14 +1526,117 @@ export function BankStatementBulkUploadDialog({
         }
     };
 
-    const handleFileUpload = async (itemIndex: number, extractedData: any) => {
+    // Add this function to handle multi-month statements
+    const handleMultiMonthStatements = async (parentId, bank, extractedData, documentInfo) => {
+        if (!extractedData?.statement_period) return;
+
+        // Parse statement period
+        const periodDates = parseStatementPeriod(extractedData.statement_period);
+        if (!periodDates) return;
+
+        const { startMonth, startYear, endMonth, endYear } = periodDates;
+
+        // Generate all months in the range
+        const monthsInRange = generateMonthRange(startMonth, startYear, endMonth, endYear);
+
+        // Skip the current month/year (it's already processed)
+        const otherMonths = monthsInRange.filter(
+            ({ month, year }) => !(month === cycleMonth && year === cycleYear)
+        );
+
+        if (otherMonths.length === 0) return;
+
+        // Create statements for each month
+        for (const { month, year } of otherMonths) {
+            try {
+                // Find the corresponding cycle ID
+                const monthStr = (month + 1).toString().padStart(2, '0');
+                const cycleMonthYear = `${year}-${monthStr}`;
+
+                // Get cycle ID
+                const { data: cycleData, error: cycleError } = await supabase
+                    .from('statement_cycles')
+                    .select('id')
+                    .eq('month_year', cycleMonthYear)
+                    .single();
+
+                if (cycleError) {
+                    console.error(`Error finding cycle for ${cycleMonthYear}:`, cycleError);
+                    continue;
+                }
+
+                const cycleId = cycleData.id;
+
+                // Check if statement already exists
+                const { data: existingStatement, error: existingError } = await supabase
+                    .from('acc_cycle_bank_statements')
+                    .select('id')
+                    .eq('bank_id', bank.id)
+                    .eq('statement_month', month)
+                    .eq('statement_year', year)
+                    .maybeSingle();
+
+                if (existingError && existingError.code !== 'PGRST116') {
+                    console.error(`Error checking for existing statement ${month}/${year}:`, existingError);
+                    continue;
+                }
+
+                // Create statement data for this month
+                const monthlyStatement = {
+                    bank_id: bank.id,
+                    company_id: bank.company_id,
+                    statement_cycle_id: cycleId,
+                    statement_month: month,
+                    statement_year: year,
+                    statement_type: 'range',
+                    has_soft_copy: true,
+                    statement_document: documentInfo,
+                    statement_extractions: {
+                        ...extractedData,
+                        parent_statement_id: parentId
+                    },
+                    validation_status: {
+                        is_validated: false,
+                        validation_date: null,
+                        validated_by: null,
+                        mismatches: []
+                    },
+                    status: {
+                        status: 'pending_validation',
+                        assigned_to: null,
+                        verification_date: null
+                    }
+                };
+
+                if (existingStatement) {
+                    // Update existing statement
+                    await supabase
+                        .from('acc_cycle_bank_statements')
+                        .update(monthlyStatement)
+                        .eq('id', existingStatement.id);
+                } else {
+                    // Create new statement
+                    await supabase
+                        .from('acc_cycle_bank_statements')
+                        .insert(monthlyStatement);
+                }
+
+            } catch (error) {
+                console.error(`Error creating statement for ${month}/${year}:`, error);
+            }
+        }
+    };
+
+    // In BankStatementBulkUploadDialog.tsx
+
+    const handleFileUpload = async (itemIndex: number, extractedData: any, validationResult: any = null) => {
         const item = uploadItems[itemIndex];
         if (!item || !item.file || !item.matchedBank) {
             console.error('Invalid item for upload');
             return;
         }
 
-        // Update UI
+        // Update UI to show upload in progress
         setUploadItems(prev => {
             const updated = [...prev];
             if (updated[itemIndex]) {
@@ -1021,17 +1655,21 @@ export function BankStatementBulkUploadDialog({
             const pdfFileName = `bank_statement_${bank.company_id || 'unknown'}_${bank.id || 'unknown'}_${cycleYear}_${cycleMonth}.pdf`;
             const pdfFilePath = `statement_documents/${cycleYear}/${cycleMonth}/${bank.company_name || 'unknown'}/${pdfFileName}`;
 
-            const { data: pdfUploadData, error: pdfUploadError } = await supabase.storage
-                .from('Statement-Cycle')
-                .upload(pdfFilePath, item.file, {
-                    cacheControl: '0',
-                    upsert: true
-                });
+            // Only upload if we haven't uploaded this file before
+            let pdfPath = item.uploadedPdfPath;
+            if (!pdfPath) {
+                const { data: pdfUploadData, error: pdfUploadError } = await supabase.storage
+                    .from('Statement-Cycle')
+                    .upload(pdfFilePath, item.file, {
+                        cacheControl: '0',
+                        upsert: true
+                    });
 
-            if (pdfUploadError) throw pdfUploadError;
-            const pdfPath = pdfUploadData?.path;
+                if (pdfUploadError) throw pdfUploadError;
+                pdfPath = pdfUploadData?.path;
+            }
 
-            // Update UI
+            // Update UI to show upload progress
             setUploadItems(prev => {
                 const updated = [...prev];
                 if (updated[itemIndex]) {
@@ -1041,23 +1679,41 @@ export function BankStatementBulkUploadDialog({
                 return updated;
             });
 
+            // Parse statement period to determine if this is a multi-month statement
+            let isMultiMonth = false;
+            let statementPeriod = extractedData?.statement_period || null;
+            let statementType = 'monthly';
+
+            if (statementPeriod) {
+                const periodDates = parseStatementPeriod(statementPeriod);
+                if (periodDates) {
+                    const { startMonth, startYear, endMonth, endYear } = periodDates;
+                    isMultiMonth = !(startMonth === endMonth && startYear === endYear);
+                    statementType = isMultiMonth ? 'range' : 'monthly';
+                }
+            }
+
             // Create statement document info with proper path
             const statementDocumentInfo = {
-                statement_pdf: pdfPath, // This should be the actual path from upload
+                statement_pdf: pdfPath,
                 statement_excel: null,
                 document_size: item.file.size || 0,
-                password: item.passwordApplied ? item.password : null
+                password: item.passwordApplied ? item.password : null,
+                upload_date: new Date().toISOString(),
+                file_name: item.file.name
             };
 
-            // Create statement data
+            // Create statement data with complete extracted information
             const statementData = {
                 bank_id: bank.id,
                 company_id: bank.company_id,
                 statement_cycle_id: localCycleId,
                 statement_month: cycleMonth,
                 statement_year: cycleYear,
-                has_soft_copy: item.hasSoftCopy || true,
-                statement_document: statementDocumentInfo, // This is properly formatted
+                statement_type: statementType,
+                has_soft_copy: item.hasSoftCopy !== undefined ? item.hasSoftCopy : true,
+                has_hard_copy: item.hasHardCopy !== undefined ? item.hasHardCopy : false,
+                statement_document: statementDocumentInfo,
                 statement_extractions: extractedData || {
                     bank_name: null,
                     account_number: null,
@@ -1067,14 +1723,16 @@ export function BankStatementBulkUploadDialog({
                     closing_balance: null,
                     monthly_balances: []
                 },
+                extraction_performed: !!extractedData,
+                extraction_timestamp: extractedData ? new Date().toISOString() : null,
                 validation_status: {
-                    is_validated: validationResults?.isValid || false,
-                    validation_date: validationResults ? new Date().toISOString() : null,
+                    is_validated: validationResult?.isValid || false,
+                    validation_date: validationResult ? new Date().toISOString() : null,
                     validated_by: null,
-                    mismatches: validationResults?.mismatches || []
+                    mismatches: validationResult?.mismatches || []
                 },
                 status: {
-                    status: 'pending_validation',
+                    status: validationResult?.isValid ? 'validated' : 'pending_validation',
                     assigned_to: null,
                     verification_date: null
                 }
@@ -1088,23 +1746,53 @@ export function BankStatementBulkUploadDialog({
                 .eq('statement_month', cycleMonth)
                 .eq('statement_year', cycleYear);
 
+            if (existingError) {
+                console.error('Error checking for existing statements:', existingError);
+                throw existingError;
+            }
+
             let statementResponse;
             if (existingStatements && existingStatements.length > 0) {
                 // Update existing statement
+                console.log(`Updating existing statement for ${bank.bank_name} (${cycleMonth}/${cycleYear})`);
                 statementResponse = await supabase
                     .from('acc_cycle_bank_statements')
                     .update(statementData)
                     .eq('id', existingStatements[0].id)
                     .select();
             } else {
-                // Insert new statement - don't include ID
+                // Insert new statement
+                console.log(`Creating new statement for ${bank.bank_name} (${cycleMonth}/${cycleYear})`);
                 statementResponse = await supabase
                     .from('acc_cycle_bank_statements')
                     .insert(statementData)
                     .select();
             }
 
-            if (statementResponse.error) throw statementResponse.error;
+            if (statementResponse.error) {
+                console.error('Error saving statement data:', statementResponse.error);
+                throw statementResponse.error;
+            }
+
+            // Get the statement with ID
+            const createdStatement = statementResponse.data[0];
+            console.log('Statement saved successfully:', createdStatement.id);
+
+            // If this is a multi-month statement, create statements for all months in the range
+            if (statementType === 'range' && statementPeriod) {
+                try {
+                    await handleMultiMonthStatements(
+                        createdStatement.id,
+                        bank,
+                        extractedData,
+                        statementDocumentInfo,
+                        statementPeriod
+                    );
+                } catch (error) {
+                    console.error('Error handling multi-month statements:', error);
+                    // Continue despite error in multi-month handling
+                }
+            }
 
             // Update UI to show success
             setUploadItems(prev => {
@@ -1114,16 +1802,15 @@ export function BankStatementBulkUploadDialog({
                         ...updated[itemIndex],
                         status: 'uploaded',
                         uploadProgress: 100,
-                        extractedData: extractedData
+                        extractedData: extractedData,
+                        uploadedStatement: createdStatement,
+                        error: null
                     };
                 }
                 return updated;
             });
 
-            // Process next item in queue
-            processNextQueueItem();
-
-            return true;
+            return createdStatement;
         } catch (error) {
             console.error('Upload error:', error);
 
@@ -1134,17 +1821,14 @@ export function BankStatementBulkUploadDialog({
                     updated[itemIndex] = {
                         ...updated[itemIndex],
                         status: 'failed',
-                        error: error?.message || 'Unknown error',
+                        error: error instanceof Error ? error.message : 'Unknown error',
                         uploadProgress: 0
                     };
                 }
                 return updated;
             });
 
-            // Process next item in queue
-            processNextQueueItem();
-
-            return false;
+            throw error;
         }
     };
 
@@ -1599,10 +2283,10 @@ export function BankStatementBulkUploadDialog({
                                                     <TableHeader className="bg-gray-100">
                                                         <TableRow>
                                                             <TableHead className="font-medium">#</TableHead>
-                                                            <TableHead className="font-medium">Bank Name</TableHead>
-                                                            <TableHead className="font-medium">Account Number</TableHead>
-                                                            <TableHead className="font-medium">Currency</TableHead>
-                                                            <TableHead className="font-medium">Password</TableHead>
+                                                            <TableHead>Bank Name</TableHead>
+                                                            <TableHead>Account Number</TableHead>
+                                                            <TableHead>Currency</TableHead>
+                                                            <TableHead>Password</TableHead>
                                                         </TableRow>
                                                     </TableHeader>
                                                     <TableBody>
@@ -2167,8 +2851,7 @@ export function BankStatementBulkUploadDialog({
                                                                                                     updated[index] = {
                                                                                                         ...updated[index],
                                                                                                         isVouched: !!checked,
-                                                                                                        status: checked ? 'vouched' : 'uploaded',
-                                                                                                        vouchNotes: vouchingNotes[statement.file.name] || ''
+                                                                                                        status: checked ? 'vouched' : 'uploaded'
                                                                                                     };
                                                                                                 }
                                                                                                 return updated;
@@ -2665,7 +3348,28 @@ export function BankStatementBulkUploadDialog({
                         </DialogFooter>
                     </DialogContent>
                 </Dialog>
+
+                
             )}
+
+            <StatementCycleConfirmationDialog
+                isOpen={showCycleConfirmation}
+                onClose={() => {
+                    setShowCycleConfirmation(false);
+                    setUploading(false);
+                }}
+                onConfirm={handleCycleConfirmation}
+                statementPeriod={processingFiles.length > 0 && processingFiles[0].extractedData?.statement_period
+                    ? processingFiles[0].extractedData.statement_period
+                    : `${cycleMonth + 1}/${cycleYear}`}
+                existingCycles={detectedCycles.existing}
+                newCyclesToCreate={detectedCycles.toCreate}
+                banks={availableBanks}
+                files={processingFiles.map(item => ({
+                    name: item.file?.name || 'Unknown',
+                    matchedBank: item.matchedBank
+                }))}
+            />
         </TooltipProvider>
     );
 }
