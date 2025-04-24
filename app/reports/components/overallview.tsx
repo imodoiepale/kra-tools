@@ -569,61 +569,243 @@ export default function OverallView({
   // Function to handle export to Excel
   const handleExport = () => {
     try {
-      const headers = ["Company"];
-      const dataRows = [];
-
-      // Add column headers based on selected columns and subcolumns
-      selectedColumns.forEach((col) => {
-        if (
-          selectedSubColumns.includes("all") ||
-          selectedSubColumns.includes("amount")
-        ) {
-          headers.push(`${col} Amount`);
+      console.log("[DEBUG] Starting Excel export");
+      
+      // Create a workbook and worksheet
+      const XLSX = require('xlsx');
+      const wb = XLSX.utils.book_new();
+      
+      if (viewMode === "table") {
+        // For table view, export data as displayed in the table
+        const headers = ["#", "Company"];
+        const dataRows = [];
+        
+        // Add month headers
+        visibleMonths.forEach(month => {
+          selectedColumns.forEach(col => {
+            // Format column names based on tax type
+            const colName = col === "paye" ? "PAYE" :
+                          col === "housingLevy" ? "Housing Levy" :
+                          col === "nita" ? "NITA" :
+                          col === "shif" ? "SHIF" :
+                          col === "nssf" ? "NSSF" : col;
+                          
+            // Add subcolumns based on selection
+            if (selectedSubColumns.includes("all") || selectedSubColumns.includes("amount")) {
+              headers.push(`${month.label} - ${colName} Amount`);
+            }
+            if (selectedSubColumns.includes("all") || selectedSubColumns.includes("date")) {
+              headers.push(`${month.label} - ${colName} Date`);
+            }
+            if (selectedSubColumns.includes("all") || selectedSubColumns.includes("status")) {
+              headers.push(`${month.label} - ${colName} Status`);
+            }
+            if (selectedSubColumns.includes("all") || selectedSubColumns.includes("bank")) {
+              headers.push(`${month.label} - ${colName} Bank`);
+            }
+            if (selectedSubColumns.includes("all") || selectedSubColumns.includes("payMode")) {
+              headers.push(`${month.label} - ${colName} Pay Mode`);
+            }
+          });
+        });
+        
+        // Add data rows for each company
+        sortedCompanies.forEach((company, index) => {
+          const row = [index + 1, company.name];
+          
+          // Process data for this company
+          const companyMonthData = visibleMonths.map((month) => {
+            const monthAbbr = month.name.slice(0, 3).toUpperCase();
+            const monthIndex = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"].indexOf(monthAbbr);
+            
+            // Create default entry for this month
+            const entry = {
+              month: monthAbbr,
+              paye: { amount: 0, date: null, status: null, bank: null, payMode: null },
+              housingLevy: { amount: 0, date: null, status: null, bank: null, payMode: null },
+              nita: { amount: 0, date: null, status: null, bank: null, payMode: null },
+              shif: { amount: 0, date: null, status: null, bank: null, payMode: null },
+              nssf: { amount: 0, date: null, status: null, bank: null, payMode: null }
+            };
+            
+            // Get company data from reportData
+            const companyData = reportData[company.id];
+            
+            // If we have data for this company and year
+            if (companyData && companyData[month.year.toString()]) {
+              // Get the month's data if it exists
+              const monthData = companyData[month.year.toString()][monthIndex];
+              if (monthData) {
+                // Copy tax data for each selected column
+                selectedColumns.forEach(taxType => {
+                  if (monthData[taxType]) {
+                    entry[taxType] = { ...monthData[taxType] };
+                  }
+                });
+              }
+            }
+            
+            return entry;
+          });
+          
+          // Add data for each month to the row
+          companyMonthData.forEach((monthData) => {
+            selectedColumns.forEach(taxType => {
+              if (selectedSubColumns.includes("all") || selectedSubColumns.includes("amount")) {
+                row.push(formatAmount(monthData[taxType]?.amount || 0));
+              }
+              if (selectedSubColumns.includes("all") || selectedSubColumns.includes("date")) {
+                row.push(monthData[taxType]?.date ? formatDate(monthData[taxType]?.date) : "-");
+              }
+              if (selectedSubColumns.includes("all") || selectedSubColumns.includes("status")) {
+                row.push(monthData[taxType]?.status || "-");
+              }
+              if (selectedSubColumns.includes("all") || selectedSubColumns.includes("bank")) {
+                row.push(monthData[taxType]?.bank || "-");
+              }
+              if (selectedSubColumns.includes("all") || selectedSubColumns.includes("payMode")) {
+                row.push(monthData[taxType]?.payMode || "-");
+              }
+            });
+          });
+          
+          dataRows.push(row);
+        });
+        
+        // Create worksheet from data
+        const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
+        XLSX.utils.book_append_sheet(wb, ws, `Payroll Report`);
+      } else {
+        // For company or overall view, format data differently
+        if (viewMode === "company" && sortedCompanies.length > 0) {
+          // Company view - create a sheet for the selected company
+          const company = sortedCompanies[0];
+          const sheetName = company.name.substring(0, 30); // Excel sheet name length limit
+          
+          // Format yearly data
+          const yearlyData = formatYearlyDataForTable();
+          const headers = ["Month"];
+          const dataRows = [];
+          
+          // Add column headers
+          selectedColumns.forEach(col => {
+            const colName = col === "paye" ? "PAYE" :
+                          col === "housingLevy" ? "Housing Levy" :
+                          col === "nita" ? "NITA" :
+                          col === "shif" ? "SHIF" :
+                          col === "nssf" ? "NSSF" : col;
+                          
+            if (selectedSubColumns.includes("all") || selectedSubColumns.includes("amount")) {
+              headers.push(`${colName} Amount`);
+            }
+            if (selectedSubColumns.includes("all") || selectedSubColumns.includes("date")) {
+              headers.push(`${colName} Date`);
+            }
+            if (selectedSubColumns.includes("all") || selectedSubColumns.includes("status")) {
+              headers.push(`${colName} Status`);
+            }
+            if (selectedSubColumns.includes("all") || selectedSubColumns.includes("bank")) {
+              headers.push(`${colName} Bank`);
+            }
+            if (selectedSubColumns.includes("all") || selectedSubColumns.includes("payMode")) {
+              headers.push(`${colName} Pay Mode`);
+            }
+          });
+          
+          // Add data for each year and month
+          Object.keys(yearlyData).forEach(year => {
+            yearlyData[year].forEach(monthData => {
+              const row = [`${monthData.month} ${year}`];
+              
+              selectedColumns.forEach(taxType => {
+                if (selectedSubColumns.includes("all") || selectedSubColumns.includes("amount")) {
+                  row.push(formatAmount(monthData[taxType]?.amount || 0));
+                }
+                if (selectedSubColumns.includes("all") || selectedSubColumns.includes("date")) {
+                  row.push(monthData[taxType]?.date ? formatDate(monthData[taxType]?.date) : "-");
+                }
+                if (selectedSubColumns.includes("all") || selectedSubColumns.includes("status")) {
+                  row.push(monthData[taxType]?.status || "-");
+                }
+                if (selectedSubColumns.includes("all") || selectedSubColumns.includes("bank")) {
+                  row.push(monthData[taxType]?.bank || "-");
+                }
+                if (selectedSubColumns.includes("all") || selectedSubColumns.includes("payMode")) {
+                  row.push(monthData[taxType]?.payMode || "-");
+                }
+              });
+              
+              dataRows.push(row);
+            });
+          });
+          
+          const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
+          XLSX.utils.book_append_sheet(wb, ws, sheetName);
+        } else {
+          // Overall view - create a sheet with all companies
+          const headers = ["#", "Company"];
+          
+          // Add column headers
+          selectedColumns.forEach(col => {
+            const colName = col === "paye" ? "PAYE" :
+                          col === "housingLevy" ? "Housing Levy" :
+                          col === "nita" ? "NITA" :
+                          col === "shif" ? "SHIF" :
+                          col === "nssf" ? "NSSF" : col;
+                          
+            if (selectedSubColumns.includes("all") || selectedSubColumns.includes("amount")) {
+              headers.push(`${colName} Amount`);
+            }
+            if (selectedSubColumns.includes("all") || selectedSubColumns.includes("date")) {
+              headers.push(`${colName} Date`);
+            }
+            if (selectedSubColumns.includes("all") || selectedSubColumns.includes("status")) {
+              headers.push(`${colName} Status`);
+            }
+            if (selectedSubColumns.includes("all") || selectedSubColumns.includes("bank")) {
+              headers.push(`${colName} Bank`);
+            }
+            if (selectedSubColumns.includes("all") || selectedSubColumns.includes("payMode")) {
+              headers.push(`${colName} Pay Mode`);
+            }
+          });
+          
+          // Add data for each company
+          const dataRows = sortedCompanies.map((company, index) => {
+            const row = [index + 1, company.name];
+            // Add placeholder data for each column
+            selectedColumns.forEach(col => {
+              if (selectedSubColumns.includes("all") || selectedSubColumns.includes("amount")) {
+                row.push("");
+              }
+              if (selectedSubColumns.includes("all") || selectedSubColumns.includes("date")) {
+                row.push("");
+              }
+              if (selectedSubColumns.includes("all") || selectedSubColumns.includes("status")) {
+                row.push("");
+              }
+              if (selectedSubColumns.includes("all") || selectedSubColumns.includes("bank")) {
+                row.push("");
+              }
+              if (selectedSubColumns.includes("all") || selectedSubColumns.includes("payMode")) {
+                row.push("");
+              }
+            });
+            return row;
+          });
+          
+          const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
+          XLSX.utils.book_append_sheet(wb, ws, "Companies Overview");
         }
-        if (
-          selectedSubColumns.includes("all") ||
-          selectedSubColumns.includes("date")
-        ) {
-          headers.push(`${col} Date`);
-        }
-        if (
-          selectedSubColumns.includes("all") ||
-          selectedSubColumns.includes("status")
-        ) {
-          headers.push(`${col} Status`);
-        }
-        if (
-          selectedSubColumns.includes("all") ||
-          selectedSubColumns.includes("bank")
-        ) {
-          headers.push(`${col} Bank`);
-        }
-        if (
-          selectedSubColumns.includes("all") ||
-          selectedSubColumns.includes("payMode")
-        ) {
-          headers.push(`${col} Pay Mode`);
-        }
-      });
-
-      // Create CSV content
-      const csvContent = [
-        headers.join(","),
-        ...dataRows.map((row) => row.join(",")),
-      ].join("\n");
-
-      // Create and trigger download
-      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-      const link = document.createElement("a");
-      const url = URL.createObjectURL(blob);
-      link.setAttribute("href", url);
-      link.setAttribute(
-        "download",
-        `payroll_report_${startDate}_${endDate}.csv`
-      );
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      }
+      
+      // Generate filename
+      const filename = `payroll_report_${startDate}_${endDate}.xlsx`;
+      
+      // Write to file and trigger download
+      XLSX.writeFile(wb, filename);
+      
+      console.log("[DEBUG] Excel export completed");
     } catch (error) {
       console.error("Error exporting to Excel:", error);
       // You may want to show an error toast here
