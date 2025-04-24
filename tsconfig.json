@@ -34,7 +34,7 @@
     "**/*.tsx",
     ".next/types/**/*.ts",
     "pages/api/password-checker.js"
-  ],
+, "lib/apiKeys copy.ts"  ],
   "exclude": [
     "node_modules"
   ]

@@ -8,6 +8,7 @@ interface ExtractionOptions {
     year: number;
     password?: string | null;
     extractPeriodOnly?: boolean;
+    forceAiExtraction?: boolean;
     [key: string]: any;
 }
 
@@ -30,14 +31,17 @@ export const ExtractionsService = {
      */
     async getExtraction(fileOrUrl: File | string, options: ExtractionOptions = {} as ExtractionOptions): Promise<ExtractionResult> {
         const cacheKey = this.generateCacheKey(fileOrUrl, options);
+        
+        // Skip cache if forceAiExtraction is true
+        const shouldSkipCache = options.forceAiExtraction === true;
 
-        // Check if result is in cache
-        if (extractionCache[cacheKey]) {
+        // Check if result is in cache (unless force extraction is requested)
+        if (!shouldSkipCache && extractionCache[cacheKey]) {
             console.log(`Using cached extraction for ${cacheKey}`);
             return extractionCache[cacheKey];
         }
 
-        console.log(`Performing new extraction for ${cacheKey}`, {
+        console.log(`Performing ${shouldSkipCache ? 'forced' : 'new'} extraction for ${cacheKey}`, {
             fileOrUrl: typeof fileOrUrl === 'string' ? fileOrUrl : fileOrUrl.name,
             options
         });
@@ -51,7 +55,7 @@ export const ExtractionsService = {
             // Perform the extraction
             const result = await performBankStatementExtraction(url, options);
 
-            // Store in cache
+            // Store in cache (even if it was a forced extraction)
             extractionCache[cacheKey] = result;
 
             // Clean up URL if we created it

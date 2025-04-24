@@ -7,12 +7,14 @@ import { API_KEYS } from './apiKeys';
 import * as path from 'path';
 import * as os from 'os';
 import { PDFDocument } from 'pdf-lib';
+import { createClient } from '@supabase/supabase-js';
 
 // Constants
 const EMBEDDING_MODEL = "gemini-embedding-exp-03-07";
 const EXTRACTION_MODEL = "gemini-2.0-flash";
 const RATE_LIMIT_COOLDOWN = 60000; // 1 minute cooldown
 const MAX_FAILURES = 5; // Max consecutive failures before cooling down
+const MAX_KEY_RETRIES = 3; // Max retries with different keys
 
 // Initialize the Gemini API with key rotation
 let currentApiKeyIndex = 0;
@@ -89,53 +91,205 @@ const resetApiKeyStatus = (key) => {
 // Delay helper function
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-// Helper function to normalize currency codes
-const normalizeCurrencyCode = (code) => {
-  if (!code) return 'USD';
-
-  const upperCode = code.toUpperCase().trim();
-
+// Helper to normalize currency codes
+function normalizeCurrencyCode(currency) {
+  if (!currency) return 'KES'; // Default for Kenyan statements
+  
+  const code = String(currency).toUpperCase().trim();
+  
+  // Map of common currency indicators to standard codes
   const currencyMap = {
-    'EURO': 'EUR',
-    'EUROS': 'EUR',
-    'US DOLLAR': 'USD',
-    'US DOLLARS': 'USD',
-    'USDOLLAR': 'USD',
-    'POUND': 'GBP',
-    'POUNDS': 'GBP',
-    'STERLING': 'GBP',
-    'KENYA SHILLING': 'KES',
-    'KENYA SHILLINGS': 'KES',
-    'KENYAN SHILLING': 'KES',
-    'KENYAN SHILLINGS': 'KES',
     'KSH': 'KES',
-    'K.SH': 'KES',
     'KSHS': 'KES',
-    'K.SHS': 'KES',
-    'SH': 'KES'
+    'KENYA SHILLING': 'KES',
+    'KENYAN SHILLING': 'KES',
+    'SHILLING': 'KES',
+    'USD': 'USD',
+    'US DOLLAR': 'USD',
+    'DOLLAR': 'USD',
+    'GBP': 'GBP',
+    'POUND': 'GBP',
+    'BRITISH POUND': 'GBP',
+    'EUR': 'EUR',
+    'EURO': 'EUR'
   };
-
-  return currencyMap[upperCode] || upperCode;
-};
+  
+  return currencyMap[code] || code;
+}
 
 // Helper function to parse currency amounts
 function parseCurrencyAmount(amount) {
-  if (!amount) return null;
-
-  // Handle both string and number cases
-  const amountStr = typeof amount === 'string' ? amount : amount.toString();
-  const cleanedAmount = amountStr.replace(/[^\d.-]/g, '');
-  const parsedAmount = parseFloat(cleanedAmount);
-  return isNaN(parsedAmount) ? null : parsedAmount;
+  if (amount === null || amount === undefined) return null;
+  
+  // If already a number, return as is
+  if (typeof amount === 'number') return amount;
+  
+  // Convert to string and clean
+  const cleanAmount = String(amount)
+    .replace(/[^\d.\-,]/g, '') // Remove all except digits, dots, minus, commas
+    .replace(/,/g, '.') // Convert commas to dots 
+    .replace(/\.(?=.*\.)/g, ''); // Keep only the last decimal point
+  
+  const value = parseFloat(cleanAmount);
+  return isNaN(value) ? null : value;
 }
 
-// Dynamic import for canvas in Node.js environment
-const getCanvas = async () => {
-  if (typeof window === 'undefined') {
-    return require('canvas');
+// Helper function to normalize text values
+function normalizeText(text) {
+  if (!text) return null;
+  
+  // Convert to string if not already
+  text = String(text);
+  
+  // Remove extra spaces, normalize case
+  text = text.trim()
+    .replace(/\s+/g, ' ') // Replace multiple spaces with single space
+    .replace(/^[^a-zA-Z0-9]*/, '') // Remove leading non-alphanumeric chars
+    .replace(/[^a-zA-Z0-9]*$/, ''); // Remove trailing non-alphanumeric chars
+  
+  // Check if it's a placeholder or empty after cleaning
+  if (!text || text.toLowerCase() === 'not available' || text.toLowerCase() === 'unknown') {
+    return null;
   }
-  return require('canvas-browserify');
-};
+  
+  return text;
+}
+
+// Helper to normalize bank names
+function normalizeBankName(bankName) {
+  if (!bankName) return null;
+  
+  const name = bankName.toString().trim().toUpperCase();
+  
+  // Common bank name mappings in Kenya
+  const bankMappings = {
+    'EQUITY': 'EQUITY BANK',
+    'EQUITY BANK': 'EQUITY BANK',
+    'EQUITY BANK KENYA': 'EQUITY BANK',
+    'KCB': 'KCB BANK',
+    'KCB BANK': 'KCB BANK',
+    'KENYA COMMERCIAL BANK': 'KCB BANK',
+    'CO-OP': 'CO-OPERATIVE BANK',
+    'COOP': 'CO-OPERATIVE BANK',
+    'CO-OPERATIVE': 'CO-OPERATIVE BANK',
+    'CO-OPERATIVE BANK': 'CO-OPERATIVE BANK',
+    'COOPERATIVE BANK': 'CO-OPERATIVE BANK',
+    'ABSA': 'ABSA BANK',
+    'ABSA BANK': 'ABSA BANK',
+    'BARCLAYS': 'ABSA BANK',
+    'BARCLAYS BANK': 'ABSA BANK',
+    'STANCHART': 'STANDARD CHARTERED',
+    'STANDARD CHARTERED': 'STANDARD CHARTERED',
+    'I&M': 'I&M BANK',
+    'I&M BANK': 'I&M BANK',
+    'I AND M': 'I&M BANK',
+    'NCBA': 'NCBA BANK',
+    'NCBA BANK': 'NCBA BANK',
+    'DIAMOND TRUST': 'DIAMOND TRUST BANK',
+    'DTB': 'DIAMOND TRUST BANK',
+    'DIAMOND TRUST BANK': 'DIAMOND TRUST BANK',
+    'FAMILY': 'FAMILY BANK',
+    'FAMILY BANK': 'FAMILY BANK'
+  };
+  
+  // Check for direct match
+  if (bankMappings[name]) {
+    return bankMappings[name];
+  }
+  
+  // Check for partial matches
+  for (const [key, value] of Object.entries(bankMappings)) {
+    if (name.includes(key)) {
+      return value;
+    }
+  }
+  
+  // If no mapping found, return original with proper capitalization
+  return bankName.toString().trim().replace(/\b\w/g, l => l.toUpperCase());
+}
+
+// Enhanced function to process extraction results and normalize the data
+function processExtractionResults(results, file, params) {
+  if (!results || !results.extractedData) {
+    return {
+      originalItem: file.originalItem,
+      success: false,
+      error: "No valid extraction data found",
+      extractedData: null
+    };
+  }
+  
+  try {
+    const data = results.extractedData;
+    
+    // Normalize bank name
+    const bankName = normalizeBankName(data.bank_name);
+    
+    // Normalize currency
+    const currency = data.currency ? normalizeCurrencyCode(data.currency) : 'KES';
+    
+    // Try to extract account number from filename if not found in extraction
+    let accountNumber = data.account_number;
+    if (!accountNumber && file.originalItem && file.originalItem.file && file.originalItem.file.name) {
+      const filename = file.originalItem.file.name;
+      const accountMatch = filename.match(/(\d{5,})/);
+      if (accountMatch) {
+        accountNumber = accountMatch[1];
+      }
+    }
+    
+    // Ensure we have a valid monthly_balances array
+    let monthlyBalances = Array.isArray(data.monthly_balances) ? data.monthly_balances : [];
+    
+    // If no monthly balances but we have a closing balance, create one
+    if (monthlyBalances.length === 0 && data.closing_balance !== undefined) {
+      monthlyBalances = [{
+        month: params.month,
+        year: params.year,
+        closing_balance: typeof data.closing_balance === 'number' ? data.closing_balance : parseCurrencyAmount(data.closing_balance),
+        statement_page: 1,
+        is_verified: false
+      }];
+    }
+    
+    // Ensure all numeric values are properly parsed
+    monthlyBalances = monthlyBalances.map(balance => ({
+      month: balance.month || params.month,
+      year: balance.year || params.year,
+      closing_balance: typeof balance.closing_balance === 'number' ? balance.closing_balance : parseCurrencyAmount(balance.closing_balance),
+      statement_page: balance.statement_page || 1,
+      is_verified: balance.is_verified || false,
+      verified_by: balance.verified_by || null,
+      verified_at: balance.verified_at || null,
+      highlight_coordinates: balance.highlight_coordinates || null
+    }));
+    
+    // Create the normalized extraction result
+    const normalizedData = {
+      bank_name: bankName,
+      account_number: accountNumber || null,
+      company_name: file.originalItem.companyName || data.company_name || null,
+      currency: currency,
+      statement_period: data.statement_period || `${params.month}/${params.year}`,
+      closing_balance: typeof data.closing_balance === 'number' ? data.closing_balance : parseCurrencyAmount(data.closing_balance),
+      monthly_balances: monthlyBalances
+    };
+    
+    return {
+      originalItem: file.originalItem,
+      success: true,
+      extractedData: normalizedData
+    };
+  } catch (error) {
+    console.error("Error normalizing extraction results:", error);
+    return {
+      originalItem: file.originalItem,
+      success: false,
+      error: "Failed to normalize extraction results: " + error.message,
+      extractedData: null
+    };
+  }
+}
 
 // Helper to get PDF page count
 async function getPdfPageCount(fileUrl, password = null) {
@@ -316,38 +470,73 @@ async function fileToGenerativePart(fileInput, originalFileName) {
 
 // Generate embeddings for text content
 async function generateTextEmbeddings(textContent) {
-  try {
-    let attempts = 0;
-    const MAX_ATTEMPTS = 3;
-
-    while (attempts < MAX_ATTEMPTS) {
-      try {
-        const embeddingModel = genAI.getGenerativeModel({ model: EMBEDDING_MODEL });
-
-        const result = await embeddingModel.embedContent({
-          content: { parts: [{ text: textContent }], role: "user" },
-        });
-
-        return result.embedding;
-      } catch (error) {
-        attempts++;
-
-        if (error.message?.includes('429') || error.message?.includes('quota')) {
-          markApiKeyFailure(API_KEYS[currentApiKeyIndex]);
-          getNextApiKey();
-        }
-
-        if (attempts < MAX_ATTEMPTS) {
-          await delay(1000 * attempts);
-        } else {
-          throw error;
-        }
+  let lastError = null;
+  
+  // Try multiple API keys if needed
+  for (let attempt = 0; attempt < MAX_KEY_RETRIES; attempt++) {
+    try {
+      // Get a fresh API key for this attempt
+      const currentKey = API_KEYS[currentApiKeyIndex];
+      const status = apiKeyStatus.get(currentKey);
+      
+      // Check if current key is in cooldown
+      if (status && Date.now() < status.cooldownUntil) {
+        console.log(`API key ${currentApiKeyIndex + 1}/${API_KEYS.length} in cooldown until ${new Date(status.cooldownUntil).toLocaleString()}`);
+        // Move to next key
+        currentApiKeyIndex = (currentApiKeyIndex + 1) % API_KEYS.length;
+        continue;
       }
+      
+      console.log(`Attempt ${attempt + 1}/${MAX_KEY_RETRIES}: Using API key ${currentApiKeyIndex + 1}/${API_KEYS.length}`);
+      
+      const embeddingModel = genAI.getGenerativeModel({ model: EMBEDDING_MODEL });
+      const result = await embeddingModel.embedContent(textContent);
+      const embedding = result.embedding;
+      
+      // Reset failure count on success
+      if (status) {
+        status.failureCount = 0;
+        status.lastUsed = Date.now();
+        apiKeyStatus.set(currentKey, status);
+      }
+      
+      return embedding.values;
+    } catch (error) {
+      lastError = error;
+      const currentKey = API_KEYS[currentApiKeyIndex];
+      console.error(`Error generating embeddings (attempt ${attempt + 1}/${MAX_KEY_RETRIES}):`, error.message);
+      
+      // Mark the current key as having a failure
+      const status = apiKeyStatus.get(currentKey) || {
+        lastUsed: 0,
+        failureCount: 0,
+        cooldownUntil: 0
+      };
+      
+      status.failureCount++;
+      status.lastUsed = Date.now();
+      
+      // If we've hit rate limits, put this key in cooldown
+      if (error.message.includes('429') || error.message.includes('quota') || error.message.includes('exhausted')) {
+        // Exponential backoff for cooldown: 1min, 2min, 4min, 8min, etc.
+        const cooldownMinutes = Math.min(15, Math.pow(2, status.failureCount - 1));
+        status.cooldownUntil = Date.now() + (cooldownMinutes * 60000);
+        console.log(`API key put in cooldown until ${new Date(status.cooldownUntil).toLocaleString()} (${cooldownMinutes} minutes)`);
+      }
+      
+      apiKeyStatus.set(currentKey, status);
+      
+      // Rotate to next API key
+      currentApiKeyIndex = (currentApiKeyIndex + 1) % API_KEYS.length;
+      genAI = new GoogleGenerativeAI(API_KEYS[currentApiKeyIndex]);
+      
+      // Wait a moment before retrying
+      await delay(1000);
     }
-  } catch (error) {
-    console.error('Error generating embeddings:', error);
-    throw error;
   }
+  
+  // If we get here, all retries failed
+  throw lastError || new Error("Failed to generate embeddings after multiple attempts");
 }
 
 // Create extraction queries for the embedding
@@ -358,27 +547,80 @@ function createExtractionQueries() {
     { field: 'company_name', query: "What is the name of the company or account holder?" },
     { field: 'currency', query: "What currency is used in this statement?" },
     { field: 'statement_period', query: "What is the statement period? Include start and end dates." },
-    // { field: 'opening_balance', query: "What is the opening balance of the account?" },
     { field: 'closing_balance', query: "What is the closing balance of the account?" },
     { field: 'monthly_balances', query: "List all monthly balances including month, year, opening and closing balances." }
   ];
 }
 
 // Process extraction using embeddings
-async function processExtraction(pageTextContent, params, onProgress) {
+async function processExtraction(pageTextContent, params, onProgress, supabase) {
   try {
-    onProgress?.('Generating embeddings for bank statement pages...');
-
-    // Create text embedding for the content
-    const pageText = Object.values(pageTextContent).join("\n\n--- PAGE BREAK ---\n\n");
-    const contentEmbedding = await generateTextEmbeddings(pageText);
-
-    if (!contentEmbedding) {
-      throw new Error('Failed to generate embeddings');
+    onProgress("Generating embeddings for bank statement pages...");
+    
+    // Handle case where pageTextContent might not be properly structured
+    let allTextContent = '';
+    
+    // If we received an object with textByPage property (new format)
+    if (pageTextContent && typeof pageTextContent === 'object') {
+      if (pageTextContent.textByPage) {
+        // Use textByPage property
+        Object.values(pageTextContent.textByPage).forEach(text => {
+          allTextContent += text + '\n\n';
+        });
+      } else {
+        // Try direct object values if no textByPage
+        Object.values(pageTextContent).forEach(text => {
+          if (typeof text === 'string') {
+            allTextContent += text + '\n\n';
+          }
+        });
+      }
+    } else if (typeof pageTextContent === 'string') {
+      // If we just got a string, use it directly
+      allTextContent = pageTextContent;
+    } else {
+      // Fallback for empty or invalid input
+      console.error("Invalid pageTextContent format:", typeof pageTextContent);
+      return {
+        success: false,
+        error: "Invalid text content format",
+        extractedData: null
+      };
     }
-
-    onProgress?.('Running extraction queries against embeddings...');
-
+    
+    console.log("Page text content length:", JSON.stringify(pageTextContent).length);
+    console.log("First 2000 chars of content:", JSON.stringify(pageTextContent).substring(0, 2000));
+    
+    // Check if we have any content to process
+    if (!allTextContent || allTextContent.trim().length < 100) {
+      console.error("Insufficient text content for extraction:", allTextContent?.substring(0, 1000) || "empty");
+      return {
+        success: false,
+        error: "Insufficient text content for extraction",
+        extractedData: {
+          bank_name: null,
+          account_number: null,
+          currency: null,
+          statement_period: null,
+          closing_balance: null
+        }
+      };
+    }
+    
+    // Generate embeddings from text content
+    let embeddings;
+    try {
+      embeddings = await generateTextEmbeddings(allTextContent);
+    } catch (error) {
+      console.error("Error generating embeddings:", error);
+      
+      // Fall back to direct extraction without embeddings
+      return extractFallbackData(allTextContent, params);
+    }
+    
+    // Continue with the rest of the extraction process as before...
+    onProgress("Running extraction queries against embeddings...");
+    
     // Create a custom extraction prompt
     const extractionPrompt = `
 You are analyzing a bank statement. Extract the following information from the text:
@@ -388,9 +630,8 @@ You are analyzing a bank statement. Extract the following information from the t
 3. Company Name: The name of the account holder
 4. Currency: The currency code or name used in the statement
 5. Statement Period: The exact date range covered in dd/mm/yyyy format always
-// 6. Opening Balance: The starting balance
-7. Closing Balance: The final balance
-6. Monthly Balances: Any balances for specific months mentioned
+6. Closing Balance: The final balance
+7. Monthly Balances: Any balances for specific months mentioned
 
 For the specific month ${params.month}/${params.year}, find exact opening and closing balances if available.
 
@@ -401,13 +642,11 @@ Return your analysis in this JSON format:
   "company_name": "Company Name",
   "currency": "Currency Code",
   "statement_period": "Start Date - End Date",
-  // "opening_balance": number,
   "closing_balance": number,
   "monthly_balances": [
     {
       "month": month_number,
       "year": year_number,
-      "opening_balance": number,
       "closing_balance": number,
       "statement_page": page_number
     }
@@ -446,213 +685,204 @@ Return your analysis in this JSON format:
 
     const result = await extractionModel.generateContent([
       extractionPrompt,
-      pageText
+      allTextContent
     ]);
 
     const responseText = result.response.text();
 
-    // Parse and validate the extracted data
-    onProgress?.('Processing extracted information...');
+    console.log("API Response first 3000 chars:", responseText.substring(0, 3000));
 
+    // Parse and validate the extracted data
+    onProgress("Processing extracted information...");
+    
     let extractedData;
     try {
-      // First attempt: Try to find a JSON object in the response
-      const jsonMatch = responseText.match(/\{[\s\S]*?\}/);
+      // First attempt: Try to find a JSON object in the response with multiple regex patterns
+      // Try multiple regex patterns to handle different AI response formats
+      const jsonPatterns = [
+        /```json\s*(\{[\s\S]*?\})\s*```/, // Code block with json tag
+        /```\s*(\{[\s\S]*?\})\s*```/,      // Code block without json tag
+        /\{[\s\S]*"monthly_balances"\s*:\s*\[[\s\S]*?\]\s*\}/, // Direct JSON with monthly_balances
+        /\{[\s\S]*"bank_name"[\s\S]*"account_number"[\s\S]*\}/, // Direct JSON with key fields
+        /\{[\s\S]*?\}/ // Any JSON object as a last resort
+      ];
       
-      if (jsonMatch) {
+      let jsonContent = null;
+      let matchedPattern = null;
+      
+      // Try each pattern in order until we find a match
+      for (const pattern of jsonPatterns) {
+        const match = responseText.match(pattern);
+        if (match) {
+          jsonContent = match[1] || match[0]; // Use group 1 if it exists (for code blocks)
+          matchedPattern = pattern.toString();
+          break;
+        }
+      }
+      
+      console.log("JSON extraction result:", { 
+        found: !!jsonContent,
+        matchedPattern,
+        contentLength: jsonContent?.length || 0,
+        contentPreview: jsonContent?.substring(0, 100)
+      });
+      
+      if (jsonContent) {
         try {
           // Try to parse the matched JSON
-          extractedData = JSON.parse(jsonMatch[0]);
+          extractedData = JSON.parse(jsonContent);
+          console.log("Successfully parsed JSON with keys:", Object.keys(extractedData));
         } catch (parseError) {
+          console.log("JSON parse error:", parseError);
+          
           // If direct parsing fails, try to repair the JSON
-          const repairResult = repairJsonString(jsonMatch[0]);
+          console.log("Attempting to repair JSON...");
+          const repairResult = repairJsonString(jsonContent);
           
           if (repairResult.success) {
+            console.log("JSON repair successful");
             extractedData = repairResult.json;
           } else {
+            console.log("JSON repair failed:", repairResult.error);
+            
             // Try a more aggressive approach to find any JSON-like structure
+            console.log("Trying aggressive JSON extraction...");
             const potentialJson = responseText.replace(/[\s\S]*?(\{[\s\S]*\})[\s\S]*/, '$1');
             const secondRepairResult = repairJsonString(potentialJson);
             
             if (secondRepairResult.success) {
+              console.log("Aggressive JSON repair successful");
               extractedData = secondRepairResult.json;
             } else {
+              console.log("All JSON extraction attempts failed");
               // Last resort: try to extract key parts manually
               extractedData = extractFallbackData(responseText, params);
-              
-              if (!extractedData) {
-                throw new Error('No valid JSON structure found in response');
-              }
             }
           }
         }
       } else {
-        // Try to extract key parts manually if no JSON-like structure is found
+        console.log("No JSON structure found in response, trying fallback extraction");
+        // No JSON structure found, attempt fallback extraction
         extractedData = extractFallbackData(responseText, params);
-        
-        if (!extractedData) {
-          throw new Error('No JSON found in response');
-        }
       }
     } catch (jsonError) {
-      console.error('JSON parsing error:', jsonError);
-      throw new Error('Failed to parse extraction results');
+      console.error("Error parsing extraction result:", jsonError);
+      throw new Error("Failed to parse extraction results");
     }
 
     // Return the normalized data
-    return normalizeExtractedData(extractedData, params);
-
+    const normalizedData = await normalizeExtractedData(extractedData, params, supabase);
+    
+    // Log normalized data for debugging
+    console.log("Returning normalized data:", JSON.stringify({
+      bank_name: normalizedData.bank_name,
+      account_number: normalizedData.account_number,
+      company_name: normalizedData.company_name,
+      statement_period: normalizedData.statement_period,
+    }));
+    
+    return {
+      success: true,
+      extractedData: normalizedData
+    };
   } catch (error) {
-    console.error('Error in extraction process:', error);
+    console.error("Error in extraction process:", error);
     throw error;
   }
-}
-
-// Helper function to extract data manually when JSON parsing fails
-function extractFallbackData(text, params) {
-  try {
-    // Create a basic structure
-    const fallbackData = {
-      bank_name: null,
-      account_number: null,
-      company_name: null,
-      currency: null,
-      statement_period: null,
-      // opening_balance: null,
-      closing_balance: null,
-      monthly_balances: []
-    };
-    
-    // Try to extract bank name
-    const bankNameMatch = text.match(/[Bb]ank\s*[Nn]ame\s*:?\s*([A-Za-z\s]+(?:Bank|BANK|Ltd|LIMITED|Limited))/);
-    if (bankNameMatch) fallbackData.bank_name = bankNameMatch[1].trim();
-    
-    // Try to extract account number
-    const accountMatch = text.match(/[Aa]ccount\s*[Nn]umber\s*:?\s*([0-9\-]+)/);
-    if (accountMatch) fallbackData.account_number = accountMatch[1].trim();
-    
-    // Try to extract company name
-    const companyMatch = text.match(/[Cc]ompany\s*[Nn]ame\s*:?\s*([A-Za-z\s]+(?:Ltd|LIMITED|Limited|LLC|Co\.|Inc\.|Corporation)?)/);
-    if (companyMatch) fallbackData.company_name = companyMatch[1].trim();
-    
-    // Try to extract currency
-    const currencyMatch = text.match(/[Cc]urrency\s*:?\s*([A-Z]{3}|[A-Za-z\s]+)/);
-    if (currencyMatch) fallbackData.currency = currencyMatch[1].trim();
-    
-    // Try to extract statement period
-    const periodMatch = text.match(/[Ss]tatement\s*[Pp]eriod\s*:?\s*([A-Za-z0-9\s\-\/]+)/);
-    if (periodMatch) fallbackData.statement_period = periodMatch[1].trim();
-    
-    // Add the current month to monthly balances
-    fallbackData.monthly_balances.push({
-      month: params.month,
-      year: params.year,
-      statement_page: 1,
-      highlight_coordinates: null,
-      is_verified: false,
-      verified_by: null,
-      verified_at: null
-    });
-    
-    return fallbackData;
-  } catch (error) {
-    console.error('Fallback extraction failed:', error);
-    return null;
-  }
-}
-
-// Normalize the extracted data
-function normalizeExtractedData(extractedData, params) {
-  // Helper function to ensure monthly balances structure
-  const processMonthlyBalances = () => {
-    const balances = Array.isArray(extractedData.monthly_balances)
-      ? extractedData.monthly_balances.map(balance => ({
-        month: balance.month,
-        year: balance.year,
-        // opening_balance: parseCurrencyAmount(balance.opening_balance),
-        closing_balance: parseCurrencyAmount(balance.closing_balance),
-        statement_page: balance.statement_page || 1,
-        highlight_coordinates: null,
-        is_verified: false,
-        verified_by: null,
-        verified_at: null
-      }))
-      : [];
-
-    // Ensure we have at least the current month in the balances
-    const hasCurrentMonth = balances.some(
-      balance => balance.month === params.month && balance.year === params.year
-    );
-
-    if (!hasCurrentMonth) {
-      balances.push({
-        month: params.month,
-        year: params.year,
-        // opening_balance: parseCurrencyAmount(extractedData.opening_balance),
-        closing_balance: parseCurrencyAmount(extractedData.closing_balance),
-        statement_page: 1,
-        highlight_coordinates: null,
-        is_verified: false,
-        verified_by: null,
-        verified_at: null
-      });
-    }
-
-    return balances;
-  };
-
-  return {
-    bank_name: extractedData.bank_name || null,
-    company_name: extractedData.company_name || null,
-    account_number: extractedData.account_number || null,
-    currency: extractedData.currency ? normalizeCurrencyCode(extractedData.currency) : null,
-    statement_period: extractedData.statement_period || null,
-    // opening_balance: parseCurrencyAmount(extractedData.opening_balance),
-    closing_balance: parseCurrencyAmount(extractedData.closing_balance),
-    monthly_balances: processMonthlyBalances()
-  };
 }
 
 // Main extraction function
 export async function performBankStatementExtraction(
   fileUrl,
   params,
-  onProgress = (message) => console.log(message)
+  onProgress = (message) => console.log(message),
+  supabase = null
 ) {
   try {
-    onProgress('Starting bank statement extraction with embedding approach...');
-
-    // Get total page count (now with password)
-    const totalPages = await getPdfPageCount(fileUrl, params.password);
-
-    if (!totalPages || !totalPages.success) {
-      const errorMessage = totalPages?.error || 'Failed to get page count';
+    // Reset count at beginning of a new extraction
+    let consecutiveErrors = 0;
+    
+    onProgress("Analyzing document content...");
+    
+    // Get page count to determine processing strategy
+    const pageCountResult = await getPdfPageCount(fileUrl, params.password);
+    
+    // Check if we got a valid result object with numPages
+    if (!pageCountResult || !pageCountResult.success) {
+      const errorMessage = pageCountResult?.error || 'Failed to get page count';
       onProgress(`Error: ${errorMessage}`);
-
+      
       // Check if password protected
-      if (totalPages?.requiresPassword) {
+      if (pageCountResult?.requiresPassword) {
         return {
           success: false,
           requiresPassword: true,
-          passwordNeeded: totalPages.passwordNeeded,
+          passwordNeeded: pageCountResult.passwordNeeded,
           message: 'This PDF is password protected. Please provide a password.'
         };
       }
-
+      
       throw new Error(errorMessage);
     }
     
-    onProgress(`Detected ${totalPages.numPages} pages in document`);
-
-    // Define pages to process: first and last page
-    const pages = [1];
-    if (totalPages.numPages > 1) {
-      pages.push(totalPages.numPages);
-    }
-
-    onProgress(`Extracting text from pages ${pages.join(', ')}...`);
-    const pageTextContent = await extractTextFromPdfPages(fileUrl, pages, params.password);
+    // Extract the actual page count from the result object
+    const pageCount = pageCountResult.numPages;
+    onProgress(`Detected ${pageCount} pages in document`);
     
+    // For large documents, sample pages instead of processing all
+    // This reduces API calls and prevents rate limiting
+    let pagesToProcess = [];
+    if (pageCount > 100) {
+      // For very large documents, sample strategically 
+      // with more focus on the beginning and end where summary data often appears
+      pagesToProcess = [1, 2, 3, 4, 5, 
+                        Math.ceil(pageCount * 0.25), 
+                        Math.ceil(pageCount * 0.5),
+                        Math.ceil(pageCount * 0.75),
+                        pageCount - 4, pageCount - 3, pageCount - 2, pageCount - 1, pageCount];
+    } else if (pageCount > 50) {
+      // For large documents (50-100 pages), sample beginning, quarter points, and end
+      pagesToProcess = [1, 2, 3, 
+                       Math.ceil(pageCount * 0.25), 
+                       Math.ceil(pageCount * 0.5),
+                       Math.ceil(pageCount * 0.75),
+                       pageCount - 2, pageCount - 1, pageCount];
+    } else if (pageCount > 20) {
+      // For medium-sized documents, sample at regular intervals
+      pagesToProcess = [1, 2, pageCount - 1, pageCount];
+      const interval = Math.ceil(pageCount / 8); // ~8 samples throughout
+      for (let i = interval; i < pageCount - interval; i += interval) {
+        pagesToProcess.push(i);
+      }
+    } else if (pageCount > 5) {
+      // For smaller documents (5-20 pages), sample first, last, and several in between
+      pagesToProcess = [1, 2, Math.ceil(pageCount / 2), pageCount - 1, pageCount];
+    } else {
+      // For very small documents, process all pages
+      pagesToProcess = Array.from({length: pageCount}, (_, i) => i + 1);
+    }
+    
+    // Sort page numbers and remove duplicates
+    pagesToProcess = [...new Set(pagesToProcess)].sort((a, b) => a - b);
+
+    // Apply an upper limit to avoid processing too many pages for very large documents
+    if (pagesToProcess.length > 20) {
+      // If we have too many pages, select a representative sample
+      const maxPages = 20;
+      const step = Math.ceil(pagesToProcess.length / maxPages);
+      pagesToProcess = pagesToProcess.filter((_, index) => index % step === 0);
+      
+      // Always ensure first and last pages are included
+      if (!pagesToProcess.includes(1)) pagesToProcess.unshift(1);
+      if (!pagesToProcess.includes(pageCount)) pagesToProcess.push(pageCount);
+      
+      pagesToProcess.sort((a, b) => a - b);
+    }
+    
+    // Extract text from PDF pages
+    const pageTextContent = await extractTextFromPdfPages(fileUrl, pagesToProcess, params.password);
+
+    // Validate we got actual text content
     if (!pageTextContent || !pageTextContent.success) {
       const errorMessage = pageTextContent?.error || 'Failed to extract text from PDF';
       onProgress(`Error: ${errorMessage}`);
@@ -667,50 +897,89 @@ export async function performBankStatementExtraction(
         };
       }
       
-      throw new Error(errorMessage);
+      // Return partial result instead of failing completely
+      return {
+        success: true,
+        extractedData: {
+          bank_name: null,
+          account_number: null,
+          currency: null,
+          statement_period: null,
+          closing_balance: null,
+          monthly_balances: []
+        },
+        rawData: null,
+        partial: true,
+        message: `Text extraction failed: ${errorMessage}`
+      };
     }
 
-    // Process extraction using the page text
-    onProgress('Analyzing document content...');
-    const extractedData = await processExtraction(pageTextContent.textByPage, params, onProgress);
+    // Process the extracted text using the textByPage property
+    const textByPageData = pageTextContent.textByPage || {};
 
-    // Add visual data for the document if needed (for highlighting)
-    if (pages.length > 0 && pageTextContent) {
-      onProgress('Extraction completed successfully');
+    // Process the extracted text in batches to reduce API load
+    onProgress("Processing extracted information...");
+    const extractionResult = await processExtraction(textByPageData, params, onProgress, supabase);
+
+    // Enhanced error handling for extraction results
+    if (!extractionResult || !extractionResult.extractedData) {
+      const errorDetails = {
+        resultExists: !!extractionResult,
+        extractedDataExists: !!extractionResult?.extractedData,
+        resultType: typeof extractionResult,
+        extractedDataType: typeof extractionResult?.extractedData,
+        resultKeys: extractionResult ? Object.keys(extractionResult) : [],
+        rawResult: JSON.stringify(extractionResult).substring(0, 500)
+      };
+      
+      console.error("Extraction failure details:", errorDetails);
+      onProgress(`Extraction did not return valid results: ${JSON.stringify(errorDetails)}`);
+      
+      // Instead of failing completely, return a partial success with empty data
+      return {
+        success: true,
+        extractedData: {
+          bank_name: null,
+          account_number: null,
+          currency: null,
+          statement_period: null,
+          closing_balance: null,
+          monthly_balances: [{
+            month: params.month || 0,
+            year: params.year || 0,
+            closing_balance: null,
+            statement_page: 1,
+            is_verified: false
+          }]
+        },
+        rawData: pageTextContent,
+        partial: true, // Indicate this is a partial result
+        message: `Extraction could not process this document fully. Error details: ${JSON.stringify(errorDetails)}`
+      };
     }
 
+    // Log the successful extraction data
+    console.log("Extraction completed successfully with data:", JSON.stringify({
+      bank_name: extractionResult.extractedData.bank_name,
+      account_number: extractionResult.extractedData.account_number,
+      statement_period: extractionResult.extractedData.statement_period,
+      monthly_balances_count: extractionResult.extractedData.monthly_balances?.length || 0
+    }, null, 2));
+
+    onProgress("Extraction completed successfully");
+    
+    // Important: Return a DEEP COPY of the extracted data to prevent reference issues
     return {
       success: true,
-      extractedData: extractedData
+      extractedData: JSON.parse(JSON.stringify(extractionResult.extractedData)),
+      rawData: pageTextContent
     };
-
   } catch (error) {
-    console.error('Error in bank statement extraction:', error);
-
-    // Return fallback data structure on error
+    onProgress(`Error in bank statement extraction: ${error.message}`);
     return {
       success: false,
-      extractedData: {
-        bank_name: null,
-        company_name: null,
-        account_number: null,
-        currency: null,
-        statement_period: null,
-        // opening_balance: null,
-        closing_balance: null,
-        monthly_balances: [{
-          month: params.month,
-          year: params.year,
-          // opening_balance: null,
-          closing_balance: null,
-          statement_page: 1,
-          highlight_coordinates: null,
-          is_verified: false,
-          verified_by: null,
-          verified_at: null
-        }]
-      },
-      message: `Extraction failed: ${error.message}`
+      error: error.message,
+      errorDetails: error.toString()
     };
   }
 }
@@ -793,9 +1062,9 @@ async function handleMultiMonthStatement(
       ) || {
         month,
         year,
-        opening_balance: null,
         closing_balance: null,
-        statement_page: 1
+        statement_page: 1,
+        is_verified: false
       };
 
       // Create new statement for this month
@@ -841,7 +1110,7 @@ async function handleMultiMonthStatement(
   }
 }
 
-export async function processBulkExtraction(batchFiles, params, onProgress) {
+export async function processBulkExtraction(batchFiles, params, onProgress, supabase = null) {
   try {
     console.log(`Starting bulk extraction for ${batchFiles.length} files`);
     onProgress(0.1);
@@ -870,13 +1139,59 @@ export async function processBulkExtraction(batchFiles, params, onProgress) {
           }
         }
 
-        // Extract text from first and last pages
+        // Extract text from key pages based on document size
         const totalPages = pageCountResult.numPages;
-        const pagesToProcess = [1];
-        if (totalPages > 1) {
-          pagesToProcess.push(totalPages);
+        let pagesToProcess = [1];
+        
+        // Enhanced adaptive sampling strategy for different document sizes
+        if (totalPages > 100) {
+          // For very large documents (100+ pages), sample strategically 
+          // with more focus on the beginning and end where summary data often appears
+          pagesToProcess = [1, 2, 3, 4, 5, 
+                            Math.ceil(totalPages * 0.25), 
+                            Math.ceil(totalPages * 0.5),
+                            Math.ceil(totalPages * 0.75),
+                            totalPages - 4, totalPages - 3, totalPages - 2, totalPages - 1, totalPages];
+        } else if (totalPages > 50) {
+          // For large documents (50-100 pages), sample beginning, quarter points, and end
+          pagesToProcess = [1, 2, 3, 
+                           Math.ceil(totalPages * 0.25), 
+                           Math.ceil(totalPages * 0.5),
+                           Math.ceil(totalPages * 0.75),
+                           totalPages - 2, totalPages - 1, totalPages];
+        } else if (totalPages > 20) {
+          // For medium documents (20-50 pages), sample at regular intervals
+          pagesToProcess = [1, 2, totalPages - 1, totalPages];
+          const interval = Math.ceil(totalPages / 8); // ~8 samples throughout
+          for (let i = interval; i < totalPages - interval; i += interval) {
+            pagesToProcess.push(i);
+          }
+        } else if (totalPages > 5) {
+          // For smaller documents (5-20 pages), sample first, last, and several in between
+          pagesToProcess = [1, 2, Math.ceil(totalPages / 2), totalPages - 1, totalPages];
+        } else {
+          // For very small documents (1-5 pages), process all pages
+          pagesToProcess = Array.from({length: totalPages}, (_, i) => i + 1);
         }
+        
+        // Sort page numbers and remove duplicates
+        pagesToProcess = [...new Set(pagesToProcess)].sort((a, b) => a - b);
 
+        // Apply an upper limit to avoid processing too many pages for very large documents
+        if (pagesToProcess.length > 20) {
+          // If we have too many pages, select a representative sample
+          const maxPages = 20;
+          const step = Math.ceil(pagesToProcess.length / maxPages);
+          pagesToProcess = pagesToProcess.filter((_, index) => index % step === 0);
+          
+          // Always ensure first and last pages are included
+          if (!pagesToProcess.includes(1)) pagesToProcess.unshift(1);
+          if (!pagesToProcess.includes(totalPages)) pagesToProcess.push(totalPages);
+          
+          pagesToProcess.sort((a, b) => a - b);
+        }
+        
+        // Extract text from PDF pages
         const textResult = await extractTextFromPdfPages(file.fileUrl, pagesToProcess, file.password);
 
         if (!textResult.success) {
@@ -891,7 +1206,7 @@ export async function processBulkExtraction(batchFiles, params, onProgress) {
           }
         }
 
-        // Add document text with clear separation
+        // Add document text with clear separation and metadata
         documentTexts.push(`
 ----- DOCUMENT INDEX: ${file.index} -----
 FILENAME: ${file.originalItem.file.name}
@@ -913,46 +1228,64 @@ ${Object.entries(textResult.textByPage).map(([pageNum, text]) =>
       onProgress(0.1 + 0.4 * ((batchFiles.indexOf(file) + 1) / batchFiles.length));
     }
 
-    // Now do a single API call for all documents
-    // (Split into chunks if too large)
-    const MAX_CHUNK_SIZE = 5000; // Characters per chunk
+    // Dynamic chunk size calculation based on total text volume and number of documents
+    const averageDocSize = documentTexts.reduce((sum, text) => sum + text.length, 0) / documentTexts.length;
+    const MAX_CHUNK_SIZE = Math.min(
+      // Smaller of these two values:
+      // 1. Size-based limit: Smaller chunks for larger documents
+      averageDocSize > 10000 ? 4000 : (averageDocSize > 5000 ? 6000 : 8000),
+      // 2. Count-based limit: Smaller chunks for more documents
+      batchFiles.length > 15 ? 3000 : (batchFiles.length > 8 ? 4000 : 8000)
+    );
+    
+    console.log(`Using dynamic chunk size of ${MAX_CHUNK_SIZE} characters (avg doc size: ${Math.round(averageDocSize)} chars)`);
+    
+    // Create chunks of document texts for processing
     const textChunks = [];
     let currentChunk = "";
+    let currentChunkDocCount = 0;
+    const MAX_DOCS_PER_CHUNK = 8; // Limit number of documents per chunk
 
     for (const docText of documentTexts) {
-      if (currentChunk.length + docText.length > MAX_CHUNK_SIZE) {
-        textChunks.push(currentChunk);
+      // Create a new chunk if adding this document would exceed size or doc count limits
+      if (currentChunk.length + docText.length > MAX_CHUNK_SIZE || currentChunkDocCount >= MAX_DOCS_PER_CHUNK) {
+        if (currentChunk.length > 0) {
+          textChunks.push(currentChunk);
+        }
         currentChunk = docText;
+        currentChunkDocCount = 1;
       } else {
         currentChunk += "\n\n" + docText;
+        currentChunkDocCount++;
       }
     }
 
     if (currentChunk.length > 0) {
       textChunks.push(currentChunk);
     }
-
+    
+    console.log(`Split into ${textChunks.length} chunks for processing`);
+    
+    // Enhanced extraction prompt with more detailed instructions
     const extractionPrompt = `
-    You are analyzing multiple bank statements (indexed from 0). For each document:
+    You are analyzing ${batchFiles.length} bank statements (indexed from 0). For each document:
     1. Identify which document index you're analyzing
-    2. Extract these details:
-      - Bank Name: The official name of the bank
-      - Account Number: The full account number
-      - Company Name: The name of the account holder
-      - Currency: The currency code used
-      - Statement Period: The date range covered in dd/mm/yyyy format strictly 
-      - Monthly Balances: Any balances for each month
+    2. Extract these details PRECISELY:
+      - Bank Name: The official name of the bank (e.g., "EQUITY BANK", "KCB", "I&M BANK")
+      - Account Number: The full account number without spaces (e.g., "1234567890")
+      - Currency: The currency code (KES, USD, GBP, EUR)
+      - Statement Period: The date range covered (e.g., "01/01/2024 - 31/01/2024" or "January 2024")
+      - Closing Balance: The ending balance for the period (number only)
 
     FORMAT YOUR RESPONSE as valid, parseable JSON objects, ONE OBJECT PER DOCUMENT:
 
       {
         "document_index": 0,
         "bank_name": "Example Bank",
-        "company_name": "Example Company",
         "account_number": "123456789",
         "currency": "USD",
         "statement_period": "Jan 2024 - Feb 2024",
-        "monthly_balances": []
+        "closing_balance": 1250.75
       }
 
       {
@@ -961,302 +1294,177 @@ ${Object.entries(textResult.textByPage).map(([pageNum, text]) =>
         ...
       }
 
-      IMPORTANT: Each JSON object must be complete and valid. Do not include any text outside of the JSON objects.
+      IMPORTANT: 
+      - Each JSON object must be complete and valid
+      - Do not include any explanatory text outside of the JSON objects
+      - If you can't determine a value, use null instead of making up data
+      - For currency codes, normalize to standard codes (KES, USD, GBP, EUR)
+      - Extract ONLY what you can see in the document, don't invent information
       `;
 
-
-    // Process each chunk
+    // Process each chunk with retry logic for API failures
+    let consecutiveErrors = 0;
+    let chunkResults = [];
     for (let i = 0; i < textChunks.length; i++) {
       try {
-        // Create an extraction model for this chunk
-        const extractionModel = genAI.getGenerativeModel({
-          model: EXTRACTION_MODEL,
-          generationConfig: {
-            temperature: 0.2,
-            topP: 0.8,
-            topK: 40,
-            maxOutputTokens: 8192,
-          },
-          safetySettings: [
-            {
-              category: HarmCategory.HARM_CATEGORY_HARASSMENT,
-              threshold: HarmBlockThreshold.BLOCK_NONE,
-            },
-            {
-              category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-              threshold: HarmBlockThreshold.BLOCK_NONE,
-            },
-            {
-              category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-              threshold: HarmBlockThreshold.BLOCK_NONE,
-            },
-            {
-              category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-              threshold: HarmBlockThreshold.BLOCK_NONE,
-            },
-          ],
-        });
-
-        // Define extraction prompt if not already defined
-
-
-        // Use extraction API with the extractionModel
-        const extractionResult = await extractionModel.generateContent([extractionPrompt, textChunks[i]]);
-        const responseText = extractionResult.response.text();
-
+        onProgress(0.5 + 0.4 * (i / textChunks.length));
+        
+        console.log(`Processing chunk ${i+1} of ${textChunks.length}`);
+        
+        // Rotate API key if we had failures to avoid rate limits
+        if (consecutiveErrors > 1) {
+          console.log("Rotating API key due to previous failures");
+          rotateApiKey();
+          consecutiveErrors = 0;
+        }
+        
+        const result = await extractionModel.generateContent([
+          extractionPrompt, 
+          textChunks[i]
+        ]);
+        
+        const responseText = result.response.text();
+        
         // Parse the results
-        const chunkResults = [];
+        try {
+          // First try: Look for a JSON array in the response
+          const jsonMatches = responseText.match(/\[\s*\{[\s\S]*\}\s*\]/g) || [];
 
-        // Look for JSON structures in the response
-        // The response should contain multiple JSON objects, one for each document
-        const jsonMatches = responseText.match(/\{[\s\S]*?\}/g) || [];
+          if (jsonMatches && jsonMatches.length > 0) {
+            const extractedData = JSON.parse(jsonMatches[0]);
 
-        for (let j = 0; j < jsonMatches.length; j++) {
-          try {
-            const parsedJson = JSON.parse(jsonMatches[j]);
-
-            // Find which document this result belongs to
-            const documentIndex = parsedJson.document_index || parsedJson.index || j;
-            const originalIndex = batchFiles.find(f => f.index === parseInt(parsedJson.document_index))?.index || j;
-
-            // Normalize the extracted data
-            const normalizedData = normalizeExtractedData(parsedJson, {
-              month: batchFiles[0].params?.month,
-              year: batchFiles[0].params?.year
-            });
-
-            chunkResults.push({
-              index: originalIndex,
-              success: true,
-              extractedData: normalizedData,
-              originalItem: batchFiles[originalIndex].originalItem
-            });
-          } catch (jsonError) {
-            console.error('Error parsing JSON for batch item:', jsonError);
-
-            // If parsing fails, add a failed result
-            chunkResults.push({
-              index: j,
-              success: false,
-              error: 'Failed to parse extraction results'
-            });
+            if (Array.isArray(extractedData)) {
+              console.log(`Successfully extracted ${extractedData.length} results from chunk ${i+1}`);
+              extractedData.forEach(item => chunkResults.push(item));
+              consecutiveErrors = 0; // Reset error counter on success
+            } else {
+              console.error("Response not in expected array format:", extractedData);
+              consecutiveErrors++;
+              
+              // If it's an object, try to use it directly
+              if (typeof extractedData === 'object' && extractedData !== null) {
+                chunkResults.push(extractedData);
+              }
+            }
+          } else {
+            console.error("No JSON array found in response");
+            consecutiveErrors++;
+            
+            // Second try: Look for individual JSON objects if array not found
+            const objectMatches = Array.from(responseText.matchAll(/\{\s*"document_index"[\s\S]*?\}/g));
+            if (objectMatches.length > 0) {
+              console.log(`Found ${objectMatches.length} individual JSON objects in response`);
+              
+              for (const match of objectMatches) {
+                try {
+                  const data = JSON.parse(match[0]);
+                  chunkResults.push(data);
+                } catch (err) {
+                  console.error("Error parsing individual object:", err);
+                }
+              }
+            }
           }
+        } catch (error) {
+          console.error("Error parsing extraction result:", error);
+          consecutiveErrors++;
         }
-
-        // If we didn't get results for all documents, add failed results
-        for (const file of batchFiles) {
-          if (!chunkResults.some(result => result.index === file.index)) {
-            chunkResults.push({
-              index: file.index,
-              success: false,
-              error: 'No extraction result found for this document'
-            });
-          }
-        }
-
-        allResults.push(...chunkResults);
       } catch (error) {
-        console.error(`Error processing chunk ${i + 1}:`, error);
+        console.error(`Error processing chunk ${i+1}:`, error);
+        consecutiveErrors++;
+        
+        // If we get an API error, rotate the key immediately
+        if (error.message && (
+            error.message.includes("429") || 
+            error.message.includes("quota") || 
+            error.message.includes("rate limit"))) {
+          console.log("API rate limit hit, rotating key immediately");
+          rotateApiKey();
+        }
       }
-
-      // Update progress
-      onProgress(0.5 + 0.4 * ((i + 1) / textChunks.length));
     }
-
-    // Return results with password-protected files if any
-    onProgress(1.0);
-
-    if (passwordProtectedFiles.length > 0) {
+    
+    // Combine and parse results
+    const extractionResults = parseExtractionResults(chunkResults.join('\n'), batchFiles);
+    
+    // Add file references to results
+    const resultsWithFiles = extractionResults.map(result => {
+      const file = batchFiles.find(f => f.index === result.document_index);
       return {
-        results: allResults,
-        passwordProtectedFiles
+        ...result,
+        file: file ? file.originalItem : null
       };
-    }
-
-    return allResults;
+    });
+    
+    onProgress(1.0);
+    return {
+      success: true,
+      results: resultsWithFiles,
+      passwordProtectedFiles
+    };
   } catch (error) {
-    console.error('Error in bulk document extraction:', error);
-    return batchFiles.map(file => ({
-      index: file.index,
+    console.error("Error in bulk extraction:", error);
+    onProgress(1.0);
+    return {
       success: false,
-      error: `Extraction failed: ${error.message}`,
-      originalItem: file.originalItem
-    }));
+      error: error.message,
+      results: [],
+      passwordProtectedFiles
+    };
   }
 }
 
-function parseExtractionResults(responseText, batchFiles) {
-  const results = [];
-
+// Parse extraction results from text response
+export function parseExtractionResults(responseText, batchFiles) {
   try {
-    console.log("Parsing API response...");
-
-    // Extract each complete JSON object using a better approach
-    let potentialJsonMatches = [];
-
-    // First try to find standard JSON objects with the document_index field
-    const standardRegex = /\{\s*"document_index"\s*:\s*\d+[\s\S]*?\}/g;
-    const standardMatches = responseText.match(standardRegex) || [];
-    console.log(`Found ${standardMatches.length} standard JSON objects`);
-    potentialJsonMatches.push(...standardMatches);
-
-    // If no standard matches found, try a more general approach
-    if (standardMatches.length === 0) {
-      const generalRegex = /\{[\s\S]*?\}/g;
-      const generalMatches = responseText.match(generalRegex) || [];
-      console.log(`Found ${generalMatches.length} general JSON objects`);
-      potentialJsonMatches.push(...generalMatches);
+    // First attempt: Try to parse directly
+    try {
+      // Replace consecutive JSON objects with array
+      const jsonArrayString = '[' + responseText.replace(/}\s*{/g, '},{') + ']';
+      return JSON.parse(jsonArrayString);
+    } catch (e) {
+      console.log("First parse attempt failed, trying individual JSON extraction:", e);
     }
+    
+    // Second attempt: Extract JSON objects one by one
+    const results = [];
+    const jsonRegex = /{[^}]*\}/g;
+    const matches = responseText.match(jsonRegex) || [];
 
-    // Process each potential JSON object
-    for (let i = 0; i < potentialJsonMatches.length; i++) {
-      const jsonStr = potentialJsonMatches[i];
-
+    for (let i = 0; i < matches.length; i++) {
       try {
-        // Try to clean up any invalid JSON
-        let jsonText = jsonStr.trim();
+        // Try to fix common JSON issues before parsing
+        const fixedJson = repairJsonString(matches[i]);
+        const parsedObj = JSON.parse(fixedJson);
         
-        // Try to parse directly first
-        try {
-          const parsedObj = JSON.parse(jsonText);
-          
-          // Skip if no document_index
-          if (parsedObj.document_index === undefined) {
-            // Try to infer document_index from position
-            parsedObj.document_index = i;
-          }
-          
-          // Find matching file
-          const matchingFile = batchFiles.find(file => file.index === parseInt(parsedObj.document_index));
-          
-          if (matchingFile) {
-            // Successfully matched and parsed
-            results.push({
-              index: parsedObj.document_index,
-              success: true,
-              extractedData: normalizeExtractedData(parsedObj, matchingFile.params || { month: 0, year: 0 }),
-              originalItem: matchingFile.originalItem
-            });
-            continue;
-          }
-        } catch (directParseError) {
-          // Direct parsing failed, try repair
+        // Validate required fields
+        if (parsedObj && typeof parsedObj.document_index !== 'undefined') {
+          results.push(parsedObj);
         }
-        
-        // Try to repair the JSON
-        const repairResult = repairJsonString(jsonText);
-        
-        if (repairResult.success) {
-          const parsedObj = repairResult.json;
-          
-          // Skip if no document_index
-          if (parsedObj.document_index === undefined) {
-            // Try to infer document_index from position
-            parsedObj.document_index = i;
-          }
-          
-          // Find matching file
-          const matchingFile = batchFiles.find(file => file.index === parseInt(parsedObj.document_index));
-          
-          if (matchingFile) {
-            // Successfully matched and parsed
-            results.push({
-              index: parsedObj.document_index,
-              success: true,
-              extractedData: normalizeExtractedData(parsedObj, matchingFile.params || { month: 0, year: 0 }),
-              originalItem: matchingFile.originalItem
-            });
-            continue;
-          }
-        }
-
-        // If we get here, both direct parsing and repair failed
-        // Attempt more advanced repair (for malformed JSON)
-        try {
-          // Try to extract the document_index directly with regex
-          const indexMatch = jsonStr.match(/"document_index"\s*:\s*(\d+)/);
-          if (indexMatch && indexMatch[1]) {
-            const docIndex = parseInt(indexMatch[1]);
-            const matchingFile = batchFiles.find(file => file.index === docIndex);
-
-            if (matchingFile) {
-              // Extract other fields with regex
-              const bankMatch = jsonStr.match(/"bank_name"\s*:\s*"([^"]+)"/);
-              const companyMatch = jsonStr.match(/"company_name"\s*:\s*"([^"]+)"/);
-              const accountMatch = jsonStr.match(/"account_number"\s*:\s*"([^"]+)"/);
-              const currencyMatch = jsonStr.match(/"currency"\s*:\s*"([^"]+)"/);
-              const periodMatch = jsonStr.match(/"statement_period"\s*:\s*"([^"]+)"/);
-
-              // Construct a partial result
-              const partialData = {
-                document_index: docIndex,
-                bank_name: bankMatch ? bankMatch[1] : null,
-                company_name: companyMatch ? companyMatch[1] : null,
-                account_number: accountMatch ? accountMatch[1] : null,
-                currency: currencyMatch ? currencyMatch[1] : null,
-                statement_period: periodMatch ? periodMatch[1] : null,
-                monthly_balances: []
-              };
-
-              // Add to results
-              results.push({
-                index: docIndex,
-                success: true,
-                extractedData: normalizeExtractedData(partialData, matchingFile.params || { month: 0, year: 0 }),
-                originalItem: matchingFile.originalItem
-              });
-            }
-          }
-        } catch (repairError) {
-          console.error("Failed to repair JSON:", repairError);
-        }
-      } catch (jsonError) {
-        console.error("Failed to parse JSON object:", jsonError);
-        console.log("Problematic JSON:", jsonStr.substring(0, 100) + "...");
+      } catch (parseErr) {
+        console.error("Failed to parse individual JSON object:", parseErr);
       }
     }
 
-    // If no results were parsed but we have batchFiles, try fallback extraction
-    if (results.length === 0 && batchFiles.length > 0) {
-      console.log("No valid JSON objects found, attempting fallback extraction");
-      
-      // Try to extract data for each file using regex patterns
-      for (const file of batchFiles) {
-        const fallbackData = extractFallbackData(responseText, file.params || { month: 0, year: 0 });
-        
-        if (fallbackData) {
-          results.push({
-            index: file.index,
-            success: true,
-            extractedData: fallbackData,
-            originalItem: file.originalItem
-          });
-        }
-      }
-    }
-
-    // Add errors for any missing files
+    // If we didn't get results for all documents, add failed results
     for (const file of batchFiles) {
-      if (!results.some(r => r.index === file.index)) {
+      if (!results.some(result => result.document_index === file.index)) {
         results.push({
-          index: file.index,
+          document_index: file.index,
           success: false,
-          error: 'Failed to extract data',
-          originalItem: file.originalItem
+          error: 'No extraction result found for this document'
         });
       }
     }
 
     return results;
   } catch (error) {
-    console.error('Error in parseExtractionResults:', error);
-
-    // Return failed results for all files
+    console.error("Error parsing extraction results:", error);
+    // Return empty default objects as last resort
     return batchFiles.map(file => ({
-      index: file.index,
+      document_index: file.index,
       success: false,
-      error: `Extraction failed: ${error.message}`,
-      originalItem: file.originalItem
+      error: 'Failed to parse extraction results'
     }));
   }
 }
@@ -1338,7 +1546,6 @@ async function verifyPdfIsUnlocked(file: File): Promise<boolean> {
     }
 }
 
-
 // Function to handle batch document extraction
 async function batchExtractDocuments(files, prompt) {
   try {
@@ -1403,45 +1610,28 @@ async function batchExtractDocuments(files, prompt) {
 
     // Look for JSON structures in the response
     // The response should contain multiple JSON objects, one for each document
-    const jsonMatches = responseText.match(/\{[\s\S]*?\}/g) || [];
+    const jsonMatches = responseText.match(/\{[^}]*\}/g) || [];
 
     for (let i = 0; i < jsonMatches.length; i++) {
       try {
-        const parsedJson = JSON.parse(jsonMatches[i]);
-
-        // Find which document this result belongs to
-        const documentIndex = parsedJson.document_index || parsedJson.index || i;
-        const originalIndex = files.find(f => f.index === parseInt(parsedJson.document_index))?.index || i;
-
-        // Normalize the extracted data
-        const normalizedData = normalizeExtractedData(parsedJson, {
-          month: files[0].params?.month,
-          year: files[0].params?.year
-        });
-
-        batchResults.push({
-          index: originalIndex,
-          success: true,
-          extractedData: normalizedData,
-          originalItem: files[originalIndex].originalItem
-        });
-      } catch (jsonError) {
-        console.error('Error parsing JSON for batch item:', jsonError);
-
-        // If parsing fails, add a failed result
-        batchResults.push({
-          index: i,
-          success: false,
-          error: 'Failed to parse extraction results'
-        });
+        // Try to fix common JSON issues before parsing
+        const fixedJson = repairJsonString(jsonMatches[i]);
+        const parsedObj = JSON.parse(fixedJson);
+        
+        // Validate required fields
+        if (parsedObj && typeof parsedObj.document_index !== 'undefined') {
+          batchResults.push(parsedObj);
+        }
+      } catch (parseErr) {
+        console.error("Failed to parse individual JSON object:", parseErr);
       }
     }
 
     // If we didn't get results for all documents, add failed results
     for (const file of files) {
-      if (!batchResults.some(result => result.index === file.index)) {
+      if (!batchResults.some(result => result.document_index === file.index)) {
         batchResults.push({
-          index: file.index,
+          document_index: file.index,
           success: false,
           error: 'No extraction result found for this document'
         });
@@ -1454,7 +1644,7 @@ async function batchExtractDocuments(files, prompt) {
 
     // Return failed results for all files
     return files.map(file => ({
-      index: file.index,
+      document_index: file.index,
       success: false,
       error: `Extraction failed: ${error.message}`
     }));
@@ -1615,7 +1805,7 @@ export async function isPdfPasswordProtected(file: File): Promise<boolean> {
     // Use PDF.js to try loading the document without a password
     const arrayBuffer = await file.arrayBuffer();
     const loadingTask = pdfjsLib.getDocument({
-      data: new Uint8Array(arrayBuffer)
+      data: arrayBuffer
     });
 
     try {
@@ -1808,3 +1998,273 @@ async function unlockPDF(fileBuffer: ArrayBuffer, password: string) {
     throw error;
   }
 }
+
+// Normalize the extracted data
+async function normalizeExtractedData(extractedData, params = {}, supabase = null) {
+  const deepCopy = JSON.parse(JSON.stringify(extractedData));
+  
+  try {
+    console.log('Normalizing extracted data', { 
+      input: extractedData, 
+      hasAccountNumber: !!extractedData?.account_number 
+    });
+    
+    // Use account number to look up bank name if available
+    let bankNameSource = 'none';
+    
+    if (extractedData.account_number && supabase) {
+      try {
+        console.log('Looking up bank name from account number:', extractedData.account_number);
+        const bankDetails = await matchBankFromAccountNumber(extractedData.account_number, supabase);
+        
+        if (bankDetails && bankDetails.bank_name) {
+          console.log(`Found bank name from database: ${bankDetails.bank_name}`);
+          extractedData.bank_name = bankDetails.bank_name;
+          bankNameSource = 'database';
+        } else {
+          console.log('No matching bank found in database for account:', extractedData.account_number);
+        }
+      } catch (bankLookupError) {
+        console.error('Error looking up bank from account number:', bankLookupError);
+      }
+    }
+    
+    // Normalize to proper format even if we got from database
+    if (extractedData.bank_name && typeof extractedData.bank_name === 'string') {
+      // Replace placeholder text like "Bank Name" with null
+      if (/bank\s+name/i.test(extractedData.bank_name)) {
+        extractedData.bank_name = null;
+      } 
+      // Apply other normalizations even if we have a bank name from database
+      else {
+        const origBankName = extractedData.bank_name;
+        extractedData.bank_name = normalizeText(extractedData.bank_name);
+        
+        // Track source only if we haven't set it already
+        if (bankNameSource === 'none' && extractedData.bank_name !== origBankName) {
+          bankNameSource = 'normalized';
+        } else if (bankNameSource === 'none') {
+          bankNameSource = 'extraction';
+        }
+      }
+    }
+    
+    // Add the source tracking for bank name
+    extractedData.bank_name_source = bankNameSource;
+    
+    // Continue with other normalizations...
+    if (extractedData.account_number && typeof extractedData.account_number === 'string') {
+      // Replace placeholder texts
+      if (/account\s+number/i.test(extractedData.account_number)) {
+        extractedData.account_number = null;
+      } else {
+        // Normalize account number - keep only digits and dashes
+        extractedData.account_number = extractedData.account_number
+          .replace(/[^\d-]/g, '') // Remove everything except digits and dashes
+          .replace(/\-+/g, '-'); // Normalize multiple dashes to single dash
+      }
+    }
+    
+    // Currency normalization
+    if (extractedData.currency && typeof extractedData.currency === 'string') {
+      if (/currency/i.test(extractedData.currency)) {
+        extractedData.currency = null;
+      } else {
+        extractedData.currency = normalizeText(extractedData.currency);
+      }
+    }
+    
+    // Statement period handling
+    if (extractedData.statement_period && typeof extractedData.statement_period === 'string') {
+      if (/statement\s+period/i.test(extractedData.statement_period)) {
+        extractedData.statement_period = null;
+      } else {
+        extractedData.statement_period = normalizeText(extractedData.statement_period);
+      }
+    }
+    
+    // Helper function to process monthly balances
+    const processMonthlyBalances = () => {
+      const balances = Array.isArray(extractedData.monthly_balances)
+        ? extractedData.monthly_balances.map(balance => ({
+          month: balance.month,
+          year: balance.year,
+          closing_balance: typeof balance.closing_balance === 'number' 
+            ? balance.closing_balance 
+            : parseCurrencyAmount(balance.closing_balance),
+          opening_balance: typeof balance.opening_balance === 'number'
+            ? balance.opening_balance
+            : parseCurrencyAmount(balance.opening_balance),
+          statement_page: balance.statement_page || 1,
+          highlight_coordinates: balance.highlight_coordinates || null,
+          is_verified: balance.is_verified || false,
+          verified_by: balance.verified_by || null,
+          verified_at: balance.verified_at || null
+        }))
+        : [];
+
+      // Ensure we have at least the current month in the balances if params are provided
+      if (params.month && params.year) {
+        const hasCurrentMonth = balances.some(
+          balance => balance.month === params.month && balance.year === params.year
+        );
+
+        if (!hasCurrentMonth) {
+          balances.push({
+            month: params.month,
+            year: params.year,
+            closing_balance: parseCurrencyAmount(extractedData.closing_balance),
+            opening_balance: parseCurrencyAmount(extractedData.opening_balance),
+            statement_page: 1,
+            highlight_coordinates: null,
+            is_verified: false,
+            verified_by: null,
+            verified_at: null
+          });
+        }
+      }
+
+      return balances;
+    };
+    
+    // Create the normalized structure to return
+    const normalizedData = {
+      bank_name: extractedData.bank_name || null,
+      company_name: extractedData.company_name || null,
+      account_number: extractedData.account_number || null,
+      currency: extractedData.currency || 'KES',
+      statement_period: extractedData.statement_period || null,
+      closing_balance: parseCurrencyAmount(extractedData.closing_balance),
+      opening_balance: parseCurrencyAmount(extractedData.opening_balance),
+      monthly_balances: processMonthlyBalances(),
+      bank_name_source: bankNameSource
+    };
+    
+    console.log('Normalized data', { 
+      normalized: normalizedData,
+      bankNameSource: normalizedData.bank_name_source
+    });
+    
+    return normalizedData;
+  } catch (error) {
+    console.error('Error in normalizeExtractedData:', error);
+    return deepCopy; // Return the original data as a fallback
+  }
+}
+
+// Helper function to match bank from account number using Supabase data
+async function matchBankFromAccountNumber(accountNumber, supabase) {
+  if (!accountNumber || !supabase) return null;
+  
+  try {
+    console.log(`Attempting to match account number: ${accountNumber}`);
+    
+    // Query existing bank accounts from the database
+    const { data: bankAccounts, error } = await supabase
+      .from('acc_portal_banks')
+      .select('id, bank_name, account_number')
+      .order('created_at', { ascending: false });
+    
+    if (error) {
+      console.error('Error fetching bank accounts:', error);
+      return null;
+    }
+    
+    if (!bankAccounts || bankAccounts.length === 0) {
+      console.log('No bank accounts found in database');
+      return null;
+    }
+    
+    console.log(`Found ${bankAccounts.length} bank accounts in database`);
+    
+    // Clean the input account number - remove all non-digits
+    const cleanAccountNumber = accountNumber.toString().replace(/\D/g, '');
+    console.log(`Cleaned account number: ${cleanAccountNumber}`);
+    
+    // Try multiple matching strategies in order of priority
+    
+    // 1. Exact match (highest confidence)
+    const exactMatch = bankAccounts.find(bank => 
+      bank.account_number && bank.account_number.replace(/\D/g, '') === cleanAccountNumber
+    );
+    
+    if (exactMatch) {
+      console.log(`Found exact account number match: ${exactMatch.bank_name}`);
+      return exactMatch.bank_name;
+    }
+    
+    // 2. Contained match (account number contains or is contained in DB record)
+    const containsMatch = bankAccounts.find(bank => {
+      if (!bank.account_number) return false;
+      const cleanBankAccountNumber = bank.account_number.replace(/\D/g, '');
+      return cleanBankAccountNumber.includes(cleanAccountNumber) || 
+             cleanAccountNumber.includes(cleanBankAccountNumber);
+    });
+    
+    if (containsMatch) {
+      console.log(`Found contains match for account number: ${containsMatch.bank_name}`);
+      return containsMatch.bank_name;
+    }
+    
+    // 3. Last digits match (common in statements that show partial numbers)
+    if (cleanAccountNumber.length >= 4) {
+      // Try last 4 digits
+      const lastFourDigits = cleanAccountNumber.slice(-4);
+      const partialMatch = bankAccounts.find(bank => 
+        bank.account_number && bank.account_number.replace(/\D/g, '').slice(-4) === lastFourDigits
+      );
+      
+      if (partialMatch) {
+        console.log(`Found partial account number match (last 4 digits): ${partialMatch.bank_name}`);
+        return partialMatch.bank_name;
+      }
+      
+      // Try last 6 digits for longer account numbers
+      if (cleanAccountNumber.length >= 6) {
+        const lastSixDigits = cleanAccountNumber.slice(-6);
+        const sixDigitMatch = bankAccounts.find(bank => 
+          bank.account_number && bank.account_number.replace(/\D/g, '').slice(-6) === lastSixDigits
+        );
+        
+        if (sixDigitMatch) {
+          console.log(`Found partial account number match (last 6 digits): ${sixDigitMatch.bank_name}`);
+          return sixDigitMatch.bank_name;
+        }
+      }
+    }
+    
+    // 4. First digits match (bank identification prefix)
+    if (cleanAccountNumber.length >= 4) {
+      // Try first 4-6 digits (common bank prefixes)
+      for (let prefixLength = 6; prefixLength >= 4; prefixLength--) {
+        if (cleanAccountNumber.length >= prefixLength) {
+          const prefix = cleanAccountNumber.substring(0, prefixLength);
+          const prefixMatch = bankAccounts.find(bank => {
+            const bankCleanNumber = bank.account_number?.replace(/\D/g, '') || '';
+            return bankCleanNumber.length >= prefixLength && 
+                   bankCleanNumber.substring(0, prefixLength) === prefix;
+          });
+          
+          if (prefixMatch) {
+            console.log(`Found bank prefix match (first ${prefixLength} digits): ${prefixMatch.bank_name}`);
+            return prefixMatch.bank_name;
+          }
+        }
+      }
+    }
+    
+    console.log('No matching bank account found in database after trying all methods');
+    return null;
+  } catch (error) {
+    console.error('Error matching bank from account number:', error);
+    return null;
+  }
+}
+
+// Dynamic import for canvas in Node.js environment
+const getCanvas = async () => {
+  if (typeof window === 'undefined') {
+    return require('canvas');
+  }
+  return require('canvas-browserify');
+};

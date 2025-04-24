@@ -45,7 +45,7 @@ import {
 import { BankReconciliationTable } from './BankReconciliationTable'
 import { useStatementCycle } from '../hooks/useStatementCycle'
 import { BankStatementFilters } from './components/BankStatementFilters'
-import { BankStatementBulkUploadDialog } from './components/BankStatementBulkUploadDialog'
+import { BankStatementBulkUploadDialog } from './components/BulkUpload/page'
 
 export default function BankReconciliationPage() {
     const [activeTab, setActiveTab] = useState<string>('statements')

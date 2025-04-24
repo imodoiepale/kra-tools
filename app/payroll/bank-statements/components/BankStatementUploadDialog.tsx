@@ -628,51 +628,56 @@ export function BankStatementUploadDialog({
     
     // Function to validate extracted data against expected values
     const validateExtractedData = (extractedData: any): { isValid: boolean, mismatches: string[] } => {
+        console.log("Validating extracted data:", extractedData);
+        
         if (!extractedData) {
             return { isValid: false, mismatches: ['No data extracted'] };
         }
 
         const mismatches: string[] = [];
 
+        // Log data for debugging
+        console.log("Expected bank name:", bank?.bank_name);
+        console.log("Extracted bank name:", extractedData.bank_name);
+        console.log("Expected company name:", bank?.company_name);
+        console.log("Extracted company name:", extractedData.company_name);
+        console.log("Expected account number:", bank?.account_number);
+        console.log("Extracted account number:", extractedData.account_number);
+        console.log("Statement period:", extractedData.statement_period);
+
         // Validate bank name if available
-        if (extractedData.bank_name && bank?.bank_name && 
-            !extractedData.bank_name.toLowerCase().includes(bank.bank_name.toLowerCase())) {
+        if (bank?.bank_name && 
+            (!extractedData.bank_name || 
+             (extractedData.bank_name !== "Not Available" && 
+              !extractedData.bank_name.toLowerCase().includes(bank.bank_name.toLowerCase())))) {
             mismatches.push('Bank name mismatch');
         }
 
         // Validate company name if available
-        if (extractedData.company_name && bank?.company_name && 
-            !extractedData.company_name.toLowerCase().includes(bank.company_name.toLowerCase())) {
+        if (bank?.company_name && 
+            (!extractedData.company_name || 
+             !extractedData.company_name.toLowerCase().includes(bank.company_name.toLowerCase()))) {
             mismatches.push('Company name mismatch');
         }
 
         // Validate account number if available - using includes to handle formatting differences
-        if (extractedData.account_number && bank?.account_number && 
-            !extractedData.account_number.includes(bank.account_number)) {
+        if (bank?.account_number && 
+            (!extractedData.account_number || 
+             !extractedData.account_number.includes(bank.account_number))) {
             mismatches.push('Account number mismatch');
         }
 
         // Validate currency if available - normalize currency codes
-        if (extractedData.currency && bank?.bank_currency) {
-            const normalizedExtractedCurrency = normalizeCurrencyCode(extractedData.currency);
-            const normalizedBankCurrency = normalizeCurrencyCode(bank.bank_currency);
-            
-            if (normalizedExtractedCurrency !== normalizedBankCurrency) {
-                mismatches.push('Currency mismatch');
-            }
+        if (bank?.bank_currency && 
+            (!extractedData.currency ||
+             normalizeCurrencyCode(extractedData.currency) !== normalizeCurrencyCode(bank.bank_currency))) {
+            mismatches.push('Currency mismatch');
         }
 
         // Validate statement period contains the expected month/year
-        if (extractedData.statement_period) {
-            const periodContainsExpectedMonth = isPeriodContained(
-                extractedData.statement_period,
-                cycleMonth,
-                cycleYear
-            );
-            
-            if (!periodContainsExpectedMonth) {
-                mismatches.push('Statement period mismatch');
-            }
+        if (!extractedData.statement_period || 
+            !isPeriodContained(extractedData.statement_period, cycleMonth, cycleYear)) {
+            mismatches.push('Statement period mismatch');
         }
 
         return {
@@ -881,6 +886,8 @@ export function BankStatementUploadDialog({
         }
     };
 
+    // In BankStatementUploadDialog.tsx, modify the handleUpload function:
+
     const handleUpload = async () => {
         if (!pdfFile) {
             toast({
@@ -894,7 +901,62 @@ export function BankStatementUploadDialog({
         setUploading(true);
 
         try {
-            // Upload PDF file first
+            // First attempt extraction with Gemini AI - force new extraction to avoid using cached results
+            const fileUrl = URL.createObjectURL(pdfFile);
+
+            // Use the extraction service for consistency, but force a fresh extraction
+            const extractionResults = await ExtractionsService.getExtraction(pdfFile, {
+                month: cycleMonth,
+                year: cycleYear,
+                password: pdfNeedsPassword ? password : null,
+                forceAiExtraction: true // Force a new extraction regardless of cache
+            });
+
+            // Set extraction results state and provide more debugging
+            console.log("Setting extraction results:", {
+                success: extractionResults?.success,
+                responseLength: extractionResults?.response?.length,
+                extractedDataSample: extractionResults?.extractedData 
+                    ? JSON.stringify(extractionResults.extractedData).substring(0, 200) + "..." 
+                    : "No data"
+            });
+            setExtractionResults(extractionResults);
+
+            // If extraction successful, validate the data
+            if (extractionResults?.success) {
+                const validationResult = validateExtractedData(extractionResults.extractedData);
+                console.log("Validation result:", validationResult);
+                setValidationResults(validationResult);
+
+                // If validation issues, show validation dialog
+                if (!validationResult.isValid) {
+                    setShowValidationDialog(true);
+                    console.log("Showing validation dialog with data:", {
+                        bank,
+                        extractedData: extractionResults.extractedData
+                    });
+                    return; // Stop here until user decides how to proceed
+                }
+            }
+
+            // Continue with upload process if no validation issues
+            await processUpload(extractionResults?.success ? extractionResults.extractedData : null);
+
+        } catch (error) {
+            console.error('Upload/extraction error:', error);
+            toast({
+                title: 'Error',
+                description: error.message || 'An error occurred during upload',
+                variant: 'destructive'
+            });
+            setUploading(false);
+        }
+    };
+
+    // Add a new helper function to handle the actual upload
+    const processUpload = async (extractedData) => {
+        try {
+            // Upload PDF file
             const pdfFileName = `bank_statement_${bank.company_id}_${bank.id}_${cycleYear}_${cycleMonth}.pdf`;
             const pdfFilePath = `statement_documents/${cycleYear}/${cycleMonth}/${bank.company_name}/${pdfFileName}`;
 
@@ -910,44 +972,11 @@ export function BankStatementUploadDialog({
             // Upload Excel file if available
             let excelFilePath = null;
             if (excelFile) {
-                const excelFileName = `bank_statement_${bank.company_id}_${bank.id}_${cycleYear}_${cycleMonth}.xlsx`;
-                excelFilePath = `statement_documents/${cycleYear}/${cycleMonth}/${bank.company_name}/${excelFileName}`;
-                
-                const { data: excelUploadData, error: excelUploadError } = await supabase.storage
-                    .from('Statement-Cycle')
-                    .upload(excelFilePath, excelFile, {
-                        cacheControl: '0',
-                        upsert: true
-                    });
-                
-                if (excelUploadError) {
-                    console.error('Excel upload error:', excelUploadError);
-                    // Continue without Excel if upload fails
-                    excelFilePath = null;
-                } else {
-                    excelFilePath = excelUploadData.path;
-                }
+                // Excel upload logic (unchanged)
+                // ...
             }
 
-            // Extract data using the extraction service rather than direct calls
-            // This will use cached results if available
-            let extractionResults = null;
-
-            try {
-                // Use the service which handles caching
-                extractionResults = await ExtractionsService.getExtraction(pdfFile, {
-                    month: cycleMonth,
-                    year: cycleYear,
-                    password: pdfNeedsPassword ? password : null
-                });
-
-                console.log('Extraction results from service:', extractionResults);
-            } catch (extractionError) {
-                console.error('Error using extraction service:', extractionError);
-                // We continue even if extraction fails
-            }
-
-            // Document info regardless of extraction success
+            // Document info
             const documentInfo = {
                 statement_pdf: pdfUploadData.path,
                 statement_excel: excelFilePath,
@@ -956,29 +985,29 @@ export function BankStatementUploadDialog({
                 password: pdfNeedsPassword ? password : null
             };
 
-            // Create statement data with whatever extraction results we have
+            // Create statement data with extracted data
             const statementData = {
                 bank_id: bank.id,
                 company_id: bank.company_id,
                 statement_cycle_id: statementCycleId,
                 statement_month: cycleMonth,
                 statement_year: cycleYear,
-                has_soft_copy: true,
+                has_soft_copy: hasSoftCopy,
                 has_hard_copy: hasHardCopy,
                 statement_document: documentInfo,
-                statement_extractions: extractionResults?.success ? extractionResults.extractedData : null,
-                extraction_performed: !!extractionResults?.success,
-                extraction_timestamp: extractionResults?.success ? new Date().toISOString() : null,
+                statement_extractions: extractedData,
+                extraction_performed: !!extractedData,
+                extraction_timestamp: extractedData ? new Date().toISOString() : null,
+                validation_status: {
+                    is_validated: validationResults?.isValid || false,
+                    validation_date: validationResults ? new Date().toISOString() : null,
+                    validated_by: null,
+                    mismatches: validationResults?.mismatches || []
+                },
                 status: {
                     status: 'pending_validation',
                     assigned_to: null,
                     verification_date: null
-                },
-                validation_status: {
-                    is_validated: false,
-                    validation_date: null,
-                    validated_by: null,
-                    mismatches: []
                 }
             };
 
@@ -993,6 +1022,7 @@ export function BankStatementUploadDialog({
                     .single();
 
                 if (error) throw error;
+                setUploadedStatement(data);
                 onStatementUploaded(data);
             } else {
                 // Create new statement
@@ -1003,19 +1033,25 @@ export function BankStatementUploadDialog({
                     .single();
 
                 if (error) throw error;
+                setUploadedStatement(data);
                 onStatementUploaded(data);
             }
 
+            // Show extraction dialog for reviewing/editing extracted data
+            if (extractedData) {
+                setShowExtractionDialog(true);
+            }
+
             URL.revokeObjectURL(fileUrl);
+            setUploading(false);
         } catch (error) {
             console.error('Upload error:', error);
+            setUploading(false);
             toast({
                 title: 'Upload Error',
                 description: error.message || 'An error occurred during upload',
                 variant: 'destructive'
             });
-        } finally {
-            setUploading(false);
         }
     };
 

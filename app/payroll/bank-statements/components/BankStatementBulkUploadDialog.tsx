@@ -1968,8 +1968,8 @@ export function BankStatementBulkUploadDialog({
         try {
             // Upload file to storage
             const bank = item.matchedBank;
-            const pdfFileName = `bank_statement_${bank.company_id || 'unknown'}_${bank.id || 'unknown'}_${cycleYear}_${cycleMonth}.pdf`;
-            const pdfFilePath = `statement_documents/${cycleYear}/${cycleMonth}/${bank.company_name || 'unknown'}/${pdfFileName}`;
+            const pdfFileName = `bank_statement_${bank.company_id || 'unknown'}_${bank.id || 'unknown'}_${cycleYear}_${cycleMonth === 0 ? 1 : cycleMonth}.pdf`;
+            const pdfFilePath = `statement_documents/${cycleYear}/${cycleMonth === 0 ? 1 : cycleMonth}/${bank.company_name || 'unknown'}/${pdfFileName}`;
 
             // Only upload if we haven't uploaded this file before
             let pdfPath = item.uploadedPdfPath;
@@ -2024,7 +2024,7 @@ export function BankStatementBulkUploadDialog({
                 bank_id: bank.id,
                 company_id: bank.company_id,
                 statement_cycle_id: localCycleId,
-                statement_month: cycleMonth,
+                statement_month: cycleMonth === 0 ? 1 : cycleMonth,
                 statement_year: cycleYear,
                 statement_type: statementType,
                 has_soft_copy: item.hasSoftCopy !== undefined ? item.hasSoftCopy : true,
@@ -2059,7 +2059,7 @@ export function BankStatementBulkUploadDialog({
                 .from('acc_cycle_bank_statements')
                 .select('id')
                 .eq('bank_id', bank.id)
-                .eq('statement_month', cycleMonth)
+                .eq('statement_month', cycleMonth === 0 ? 1 : cycleMonth)
                 .eq('statement_year', cycleYear);
 
             if (existingError) {
@@ -2082,9 +2082,9 @@ export function BankStatementBulkUploadDialog({
                     const { data: newCycle, error: newCycleError } = await supabase
                         .from('statement_cycles')
                         .insert({
-                            cycle_month: cycleMonth,
+                            cycle_month: cycleMonth === 0 ? 1 : cycleMonth,
                             cycle_year: cycleYear,
-                            month_year: `${cycleYear}-${(cycleMonth + 1).toString().padStart(2, '0')}`,
+                            month_year: `${cycleYear}-${(cycleMonth === 0 ? 1 : cycleMonth).toString().padStart(2, '0')}`,
                             status: 'active',
                             created_by: null
                         })
@@ -2108,9 +2108,9 @@ export function BankStatementBulkUploadDialog({
                 const { data: newCycle, error: newCycleError } = await supabase
                     .from('statement_cycles')
                     .insert({
-                        cycle_month: cycleMonth,
+                        cycle_month: cycleMonth === 0 ? 1 : cycleMonth,
                         cycle_year: cycleYear,
-                        month_year: `${cycleYear}-${(cycleMonth + 1).toString().padStart(2, '0')}`,
+                        month_year: `${cycleYear}-${(cycleMonth === 0 ? 1 : cycleMonth).toString().padStart(2, '0')}`,
                         status: 'active',
                         created_by: null
                     })
@@ -2133,7 +2133,7 @@ export function BankStatementBulkUploadDialog({
             let statementResponse;
             if (existingStatements && existingStatements.length > 0) {
                 // Update existing statement
-                console.log(`Updating existing statement for ${bank.bank_name} (${cycleMonth}/${cycleYear})`);
+                console.log(`Updating existing statement for ${bank.bank_name} (${cycleMonth === 0 ? 1 : cycleMonth}/${cycleYear})`);
                 statementResponse = await supabase
                     .from('acc_cycle_bank_statements')
                     .update(statementData)
@@ -2141,7 +2141,7 @@ export function BankStatementBulkUploadDialog({
                     .select();
             } else {
                 // Insert new statement
-                console.log(`Creating new statement for ${bank.bank_name} (${cycleMonth}/${cycleYear})`);
+                console.log(`Creating new statement for ${bank.bank_name} (${cycleMonth === 0 ? 1 : cycleMonth}/${cycleYear})`);
                 statementResponse = await supabase
                     .from('acc_cycle_bank_statements')
                     .insert(statementData)
@@ -2189,31 +2189,35 @@ export function BankStatementBulkUploadDialog({
             });
             // Add this after updating the uploadItems state
             if (extractionResults?.success) {
-    // Make sure we have a statement with an ID before showing the dialog
-    if (createdStatement && createdStatement.id) {
-        console.log('Setting uploaded statement with ID:', createdStatement.id);
-        
-        // Update the statement with the extracted data
-        const statementWithExtraction = {
-            ...createdStatement,
-            statement_extractions: extractionResults.extractedData
-        };
-        
-        // Store the updated statement and show the extraction dialog
-        setUploadedStatement(statementWithExtraction);
-        
-        // You might not need to immediately show the dialog here
-        // if it's handled elsewhere in your component flow
-        // setShowExtractionDialog(true);
-    } else {
-        console.error('Created statement is missing ID', createdStatement);
-        toast({
-            title: 'Warning',
-            description: 'Statement created but ID is missing. Refresh may be required.',
-            variant: 'warning'
-        });
-    }
-}
+                // Make sure we have a statement with an ID before showing the dialog
+                if (createdStatement && createdStatement.id) {
+                    console.log('Setting uploaded statement with ID:', createdStatement.id);
+                    console.log('PDF path being passed to extraction dialog:', pdfPath);
+                    
+                    // Create a clean statement object with PDF path explicitly included
+                    const statementWithExtraction = {
+                        ...createdStatement,
+                        statement_extractions: extractionResults.extractedData,
+                        statement_document: {
+                            ...statementDocumentInfo,
+                            statement_pdf: pdfPath // Ensure the PDF path is correctly passed
+                        }
+                    };
+                    
+                    // Store the updated statement and show the extraction dialog
+                    setUploadedStatement(statementWithExtraction);
+                    
+                    // Show the extraction dialog after successful upload and extraction
+                    setShowExtractionDialog(true);
+                } else {
+                    console.error('Created statement is missing ID', createdStatement);
+                    toast({
+                        title: 'Warning',
+                        description: 'Statement created but ID is missing. Refresh may be required.',
+                        variant: 'warning'
+                    });
+                }
+            }
 
             return createdStatement;
         } catch (error) {
@@ -2986,7 +2990,7 @@ export function BankStatementBulkUploadDialog({
                                                                                 </TableCell>
                                                                                 <TableCell>
                                                                                     {statement.extractedData?.statement_period ||
-                                                                                        format(new Date(cycleYear, cycleMonth), 'MMMM yyyy')}
+                                                                                        format(new Date(cycleYear, cycleMonth, 1), 'MMMM yyyy')}
                                                                                 </TableCell>
                                                                                 <TableCell>
                                                                                     {statement.extractedData?.closing_balance?.toLocaleString() || '-'}
@@ -3483,7 +3487,7 @@ export function BankStatementBulkUploadDialog({
                 onConfirm={handleCycleConfirmation}
                 statementPeriod={processingFiles.length > 0 && processingFiles[0].extractedData?.statement_period
                     ? processingFiles[0].extractedData.statement_period
-                    : `${cycleMonth + 1}/${cycleYear}`}
+                    : `${cycleMonth === 0 ? 1 : cycleMonth}/${cycleYear}`}
                 existingCycles={detectedCycles.existing}
                 newCyclesToCreate={detectedCycles.toCreate}
                 banks={availableBanks}

@@ -553,7 +553,10 @@ export function BankExtractionDialog({
     useEffect(() => {
         const loadPdfDocument = async () => {
             if (!isOpen) return;
+            
+            // Early exit if no statement document is available
             if (!statement?.statement_document?.statement_pdf) {
+                console.log('No PDF file available for this statement');
                 setLoading(false);
                 setPdfLoading(false);
                 return;
@@ -571,49 +574,102 @@ export function BankExtractionDialog({
 
                 // Try to load the PDF document to check if it's accessible
                 try {
+                    // Initialize PDF.js worker if not already initialized
+                    if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
+                        pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+                    }
+                    
                     const pdfLoadingTask = pdfjsLib.getDocument({
                         url: publicUrl,
                         password: pdfPassword || null
                     });
-                    const pdfDoc = await pdfLoadingTask.promise;
+                    
+                    // Create a timeout promise to catch hanging loads
+                    const timeoutPromise = new Promise((_, reject) => {
+                        setTimeout(() => reject(new Error('PDF loading timed out after 15 seconds')), 15000);
+                    });
+                    
+                    // Race between the PDF loading and timeout
+                    const pdfDoc = await Promise.race([
+                        pdfLoadingTask.promise,
+                        timeoutPromise
+                    ]) as PDFDocumentProxy;
+                    
                     setPdfDocument(pdfDoc);
                     setTotalPages(pdfDoc.numPages);
                     setPdfNeedsPassword(false);
-                } catch (pdfError) {
-                    console.error('Error loading PDF document:', pdfError);
-                    if (pdfError.name === 'PasswordException') {
+                    
+                    // Render first page immediately
+                    if (pdfDoc) {
+                        renderPage(1, pdfDoc);
+                    }
+                    
+                    // Initialize rendered pages array
+                    setRenderedPages(Array(pdfDoc.numPages).fill(false));
+                    setAllPagesRendered(Array(pdfDoc.numPages).fill(false));
+                    setRenderedPageCanvases(Array(pdfDoc.numPages).fill(null));
+                    
+                    // Set document size if available
+                    if (statement?.statement_document?.document_size) {
+                        const sizeInKB = Math.round(statement.statement_document.document_size / 1024);
+                        setDocumentSizeKB(sizeInKB);
+                    }
+                    
+                    // Extract text from first page for analysis
+                    extractTextFromPage(1, pdfDoc);
+                    
+                    setPdfLoading(false);
+                    setLoading(false);
+                } catch (pdfError: any) {
+                    console.error('PDF loading error:', pdfError);
+                    
+                    // Check if this is a password required error
+                    if (pdfError.name === 'PasswordException' || 
+                        (pdfError.message && pdfError.message.includes('password'))) {
                         setPdfNeedsPassword(true);
                         setShowPasswordDialog(true);
+                    } else {
+                        setPdfError(pdfError.message || 'Failed to load PDF');
                     }
+                    
+                    setPdfLoading(false);
+                    setLoading(false);
                 }
-
-                setLoading(false);
+            } catch (error: any) {
+                console.error('Error in PDF loading process:', error);
+                setPdfError(error.message || 'Failed to process PDF');
                 setPdfLoading(false);
-            } catch (error) {
-                console.error('Error setting PDF URL:', error);
-                toast({
-                    title: 'Error',
-                    description: 'Failed to load PDF document',
-                    variant: 'destructive'
-                });
                 setLoading(false);
-                setPdfLoading(false);
             }
         };
 
-        if (isOpen) {
-            loadPdfDocument();
+        loadPdfDocument();
+    }, [isOpen, statement, pdfPassword]);
+
+    // Function to update the PDF viewer component to show PDF immediately after upload
+    const updatePdfViewer = () => {
+        if (!statement?.statement_document?.statement_pdf) {
+            console.log('No PDF file available for viewing');
+            return;
         }
+        
+        // Construct the public URL for viewing
+        const pdfStoragePath = statement.statement_document.statement_pdf;
+        const publicUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/Statement-Cycle/${pdfStoragePath}`;
+        
+        console.log('Setting PDF URL for viewing:', publicUrl);
+        setPdfUrl(publicUrl);
 
-        return () => {
-            if (pdfUrl) {
-                URL.revokeObjectURL(pdfUrl);
-            }
-            setLoading(true);
-            setPdfLoading(true);
-            setPdfUrl(null);
-        };
-    }, [isOpen, statement?.statement_document?.statement_pdf, pdfPassword]);
+        // Set PDF loading to false to indicate it's ready for viewing
+        setPdfLoading(false);
+    };
+
+    // Call updatePdfViewer whenever the statement document changes
+    useEffect(() => {
+        if (isOpen && statement?.statement_document?.statement_pdf) {
+            updatePdfViewer();
+        }
+    }, [isOpen, statement?.statement_document?.statement_pdf]);
 
     function onDocumentLoadSuccess({ numPages }) {
         console.log('PDF loaded successfully with', numPages, 'pages');
@@ -965,7 +1021,7 @@ export function BankExtractionDialog({
                             .eq('bank_id', statement.bank_id)
                             .eq('statement_month', statement.statement_month)
                             .eq('statement_year', statement.statement_year)
-                            .single();
+                            .maybeSingle();
                         
                         if (error) throw error;
                         
@@ -1700,108 +1756,72 @@ export function BankExtractionDialog({
         return formattedWholePart + decimalPart;
     };
 
-    const handlePasswordSubmit = async (passwordToTry: string) => {
+    const handleViewPasswordSubmit = async (event) => {
+        event.preventDefault();
         setApplyingPassword(true);
+        
         try {
             if (!pdfUrl) {
                 throw new Error('No PDF URL available');
             }
-
-            const loadingTask = pdfjsLib.getDocument({
-                url: pdfUrl,
-                password: passwordToTry
-            });
-
-            const pdf = await loadingTask.promise;
-            setPdfDocument(pdf);
-            setTotalPages(pdf.numPages);
-            setPassword(passwordToTry);
-            setCurrentPassword(passwordToTry);
-            setPdfNeedsPassword(false);
-            setPasswordApplied(true);
-            setShowPasswordDialog(false);
-
-            // Initialize arrays and render pages
-            setAllPagesRendered(new Array(pdf.numPages).fill(false));
-            setRenderedPageCanvases(new Array(pdf.numPages).fill(null));
-            await renderAllPages(pdf);
-
-            toast({
-                title: 'Success',
-                description: 'Password applied successfully',
-                variant: 'default'
-            });
-        } catch (error) {
-            console.error('Password application error:', error);
-            toast({
-                title: 'Error',
-                description: 'Failed to apply password. Please try again.',
-                variant: 'destructive'
-            });
-        } finally {
-            setApplyingPassword(false);
-        }
-    };
-
-    // Function to check if PDF is password protected and handle password application
-    // const handlePasswordProtectedPdf = async (pdf, bank) => {
-    //     try {
-    //         // Check if PDF is password protected
-    //         const needsPassword = await isPdfPasswordProtected(pdf);
-    //         setPdfNeedsPassword(needsPassword);
-
-    //         if (needsPassword) {
-    //             const password = bank.acc_password || null; // Prompt user if no stored password
-    //             if (password) {
-    //                 const success = await applyPasswordToFiles(pdf, password);
-    //                 if (!success) {
-    //                     alert('Failed to apply password. Please try again.');
-    //                     return false;
-    //                 }
-    //             } else {
-    //                 alert('Password is required to proceed.');
-    //                 return false;
-    //             }
-    //         }
-    //         return true;
-    //     } catch (error) {
-    //         console.error('Error checking password protection:', error);
-    //         return false;
-    //     }
-    // };
-
-    // Function to apply password to PDF
-    const applyPasswordToFiles = async (pdf, password) => {
-        try {
-            // PDF.js doesn't have an authenticatePassword method on the PDF object
-            // Instead, we need to create a new loading task with the password
+            
+            // Try to load PDF with password
             const loadingTask = pdfjsLib.getDocument({
                 url: pdfUrl,
                 password: password
             });
-
-            const newPdf = await loadingTask.promise;
-            setPdfDocument(newPdf);
-            setTotalPages(newPdf.numPages);
-            setPdfNeedsPassword(false);
-            setPasswordApplied(true);
-
-            // Initialize arrays and trigger render
-            setAllPagesRendered(new Array(newPdf.numPages).fill(false));
-            setRenderedPageCanvases(new Array(newPdf.numPages).fill(null));
-
-            // Render all pages with the new PDF
-            await renderAllPages(newPdf);
-
-            return true;
+            
+            try {
+                const pdf = await loadingTask.promise;
+                setPdfDocument(pdf);
+                setTotalPages(pdf.numPages);
+                setNumPages(pdf.numPages);
+                setPdfNeedsPassword(false);
+                setShowPasswordDialog(false);
+                setCurrentPassword(password);
+                
+                // Render the first page 
+                renderPage(1, pdf);
+                
+                // Also save the password to the bank if it was successful
+                if (bank && bank.id) {
+                    try {
+                        const { error } = await supabase
+                            .from('acc_portal_banks')
+                            .update({ acc_password: password })
+                            .eq('id', bank.id);
+                            
+                        if (error) {
+                            console.error('Error saving password to bank:', error);
+                        } else {
+                            console.log('Password saved to bank successfully');
+                        }
+                    } catch (saveError) {
+                        console.error('Error saving password:', saveError);
+                    }
+                }
+                
+                toast({
+                    title: "Success",
+                    description: "Password applied successfully",
+                });
+            } catch (passwordError) {
+                console.error('Password error:', passwordError);
+                toast({
+                    title: "Incorrect Password",
+                    description: "The password is incorrect. Please try again.",
+                    variant: "destructive"
+                });
+            }
         } catch (error) {
             console.error('Error applying password:', error);
             toast({
-                title: 'Password Error',
-                description: 'The provided password is incorrect.',
-                variant: 'destructive'
+                title: "Error",
+                description: "Failed to apply password to PDF",
+                variant: "destructive"
             });
-            return false;
+        } finally {
+            setApplyingPassword(false);
         }
     };
 
@@ -1952,13 +1972,51 @@ export function BankExtractionDialog({
 
     // Function to update statement with extracted data
     const updateStatementWithExtraction = async (extractedData: any) => {
-        if (!statement || !statement.id || !extractedData) {
-            console.error('Missing statement ID or extracted data');
+        if (!statement) {
+            console.error('Missing statement');
+            return;
+        }
+
+        // First try to find the statement ID if it's not available
+        let statementId = statement.id;
+        
+        if (!statementId && statement.bank_id && statement.statement_month && statement.statement_year) {
+            console.log('Statement ID missing, searching for existing statement');
+            try {
+                const { data: foundStatement, error } = await supabase
+                    .from('acc_cycle_bank_statements')
+                    .select('id')
+                    .eq('bank_id', statement.bank_id)
+                    .eq('statement_month', statement.statement_month)
+                    .eq('statement_year', statement.statement_year)
+                    .maybeSingle();
+                
+                if (foundStatement && foundStatement.id) {
+                    statementId = foundStatement.id;
+                    console.log('Found statement ID:', statementId);
+                }
+            } catch (findError) {
+                console.error('Error finding statement ID:', findError);
+            }
+        }
+        
+        if (!statementId) {
+            console.error('Still could not find a valid statement ID');
+            toast({
+                title: 'Update Error',
+                description: 'Could not find a valid statement ID to update.',
+                variant: 'destructive'
+            });
+            return;
+        }
+
+        if (!extractedData) {
+            console.error('Missing extracted data');
             return;
         }
 
         try {
-            console.log(`Updating statement ${statement.id} with extracted data`);
+            console.log(`Updating statement ${statementId} with extracted data`);
 
             const { data: updatedStatement, error } = await supabase
                 .from('acc_cycle_bank_statements')
@@ -1968,48 +2026,135 @@ export function BankExtractionDialog({
                     extraction_timestamp: new Date().toISOString(),
                     last_extracted_at: new Date().toISOString()
                 })
-                .eq('id', statement.id)
+                .eq('id', statementId)
                 .select('*')
                 .single();
 
-            if (error) {
-                console.error('Error updating statement with extraction:', error);
-                throw error;
-            }
+            if (error) throw error;
 
-            if (updatedStatement) {
-                // Update local state if parent component provided a callback
-                if (onStatementUpdated && typeof onStatementUpdated === 'function') {
-                    onStatementUpdated(updatedStatement);
-                }
-
-                console.log('Statement updated with extracted data');
-                toast({
-                    title: "Success",
-                    description: "Statement updated with extracted data",
-                });
-
-                // Apply extracted data to local state
-                if (extractedData.bank_name) setBankName(extractedData.bank_name);
-                if (extractedData.account_number) setAccountNumber(extractedData.account_number);
-                if (extractedData.currency) setCurrency(extractedData.currency);
-                if (extractedData.statement_period) setStatementPeriod(extractedData.statement_period);
-                if (extractedData.monthly_balances && Array.isArray(extractedData.monthly_balances)) {
-                    setMonthlyBalances(extractedData.monthly_balances);
+            console.log('Statement updated successfully:', updatedStatement);
+            
+            // Update local state with correct ID
+            if (updatedStatement && updatedStatement.id) {
+                // Update the statement object with the correct ID to fix subsequent operations
+                if (!statement.id) {
+                    statement.id = updatedStatement.id;
                 }
             }
+
+            toast({
+                title: 'Success',
+                description: 'Statement updated with extracted data.',
+                variant: 'default'
+            });
 
             return updatedStatement;
         } catch (error) {
-            console.error('Error updating statement:', error);
+            console.error('Unexpected error updating statement:', error);
             toast({
-                title: "Update Error",
-                description: "Failed to save extracted data",
-                variant: "destructive"
+                title: 'Update Error',
+                description: 'An unexpected error occurred while updating the statement.',
+                variant: 'destructive'
             });
+        }
+    };
+
+    // Function to look up bank name from account number in the database
+    const lookupBankNameFromAccountNumber = async (accNumber) => {
+        if (!accNumber || accNumber.length < 4) return;
+        
+        try {
+            console.log('Looking up bank by account number:', accNumber);
+            
+            // Clean the account number for comparison
+            const cleanAccountNumber = accNumber.replace(/\D/g, '');
+            
+            // Query the banks table
+            const { data: banks, error } = await supabase
+                .from('acc_portal_banks')
+                .select('id, bank_name, account_number');
+                
+            if (error) {
+                console.error('Error querying banks:', error);
+                return;
+            }
+            
+            if (!banks || banks.length === 0) {
+                console.log('No banks found in database');
+                return;
+            }
+            
+            console.log(`Found ${banks.length} banks, searching for matching account number`);
+            
+            // Try different matching strategies
+            for (const bank of banks) {
+                if (!bank.account_number) continue;
+                
+                const bankAccountNumber = bank.account_number.replace(/\D/g, '');
+                
+                // Exact match
+                if (bankAccountNumber === cleanAccountNumber) {
+                    console.log(`Found exact account number match: ${bank.bank_name}`);
+                    setBankName(bank.bank_name);
+                    return bank.bank_name;
+                }
+                
+                // Contains match
+                if (bankAccountNumber.includes(cleanAccountNumber) || 
+                    cleanAccountNumber.includes(bankAccountNumber)) {
+                    console.log(`Found partial account number match: ${bank.bank_name}`);
+                    setBankName(bank.bank_name);
+                    return bank.bank_name;
+                }
+                
+                // Last digits match (common in statements)
+                if (cleanAccountNumber.length >= 4 && bankAccountNumber.length >= 4) {
+                    const lastFourDigitsA = cleanAccountNumber.slice(-4);
+                    const lastFourDigitsB = bankAccountNumber.slice(-4);
+                    
+                    if (lastFourDigitsA === lastFourDigitsB) {
+                        console.log(`Found last 4 digits match: ${bank.bank_name}`);
+                        setBankName(bank.bank_name);
+                        return bank.bank_name;
+                    }
+                }
+            }
+            
+            console.log('No matching bank found for account number:', accNumber);
+            return null;
+        } catch (error) {
+            console.error('Error looking up bank by account number:', error);
             return null;
         }
     };
+    
+    // Trigger bank lookup when account number changes
+    useEffect(() => {
+        if (accountNumber && accountNumber.length >= 4) {
+            lookupBankNameFromAccountNumber(accountNumber);
+        }
+    }, [accountNumber]);
+
+    // Add the following functions to handle password-protected PDFs
+    async function isPdfPasswordProtected(pdf) {
+        try {
+            await pdf.authenticatePassword('');
+            return false;
+        } catch (error) {
+            return true;
+        }
+    }
+
+    async function applyPasswordToFiles(pdf, password) {
+        try {
+            await pdf.authenticatePassword(password);
+            console.log('Password applied successfully');
+            return true;
+        } catch (error) {
+            console.error('Error applying password:', error);
+            return false;
+        }
+    }
 
     return (
         <Dialog open={isOpen} onOpenChange={handleClose}>
@@ -2046,7 +2191,7 @@ export function BankExtractionDialog({
                         <div className="text-base flex flex-wrap items-center gap-4 text-gray-700">
                             <span><span className="font-medium">Bank Name:</span> {bank.bank_name}</span> |
                             <span><span className="font-medium">Account Number:</span> {bank.account_number}</span> |
-                            <span><span className="font-medium">Statement Period:</span> {format(new Date(statement.statement_year, statement.statement_month), 'MMMM yyyy')}</span> |
+                            <span><span className="font-medium">Statement Period:</span> {format(new Date(statement.statement_year, statement.statement_month, 1), 'MMMM yyyy')}</span> |
                             <span className="text-gray-500">
                                 <span className="font-medium">Password:</span> <span className="font-semibold text-blue-600">{bank.acc_password}</span>
                             </span>
@@ -2192,7 +2337,7 @@ export function BankExtractionDialog({
 
                                                             <Button
                                                                 className="w-full"
-                                                                onClick={() => handlePasswordSubmit(password)}
+                                                                onClick={handleViewPasswordSubmit}
                                                                 disabled={!password || applyingPassword}
                                                             >
                                                                 {applyingPassword ? (
@@ -2209,9 +2354,13 @@ export function BankExtractionDialog({
                                                                 <Button
                                                                     variant="outline"
                                                                     className="w-full"
-                                                                    onClick={() => {
+                                                                    onClick={(e) => {
                                                                         setPassword(bank.acc_password);
-                                                                        handlePasswordSubmit(bank.acc_password);
+                                                                        // Create a synthetic event
+                                                                        const syntheticEvent = {
+                                                                            preventDefault: () => {}
+                                                                        };
+                                                                        handleViewPasswordSubmit(syntheticEvent);
                                                                     }}
                                                                 >
                                                                     Use Bank Password
@@ -2380,7 +2529,7 @@ export function BankExtractionDialog({
                                     </Card>
 
                                     {/* Monthly balances section - Expanded to take the full space */}
-                                    <Card className="flex-1 flex flex-col overflow-hidden min-h-[300px]">
+                                    <Card className="flex-1 flex flex-col overflow-hidden max-h-[300px]">
                                         <CardHeader className="py-2 flex flex-row items-center justify-between shrink-0">
                                             <CardTitle className="text-base">Monthly Balances</CardTitle>
                                             <Button
@@ -2401,7 +2550,7 @@ export function BankExtractionDialog({
                                                     </p>
                                                 </div>
                                             ) : (
-                                                <div className="h-full">
+                                                <div className="h-[200px]">
                                                     <Table>
                                                         <TableHeader className="sticky top-0 bg-white z-10">
                                                             <TableRow>
@@ -2850,7 +2999,7 @@ export function BankExtractionDialog({
                         <AlertDialogFooter>
                             <AlertDialogCancel>Cancel</AlertDialogCancel>
                             <AlertDialogAction
-                                onClick={() => applyPasswordToFiles(pdfDocument, 'password123')} // Replace with actual password input
+                                onClick={handleViewPasswordSubmit}
                                 className="bg-blue-600 hover:bg-blue-700 text-white"
                             >
                                 Submit
@@ -2954,25 +3103,4 @@ export function BankExtractionDialog({
             </DialogContent>
         </Dialog>
     );
-}
-
-// Add the following functions to handle password-protected PDFs
-async function isPdfPasswordProtected(pdf) {
-    try {
-        await pdf.authenticatePassword('');
-        return false;
-    } catch (error) {
-        return true;
-    }
-}
-
-async function applyPasswordToFiles(pdf, password) {
-    try {
-        await pdf.authenticatePassword(password);
-        console.log('Password applied successfully');
-        return true;
-    } catch (error) {
-        console.error('Error applying password:', error);
-        return false;
-    }
 }

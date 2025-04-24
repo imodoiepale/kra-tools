@@ -28,6 +28,11 @@ export function StatementCycleConfirmationDialog({
             const allCycles = [...existingCycles, ...newCyclesToCreate];
             setSelectedCycles(allCycles.map(cycle => cycle.id || cycle.month_year));
             setSelectAll(true);
+            
+            // Log detected cycles for debugging
+            console.log("StatementCycleConfirmationDialog - Existing cycles:", existingCycles);
+            console.log("StatementCycleConfirmationDialog - New cycles:", newCyclesToCreate);
+            console.log("StatementCycleConfirmationDialog - Files:", files);
         }
     }, [isOpen, existingCycles, newCyclesToCreate]);
 
@@ -64,10 +69,25 @@ export function StatementCycleConfirmationDialog({
     return (
         <Dialog open={isOpen} onOpenChange={onClose}>
             <DialogContent className="max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
+                {/* Enhanced summary display in the dialog header */}
                 <DialogHeader>
                     <DialogTitle className="text-xl">Confirm Statement Cycles</DialogTitle>
-                    <DialogDescription>
-                        Based on the statement period <span className="font-medium">{statementPeriod}</span>, the following statement cycles are detected:
+                    <DialogDescription className="space-y-2">
+                        <p>
+                            Based on the statement periods <span className="font-medium">{statementPeriod}</span>, the following statement cycles are detected:
+                        </p>
+                        <div className="mt-2 space-y-1">
+                            <div className="text-sm font-medium">Files being processed:</div>
+                            <ul className="text-sm list-disc pl-5">
+                                {files.map((file, index) => (
+                                    <li key={index}>
+                                        {file.name} 
+                                        {file.period && <span className="text-muted-foreground ml-1">({file.period})</span>}
+                                        {file.matchedBank && <span className="text-blue-600 ml-1">- {file.matchedBank.bank_name}</span>}
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
                     </DialogDescription>
                 </DialogHeader>
 
