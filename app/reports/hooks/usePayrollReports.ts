@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 
 export interface TaxData {
-  amount: number;
+  amount: string | number;
   date: string | null;
   status: string | null;
   bank: string | null;
@@ -112,11 +112,11 @@ export function usePayrollReports() {
         // Initialize years in the date range
         for (let year = startYear; year <= endYear; year++) {
           processedData[companyId][year] = Array(12).fill(null).map(() => ({
-            paye: { amount: 0, date: null, status: null, bank: null, payMode: null },
-            housingLevy: { amount: 0, date: null, status: null, bank: null, payMode: null },
-            nita: { amount: 0, date: null, status: null, bank: null, payMode: null },
-            shif: { amount: 0, date: null, status: null, bank: null, payMode: null },
-            nssf: { amount: 0, date: null, status: null, bank: null, payMode: null }
+            paye: { amount: '0', date: null, status: null, bank: null, payMode: null },
+            housingLevy: { amount: '0', date: null, status: null, bank: null, payMode: null },
+            nita: { amount: '0', date: null, status: null, bank: null, payMode: null },
+            shif: { amount: '0', date: null, status: null, bank: null, payMode: null },
+            nssf: { amount: '0', date: null, status: null, bank: null, payMode: null }
           }));
         }
       });
@@ -148,7 +148,8 @@ export function usePayrollReports() {
                 processedData[companyId][cycleInfo.year][cycleInfo.monthIndex][taxType]) {
               
               processedData[companyId][cycleInfo.year][cycleInfo.monthIndex][taxType] = {
-                amount: parseFloat(data.amount || '0'),
+                // Keep the original amount string from the database instead of converting to number
+                amount: data.amount || '0',
                 date: data.payment_date || null,
                 status: data.status || null,
                 bank: data.bank_name || null,

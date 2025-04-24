@@ -163,8 +163,8 @@ export default function OverallView({
   // Function to format amount - consistent with DataTable component
   const formatAmount = (amount) => {
     if (typeof amount === "string") {
-      const cleanedStr = amount.replace(/[^0-9.-]/g, "");
-      amount = parseFloat(cleanedStr) || 0;
+      // Return the string amount directly from the database without modifying it
+      return amount;
     }
 
     if (isNaN(amount) || amount === undefined) {
@@ -1087,7 +1087,9 @@ export default function OverallView({
                             0
                           )}
                           className={`sticky top-0 z-50 text-white py-3 px-4 border border-slate-300 text-center ${
-                            index % 2 === 0 ? "bg-[#1e4d7b]" : "bg-[#2a5a8c]"
+                            index % 2 === 0
+                              ? "bg-[#1e4d7b]"
+                              : "bg-[#2a5a8c]"
                           }`}
                         >
                           {month.label}
