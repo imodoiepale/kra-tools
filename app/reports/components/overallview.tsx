@@ -10,6 +10,7 @@ import { ColumnFilter } from "./column-filter";
 import { Badge } from "@/components/ui/badge";
 import { useCompanyTaxReports } from "../hooks/useCompanyTaxReports";
 import { DataTable } from "./data-table";
+import { format } from "date-fns";
 
 interface OverallViewProps {
   companies: Array<{
@@ -63,9 +64,7 @@ export default function OverallView({
     key: string;
     direction: "asc" | "desc";
   }>({ key: "name", direction: "asc" });
-  const [selectedFilters, setSelectedFilters] = useState<
-    Record<string, Record<string, boolean>>
-  >({});
+  const [selectedFilters, setSelectedFilters] = useState<Record<string, Record<string, boolean>>>({});
   const [filteredCompanies, setFilteredCompanies] = useState(companies);
 
   // Add counts state
@@ -116,7 +115,7 @@ export default function OverallView({
   const currentMonth = new Date().getMonth() + 1;
 
   // Get list of years (current year and previous years)
-  const years = Array.from({ length: 10 }, (_, i) => currentYear - i);
+  const years = Array.from({ length: 16 }, (_, i) => currentYear - i);
 
   // Month names array
   const monthNames = [
@@ -279,14 +278,41 @@ export default function OverallView({
   // Apply date range
   const applyDateRange = () => {
     console.log("[DEBUG] Applying date range:", startDate, endDate);
+    console.log("[DEBUG] Current reportData structure before fetch:", 
+      reportData ? {
+        companies: Object.keys(reportData).length,
+        sampleCompany: Object.keys(reportData)[0] ? {
+          id: Object.keys(reportData)[0],
+          years: Object.keys(reportData[Object.keys(reportData)[0]]),
+          monthsInYear: Object.keys(reportData)[0] && Object.keys(reportData[Object.keys(reportData)[0]])[0] ? 
+            reportData[Object.keys(reportData)[0]][Object.keys(reportData[Object.keys(reportData)[0]])[0]].length : 0
+        } : null
+      } : "No data"
+    );
+    
     setIsLoading(true);
     // Actual data fetching is handled by useCompanyTaxReports
     if (refetchReports) {
       refetchReports();
     }
+    
     setTimeout(() => {
       setIsLoading(false);
-      console.log("[DEBUG] After date range applied - reportData keys:", Object.keys(reportData || {}).length);
+      console.log("[DEBUG] After date range applied - Full data structure:", 
+        reportData ? {
+          companies: Object.keys(reportData).length,
+          sampleCompany: Object.keys(reportData)[0] ? {
+            id: Object.keys(reportData)[0],
+            years: Object.keys(reportData[Object.keys(reportData)[0]]),
+            monthsInYear: Object.keys(reportData)[0] && Object.keys(reportData[Object.keys(reportData)[0]])[0] ? 
+              reportData[Object.keys(reportData)[0]][Object.keys(reportData[Object.keys(reportData)[0]])[0]].length : 0,
+            sampleMonth: Object.keys(reportData)[0] && 
+              Object.keys(reportData[Object.keys(reportData)[0]])[0] && 
+              reportData[Object.keys(reportData)[0]][Object.keys(reportData[Object.keys(reportData)[0]])[0]][0] ? 
+              reportData[Object.keys(reportData)[0]][Object.keys(reportData[Object.keys(reportData)[0]])[0]][0] : null
+          } : null
+        } : "No data"
+      );
     }, 500);
   };
 
@@ -406,6 +432,18 @@ export default function OverallView({
     console.log("[DEBUG] formatDataForDataTable - reportData keys:", reportData ? Object.keys(reportData).length : 0);
     console.log("[DEBUG] formatDataForDataTable - filteredCompanies:", filteredCompanies.length);
     console.log("[DEBUG] formatDataForDataTable - selectedColumns:", selectedColumns);
+
+    // Add detailed debug logging for reportData structure
+    console.log("[DEBUG] reportData structure:",
+      reportData && Object.keys(reportData).length > 0 ?
+      Object.keys(reportData).slice(0,1).map(companyId => ({
+        companyId,
+        years: Object.keys(reportData[companyId]),
+        sampleMonth: reportData[companyId][Object.keys(reportData[companyId])[0]]?.[0]
+      })) :
+      "No data"
+    );
+
     // For the standard table view, we need to convert the data to month-based entries
     // If this is for company or overall view, DataTable will handle it internally
     if (viewMode === "table") {
@@ -413,46 +451,35 @@ export default function OverallView({
       return visibleMonths.map((month) => {
         // Convert month name to abbreviation (JAN, FEB, etc.)
         const monthAbbr = month.name.slice(0, 3).toUpperCase();
+        const monthIndex = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"].indexOf(monthAbbr);
         
         // Create default entry for this month
-        return {
+        const entry = {
           month: monthAbbr,
-          paye: {
-            amount: 0,
-            date: null,
-            status: null,
-            bank: null,
-            payMode: null
-          },
-          housingLevy: {
-            amount: 0,
-            date: null,
-            status: null,
-            bank: null,
-            payMode: null
-          },
-          nita: {
-            amount: 0,
-            date: null,
-            status: null,
-            bank: null,
-            payMode: null
-          },
-          shif: {
-            amount: 0,
-            date: null,
-            status: null,
-            bank: null,
-            payMode: null
-          },
-          nssf: {
-            amount: 0,
-            date: null,
-            status: null,
-            bank: null,
-            payMode: null
-          }
+          paye: { amount: 0, date: null, status: null, bank: null, payMode: null },
+          housingLevy: { amount: 0, date: null, status: null, bank: null, payMode: null },
+          nita: { amount: 0, date: null, status: null, bank: null, payMode: null },
+          shif: { amount: 0, date: null, status: null, bank: null, payMode: null },
+          nssf: { amount: 0, date: null, status: null, bank: null, payMode: null }
         };
+
+        // Populate with actual data from reportData
+        if (reportData && sortedCompanies.length > 0) {
+          sortedCompanies.forEach(company => {
+            if (reportData[company.id] && reportData[company.id][month.year.toString()]) {
+              const companyMonthData = reportData[company.id][month.year.toString()][monthIndex];
+              if (companyMonthData) {
+                selectedColumns.forEach(taxType => {
+                  if (companyMonthData[taxType]) {
+                    entry[taxType] = { ...companyMonthData[taxType] };
+                  }
+                });
+              }
+            }
+          });
+        }
+        
+        return entry;
       });
     }
     
@@ -658,11 +685,7 @@ export default function OverallView({
       <div className="bg-white shadow-lg p-3 border-b border-gray-200">
         <div className="max-w-screen-2xl mx-auto">
           <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-6">
-              <h1 className="font-bold text-gray-800 text-lg">
-                Payroll Report Overview
-              </h1>
-            </div>
+            
             <div className="flex items-center gap-4">
               {/* Search input */}
               <div className="relative flex-grow max-w-md">
@@ -688,7 +711,7 @@ export default function OverallView({
                   className="pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg w-full focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent shadow-sm"
                 />
               </div>
-
+  
               {/* Client Category Filter */}
               <div className="flex items-center gap-2">
                 <Button
@@ -705,7 +728,7 @@ export default function OverallView({
                   )}
                 </Button>
               </div>
-
+  
               <ClientCategoryFilter
                 isOpen={isFilterOpen}
                 onClose={() => {
@@ -722,13 +745,13 @@ export default function OverallView({
                   filters: Record<string, Record<string, boolean>>
                 ) => {
                   setSelectedFilters(filters);
-
+  
                   // Reset to all companies if no filters are selected
                   if (!Object.keys(filters).length) {
                     setFilteredCompanies(companies);
                     return;
                   }
-
+  
                   // Apply the selected filters
                   const filtered = companies.filter((company) => {
                     // Check if any of the selected categories match the company
@@ -738,12 +761,12 @@ export default function OverallView({
                         if (!Object.values(statuses).some((value) => value)) {
                           return false;
                         }
-
+  
                         const now = new Date();
                         let isActive = false;
                         let effectiveFrom = null;
                         let effectiveTo = null;
-
+  
                         // Determine which category we're checking
                         switch (category) {
                           case "acc":
@@ -782,24 +805,24 @@ export default function OverallView({
                             );
                             break;
                         }
-
+  
                         // For specific categories, determine if active based on effective dates
                         if (category !== "all") {
                           isActive =
                             effectiveTo === null || new Date(effectiveTo) > now;
                         }
-
+  
                         // Check if the company's status matches any of the selected statuses
                         return statuses[isActive ? "active" : "inactive"];
                       }
                     );
                   });
-
+  
                   setFilteredCompanies(filtered);
                 }}
                 selectedFilters={selectedFilters}
               />
-
+  
               {/* Date range selector */}
               <div className="flex items-center gap-3 bg-white p-1 rounded-lg shadow-sm border border-gray-200">
                 <div className="flex items-center">
@@ -827,7 +850,8 @@ export default function OverallView({
                         const [_, month] = endDate.split("-");
                         setEndDate(`${e.target.value}-${month}`);
                       }}
-                      className="border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                      className="border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
                       {years.map((year) => (
                         <option key={year} value={year}>
                           {year}
@@ -840,7 +864,8 @@ export default function OverallView({
                         const [year] = endDate.split("-");
                         setEndDate(`${year}-${e.target.value}`);
                       }}
-                      className="border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                      className="border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
                       {Array.from({ length: 12 }, (_, i) => {
                         // Display months in chronological order (January to December)
                         const monthIndex = i;
@@ -856,7 +881,7 @@ export default function OverallView({
                     </select>
                   </div>
                 </div>
-
+  
                 <div className="flex items-center">
                   <label className="text-sm font-medium text-gray-700 mr-2">
                     From:
@@ -868,7 +893,8 @@ export default function OverallView({
                         const [_, month] = startDate.split("-");
                         setStartDate(`${e.target.value}-${month}`);
                       }}
-                      className="border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                      className="border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
                       {years.map((year) => (
                         <option key={year} value={year}>
                           {year}
@@ -881,7 +907,8 @@ export default function OverallView({
                         const [year] = startDate.split("-");
                         setStartDate(`${year}-${e.target.value}`);
                       }}
-                      className="border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                      className="border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
                       {Array.from({ length: 12 }, (_, i) => {
                         // Display months in chronological order (January to December)
                         const monthIndex = i;
@@ -900,25 +927,29 @@ export default function OverallView({
                 <button
                   onClick={applyDateRange}
                   disabled={isLoading}
-                  className="px-4 py-1.5 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-70 flex items-center">
+                  className="px-4 py-1.5 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-70 flex items-center"
+                >
                   {isLoading ? (
                     <>
                       <svg
                         className="animate-spin -ml-1 mr-2 h-4 w-4 text-white"
                         xmlns="http://www.w3.org/2000/svg"
                         fill="none"
-                        viewBox="0 0 24 24">
+                        viewBox="0 0 24 24"
+                      >
                         <circle
                           className="opacity-25"
                           cx="12"
                           cy="12"
                           r="10"
                           stroke="currentColor"
-                          strokeWidth="4"></circle>
+                          strokeWidth="4"
+                        ></circle>
                         <path
                           className="opacity-75"
                           fill="currentColor"
-                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                        ></path>
                       </svg>
                       Loading...
                     </>
@@ -927,7 +958,7 @@ export default function OverallView({
                   )}
                 </button>
               </div>
-
+  
               {/* Export and View Mode buttons */}
               <div className="flex items-center gap-2">
                 <Button
@@ -942,7 +973,8 @@ export default function OverallView({
                     setIsLoading(true);
                     setTimeout(() => setIsLoading(false), 500);
                   }}
-                  className="flex items-center gap-2">
+                  className="flex items-center gap-2"
+                >
                   <RefreshCw className="h-4 w-4" />
                   Refresh
                 </Button>
@@ -950,11 +982,12 @@ export default function OverallView({
                   variant="outline"
                   size="sm"
                   onClick={handleExport}
-                  className="flex items-center gap-2">
+                  className="flex items-center gap-2"
+                >
                   <Download className="h-4 w-4" />
                   Export
                 </Button>
-
+  
                 <Button
                   variant="outline"
                   size="sm"
@@ -967,18 +1000,19 @@ export default function OverallView({
                         : "table";
                     setViewMode(nextMode);
                   }}
-                  className="flex items-center gap-2">
+                  className="flex items-center gap-2"
+                >
                   <LayoutGrid className="h-4 w-4" />
                   {viewMode === "table"
                     ? "Overall View"
-                    : viewMode === "overall"
+                    : viewMode === "company"
                     ? "Company View"
                     : "Table View"}
                 </Button>
               </div>
             </div>
           </div>
-
+  
           <div className="flex flex-wrap items-center gap-4 justify-between">
             {/* Column filter controls */}
             <ColumnFilter
@@ -1001,7 +1035,7 @@ export default function OverallView({
           </div>
         </div>
       </div>
-
+  
       {/* Table container with horizontal scrolling */}
       <div className="flex-grow relative">
         {/* Debug info */}
@@ -1042,7 +1076,8 @@ export default function OverallView({
                                 ? "desc"
                                 : "asc",
                           });
-                        }}>
+                        }}
+                      >
                         <div className="flex items-center gap-1">
                           <span className="text-[10px] text-white">
                             Company
@@ -1064,7 +1099,8 @@ export default function OverallView({
                           )}
                           className={`sticky top-0 z-50 text-white py-3 px-4 border border-slate-300 text-center ${
                             index % 2 === 0 ? "bg-[#1e4d7b]" : "bg-[#2a5a8c]"
-                          }`}>
+                          }`}
+                        >
                           {month.label}
                         </th>
                       ))}
@@ -1078,7 +1114,8 @@ export default function OverallView({
                             <th
                               key={column}
                               colSpan={calculateColSpan(selectedSubColumns)}
-                              className="sticky top-[35px] z-50 bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-center">
+                              className="sticky top-[35px] z-50 bg-[#2a5a8c] text-white py-2 px-3 border-2 border-slate-300 text-center"
+                            >
                               {column === "paye"
                                 ? "PAYE"
                                 : column === "housingLevy"
@@ -1106,7 +1143,8 @@ export default function OverallView({
                                 subColumn === "all" ? null : (
                                   <th
                                     key={`${column}-${subColumn}`}
-                                    className="sticky top-[70px] z-50 bg-[#2a5a8c] text-white py-1.5 px-2 border border-slate-300 text-[11px] font-medium">
+                                    className="sticky top-[70px] z-50 bg-[#2a5a8c] text-white py-1.5 px-2 border border-slate-300 text-[11px] font-medium"
+                                  >
                                     {subColumn === "amount"
                                       ? "Amount"
                                       : subColumn === "date"
@@ -1151,90 +1189,39 @@ export default function OverallView({
                     {sortedCompanies.map((company, companyIndex) => {
                       // Process data for this company - this ensures we're using the same data source as DataTable
                       const companyMonthData = visibleMonths.map((month) => {
-                        // Convert month name to abbreviation (JAN, FEB, etc.)
                         const monthAbbr = month.name.slice(0, 3).toUpperCase();
-
+                        const monthIndex = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"].indexOf(monthAbbr);
+                      
                         // Create default entry for this month
                         const entry = {
                           month: monthAbbr,
-                          paye: {
-                            amount: 0,
-                            date: null,
-                            status: null,
-                            bank: null,
-                            payMode: null,
-                          },
-                          housingLevy: {
-                            amount: 0,
-                            date: null,
-                            status: null,
-                            bank: null,
-                            payMode: null,
-                          },
-                          nita: {
-                            amount: 0,
-                            date: null,
-                            status: null,
-                            bank: null,
-                            payMode: null,
-                          },
-                          shif: {
-                            amount: 0,
-                            date: null,
-                            status: null,
-                            bank: null,
-                            payMode: null,
-                          },
-                          nssf: {
-                            amount: 0,
-                            date: null,
-                            status: null,
-                            bank: null,
-                            payMode: null,
-                          },
+                          paye: { amount: 0, date: null, status: null, bank: null, payMode: null },
+                          housingLevy: { amount: 0, date: null, status: null, bank: null, payMode: null },
+                          nita: { amount: 0, date: null, status: null, bank: null, payMode: null },
+                          shif: { amount: 0, date: null, status: null, bank: null, payMode: null },
+                          nssf: { amount: 0, date: null, status: null, bank: null, payMode: null }
                         };
-
+                      
                         // Get company data from reportData
                         const companyData = reportData[company.id];
-
+                      
                         // If we have data for this company and year
                         if (companyData && companyData[month.year.toString()]) {
-                          // Find the appropriate month by index
-                          const monthNames = [
-                            "JAN",
-                            "FEB",
-                            "MAR",
-                            "APR",
-                            "MAY",
-                            "JUN",
-                            "JUL",
-                            "AUG",
-                            "SEP",
-                            "OCT",
-                            "NOV",
-                            "DEC",
-                          ];
-                          const monthIndex = monthNames.indexOf(monthAbbr);
-
-                          if (
-                            monthIndex !== -1 &&
-                            companyData[month.year.toString()][monthIndex]
-                          ) {
-                            const monthData =
-                              companyData[month.year.toString()][monthIndex];
-
+                          // Get the month's data if it exists
+                          const monthData = companyData[month.year.toString()][monthIndex];
+                          if (monthData) {
                             // Copy tax data for each selected column
-                            for (const taxType of selectedColumns) {
+                            selectedColumns.forEach(taxType => {
                               if (monthData[taxType]) {
                                 entry[taxType] = { ...monthData[taxType] };
                               }
-                            }
+                            });
                           }
                         }
-
+                      
                         return entry;
                       });
-
+  
                       return (
                         <tr
                           key={company.id}
@@ -1242,13 +1229,15 @@ export default function OverallView({
                             companyIndex % 2 === 0
                               ? "bg-white hover:bg-blue-50"
                               : "bg-gray-50 hover:bg-blue-50"
-                          }>
+                          }
+                        >
                           <td
                             className="sticky left-0 z-40 py-1 px-1.5 border border-slate-300 text-center text-[10px] text-slate-700"
                             style={{
                               backgroundColor:
                                 companyIndex % 2 === 0 ? "white" : "#f9fafb",
-                            }}>
+                            }}
+                          >
                             {companyIndex + 1}
                           </td>
                           <td
@@ -1256,104 +1245,105 @@ export default function OverallView({
                             style={{
                               backgroundColor:
                                 companyIndex % 2 === 0 ? "white" : "#f9fafb",
-                            }}>
+                            }}
+                          >
                             <span className="block truncate w-[85px]">
                               {truncateCompanyName(company.name)}
                             </span>
                             <div
                               className="fixed z-[9999] invisible group-hover:visible bg-slate-900 text-white p-1.5 rounded shadow-lg text-[10px] max-w-xs whitespace-normal break-words"
-                              style={{ transform: "translateY(-100%)" }}>
+                              style={{ transform: "translateY(-100%)" }}
+                            >
                               {company.name}
                             </div>
                           </td>
-
+  
                           {/* Render data for all visible months */}
-                          {companyMonthData.map((monthData, monthIndex) => (
-                            <React.Fragment key={monthIndex}>
-                              {selectedColumns.map((taxType) => (
-                                <React.Fragment
-                                  key={`${taxType}-${monthIndex}`}>
-                                  {(selectedSubColumns.includes("all") ||
-                                    selectedSubColumns.includes("amount")) && (
-                                    <td
-                                      className={`py-1.5 px-2 border border-slate-300 text-right text-[11px] ${
-                                        monthData[taxType]?.amount
-                                          ? "font-medium text-slate-700"
-                                          : "text-slate-500"
-                                      }`}>
-                                      {formatAmount(
-                                        monthData[taxType]?.amount || 0
-                                      )}
-                                    </td>
-                                  )}
-                                  {(selectedSubColumns.includes("all") ||
-                                    selectedSubColumns.includes("date")) && (
-                                    <td
-                                      className={`py-1.5 px-2 border border-slate-300 text-center text-[11px] ${
-                                        monthData[taxType]?.date
-                                          ? getDateColor(
-                                              monthData[taxType].date
-                                            )
-                                          : "text-slate-400"
-                                      }`}>
-                                      {formatDate(monthData[taxType]?.date)}
-                                    </td>
-                                  )}
-                                  {(selectedSubColumns.includes("all") ||
-                                    selectedSubColumns.includes("status")) && (
-                                    <td
-                                      className={`py-1.5 px-2 border border-slate-300 text-center text-[11px] ${
-                                        monthData[taxType]?.status
-                                          ? "font-medium text-slate-700"
-                                          : "text-slate-500"
-                                      }`}>
-                                      {monthData[taxType]?.status ?? "—"}
-                                    </td>
-                                  )}
-                                  {(selectedSubColumns.includes("all") ||
-                                    selectedSubColumns.includes("bank")) && (
-                                    <td
-                                      className={`py-1.5 px-2 border border-slate-300 text-center text-[11px] ${
-                                        monthData[taxType]?.bank
-                                          ? "font-medium text-slate-700"
-                                          : "text-slate-500"
-                                      }`}>
-                                      {monthData[taxType]?.bank ?? "—"}
-                                    </td>
-                                  )}
-                                  {(selectedSubColumns.includes("all") ||
-                                    selectedSubColumns.includes("payMode")) && (
-                                    <td
-                                      className={`py-1.5 px-2 border border-slate-300 text-center text-[11px] ${
-                                        monthData[taxType]?.payMode
-                                          ? "font-medium text-slate-700"
-                                          : "text-slate-500"
-                                      }`}>
-                                      {monthData[taxType]?.payMode ?? "—"}
-                                    </td>
-                                  )}
-                                </React.Fragment>
-                              ))}
-                            </React.Fragment>
-                          ))}
+                          {companyMonthData.map((monthData, monthIndex) => {
+                            return (
+                              <React.Fragment key={monthIndex}>
+                                {selectedColumns.map((taxType) => (
+                                  <React.Fragment key={`${taxType}-${monthIndex}`}>
+                                    {(selectedSubColumns.includes("all") ||
+                                      selectedSubColumns.includes("amount")) && (
+                                      <td
+                                        className={`py-1.5 px-2 border border-slate-300 text-right text-[11px] ${
+                                          monthData[taxType]?.amount
+                                            ? "font-medium text-slate-700"
+                                            : "text-slate-500"
+                                        }`}
+                                      >
+                                        {formatAmount(
+                                          monthData[taxType]?.amount || 0
+                                        )}
+                                      </td>
+                                    )}
+                                    {(selectedSubColumns.includes("all") ||
+                                      selectedSubColumns.includes("date")) && (
+                                      <td
+                                        className={`py-1.5 px-2 border border-slate-300 text-right text-[11px] ${
+                                          monthData[taxType]?.date
+                                            ? "font-medium text-slate-700"
+                                            : "text-slate-500"
+                                        }`}
+                                      >
+                                        {monthData[taxType]?.date
+                                          ? formatDate(monthData[taxType]?.date)
+                                          : "-"}
+                                      </td>
+                                    )}
+                                    {(selectedSubColumns.includes("all") ||
+                                      selectedSubColumns.includes("status")) && (
+                                      <td
+                                        className={`py-1.5 px-2 border border-slate-300 text-center text-[11px] ${
+                                          monthData[taxType]?.status
+                                            ? "font-medium text-slate-700"
+                                            : "text-slate-500"
+                                        }`}
+                                      >
+                                        {monthData[taxType]?.status || "-"}
+                                      </td>
+                                    )}
+                                    {(selectedSubColumns.includes("all") ||
+                                      selectedSubColumns.includes("bank")) && (
+                                      <td
+                                        className={`py-1.5 px-2 border border-slate-300 text-center text-[11px] ${
+                                          monthData[taxType]?.bank
+                                            ? "font-medium text-slate-700"
+                                            : "text-slate-500"
+                                        }`}
+                                      >
+                                        {monthData[taxType]?.bank || "-"}
+                                      </td>
+                                    )}
+                                    {(selectedSubColumns.includes("all") ||
+                                      selectedSubColumns.includes("payMode")) && (
+                                      <td
+                                        className={`py-1.5 px-2 border border-slate-300 text-center text-[11px] ${
+                                          monthData[taxType]?.payMode
+                                            ? "font-medium text-slate-700"
+                                            : "text-slate-500"
+                                        }`}
+                                      >
+                                        {monthData[taxType]?.payMode || "-"}
+                                      </td>
+                                    )}
+                                  </React.Fragment>
+                                ))}
+                              </React.Fragment>
+                            );
+                          })}
                         </tr>
                       );
                     })}
-
+  
                     {/* Empty state handling */}
                     {filteredCompanies.length === 0 && (
                       <tr>
                         <td
-                          colSpan={
-                            visibleMonths.length *
-                              selectedColumns.reduce(
-                                (sum, _) =>
-                                  sum + calculateColSpan(selectedSubColumns),
-                                0
-                              ) +
-                            2
-                          }
-                          className="text-center py-10 text-gray-500">
+                          colSpan={totalSubColumns + 2}
+                          className="text-center py-10 text-gray-500"
+                        >
                           No companies found matching your search criteria
                         </td>
                       </tr>
@@ -1362,28 +1352,22 @@ export default function OverallView({
                 </table>
               </div>
             ) : (
-              <>
-                {/* Log data being passed to DataTable */}
-                {console.log("[DEBUG] Rendering DataTable with:", {
-                  dataLength: formatDataForDataTable().length,
-                  yearlyDataKeys: Object.keys(formatYearlyDataForTable()),
-                  viewMode,
-                  isHorizontalView: viewMode === "company"
-                })}
+              <div className="w-full h-full">
+                {/* The alternative view modes (overall or company) */}
                 <DataTable
                   data={formatDataForDataTable()}
                   selectedColumns={selectedColumns}
                   selectedSubColumns={selectedSubColumns}
-                  viewMode={viewMode}
+                  isLoading={isLoading}
                   showTotals={showTotals}
+                  viewMode={viewMode}
                   startDate={startDate}
                   endDate={endDate}
                   getMonthsInRange={getMonthsInRange}
-                  isLoading={isLoading}
                   yearlyData={formatYearlyDataForTable()}
                   isHorizontalView={viewMode === "company"}
                 />
-              </>
+              </div>
             )}
           </div>
           {/* Horizontal scroll indicator */}

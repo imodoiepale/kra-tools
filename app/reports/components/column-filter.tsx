@@ -130,7 +130,7 @@ export function ColumnFilter({
             role="combobox"
             aria-expanded={open}
             className="min-w-[200px] justify-between bg-[#1e4d7b] text-white hover:bg-[#2a5a8c] hover:text-white">
-            Tax Fields ({selectedColumns.length} selected)
+            Taxes ({selectedColumns.length} selected)
             <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
           </Button>
         </PopoverTrigger>
@@ -179,7 +179,7 @@ export function ColumnFilter({
           <Button
             variant="outline"
             className="min-w-[150px] justify-between bg-[#1e4d7b] text-white hover:bg-[#2a5a8c] hover:text-white">
-            Details ({selectedSubColumns.length} selected)
+            Tax Fields ({selectedSubColumns.length} selected)
             <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
           </Button>
         </DropdownMenuTrigger>
@@ -189,7 +189,7 @@ export function ColumnFilter({
           onMouseDown={(e) => e.preventDefault()}
           onTouchStart={(e) => e.preventDefault()}>
           <div className="px-2 py-1.5 text-sm font-semibold border-b">
-            All Details
+            All Fields
           </div>
           <DropdownMenuCheckboxItem
             checked={selectedSubColumns.includes("all")}

@@ -525,16 +525,24 @@ export function PasswordCheckerReports() {
       </div>
 
       <div className="rounded-md border">
+        
         <div className="overflow-x-auto">
+
           <div className="max-h-[calc(100vh-300px)] overflow-y-auto">
+
+
             <Table className="text-sm pb-4">
               <TableHeader>
                 <TableRow>
                   <TableHead className="text-center border-r border-black">Index</TableHead>
+
                   <TableHead className="border-r border-black">
+
                     <button
                       className="flex items-center font-semibold"
+
                       onClick={() => handleSort("company_name")}
+
                     >
                       Company Name {getSortIcon("company_name")}
                     </button>
@@ -543,6 +551,7 @@ export function PasswordCheckerReports() {
                     <button
                       className="flex items-center font-semibold justify-center"
                       onClick={() => handleSort("kra_pin")}
+
                     >
                       KRA PIN {getSortIcon("kra_pin")}
                     </button>
@@ -554,6 +563,8 @@ export function PasswordCheckerReports() {
                       onClick={() => handleSort("status")}
                     >
                       Status {getSortIcon("status")}
+
+
                     </button>
                   </TableHead>
                   <TableHead className="text-center border-r border-black">
@@ -572,6 +583,9 @@ export function PasswordCheckerReports() {
                       Client Category {getSortIcon("client_category")}
                     </button>
                   </TableHead>
+
+
+
                   <TableHead className="text-center">Actions</TableHead>
                 </TableRow>
                 {showStatsRows && (
@@ -592,7 +606,9 @@ export function PasswordCheckerReports() {
                         <span className={stats.complete.kra_password === filteredCompanies.length ? 'text-green-600 font-bold' : ''}>
                           {stats.complete.kra_password}
                         </span>
+
                       </TableCell>
+
                       <TableCell className="text-center text-[10px] border-r border-black">
                         <span className={stats.complete.status === filteredCompanies.length ? 'text-green-600 font-bold' : ''}>
                           {stats.complete.status}
@@ -610,6 +626,7 @@ export function PasswordCheckerReports() {
                       </TableCell>
                       <TableCell></TableCell>
                     </TableRow>
+                  
                     <TableRow className="bg-red-50">
                       <TableCell className="text-center text-[10px] font-bold border-r border-black">Missing</TableCell>
                       <TableCell className="text-center text-[10px] border-r border-black">
