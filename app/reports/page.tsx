@@ -447,112 +447,327 @@ function CompanyReports() {
   // Enhanced export function with better error handling and formatting
   const exportToExcel = useCallback(() => {
     try {
-      if (!startYear || !reportData[startYear.toString()]) {
-        throw new Error("No data available for selected year");
-      }
-
-      const data = Object.keys(displayData)
-        .map((year) => {
-          const yearData = displayData[year].map((entry) => {
-            const row: Record<string, string | number> = { Month: entry.month };
-
-            // Helper function to format amount and date
-            const formatTaxData = (taxType: keyof typeof entry) => ({
-              [`${
-                taxTypes.find((t) => t.id === taxType)?.name || taxType
-              } Amount`]: new Intl.NumberFormat("en-KE", {
-                minimumFractionDigits: 2,
-              }).format(entry[taxType].amount),
-              [`${
-                taxTypes.find((t) => t.id === taxType)?.name || taxType
-              } Pay Date`]: entry[taxType].date || "-",
-            });
-
-            // Add selected tax columns
-            if (
-              selectedColumns.includes("all") ||
-              selectedColumns.includes("paye")
-            ) {
-              Object.assign(row, formatTaxData("paye"));
-            }
-            if (
-              selectedColumns.includes("all") ||
-              selectedColumns.includes("housingLevy")
-            ) {
-              Object.assign(row, formatTaxData("housingLevy"));
-            }
-            if (
-              selectedColumns.includes("all") ||
-              selectedColumns.includes("nita")
-            ) {
-              Object.assign(row, formatTaxData("nita"));
-            }
-            if (
-              selectedColumns.includes("all") ||
-              selectedColumns.includes("shif")
-            ) {
-              Object.assign(row, formatTaxData("shif"));
-            }
-            if (
-              selectedColumns.includes("all") ||
-              selectedColumns.includes("nssf")
-            ) {
-              Object.assign(row, formatTaxData("nssf"));
-            }
-
-            return row;
-          });
-
-          return yearData;
-        })
-        .flat();
-
-      const ws = XLSX.utils.json_to_sheet(data);
+      console.log("[DEBUG] Starting Excel export");
+      
+      // Create a workbook and worksheet
       const wb = XLSX.utils.book_new();
-
-      // Add worksheet name and company details
-      const sheetName =
-        selectedCompanyName.length > 30
-          ? `${selectedCompanyName.substring(0, 27)}...`
-          : selectedCompanyName;
-
-      XLSX.utils.book_append_sheet(wb, ws, sheetName);
-
-      // Add some basic styling
-      const range = XLSX.utils.decode_range(ws["!ref"] || "A1");
-      for (let C = range.s.c; C <= range.e.c; ++C) {
-        const address = XLSX.utils.encode_col(C) + "1";
-        if (!ws[address]) continue;
-        ws[address].s = {
-          font: { bold: true },
-          fill: { fgColor: { rgb: "EFEFEF" } },
-        };
+      
+      if (isRangeView && displayData) {
+        // Range view - create a sheet for each year
+        const years = Object.keys(displayData).sort();
+        const months = [
+          "JAN", "FEB", "MAR", "APR", "MAY", "JUN",
+          "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"
+        ];
+        
+        years.forEach(year => {
+          const headers = ["Month"];
+          const dataRows = [];
+          
+          // Add column headers
+          selectedColumns.filter(col => col !== "month").forEach(col => {
+            const colName = taxTypes.find(t => t.id === col)?.name || col.toUpperCase();
+            
+            if (selectedSubColumns.includes("all") || selectedSubColumns.includes("amount")) {
+              headers.push(`${colName} Amount`);
+            }
+            if (selectedSubColumns.includes("all") || selectedSubColumns.includes("date")) {
+              headers.push(`${colName} Date`);
+            }
+            if (selectedSubColumns.includes("all") || selectedSubColumns.includes("status")) {
+              headers.push(`${colName} Status`);
+            }
+            if (selectedSubColumns.includes("all") || selectedSubColumns.includes("bank")) {
+              headers.push(`${colName} Bank`);
+            }
+            if (selectedSubColumns.includes("all") || selectedSubColumns.includes("payMode")) {
+              headers.push(`${colName} Pay Mode`);
+            }
+          });
+          
+          // Add "Monthly Total" column
+          headers.push("Monthly Total");
+          
+          // Add data for each month
+          months.forEach(month => {
+            const entry = displayData[year]?.find(e => e.month === month) || {
+              month,
+              paye: { amount: 0, date: null, status: null, bank: null, payMode: null },
+              housingLevy: { amount: 0, date: null, status: null, bank: null, payMode: null },
+              nita: { amount: 0, date: null, status: null, bank: null, payMode: null },
+              shif: { amount: 0, date: null, status: null, bank: null, payMode: null },
+              nssf: { amount: 0, date: null, status: null, bank: null, payMode: null }
+            };
+            
+            const row = [month];
+            let monthlyTotal = 0;
+            
+            // Add data for each selected column
+            selectedColumns.filter(col => col !== "month").forEach(col => {
+              if (selectedSubColumns.includes("all") || selectedSubColumns.includes("amount")) {
+                row.push(formatAmount(entry[col]?.amount || 0));
+                monthlyTotal += (entry[col]?.amount || 0);
+              }
+              if (selectedSubColumns.includes("all") || selectedSubColumns.includes("date")) {
+                row.push(entry[col]?.date ? formatDate(entry[col]?.date) : "-");
+              }
+              if (selectedSubColumns.includes("all") || selectedSubColumns.includes("status")) {
+                row.push(entry[col]?.status || "-");
+              }
+              if (selectedSubColumns.includes("all") || selectedSubColumns.includes("bank")) {
+                row.push(entry[col]?.bank || "-");
+              }
+              if (selectedSubColumns.includes("all") || selectedSubColumns.includes("payMode")) {
+                row.push(entry[col]?.payMode || "-");
+              }
+            });
+            
+            // Add monthly total
+            row.push(formatAmount(monthlyTotal));
+            
+            dataRows.push(row);
+          });
+          
+          // Add yearly total row
+          const totalRow = [`${year} TOTAL`];
+          const yearlyTotals = {};
+          
+          // Calculate yearly totals for each tax type
+          selectedColumns.filter(col => col !== "month").forEach(col => {
+            yearlyTotals[col] = displayData[year]?.reduce(
+              (sum, entry) => sum + (entry[col]?.amount || 0), 0
+            ) || 0;
+          });
+          
+          // Add yearly totals to the row
+          selectedColumns.filter(col => col !== "month").forEach(col => {
+            if (selectedSubColumns.includes("all") || selectedSubColumns.includes("amount")) {
+              totalRow.push(formatAmount(yearlyTotals[col]));
+            }
+            if (selectedSubColumns.includes("all") || selectedSubColumns.includes("date")) {
+              totalRow.push("");
+            }
+            if (selectedSubColumns.includes("all") || selectedSubColumns.includes("status")) {
+              totalRow.push("");
+            }
+            if (selectedSubColumns.includes("all") || selectedSubColumns.includes("bank")) {
+              totalRow.push("");
+            }
+            if (selectedSubColumns.includes("all") || selectedSubColumns.includes("payMode")) {
+              totalRow.push("");
+            }
+          });
+          
+          // Add yearly grand total
+          const yearlyGrandTotal = Object.values(yearlyTotals).reduce((sum, val) => sum + val, 0);
+          totalRow.push(formatAmount(yearlyGrandTotal));
+          
+          dataRows.push(totalRow);
+          
+          // Create worksheet and add to workbook
+          const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
+          XLSX.utils.book_append_sheet(wb, ws, `Year ${year}`);
+        });
+      } else {
+        // Single year view
+        const headers = ["Month"];
+        const dataRows = [];
+        
+        // Add column headers
+        selectedColumns.filter(col => col !== "month").forEach(col => {
+          const colName = taxTypes.find(t => t.id === col)?.name || col.toUpperCase();
+          
+          if (selectedSubColumns.includes("all") || selectedSubColumns.includes("amount")) {
+            headers.push(`${colName} Amount`);
+          }
+          if (selectedSubColumns.includes("all") || selectedSubColumns.includes("date")) {
+            headers.push(`${colName} Date`);
+          }
+          if (selectedSubColumns.includes("all") || selectedSubColumns.includes("status")) {
+            headers.push(`${colName} Status`);
+          }
+          if (selectedSubColumns.includes("all") || selectedSubColumns.includes("bank")) {
+            headers.push(`${colName} Bank`);
+          }
+          if (selectedSubColumns.includes("all") || selectedSubColumns.includes("payMode")) {
+            headers.push(`${colName} Pay Mode`);
+          }
+        });
+        
+        // Add "Monthly Total" column
+        headers.push("Monthly Total");
+        
+        // Add data for each entry
+        displayData.forEach(entry => {
+          const row = [entry.month];
+          let monthlyTotal = 0;
+          
+          // Add data for each selected column
+          selectedColumns.filter(col => col !== "month").forEach(col => {
+            if (selectedSubColumns.includes("all") || selectedSubColumns.includes("amount")) {
+              row.push(formatAmount(entry[col]?.amount || 0));
+              monthlyTotal += (entry[col]?.amount || 0);
+            }
+            if (selectedSubColumns.includes("all") || selectedSubColumns.includes("date")) {
+              row.push(entry[col]?.date ? formatDate(entry[col]?.date) : "-");
+            }
+            if (selectedSubColumns.includes("all") || selectedSubColumns.includes("status")) {
+              row.push(entry[col]?.status || "-");
+            }
+            if (selectedSubColumns.includes("all") || selectedSubColumns.includes("bank")) {
+              row.push(entry[col]?.bank || "-");
+            }
+            if (selectedSubColumns.includes("all") || selectedSubColumns.includes("payMode")) {
+              row.push(entry[col]?.payMode || "-");
+            }
+          });
+          
+          // Add monthly total
+          row.push(formatAmount(monthlyTotal));
+          
+          dataRows.push(row);
+        });
+        
+        // Calculate totals
+        const totals = {};
+        displayData.forEach(entry => {
+          selectedColumns.filter(col => col !== "month").forEach(col => {
+            totals[col] = (totals[col] || 0) + (entry[col]?.amount || 0);
+          });
+        });
+        
+        // Add total row
+        const totalRow = ["TOTAL"];
+        
+        // Add totals for each column
+        selectedColumns.filter(col => col !== "month").forEach(col => {
+          if (selectedSubColumns.includes("all") || selectedSubColumns.includes("amount")) {
+            totalRow.push(formatAmount(totals[col] || 0));
+          }
+          if (selectedSubColumns.includes("all") || selectedSubColumns.includes("date")) {
+            totalRow.push("");
+          }
+          if (selectedSubColumns.includes("all") || selectedSubColumns.includes("status")) {
+            totalRow.push("");
+          }
+          if (selectedSubColumns.includes("all") || selectedSubColumns.includes("bank")) {
+            totalRow.push("");
+          }
+          if (selectedSubColumns.includes("all") || selectedSubColumns.includes("payMode")) {
+            totalRow.push("");
+          }
+        });
+        
+        // Add grand total
+        const grandTotal = Object.values(totals).reduce((sum, val) => sum + val, 0);
+        totalRow.push(formatAmount(grandTotal));
+        
+        dataRows.push(totalRow);
+        
+        // Create worksheet and add to workbook
+        const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
+        
+        // Add worksheet name and company details
+        const sheetName =
+          selectedCompanyName.length > 30
+            ? `${selectedCompanyName.substring(0, 27)}...`
+            : selectedCompanyName;
+        
+        XLSX.utils.book_append_sheet(wb, ws, sheetName);
       }
-
-      // Generate filename with sanitized company name
-      const sanitizedCompanyName = selectedCompanyName.replace(
-        /[^a-z0-9]/gi,
-        "_"
-      );
-      const filename = `${sanitizedCompanyName}_${startYear}_${endYear}_tax_report.xlsx`;
-
+      
+      // Generate filename with sanitized company name and date range
+      const sanitizedCompanyName = selectedCompanyName.replace(/[^a-z0-9]/gi, "_");
+      let filename;
+      
+      if (isRangeView) {
+        filename = `${sanitizedCompanyName}_${startYear}-${startMonth}_to_${endYear}-${endMonth}_tax_report.xlsx`;
+      } else {
+        filename = `${sanitizedCompanyName}_${selectedYear}_tax_report.xlsx`;
+      }
+      
+      // Write to file and trigger download
       XLSX.writeFile(wb, filename);
+      
+      console.log("[DEBUG] Excel export completed");
     } catch (error) {
       console.error("Error exporting to Excel:", error);
       // You can add a toast notification here to show the error
     }
   }, [
+    isRangeView,
+    displayData,
+    selectedYear,
     startYear,
-    reportData,
+    startMonth,
+    endYear,
+    endMonth,
     selectedCompanyName,
     selectedColumns,
-    displayData,
+    selectedSubColumns,
   ]);
+  
+  // Helper functions for formatting
+  const formatAmount = (amount) => {
+    if (typeof amount === "string") {
+      const cleanedStr = amount.replace(/[^0-9.-]/g, "");
+      amount = parseFloat(cleanedStr) || 0;
+    }
+    if (isNaN(amount) || amount === undefined) {
+      amount = 0;
+    }
+    if (amount === 0) return "0.00";
+    return new Intl.NumberFormat("en-KE", { minimumFractionDigits: 2 }).format(amount);
+  };
+  
+  const formatDate = (date) => {
+    if (!date) return "—";
+    try {
+      if (date === "" || date === "Invalid Date") return "—";
+      
+      if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(date)) {
+        const [day, month, year] = date.split("/");
+        return `${day.padStart(2, "0")}/${month.padStart(2, "0")}/${year}`;
+      }
+      
+      if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(date)) {
+        const [year, month, day] = date.split("-");
+        return `${day.padStart(2, "0")}/${month.padStart(2, "0")}/${year}`;
+      }
+      
+      const dateObj = new Date(date);
+      if (isNaN(dateObj.getTime())) return "—";
+      
+      const day = dateObj.getDate().toString().padStart(2, "0");
+      const month = (dateObj.getMonth() + 1).toString().padStart(2, "0");
+      const year = dateObj.getFullYear();
+      
+      return `${day}/${month}/${year}`;
+    } catch (e) {
+      console.error("Error formatting date:", date, e);
+      return "—";
+    }
+  };
 
   // When in overall view, render the OverallView component
   if (isOverallView) {
     return (
       <div className="flex-1 p-4 space-y-4 overflow-auto">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-bold">Overall View</h2>
+          <Button
+            onClick={() => {
+              // Export functionality for OverallView will be handled by the component itself
+              const exportButton = document.querySelector('.overallview-export-button');
+              if (exportButton) {
+                exportButton.click();
+              }
+            }}
+            variant="outline"
+            className="ml-auto">
+            Export to Excel
+          </Button>
+        </div>
         <OverallView 
           companies={filteredCompanies} 
           initialSearchQuery={searchQuery}

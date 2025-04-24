@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/table";
 import React, { memo, useMemo } from "react";
 import { Button } from "@/components/ui/button";
+import * as XLSX from "xlsx";
 
 export type TaxEntry = {
   month: string;
@@ -79,6 +80,7 @@ interface DataTableProps {
     total: number;
   };
   onPageChange?: (page: number) => void;
+  onExport?: () => void;
 }
 
 // Memoized formatter for better performance
@@ -353,6 +355,7 @@ export const DataTable = memo(
     getMonthsInRange,
     pagination,
     onPageChange,
+    onExport,
   }: DataTableProps) => {
     // Helper function to calculate column spans
     const calculateColSpan = (subColumns) => {
@@ -402,6 +405,7 @@ export const DataTable = memo(
           {title && (
             <h3 className="text-xl font-bold text-gray-800 mb-4">{title}</h3>
           )}
+
           <div className="overflow-x-auto border rounded-lg shadow">
             <Table>
               <TableHeader>
@@ -546,6 +550,7 @@ export const DataTable = memo(
               {title}
             </h3>
           )}
+
           <div className="rounded-xl border-2 border-slate-300 shadow-md overflow-x-auto">
             <div className="max-h-[calc(100vh-300px)] overflow-auto relative">
               <Table>
@@ -833,6 +838,7 @@ export const DataTable = memo(
         {title && (
           <h3 className="text-xl font-semibold text-slate-800 px-1">{title}</h3>
         )}
+
         <div className="flex-grow flex flex-col rounded-xl border-2 border-slate-300 shadow-md overflow-hidden">
           <div className="flex-grow overflow-auto relative">
             <Table>
@@ -1074,5 +1080,320 @@ export const DataTable = memo(
     );
   }
 );
+
+// Export function to export data as displayed in the table
+const exportTableToExcel = (
+  data: any[],
+  yearlyData: Record<string, any[]> | null,
+  selectedColumns: string[],
+  selectedSubColumns: string[],
+  isHorizontalView: boolean,
+  visibleMonths?: any[],
+  title?: string
+) => {
+  try {
+    console.log("[DEBUG] Starting Excel export from DataTable");
+    
+    // Create a workbook
+    const wb = XLSX.utils.book_new();
+    let headers: string[] = [];
+    let exportData: any[] = [];
+    
+    // Format data based on current view
+    if (isHorizontalView && yearlyData) {
+      // Horizontal view (yearly tables)
+      const years = Object.keys(yearlyData).sort().reverse();
+      const months = [
+        "JAN", "FEB", "MAR", "APR", "MAY", "JUN",
+        "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"
+      ];
+      
+      // Create a sheet for each year
+      years.forEach(year => {
+        headers = ["Month"];
+        exportData = [];
+        
+        // Add column headers
+        selectedColumns.forEach(col => {
+          const colName = taxColumns.find(t => t.id === col)?.label || col.toUpperCase();
+          
+          if (selectedSubColumns.includes("all") || selectedSubColumns.includes("amount")) {
+            headers.push(`${colName} Amount`);
+          }
+          if (selectedSubColumns.includes("all") || selectedSubColumns.includes("date")) {
+            headers.push(`${colName} Date`);
+          }
+          if (selectedSubColumns.includes("all") || selectedSubColumns.includes("status")) {
+            headers.push(`${colName} Status`);
+          }
+          if (selectedSubColumns.includes("all") || selectedSubColumns.includes("bank")) {
+            headers.push(`${colName} Bank`);
+          }
+          if (selectedSubColumns.includes("all") || selectedSubColumns.includes("payMode")) {
+            headers.push(`${colName} Pay Mode`);
+          }
+        });
+        
+        // Add a column for monthly total
+        headers.push("Monthly Total");
+        
+        // Add data for each month
+        months.forEach(month => {
+          const entry = yearlyData[year]?.find(e => e.month === month) || {
+            month,
+            paye: { amount: 0, date: null },
+            housingLevy: { amount: 0, date: null },
+            nita: { amount: 0, date: null },
+            shif: { amount: 0, date: null },
+            nssf: { amount: 0, date: null },
+          };
+          
+          const row: any[] = [month];
+          let monthlyTotal = 0;
+          
+          // Add data for each selected column
+          selectedColumns.forEach(col => {
+            if (selectedSubColumns.includes("all") || selectedSubColumns.includes("amount")) {
+              row.push(formatAmount(entry[col]?.amount || 0));
+              monthlyTotal += (entry[col]?.amount || 0);
+            }
+            if (selectedSubColumns.includes("all") || selectedSubColumns.includes("date")) {
+              row.push(formatDate(entry[col]?.date));
+            }
+            if (selectedSubColumns.includes("all") || selectedSubColumns.includes("status")) {
+              row.push(entry[col]?.status || "—");
+            }
+            if (selectedSubColumns.includes("all") || selectedSubColumns.includes("bank")) {
+              row.push(entry[col]?.bank || "—");
+            }
+            if (selectedSubColumns.includes("all") || selectedSubColumns.includes("payMode")) {
+              row.push(entry[col]?.payMode || "—");
+            }
+          });
+          
+          // Add monthly total
+          row.push(formatAmount(monthlyTotal));
+          
+          exportData.push(row);
+        });
+        
+        // Add yearly total row
+        const totalRow: any[] = [`${year} TOTAL`];
+        const yearlyTotals: Record<string, number> = {};
+        
+        // Calculate yearly totals for each tax type
+        selectedColumns.forEach(col => {
+          yearlyTotals[col] = yearlyData[year]?.reduce(
+            (sum, entry) => sum + (entry[col]?.amount || 0), 0
+          ) || 0;
+        });
+        
+        // Add yearly totals to the row
+        selectedColumns.forEach(col => {
+          if (selectedSubColumns.includes("all") || selectedSubColumns.includes("amount")) {
+            totalRow.push(formatAmount(yearlyTotals[col]));
+          }
+          if (selectedSubColumns.includes("all") || selectedSubColumns.includes("date")) {
+            totalRow.push("");
+          }
+          if (selectedSubColumns.includes("all") || selectedSubColumns.includes("status")) {
+            totalRow.push("");
+          }
+          if (selectedSubColumns.includes("all") || selectedSubColumns.includes("bank")) {
+            totalRow.push("");
+          }
+          if (selectedSubColumns.includes("all") || selectedSubColumns.includes("payMode")) {
+            totalRow.push("");
+          }
+        });
+        
+        // Add yearly grand total
+        const yearlyGrandTotal = Object.values(yearlyTotals).reduce((sum, val) => sum + val, 0);
+        totalRow.push(formatAmount(yearlyGrandTotal));
+        
+        exportData.push(totalRow);
+        
+        // Create worksheet and add to workbook
+        const ws = XLSX.utils.aoa_to_sheet([headers, ...exportData]);
+        XLSX.utils.book_append_sheet(wb, ws, `Year ${year}`);
+      });
+    } else if (visibleMonths) {
+      // Overall view
+      headers = ["Month/Year"];
+      
+      // Add column headers
+      selectedColumns.forEach(col => {
+        const colName = taxColumns.find(t => t.id === col)?.label || col.toUpperCase();
+        
+        if (selectedSubColumns.includes("all") || selectedSubColumns.includes("amount")) {
+          headers.push(`${colName} Amount`);
+        }
+        if (selectedSubColumns.includes("all") || selectedSubColumns.includes("date")) {
+          headers.push(`${colName} Date`);
+        }
+        if (selectedSubColumns.includes("all") || selectedSubColumns.includes("status")) {
+          headers.push(`${colName} Status`);
+        }
+        if (selectedSubColumns.includes("all") || selectedSubColumns.includes("bank")) {
+          headers.push(`${colName} Bank`);
+        }
+        if (selectedSubColumns.includes("all") || selectedSubColumns.includes("payMode")) {
+          headers.push(`${colName} Pay Mode`);
+        }
+      });
+      
+      // Add data for each month
+      visibleMonths.forEach(month => {
+        const entry = data.find(
+          (d) => d.month === month.name.slice(0, 3).toUpperCase()
+        ) || {
+          month: month.name.slice(0, 3).toUpperCase(),
+          paye: { amount: 0, date: null },
+          housingLevy: { amount: 0, date: null },
+          nita: { amount: 0, date: null },
+          shif: { amount: 0, date: null },
+          nssf: { amount: 0, date: null },
+        };
+        
+        const row: any[] = [`${month.name} ${month.year}`];
+        
+        // Add data for each selected column
+        selectedColumns.forEach(col => {
+          if (selectedSubColumns.includes("all") || selectedSubColumns.includes("amount")) {
+            row.push(formatAmount(entry[col]?.amount || 0));
+          }
+          if (selectedSubColumns.includes("all") || selectedSubColumns.includes("date")) {
+            row.push(formatDate(entry[col]?.date));
+          }
+          if (selectedSubColumns.includes("all") || selectedSubColumns.includes("status")) {
+            row.push(entry[col]?.status || "—");
+          }
+          if (selectedSubColumns.includes("all") || selectedSubColumns.includes("bank")) {
+            row.push(entry[col]?.bank || "—");
+          }
+          if (selectedSubColumns.includes("all") || selectedSubColumns.includes("payMode")) {
+            row.push(entry[col]?.payMode || "—");
+          }
+        });
+        
+        exportData.push(row);
+      });
+      
+      // Create worksheet and add to workbook
+      const ws = XLSX.utils.aoa_to_sheet([headers, ...exportData]);
+      XLSX.utils.book_append_sheet(wb, ws, "Overall View");
+    } else {
+      // Regular table view
+      headers = ["Month"];
+      
+      // Add column headers
+      selectedColumns.forEach(col => {
+        const colName = taxColumns.find(t => t.id === col)?.label || col.toUpperCase();
+        
+        if (selectedSubColumns.includes("all") || selectedSubColumns.includes("amount")) {
+          headers.push(`${colName} Amount`);
+        }
+        if (selectedSubColumns.includes("all") || selectedSubColumns.includes("date")) {
+          headers.push(`${colName} Date`);
+        }
+        if (selectedSubColumns.includes("all") || selectedSubColumns.includes("status")) {
+          headers.push(`${colName} Status`);
+        }
+        if (selectedSubColumns.includes("all") || selectedSubColumns.includes("bank")) {
+          headers.push(`${colName} Bank`);
+        }
+        if (selectedSubColumns.includes("all") || selectedSubColumns.includes("payMode")) {
+          headers.push(`${colName} Pay Mode`);
+        }
+      });
+      
+      // Add "Monthly Total" column
+      headers.push("Monthly Total");
+      
+      // Add data for each entry
+      data.forEach(entry => {
+        const row: any[] = [entry.month];
+        let monthlyTotal = 0;
+        
+        // Add data for each selected column
+        selectedColumns.forEach(col => {
+          if (selectedSubColumns.includes("all") || selectedSubColumns.includes("amount")) {
+            row.push(formatAmount(entry[col]?.amount || 0));
+            monthlyTotal += (entry[col]?.amount || 0);
+          }
+          if (selectedSubColumns.includes("all") || selectedSubColumns.includes("date")) {
+            row.push(formatDate(entry[col]?.date));
+          }
+          if (selectedSubColumns.includes("all") || selectedSubColumns.includes("status")) {
+            row.push(entry[col]?.status || "—");
+          }
+          if (selectedSubColumns.includes("all") || selectedSubColumns.includes("bank")) {
+            row.push(entry[col]?.bank || "—");
+          }
+          if (selectedSubColumns.includes("all") || selectedSubColumns.includes("payMode")) {
+            row.push(entry[col]?.payMode || "—");
+          }
+        });
+        
+        // Add monthly total
+        row.push(formatAmount(monthlyTotal));
+        
+        exportData.push(row);
+      });
+      
+      // Calculate totals
+      const totals: Record<string, number> = {};
+      data.forEach(entry => {
+        selectedColumns.forEach(col => {
+          totals[col] = (totals[col] || 0) + (entry[col]?.amount || 0);
+        });
+      });
+      
+      // Add total row
+      const totalRow: any[] = ["TOTAL"];
+      
+      // Add totals for each column
+      selectedColumns.forEach(col => {
+        if (selectedSubColumns.includes("all") || selectedSubColumns.includes("amount")) {
+          totalRow.push(formatAmount(totals[col] || 0));
+        }
+        if (selectedSubColumns.includes("all") || selectedSubColumns.includes("date")) {
+          totalRow.push("");
+        }
+        if (selectedSubColumns.includes("all") || selectedSubColumns.includes("status")) {
+          totalRow.push("");
+        }
+        if (selectedSubColumns.includes("all") || selectedSubColumns.includes("bank")) {
+          totalRow.push("");
+        }
+        if (selectedSubColumns.includes("all") || selectedSubColumns.includes("payMode")) {
+          totalRow.push("");
+        }
+      });
+      
+      // Add grand total
+      const grandTotal = Object.values(totals).reduce((sum, val) => sum + val, 0);
+      totalRow.push(formatAmount(grandTotal));
+      
+      exportData.push(totalRow);
+      
+      // Create worksheet and add to workbook
+      const ws = XLSX.utils.aoa_to_sheet([headers, ...exportData]);
+      XLSX.utils.book_append_sheet(wb, ws, title || "Tax Report");
+    }
+    
+    // Generate filename
+    const now = new Date();
+    const timestamp = `${now.getFullYear()}${(now.getMonth() + 1).toString().padStart(2, '0')}${now.getDate().toString().padStart(2, '0')}_${now.getHours().toString().padStart(2, '0')}${now.getMinutes().toString().padStart(2, '0')}`;
+    const filename = `tax_report_${timestamp}.xlsx`;
+    
+    // Write to file and trigger download
+    XLSX.writeFile(wb, filename);
+    
+    console.log("[DEBUG] Excel export completed");
+  } catch (error) {
+    console.error("Error exporting to Excel:", error);
+  }
+};
 
 DataTable.displayName = "DataTable";
