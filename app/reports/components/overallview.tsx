@@ -8,7 +8,8 @@ import { Button } from "@/components/ui/button";
 import { ClientCategoryFilter } from "./client-category-filter";
 import { ColumnFilter } from "./column-filter";
 import { Badge } from "@/components/ui/badge";
-import { useCompanyTaxReports } from "../hooks/useCompanyTaxReports";
+import { supabase } from "@/lib/supabase";
+import { usePayrollReports } from "../hooks/usePayrollReports";
 import { DataTable } from "./data-table";
 import { format } from "date-fns";
 
@@ -58,7 +59,7 @@ export default function OverallView({
   const [viewMode, setViewMode] = useState<"table" | "overall" | "company">(
     "table"
   );
-  const { reportData, loading: taxDataLoading, refetch: refetchReports } = useCompanyTaxReports();
+  const { reportData, loading: taxDataLoading, fetchReportData } = usePayrollReports();
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [sortConfig, setSortConfig] = useState<{
     key: string;
@@ -88,9 +89,7 @@ export default function OverallView({
     filteredCompanies.forEach((company) => {
       const now = new Date();
       const isActive = ["acc", "audit", "sheria", "imm"].some((category) => {
-        const effectiveToField = `${
-          category === "audit" ? "audit_tax" : category
-        }_client_effective_to`;
+        const effectiveToField = `${category === "audit" ? "audit_tax" : category}_client_effective_to`;
         return (
           company[effectiveToField] === null ||
           new Date(company[effectiveToField]) > now
@@ -106,6 +105,13 @@ export default function OverallView({
 
     setCounts(newCounts);
   }, [companies, filteredCompanies]);
+
+  // Load data on component mount
+  useEffect(() => {
+    // Initialize data when component mounts
+    applyDateRange();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // State for date range selection
   const currentYear = new Date().getFullYear();
@@ -276,44 +282,31 @@ export default function OverallView({
   );
 
   // Apply date range
-  const applyDateRange = () => {
+  const applyDateRange = async () => {
     console.log("[DEBUG] Applying date range:", startDate, endDate);
-    console.log("[DEBUG] Current reportData structure before fetch:", 
-      reportData ? {
-        companies: Object.keys(reportData).length,
-        sampleCompany: Object.keys(reportData)[0] ? {
-          id: Object.keys(reportData)[0],
-          years: Object.keys(reportData[Object.keys(reportData)[0]]),
-          monthsInYear: Object.keys(reportData)[0] && Object.keys(reportData[Object.keys(reportData)[0]])[0] ? 
-            reportData[Object.keys(reportData)[0]][Object.keys(reportData[Object.keys(reportData)[0]])[0]].length : 0
-        } : null
-      } : "No data"
-    );
+    console.log("[DEBUG] Filtered companies count:", filteredCompanies.length);
     
     setIsLoading(true);
-    // Actual data fetching is handled by useCompanyTaxReports
-    if (refetchReports) {
-      refetchReports();
-    }
     
-    setTimeout(() => {
+    try {
+      // Get all company IDs
+      const companyIds = filteredCompanies.map(company => company.id);
+      console.log("[DEBUG] Company IDs to fetch:", companyIds);
+      
+      if (companyIds.length === 0) {
+        console.warn("[DEBUG] No companies to fetch data for");
+        setIsLoading(false);
+        return;
+      }
+      
+      // Fetch real data from the database using our hook
+      await fetchReportData(startDate, endDate, companyIds);
+      
+    } catch (error) {
+      console.error("[DEBUG] Error in applyDateRange:", error);
+    } finally {
       setIsLoading(false);
-      console.log("[DEBUG] After date range applied - Full data structure:", 
-        reportData ? {
-          companies: Object.keys(reportData).length,
-          sampleCompany: Object.keys(reportData)[0] ? {
-            id: Object.keys(reportData)[0],
-            years: Object.keys(reportData[Object.keys(reportData)[0]]),
-            monthsInYear: Object.keys(reportData)[0] && Object.keys(reportData[Object.keys(reportData)[0]])[0] ? 
-              reportData[Object.keys(reportData)[0]][Object.keys(reportData[Object.keys(reportData)[0]])[0]].length : 0,
-            sampleMonth: Object.keys(reportData)[0] && 
-              Object.keys(reportData[Object.keys(reportData)[0]])[0] && 
-              reportData[Object.keys(reportData)[0]][Object.keys(reportData[Object.keys(reportData)[0]])[0]][0] ? 
-              reportData[Object.keys(reportData)[0]][Object.keys(reportData[Object.keys(reportData)[0]])[0]][0] : null
-          } : null
-        } : "No data"
-      );
-    }, 500);
+    }
   };
 
   // Helper function to calculate column spans based on selected subcolumns
@@ -966,12 +959,8 @@ export default function OverallView({
                   size="sm"
                   onClick={() => {
                     console.log("[DEBUG] Refreshing data");
-                    if (refetchReports) {
-                      refetchReports();
-                    }
-                    // Force re-render
-                    setIsLoading(true);
-                    setTimeout(() => setIsLoading(false), 500);
+                    // Refresh data by calling applyDateRange
+                    applyDateRange();
                   }}
                   className="flex items-center gap-2"
                 >
