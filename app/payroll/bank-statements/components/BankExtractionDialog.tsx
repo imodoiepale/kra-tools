@@ -5,7 +5,7 @@ import {
     AlertTriangle, CheckCircle, Check, Trash,
     Plus, X, ChevronsUpDown, CalendarIcon, Eye,
     FileCheck, DollarSign, Building, Calendar,
-    FileTextIcon, Download ,
+    FileTextIcon, Download,
     ZoomOut,
     ZoomIn,
     Calculator
@@ -552,20 +552,43 @@ export function BankExtractionDialog({
     // Load PDF document
     useEffect(() => {
         const loadPdfDocument = async () => {
-            if (!statement.statement_document.statement_pdf) {
+            if (!isOpen) return;
+            if (!statement?.statement_document?.statement_pdf) {
                 setLoading(false);
+                setPdfLoading(false);
                 return;
             }
 
             try {
                 setLoading(true);
+                setPdfLoading(true);
 
                 // Construct the public URL
                 const publicUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/Statement-Cycle/${statement.statement_document.statement_pdf}`;
 
+                console.log('Loading PDF from URL:', publicUrl);
                 setPdfUrl(publicUrl);
-                setLoading(false);
 
+                // Try to load the PDF document to check if it's accessible
+                try {
+                    const pdfLoadingTask = pdfjsLib.getDocument({
+                        url: publicUrl,
+                        password: pdfPassword || null
+                    });
+                    const pdfDoc = await pdfLoadingTask.promise;
+                    setPdfDocument(pdfDoc);
+                    setTotalPages(pdfDoc.numPages);
+                    setPdfNeedsPassword(false);
+                } catch (pdfError) {
+                    console.error('Error loading PDF document:', pdfError);
+                    if (pdfError.name === 'PasswordException') {
+                        setPdfNeedsPassword(true);
+                        setShowPasswordDialog(true);
+                    }
+                }
+
+                setLoading(false);
+                setPdfLoading(false);
             } catch (error) {
                 console.error('Error setting PDF URL:', error);
                 toast({
@@ -574,6 +597,7 @@ export function BankExtractionDialog({
                     variant: 'destructive'
                 });
                 setLoading(false);
+                setPdfLoading(false);
             }
         };
 
@@ -586,9 +610,10 @@ export function BankExtractionDialog({
                 URL.revokeObjectURL(pdfUrl);
             }
             setLoading(true);
+            setPdfLoading(true);
             setPdfUrl(null);
         };
-    }, [isOpen, statement.statement_document.statement_pdf]);
+    }, [isOpen, statement?.statement_document?.statement_pdf, pdfPassword]);
 
     function onDocumentLoadSuccess({ numPages }) {
         console.log('PDF loaded successfully with', numPages, 'pages');
@@ -637,7 +662,7 @@ export function BankExtractionDialog({
         });
     };
 
-    
+
     // Function to format date for the current month
     const formatDateForCurrentMonth = () => {
         const lastDay = new Date(selectedYear, selectedMonth, 0).getDate();
@@ -925,89 +950,131 @@ export function BankExtractionDialog({
 
     const handleSave = async () => {
         try {
-            setSaving(true)
-
-            // Prepare updated extraction data
-            const updatedExtractions = {
-                bank_name: bankName || null,
-                account_number: accountNumber || null,
-                currency: currency || null,
-                statement_period: statementPeriod || extractionsData.statement_period,
-                // Set opening/closing balance based on monthly balances for the selected month/year
-                opening_balance: getMonthlyOpeningBalance(),
-                closing_balance: getMonthlyClosingBalance(),
-                monthly_balances: monthlyBalances
+            setSaving(true);
+            
+            // Check that statement ID is valid before proceeding
+            if (!statement || !statement.id) {
+                console.error('Cannot save: Statement ID is undefined or invalid', statement);
+                
+                // Try to find the statement ID using bank_id and statement date
+                if (statement && statement.bank_id && statement.statement_month && statement.statement_year) {
+                    try {
+                        const { data: foundStatement, error } = await supabase
+                            .from('acc_cycle_bank_statements')
+                            .select('id')
+                            .eq('bank_id', statement.bank_id)
+                            .eq('statement_month', statement.statement_month)
+                            .eq('statement_year', statement.statement_year)
+                            .single();
+                        
+                        if (error) throw error;
+                        
+                        if (foundStatement && foundStatement.id) {
+                            // Use the found ID for saving
+                            const statementId = foundStatement.id;
+                            console.log('Found statement ID:', statementId);
+                            
+                            // Continue with save operation using the found ID
+                            await saveWithId(statementId);
+                            return;
+                        }
+                    } catch (findError) {
+                        console.error('Error finding statement ID:', findError);
+                    }
+                }
+                
+                toast({
+                    title: 'Save Error',
+                    description: 'Invalid statement ID. Cannot save changes.',
+                    variant: 'destructive'
+                });
+                setSaving(false);
+                return;
             }
-
-            // Validate bank details match expected values
-            const hasMismatches = []
-            if (bankName && !bankName.toLowerCase().includes(bank.bank_name.toLowerCase())) {
-                hasMismatches.push(`Bank name mismatch: Expected "${bank.bank_name}", found "${bankName}"`)
-            }
-            if (accountNumber && !accountNumber.includes(bank.account_number)) {
-                hasMismatches.push(`Account number mismatch: Expected "${bank.account_number}", found "${accountNumber}"`)
-            }
-            // if (currency && normalizeCurrencyCode(currency) !== normalizeCurrencyCode(bank.bank_currency)) {
-            //     hasMismatches.push(`Currency mismatch: Expected "${bank.bank_currency}", found "${currency}"`)
-            // }
-
-            // Update validation status
-            const validationStatus = {
-                is_validated: hasMismatches.length === 0,
-                validation_date: new Date().toISOString(),
-                validated_by: null, // TODO: Add user info when authentication is implemented
-                mismatches: hasMismatches
-            }
-
-            // Update statement status
-            const statusUpdate = {
-                status: hasMismatches.length === 0 ? 'validated' : 'validation_issues',
-                verification_date: new Date().toISOString(),
-                assigned_to: statement.status.assigned_to
-            }
-
-            // Update document size
-            const updatedDocumentDetails = {
-                ...statement.statement_document,
-                document_size: documentSize
-            }
-
-            // Update database
-            const { data, error } = await supabase
-                .from('acc_cycle_bank_statements')
-                .update({
-                    statement_extractions: updatedExtractions,
-                    validation_status: validationStatus,
-                    status: statusUpdate,
-                    statement_document: updatedDocumentDetails
-                })
-                .eq('id', statement.id)
-                .select('*')
-                .single()
-
-            if (error) throw error
-
-            // Notify parent component
-            onStatementUpdated(data)
-
-            // Handle statement range data
-            await handleStatementRangeData();
-
-            toast({
-                title: 'Success',
-                description: 'Statement data saved successfully'
-            })
+            
+            // If ID exists, call the save function with it
+            await saveWithId(statement.id);
         } catch (error) {
-            console.error('Save error:', error)
+            console.error('Save error:', error);
             toast({
                 title: 'Save Error',
                 description: 'Failed to save statement data',
                 variant: 'destructive'
-            })
+            });
         } finally {
-            setSaving(false)
+            setSaving(false);
         }
-    }
+    };
+    
+    // Helper function to handle saving with a valid ID
+    const saveWithId = async (statementId) => {
+        // Prepare updated extraction data
+        const updatedExtractions = {
+            bank_name: bankName || null,
+            account_number: accountNumber || null,
+            currency: currency || null,
+            statement_period: statementPeriod || extractionsData.statement_period,
+            opening_balance: getMonthlyOpeningBalance(),
+            closing_balance: getMonthlyClosingBalance(),
+            monthly_balances: monthlyBalances
+        };
+    
+        // Validate bank details match expected values
+        const hasMismatches = [];
+        if (bankName && !bankName.toLowerCase().includes(bank.bank_name.toLowerCase())) {
+            hasMismatches.push(`Bank name mismatch: Expected "${bank.bank_name}", found "${bankName}"`);
+        }
+        if (accountNumber && !accountNumber.includes(bank.account_number)) {
+            hasMismatches.push(`Account number mismatch: Expected "${bank.account_number}", found "${accountNumber}"`);
+        }
+    
+        // Update validation status
+        const validationStatus = {
+            is_validated: hasMismatches.length === 0,
+            validation_date: new Date().toISOString(),
+            validated_by: null,
+            mismatches: hasMismatches
+        };
+    
+        // Update statement status
+        const statusUpdate = {
+            status: hasMismatches.length === 0 ? 'validated' : 'validation_issues',
+            verification_date: new Date().toISOString(),
+            assigned_to: statement.status.assigned_to
+        };
+    
+        // Update document size
+        const updatedDocumentDetails = {
+            ...statement.statement_document,
+            document_size: documentSize
+        };
+    
+        // Update database with explicit ID
+        const { data, error } = await supabase
+            .from('acc_cycle_bank_statements')
+            .update({
+                statement_extractions: updatedExtractions,
+                validation_status: validationStatus,
+                status: statusUpdate,
+                statement_document: updatedDocumentDetails
+            })
+            .eq('id', statementId)
+            .select('*')
+            .single();
+    
+        if (error) throw error;
+    
+        // Notify parent component with the updated statement
+        onStatementUpdated(data);
+    
+        // Handle statement range data
+        await handleStatementRangeData();
+    
+        toast({
+            title: 'Success',
+            description: 'Statement data saved successfully'
+        });
+    };
 
     const handleDeleteStatement = () => {
         // Check if this is a range statement
@@ -1632,7 +1699,7 @@ export function BankExtractionDialog({
 
         return formattedWholePart + decimalPart;
     };
-    
+
     const handlePasswordSubmit = async (passwordToTry: string) => {
         setApplyingPassword(true);
         try {
@@ -2160,9 +2227,25 @@ export function BankExtractionDialog({
                                                     style={{ height: "calc(100vh - 280px)" }}
                                                     title="PDF Viewer"
                                                 ></iframe>
-                                            ) : (
+                                            ) : statement?.statement_document?.statement_pdf ? (
                                                 <div className="flex items-center justify-center h-full">
+                                                    <FileTextIcon className="h-12 w-12 text-gray-300 mb-4" />
+                                                    <p className="text-muted-foreground">Loading PDF...</p>
+                                                </div>
+                                            ) : (
+                                                <div className="flex flex-col items-center justify-center h-full">
+                                                    <FileTextIcon className="h-12 w-12 text-gray-300 mb-4" />
                                                     <p className="text-muted-foreground">No PDF available</p>
+                                                    {bank && (
+                                                        <div className="mt-4 text-center">
+                                                            <p className="text-sm mb-2">You can still add statement details manually:</p>
+                                                            <div className="text-sm text-gray-600 bg-gray-50 p-3 rounded">
+                                                                <p><strong>Bank:</strong> {bank.bank_name}</p>
+                                                                <p><strong>Account:</strong> {bank.account_number}</p>
+                                                                <p><strong>Month:</strong> {format(new Date(statement.statement_year, statement.statement_month, 1), 'MMMM yyyy')}</p>
+                                                            </div>
+                                                        </div>
+                                                    )}
                                                 </div>
                                             )}
                                         </div>

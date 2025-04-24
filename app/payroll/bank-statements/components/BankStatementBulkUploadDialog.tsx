@@ -4,14 +4,14 @@
 import { useState, useRef, useEffect } from 'react'
 import {
     Loader2, Upload, AlertTriangle, CheckCircle, UploadCloud,
-    FileText, Building, Landmark, CreditCard, DollarSign,HelpCircle,
+    FileText, Building, Landmark, CreditCard, DollarSign, HelpCircle,
     Calendar, X, ArrowRight, FileCheck, FilePlus, FileWarning,
     ChevronDown, ChevronRight, Save, Eye, CircleDashed, XCircle, FileSearch
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/hooks/use-toast'
 import { format } from 'date-fns'
-import { Dialog, DialogContent, DialogHeader, DialogTitle,DialogDescription , DialogFooter } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
@@ -292,6 +292,7 @@ export function BankStatementBulkUploadDialog({
 
     const [extractionCache, setExtractionCache] = useState<Record<string, any>>({});
 
+    const [uploadedStatement, setUploadedStatement] = useState(null);
 
     // Use useEffect to sync with prop changes
     useEffect(() => {
@@ -468,7 +469,7 @@ export function BankStatementBulkUploadDialog({
     useEffect(() => {
         // Get all statements grouped by company
         const companies = {};
-        
+
         // Group statements by company ID
         uploadItems.forEach(item => {
             if (item.matchedBank?.company_id) {
@@ -479,16 +480,16 @@ export function BankStatementBulkUploadDialog({
                 companies[companyId].push(item);
             }
         });
-        
+
         // Check each company's statements
         Object.keys(companies).forEach(companyId => {
             const statements = companies[companyId];
             const allVouched = statements.every(item => item.isVouched);
-            
+
             // Update company group vouched status
-            setCompanyGroups(prev => 
-                prev.map(group => 
-                    group.companyId === parseInt(companyId) 
+            setCompanyGroups(prev =>
+                prev.map(group =>
+                    group.companyId === parseInt(companyId)
                         ? { ...group, isVouched: allVouched }
                         : group
                 )
@@ -1307,7 +1308,7 @@ export function BankStatementBulkUploadDialog({
                                     }
                                     return updated;
                                 });
-                                
+
                                 // Add to ready for processing list
                                 readyForProcessing.push(i);
                                 continue;
@@ -1335,7 +1336,7 @@ export function BankStatementBulkUploadDialog({
                                     }
                                     return updated;
                                 });
-                                
+
                                 // Add to ready for processing list
                                 readyForProcessing.push(i);
                                 continue;
@@ -1373,7 +1374,7 @@ export function BankStatementBulkUploadDialog({
             if (readyForProcessing.length > 0) {
                 // Update processing queue with ready items
                 setProcessingQueue(readyForProcessing);
-                
+
                 // Start processing the first item
                 if (readyForProcessing.length > 0) {
                     handleFileExtraction(readyForProcessing[0]);
@@ -1421,7 +1422,7 @@ export function BankStatementBulkUploadDialog({
 
             // Use ExtractionsService to get extraction (will use cache if available)
             const extractionResult = await ExtractionsService.getExtraction(file, extractionOptions);
-            
+
             console.log('Extraction result:', extractionResult?.success ? 'Success' : 'Failed');
 
             // Store results
@@ -1439,8 +1440,8 @@ export function BankStatementBulkUploadDialog({
                 // If extraction failed, continue with upload anyway
                 toast({
                     title: "Extraction Warning",
-                    description: extractionResult.requiresPassword 
-                        ? "PDF is password protected. Please provide a password." 
+                    description: extractionResult.requiresPassword
+                        ? "PDF is password protected. Please provide a password."
                         : "Could not extract data from the statement. Continuing with upload.",
                     variant: "warning"
                 });
@@ -1499,7 +1500,7 @@ export function BankStatementBulkUploadDialog({
 
             // Use ExtractionsService directly (handles caching and URL cleanup internally)
             const extractionResult = await ExtractionsService.getExtraction(item.file, extractionOptions);
-            
+
             console.log('Extraction result:', extractionResult?.success ? 'Success' : 'Failed');
 
             // Store results
@@ -1516,8 +1517,8 @@ export function BankStatementBulkUploadDialog({
                 // If extraction failed, continue with upload anyway
                 toast({
                     title: "Extraction Warning",
-                    description: extractionResult.requiresPassword 
-                        ? "PDF is password protected. Please provide a password." 
+                    description: extractionResult.requiresPassword
+                        ? "PDF is password protected. Please provide a password."
                         : "Could not extract data from the statement. Continuing with upload.",
                     variant: "warning"
                 });
@@ -1882,14 +1883,14 @@ export function BankStatementBulkUploadDialog({
         try {
             // Filter items that have files and matched banks
             const validItems = items.filter(item => item.file && item.matchedBank);
-            
+
             if (validItems.length === 0) {
                 console.log('No valid items for batch extraction');
                 return;
             }
 
             console.log(`Processing batch extraction for ${validItems.length} files`);
-            
+
             // Define extraction options
             const extractionOptions = {
                 month: cycleMonth,
@@ -1898,10 +1899,10 @@ export function BankStatementBulkUploadDialog({
 
             // Extract files from items
             const files = validItems.map(item => item.file);
-            
+
             // Use ExtractionsService to process batch
             const batchResults = await ExtractionsService.processBatch(files, extractionOptions);
-            
+
             console.log(`Batch extraction completed with ${batchResults.filter(r => r.success).length} successful extractions`);
 
             // Process each result
@@ -1909,7 +1910,7 @@ export function BankStatementBulkUploadDialog({
                 const item = validItems[i];
                 const result = batchResults[i];
                 const itemIndex = uploadItems.findIndex(uploadItem => uploadItem === item);
-                
+
                 if (itemIndex === -1) continue;
 
                 // Update item with extraction result
@@ -2073,10 +2074,10 @@ export function BankStatementBulkUploadDialog({
                     .select('id')
                     .eq('id', localCycleId)
                     .maybeSingle();
-                
+
                 if (cycleCheckError || !cycleExists) {
                     console.error('Statement cycle does not exist:', localCycleId);
-                    
+
                     // Create a new cycle since the existing one doesn't exist
                     const { data: newCycle, error: newCycleError } = await supabase
                         .from('statement_cycles')
@@ -2089,15 +2090,15 @@ export function BankStatementBulkUploadDialog({
                         })
                         .select('id')
                         .single();
-                    
+
                     if (newCycleError) {
                         console.error('Error creating statement cycle:', newCycleError);
                         throw new Error(`Failed to create statement cycle: ${newCycleError.message}`);
                     }
-                    
+
                     // Update the local cycle ID with the new one
                     setLocalCycleId(newCycle.id);
-                    
+
                     // Update the statement data with the new cycle ID
                     statementData.statement_cycle_id = newCycle.id;
                     console.log('Created new statement cycle:', newCycle.id);
@@ -2115,15 +2116,15 @@ export function BankStatementBulkUploadDialog({
                     })
                     .select('id')
                     .single();
-                
+
                 if (newCycleError) {
                     console.error('Error creating statement cycle:', newCycleError);
                     throw new Error(`Failed to create statement cycle: ${newCycleError.message}`);
                 }
-                
+
                 // Update the local cycle ID with the new one
                 setLocalCycleId(newCycle.id);
-                
+
                 // Update the statement data with the new cycle ID
                 statementData.statement_cycle_id = newCycle.id;
                 console.log('Created new statement cycle:', newCycle.id);
@@ -2186,6 +2187,33 @@ export function BankStatementBulkUploadDialog({
                 }
                 return updated;
             });
+            // Add this after updating the uploadItems state
+            if (extractionResults?.success) {
+    // Make sure we have a statement with an ID before showing the dialog
+    if (createdStatement && createdStatement.id) {
+        console.log('Setting uploaded statement with ID:', createdStatement.id);
+        
+        // Update the statement with the extracted data
+        const statementWithExtraction = {
+            ...createdStatement,
+            statement_extractions: extractionResults.extractedData
+        };
+        
+        // Store the updated statement and show the extraction dialog
+        setUploadedStatement(statementWithExtraction);
+        
+        // You might not need to immediately show the dialog here
+        // if it's handled elsewhere in your component flow
+        // setShowExtractionDialog(true);
+    } else {
+        console.error('Created statement is missing ID', createdStatement);
+        toast({
+            title: 'Warning',
+            description: 'Statement created but ID is missing. Refresh may be required.',
+            variant: 'warning'
+        });
+    }
+}
 
             return createdStatement;
         } catch (error) {
@@ -2217,7 +2245,7 @@ export function BankStatementBulkUploadDialog({
             bank: bank?.bank_name,
             period: extractedData?.statement_period,
         });
-        
+
         // Return early if no statement period
         if (!extractedData?.statement_period) return;
 
@@ -2226,7 +2254,7 @@ export function BankStatementBulkUploadDialog({
         if (!periodDates) return;
 
         console.log('Parsed period dates:', periodDates);
-        
+
         // In a real implementation, we would create statements for each month in the range
         // For now, just log the info to prevent the reference error
     };
@@ -3037,7 +3065,7 @@ export function BankStatementBulkUploadDialog({
                                                                     </div>
                                                                 </div> */}
 
-                                                                
+
                                                             </div>
                                                         </div>
                                                     ))}
@@ -3443,7 +3471,7 @@ export function BankStatementBulkUploadDialog({
                     </DialogContent>
                 </Dialog>
 
-                
+
             )}
 
             <StatementCycleConfirmationDialog
