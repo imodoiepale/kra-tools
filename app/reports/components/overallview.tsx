@@ -35,6 +35,10 @@ interface OverallViewProps {
     | "payMode"
     | "all"
   )[];
+  initialSearchQuery?: string;
+  initialSelectedFilters?: Record<string, Record<string, boolean>>;
+  onSearchChange?: (query: string) => void;
+  onFilterChange?: (filters: Record<string, Record<string, boolean>>) => void;
 }
 
 export default function OverallView({
@@ -47,6 +51,10 @@ export default function OverallView({
     "nssf",
   ],
   selectedSubColumns: initialSelectedSubColumns = ["all"],
+  initialSearchQuery = "",
+  initialSelectedFilters = {},
+  onSearchChange,
+  onFilterChange,
 }: OverallViewProps) {
   const [selectedColumns, setSelectedColumns] = useState(
     initialSelectedColumns
@@ -65,8 +73,14 @@ export default function OverallView({
     key: string;
     direction: "asc" | "desc";
   }>({ key: "name", direction: "asc" });
-  const [selectedFilters, setSelectedFilters] = useState<Record<string, Record<string, boolean>>>({});
+  const [selectedFilters, setSelectedFilters] = useState<Record<string, Record<string, boolean>>>(initialSelectedFilters);
+  // Use the companies passed from parent directly
   const [filteredCompanies, setFilteredCompanies] = useState(companies);
+  
+  // Update filteredCompanies when companies prop changes
+  useEffect(() => {
+    setFilteredCompanies(companies);
+  }, [companies]);
 
   // Add counts state
   const [counts, setCounts] = useState({
@@ -147,10 +161,10 @@ export default function OverallView({
     `${currentYear}-${currentMonth.toString().padStart(2, "0")}`
   );
 
-  // Use company filters hook with default Accounting and Audit filters
+  // Use company filters hook with initial values from parent
   const {
     searchQuery,
-    setSearchQuery,
+    setSearchQuery: setLocalSearchQuery,
     selectedFilters: filters,
     setSelectedFilters: setFilters,
     filteredCompanies: filtered,
@@ -158,7 +172,15 @@ export default function OverallView({
     handleFilterChange,
     isDateInRange,
     totalFilteredCount,
-  } = useCompanyFilters(companies);
+  } = useCompanyFilters(companies, initialSearchQuery);
+  
+  // Sync search query with parent component
+  const setSearchQuery = (query: string) => {
+    setLocalSearchQuery(query);
+    if (onSearchChange) {
+      onSearchChange(query);
+    }
+  };
 
   // Function to format amount - consistent with DataTable component
   const formatAmount = (amount) => {
@@ -339,70 +361,6 @@ export default function OverallView({
     0
   );
   const tableWidth = visibleMonths.length * totalSubColumns * 200; // Adjust width based on visible columns
-
-  // Enhanced search and filter functionality
-  useEffect(() => {
-    let filtered = [...companies];
-
-    // Apply search filter
-    if (searchQuery.trim()) {
-      const searchLower = searchQuery.toLowerCase();
-      filtered = filtered.filter((company) =>
-        company.name.toLowerCase().includes(searchLower)
-      );
-    }
-
-    // Apply category filters
-    if (Object.keys(selectedFilters).length > 0) {
-      filtered = filtered.filter((company) => {
-        return Object.entries(selectedFilters).some(([category, statuses]) => {
-          // Skip categories where no status is selected
-          if (!Object.values(statuses).some((value) => value)) {
-            return false;
-          }
-
-          const now = new Date();
-          let isActive = false;
-
-          switch (category) {
-            case "acc":
-              isActive =
-                !company.acc_client_effective_to ||
-                new Date(company.acc_client_effective_to) > now;
-              break;
-            case "audit":
-              isActive =
-                !company.audit_tax_client_effective_to ||
-                new Date(company.audit_tax_client_effective_to) > now;
-              break;
-            case "sheria":
-              isActive =
-                !company.cps_sheria_client_effective_to ||
-                new Date(company.cps_sheria_client_effective_to) > now;
-              break;
-            case "imm":
-              isActive =
-                !company.imm_client_effective_to ||
-                new Date(company.imm_client_effective_to) > now;
-              break;
-            case "all":
-              isActive = ["acc", "audit", "sheria", "imm"].some((cat) => {
-                const toField =
-                  company[
-                    `${cat === "audit" ? "audit_tax" : cat}_client_effective_to`
-                  ];
-                return !toField || new Date(toField) > now;
-              });
-              break;
-          }
-
-          return statuses[isActive ? "active" : "inactive"];
-        });
-      });
-    }
-
-    setFilteredCompanies(filtered);
-  }, [companies, searchQuery, selectedFilters]);
 
   // Update sorting logic
   const sortedCompanies = useMemo(() => {
@@ -725,19 +683,28 @@ export default function OverallView({
               <ClientCategoryFilter
                 isOpen={isFilterOpen}
                 onClose={() => {
-                  if (!Object.keys(selectedFilters).length) {
-                    setFilteredCompanies(companies);
-                  }
+                  // Just close the filter dialog without changing anything
                   setIsFilterOpen(false);
                 }}
                 onClearFilters={() => {
+                  // Update local state
                   setSelectedFilters({});
-                  setFilteredCompanies(companies);
+                  
+                  // Sync with parent component if callback is provided
+                  if (onFilterChange) {
+                    onFilterChange({});
+                  }
                 }}
                 onApplyFilters={(
                   filters: Record<string, Record<string, boolean>>
                 ) => {
+                  // Update local state
                   setSelectedFilters(filters);
+                  
+                  // Sync with parent component if callback is provided
+                  if (onFilterChange) {
+                    onFilterChange(filters);
+                  }
   
                   // Reset to all companies if no filters are selected
                   if (!Object.keys(filters).length) {
@@ -1030,11 +997,13 @@ export default function OverallView({
         {/* Debug info */}
         {process.env.NODE_ENV !== 'production' && (
           <div className="bg-yellow-100 p-2 text-xs border-b border-yellow-300 overflow-auto max-h-40">
-            <div><strong>DEBUG:</strong> Companies: {companies.length}, Filtered: {filteredCompanies.length}</div>
+            <div><strong>DEBUG:</strong> Companies: {companies.length}, Filtered: {filteredCompanies.length}, Sorted: {sortedCompanies.length}</div>
             <div><strong>ViewMode:</strong> {viewMode}</div>
             <div><strong>Has reportData:</strong> {reportData ? 'Yes' : 'No'}</div>
             <div><strong>Report keys:</strong> {reportData ? Object.keys(reportData).join(', ').substring(0, 100) : 'None'}</div>
             <div><strong>Selected Columns:</strong> {selectedColumns.join(', ')}</div>
+            <div><strong>Search Query:</strong> {searchQuery}</div>
+            <div><strong>Selected Filters:</strong> {JSON.stringify(Object.keys(selectedFilters))}</div>
           </div>
         )}
         <div className="absolute inset-0 flex flex-col">
@@ -1069,7 +1038,7 @@ export default function OverallView({
                       >
                         <div className="flex items-center gap-1">
                           <span className="text-[10px] text-white">
-                            Company
+                            Company({filteredCompanies.length})
                           </span>
                           {sortConfig.key === "name" && (
                             <span className="text-[10px] text-white">

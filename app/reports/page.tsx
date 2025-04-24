@@ -553,7 +553,20 @@ function CompanyReports() {
   if (isOverallView) {
     return (
       <div className="flex-1 p-4 space-y-4 overflow-auto">
-        <OverallView companies={companies} />
+        <OverallView 
+          companies={filteredCompanies} 
+          initialSearchQuery={searchQuery}
+          initialSelectedFilters={Object.fromEntries(
+            selectedFilters.map(filter => [filter, { active: true, inactive: false }])
+          )}
+          onSearchChange={setSearchQuery}
+          onFilterChange={(filters) => {
+            const selectedCategories = Object.entries(filters)
+              .filter(([_, value]) => Object.values(value).some(v => v))
+              .map(([key]) => key);
+            setSelectedFilters(selectedCategories);
+          }}
+        />
       </div>
     );
   }
