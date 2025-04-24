@@ -1,4 +1,5 @@
 // @ts-nocheck
+"use client"
 import { useState, useEffect, useRef } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -989,6 +990,82 @@ export function BankStatementBulkUploadDialog({
         }
     };
 
+    // Function to upload statement documents - modified to be called after validation
+    const uploadStatementDocuments = async (fileName, pdfUrl, excelUrl = null) => {
+        try {
+            console.log('Uploading validated statement documents');
+            
+            let pdfPath = null;
+            let excelPath = null;
+            let documentSize = 0;
+            
+            // Upload PDF if available
+            if (pdfUrl) {
+                // Extract file from the URL
+                const response = await fetch(pdfUrl);
+                const blob = await response.blob();
+                documentSize = blob.size; // Store document size in bytes
+                
+                // Generate a unique file path
+                const timestamp = Date.now();
+                const safeName = fileName.replace(/[^a-zA-Z0-9.-]/g, '_');
+                const filePath = `bank-statements/${timestamp}_${safeName}`;
+                
+                // Upload to Supabase storage
+                const { data: uploadData, error: uploadError } = await supabase.storage
+                    .from('Statement-Cycle')
+                    .upload(filePath, blob, {
+                        cacheControl: '0',
+                        upsert: true
+                    });
+                
+                if (uploadError) {
+                    console.error('Error uploading PDF:', uploadError);
+                    throw uploadError;
+                }
+                
+                console.log('PDF uploaded successfully:', uploadData?.path);
+                pdfPath = uploadData?.path || filePath;
+            }
+            
+            // Upload Excel if available
+            if (excelUrl) {
+                // Similar process for Excel file
+                const response = await fetch(excelUrl);
+                const blob = await response.blob();
+                
+                const timestamp = Date.now();
+                const safeName = fileName.replace(/[^a-zA-Z0-9.-]/g, '_') + '.xlsx';
+                const filePath = `bank-statements/excel/${timestamp}_${safeName}`;
+                
+                const { data: uploadData, error: uploadError } = await supabase.storage
+                    .from('Statement-Cycle')
+                    .upload(filePath, blob, {
+                        cacheControl: '3600',
+                        upsert: false
+                    });
+                
+                if (uploadError) {
+                    console.error('Error uploading Excel:', uploadError);
+                    // Continue without Excel, don't throw
+                }
+                
+                console.log('Excel uploaded successfully:', uploadData?.path);
+                excelPath = uploadData?.path || filePath;
+            }
+            
+            return { pdfPath, excelPath, documentSize };
+        } catch (error) {
+            console.error('Error in uploadStatementDocuments:', error);
+            toast({
+                title: "Upload Error",
+                description: "Failed to upload statement documents. Please try again.",
+                variant: "destructive",
+            });
+            throw error;
+        }
+    };
+
     // Function to handle file upload to storage and database
     const handleFileUpload = async (itemIndex: number, extractedData: any, validationResult: any = null) => {
         const item = uploadItems[itemIndex];
@@ -1054,6 +1131,37 @@ export function BankStatementBulkUploadDialog({
                 }
             }
 
+            // Helper function to determine if a statement is a range (multi-month) or monthly statement
+            const determineStatementType = (extractedData) => {
+                if (!extractedData?.monthly_balances || extractedData.monthly_balances.length === 0) {
+                    return false; // Default to monthly if no data
+                }
+                
+                // If more than one monthly balance entry, it's a range statement
+                if (extractedData.monthly_balances.length > 1) {
+                    return true;
+                }
+                
+                // Check statement period if available
+                if (extractedData.statement_period) {
+                    const period = extractedData.statement_period.toLowerCase();
+                    // Look for typical range indicators
+                    if (period.includes(' to ') || 
+                        period.includes('-') ||
+                        period.includes('quarter') ||
+                        period.includes('q1') ||
+                        period.includes('q2') ||
+                        period.includes('q3') ||
+                        period.includes('q4')) {
+                        return true;
+                    }
+                }
+                
+                return false; // Default to monthly
+            };
+
+            isMultiMonth = determineStatementType(extractedData);
+
             // Create statement document info with proper path
             const statementDocumentInfo = {
                 statement_pdf: pdfPath,
@@ -1071,7 +1179,7 @@ export function BankStatementBulkUploadDialog({
                 statement_cycle_id: localCycleId,
                 statement_month: cycleMonth === 0 ? 1 : cycleMonth,
                 statement_year: cycleYear,
-                statement_type: statementType,
+                statement_type: isMultiMonth ? 'range' : 'monthly',
                 has_soft_copy: item.hasSoftCopy !== undefined ? item.hasSoftCopy : true,
                 has_hard_copy: item.hasHardCopy !== undefined ? item.hasHardCopy : false,
                 statement_document: statementDocumentInfo,
@@ -1616,6 +1724,212 @@ export function BankStatementBulkUploadDialog({
             });
             
             // Move to next file even on error
+            goToNextFile();
+        }
+    };
+
+    // Define the saveExtractedDataToStatement function
+    const saveExtractedDataToStatement = async (extractedData, bank, pdfUrl) => {
+        try {
+            setSubmitting(true);
+            console.log('Saving extracted data to statement:', { bank, hasExtractedData: !!extractedData });
+            
+            // 1. First determine if this is a range or monthly statement
+            const isRangeStatement = determineStatementType(extractedData);
+            console.log(`Statement classified as: ${isRangeStatement ? 'RANGE' : 'MONTHLY'}`);
+            
+            // 2. Only upload the document after validation is confirmed
+            const { pdfPath, excelPath, documentSize } = await uploadStatementDocuments(
+                currentProcessingItem.fileName,
+                pdfUrl,
+                null // no excel for now
+            );
+            
+            // 3. Create the statement data with proper statement_type
+            const statementData = {
+                bank_id: bank?.id,
+                statement_month: extractedData.monthly_balances[0]?.month || new Date().getMonth() + 1,
+                statement_year: extractedData.monthly_balances[0]?.year || new Date().getFullYear(),
+                statement_type: isRangeStatement ? 'range' : 'monthly',
+                statement_document: {
+                    statement_pdf: pdfPath,
+                    statement_excel: excelPath,
+                    document_size: documentSize
+                },
+                has_soft_copy: !!pdfPath,
+                has_hard_copy: false,
+                statement_extractions: extractedData,
+                validation_status: {
+                    is_validated: false,
+                    validation_date: null,
+                    validated_by: null,
+                    mismatches: []
+                },
+                created_at: new Date().toISOString(),
+                modified_at: new Date().toISOString()
+            };
+            
+            // 4. Save to database
+            const { data: statement, error } = await supabase
+                .from('acc_cycle_bank_statements')
+                .insert(statementData)
+                .select()
+                .single();
+                
+            if (error) {
+                console.error('Error saving statement:', error);
+                throw error;
+            }
+            
+            console.log('Statement saved successfully:', statement);
+            
+            // 5. If range statement, create related cycles
+            if (isRangeStatement && extractedData.monthly_balances.length > 1) {
+                await handleRelatedCycles(statement.id, extractedData, bank?.id);
+            }
+            
+            toast({
+                title: "Success",
+                description: `Statement saved successfully (${isRangeStatement ? 'Range' : 'Monthly'})`,
+            });
+            
+            return statement;
+        } catch (error) {
+            console.error('Error saving statement:', error);
+            toast({
+                title: "Save Error",
+                description: error.message || "Failed to save statement data",
+                variant: "destructive"
+            });
+            return null;
+        } finally {
+            setSubmitting(false);
+        }
+    };
+    
+    // Function to handle related cycles for a range statement
+    const handleRelatedCycles = async (parentId, extractedData, bankId) => {
+        try {
+            // Skip the first cycle (main statement)
+            const additionalCycles = extractedData.monthly_balances.slice(1);
+            
+            if (additionalCycles.length === 0) return;
+            
+            console.log(`Creating ${additionalCycles.length} additional cycles for parent statement ${parentId}`);
+            
+            // Create statement records for each additional month
+            const cyclesToCreate = additionalCycles.map(cycle => ({
+                bank_id: bankId,
+                statement_month: cycle.month,
+                statement_year: cycle.year,
+                statement_type: 'monthly',
+                parent_statement_id: parentId,
+                statement_document: {
+                    statement_pdf: null,
+                    statement_excel: null
+                },
+                has_soft_copy: false,
+                has_hard_copy: false,
+                statement_extractions: {
+                    bank_name: extractedData.bank_name,
+                    account_number: extractedData.account_number,
+                    currency: extractedData.currency,
+                    opening_balance: cycle.opening_balance,
+                    closing_balance: cycle.closing_balance,
+                    monthly_balances: [cycle],
+                    parent_statement_id: parentId
+                },
+                validation_status: {
+                    is_validated: false,
+                    validation_date: null,
+                    validated_by: null,
+                    mismatches: []
+                },
+                created_at: new Date().toISOString(),
+                modified_at: new Date().toISOString()
+            }));
+            
+            const { data, error } = await supabase
+                .from('acc_cycle_bank_statements')
+                .insert(cyclesToCreate);
+                
+            if (error) {
+                console.error('Error creating related cycles:', error);
+                throw error;
+            }
+            
+            console.log(`Successfully created ${cyclesToCreate.length} related cycles`);
+            
+            toast({
+                title: "Range Statement Processed",
+                description: `Created ${cyclesToCreate.length} additional monthly entries`
+            });
+            
+        } catch (error) {
+            console.error('Error creating related cycles:', error);
+            toast({
+                title: "Warning",
+                description: "Main statement saved but failed to create all related cycles",
+                variant: "warning"
+            });
+        }
+    };
+    
+    // Handle validation dialog close with successful validation
+    const handleValidationClose = async (updatedData) => {
+        setShowBankValidationDialog(false);
+        
+        if (updatedData) {
+            console.log('Validation completed successfully with data:', updatedData);
+            
+            // Store the updated data in the extraction map
+            if (currentProcessingItem?.extractionId) {
+                setExtractionMap(prev => ({
+                    ...prev,
+                    [currentProcessingItem.extractionId]: {
+                        ...prev[currentProcessingItem.extractionId],
+                        extractedData: updatedData
+                    }
+                }));
+            }
+            
+            // After validation success, save to database
+            try {
+                // Get bank info for the current item
+                const bankId = currentProcessingItem?.bankId;
+                let bank = null;
+                
+                if (bankId) {
+                    const { data } = await supabase
+                        .from('acc_portal_banks')
+                        .select('*')
+                        .eq('id', bankId)
+                        .single();
+                        
+                    bank = data;
+                }
+                
+                // Save the validated data
+                await saveExtractedDataToStatement(
+                    updatedData, 
+                    bank, 
+                    currentProcessingItem?.pdfUrl
+                );
+                
+                goToNextFile();
+            } catch (error) {
+                console.error('Error saving validated data:', error);
+                toast({
+                    title: "Save Error",
+                    description: "Failed to save validated data",
+                    variant: "destructive"
+                });
+                
+                // Continue to next file even on error
+                goToNextFile();
+            }
+        } else {
+            console.log('Validation cancelled or failed');
             goToNextFile();
         }
     };

@@ -549,127 +549,126 @@ export function BankExtractionDialog({
         }
     }, [skipExtraction, preExtractedData]);
 
-    // Load PDF document
-    useEffect(() => {
-        const loadPdfDocument = async () => {
-            if (!isOpen) return;
+    // Improved function to load and display PDF in the extraction dialog
+    const loadPdfDocument = async () => {
+        try {
+            console.log('Loading PDF document:', statement?.statement_document?.statement_pdf);
+            setPdfLoading(true);
+            setPdfError(null);
             
-            // Early exit if no statement document is available
             if (!statement?.statement_document?.statement_pdf) {
-                console.log('No PDF file available for this statement');
-                setLoading(false);
+                console.log('No PDF document available');
                 setPdfLoading(false);
+                setPdfError('No PDF document available');
                 return;
             }
-
+            
+            // Construct the public URL for the PDF
+            const storagePath = statement.statement_document.statement_pdf;
+            const publicUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/Statement-Cycle/${storagePath}`;
+            console.log('Using PDF URL:', publicUrl);
+            
+            // Set URL for display
+            setPdfUrl(publicUrl);
+            
             try {
-                setLoading(true);
-                setPdfLoading(true);
-
-                // Construct the public URL
-                const publicUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/Statement-Cycle/${statement.statement_document.statement_pdf}`;
-
-                console.log('Loading PDF from URL:', publicUrl);
-                setPdfUrl(publicUrl);
-
-                // Try to load the PDF document to check if it's accessible
-                try {
-                    // Initialize PDF.js worker if not already initialized
-                    if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
-                        pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
-                    }
-                    
-                    const pdfLoadingTask = pdfjsLib.getDocument({
-                        url: publicUrl,
-                        password: pdfPassword || null
-                    });
-                    
-                    // Create a timeout promise to catch hanging loads
-                    const timeoutPromise = new Promise((_, reject) => {
-                        setTimeout(() => reject(new Error('PDF loading timed out after 15 seconds')), 15000);
-                    });
-                    
-                    // Race between the PDF loading and timeout
-                    const pdfDoc = await Promise.race([
-                        pdfLoadingTask.promise,
-                        timeoutPromise
-                    ]) as PDFDocumentProxy;
-                    
-                    setPdfDocument(pdfDoc);
-                    setTotalPages(pdfDoc.numPages);
-                    setPdfNeedsPassword(false);
-                    
-                    // Render first page immediately
-                    if (pdfDoc) {
-                        renderPage(1, pdfDoc);
-                    }
-                    
-                    // Initialize rendered pages array
-                    setRenderedPages(Array(pdfDoc.numPages).fill(false));
-                    setAllPagesRendered(Array(pdfDoc.numPages).fill(false));
-                    setRenderedPageCanvases(Array(pdfDoc.numPages).fill(null));
-                    
-                    // Set document size if available
-                    if (statement?.statement_document?.document_size) {
-                        const sizeInKB = Math.round(statement.statement_document.document_size / 1024);
-                        setDocumentSizeKB(sizeInKB);
-                    }
-                    
-                    // Extract text from first page for analysis
-                    extractTextFromPage(1, pdfDoc);
-                    
-                    setPdfLoading(false);
-                    setLoading(false);
-                } catch (pdfError: any) {
-                    console.error('PDF loading error:', pdfError);
-                    
-                    // Check if this is a password required error
-                    if (pdfError.name === 'PasswordException' || 
-                        (pdfError.message && pdfError.message.includes('password'))) {
-                        setPdfNeedsPassword(true);
-                        setShowPasswordDialog(true);
-                    } else {
-                        setPdfError(pdfError.message || 'Failed to load PDF');
-                    }
-                    
-                    setPdfLoading(false);
-                    setLoading(false);
+                // Initialize PDF.js if not already initialized
+                if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
+                    pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
                 }
-            } catch (error: any) {
-                console.error('Error in PDF loading process:', error);
-                setPdfError(error.message || 'Failed to process PDF');
-                setPdfLoading(false);
-                setLoading(false);
+                
+                // Create loading task with password if available
+                const loadingTask = pdfjsLib.getDocument({
+                    url: publicUrl,
+                    password: pdfPassword || null
+                });
+                
+                // Add a timeout to prevent hanging
+                const timeoutPromise = new Promise((_, reject) => {
+                    setTimeout(() => reject(new Error('PDF loading timed out')), 15000);
+                });
+                
+                const pdfDoc = await Promise.race([
+                    loadingTask.promise,
+                    timeoutPromise
+                ]);
+                
+                console.log('PDF loaded successfully:', pdfDoc.numPages, 'pages');
+                setPdfDocument(pdfDoc);
+                setNumPages(pdfDoc.numPages);
+                setTotalPages(pdfDoc.numPages);
+                
+                // Initialize arrays
+                setRenderedPages(Array(pdfDoc.numPages).fill(false));
+                setAllPagesRendered(Array(pdfDoc.numPages).fill(false));
+                
+                // We don't need to immediately render the page here since we're using the iframe-based PDFViewer
+                // This was calling renderPage which isn't defined, so removing it fixes the error
+                
+            } catch (pdfError) {
+                console.error('Error loading PDF:', pdfError);
+                
+                // Handle password-protected PDF
+                if (pdfError.name === 'PasswordException' || 
+                    (pdfError.message && pdfError.message.includes('password'))) {
+                    console.log('PDF is password protected');
+                    setPdfNeedsPassword(true);
+                    setShowPasswordDialog(true);
+                    
+                    toast({
+                        title: "Password Required",
+                        description: "This PDF is password-protected. Please enter the password.",
+                        variant: "destructive"
+                    });
+                } else {
+                    setPdfError(pdfError.message || 'Failed to load PDF');
+                    toast({
+                        title: "Error",
+                        description: "Failed to load the PDF document",
+                        variant: "destructive"
+                    });
+                }
             }
-        };
-
-        loadPdfDocument();
-    }, [isOpen, statement, pdfPassword]);
-
-    // Function to update the PDF viewer component to show PDF immediately after upload
-    const updatePdfViewer = () => {
-        if (!statement?.statement_document?.statement_pdf) {
-            console.log('No PDF file available for viewing');
-            return;
+        } catch (error) {
+            console.error('Error in loadPdfDocument:', error);
+            setPdfError('Failed to load PDF document');
+        } finally {
+            setPdfLoading(false);
         }
-        
-        // Construct the public URL for viewing
-        const pdfStoragePath = statement.statement_document.statement_pdf;
-        const publicUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/Statement-Cycle/${pdfStoragePath}`;
-        
-        console.log('Setting PDF URL for viewing:', publicUrl);
-        setPdfUrl(publicUrl);
-
-        // Set PDF loading to false to indicate it's ready for viewing
-        setPdfLoading(false);
     };
-
-    // Call updatePdfViewer whenever the statement document changes
+    
+    // Always call loadPdfDocument when dialog opens or statement changes
     useEffect(() => {
         if (isOpen && statement?.statement_document?.statement_pdf) {
-            updatePdfViewer();
+            loadPdfDocument();
         }
     }, [isOpen, statement?.statement_document?.statement_pdf]);
+
+    // Effect to handle dialog opening and PDF preparation
+    useEffect(() => {
+        if (isOpen) {
+            if (statement?.statement_document?.statement_pdf) {
+                console.log('Statement has PDF:', statement.statement_document.statement_pdf);
+                
+                // Initialize PDF viewer with the correct URL
+                const pdfPath = statement.statement_document.statement_pdf;
+                
+                // Handle both direct URLs and storage paths
+                let publicUrl = pdfPath;
+                if (!pdfPath.startsWith('http')) {
+                    publicUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/Statement-Cycle/${pdfPath}`;
+                }
+                
+                console.log('Setting PDF URL for display:', publicUrl);
+                setPdfUrl(publicUrl);
+                
+                // Continue with regular PDF loading for extraction
+                loadPdfDocument();
+            } else {
+                console.log('No PDF document available in statement');
+            }
+        }
+    }, [isOpen]);
 
     function onDocumentLoadSuccess({ numPages }) {
         console.log('PDF loaded successfully with', numPages, 'pages');
@@ -1008,128 +1007,138 @@ export function BankExtractionDialog({
         try {
             setSaving(true);
             
-            // Check that statement ID is valid before proceeding
-            if (!statement || !statement.id) {
+            // Get a valid statement ID
+            const statementId = await findStatementId();
+            
+            if (!statementId) {
                 console.error('Cannot save: Statement ID is undefined or invalid', statement);
-                
-                // Try to find the statement ID using bank_id and statement date
-                if (statement && statement.bank_id && statement.statement_month && statement.statement_year) {
-                    try {
-                        const { data: foundStatement, error } = await supabase
-                            .from('acc_cycle_bank_statements')
-                            .select('id')
-                            .eq('bank_id', statement.bank_id)
-                            .eq('statement_month', statement.statement_month)
-                            .eq('statement_year', statement.statement_year)
-                            .maybeSingle();
-                        
-                        if (error) throw error;
-                        
-                        if (foundStatement && foundStatement.id) {
-                            // Use the found ID for saving
-                            const statementId = foundStatement.id;
-                            console.log('Found statement ID:', statementId);
-                            
-                            // Continue with save operation using the found ID
-                            await saveWithId(statementId);
-                            return;
-                        }
-                    } catch (findError) {
-                        console.error('Error finding statement ID:', findError);
-                    }
-                }
-                
                 toast({
                     title: 'Save Error',
-                    description: 'Invalid statement ID. Cannot save changes.',
+                    description: 'Could not find a valid statement ID. The statement may need to be created first.',
                     variant: 'destructive'
                 });
                 setSaving(false);
                 return;
             }
             
-            // If ID exists, call the save function with it
-            await saveWithId(statement.id);
+            console.log('Proceeding to save with statementId:', statementId);
+            
+            // Prepare extraction data
+            const updatedExtractions = {
+                bank_name: bankName,
+                account_number: accountNumber,
+                currency: currency,
+                statement_period: statementPeriod,
+                monthly_balances: monthlyBalances,
+                last_updated: new Date().toISOString()
+            };
+            
+            // Update statement extractions in database
+            const { data: updatedStatement, error: updateError } = await supabase
+                .from('acc_cycle_bank_statements')
+                .update({
+                    statement_extractions: updatedExtractions,
+                    modified_at: new Date().toISOString()
+                })
+                .eq('id', statementId)
+                .select('*')
+                .single();
+            
+            if (updateError) {
+                console.error('Error updating statement:', updateError);
+                throw updateError;
+            }
+            
+            console.log('Statement updated successfully:', updatedStatement);
+            
+            // Also handle range statements if required
+            if (detectedPeriods && detectedPeriods.length > 1) {
+                await handleStatementRangeData();
+            }
+            
+            // Show success message
+            toast({
+                title: 'Success',
+                description: 'Statement data saved successfully',
+                variant: 'default'
+            });
+            
+            // Callback to parent component
+            if (onStatementUpdated && updatedStatement) {
+                onStatementUpdated(updatedStatement);
+            }
+            
+            // Close dialog
+            onClose?.();
         } catch (error) {
             console.error('Save error:', error);
             toast({
                 title: 'Save Error',
-                description: 'Failed to save statement data',
+                description: error.message || 'Failed to save statement data. Please try again.',
                 variant: 'destructive'
             });
         } finally {
             setSaving(false);
         }
     };
-    
-    // Helper function to handle saving with a valid ID
-    const saveWithId = async (statementId) => {
-        // Prepare updated extraction data
-        const updatedExtractions = {
-            bank_name: bankName || null,
-            account_number: accountNumber || null,
-            currency: currency || null,
-            statement_period: statementPeriod || extractionsData.statement_period,
-            opening_balance: getMonthlyOpeningBalance(),
-            closing_balance: getMonthlyClosingBalance(),
-            monthly_balances: monthlyBalances
-        };
-    
-        // Validate bank details match expected values
-        const hasMismatches = [];
-        if (bankName && !bankName.toLowerCase().includes(bank.bank_name.toLowerCase())) {
-            hasMismatches.push(`Bank name mismatch: Expected "${bank.bank_name}", found "${bankName}"`);
+
+    // Enhanced function to find statement ID when missing
+    const findStatementId = async () => {
+        if (statement?.id) {
+            console.log('Statement ID already available:', statement.id);
+            return statement.id;
         }
-        if (accountNumber && !accountNumber.includes(bank.account_number)) {
-            hasMismatches.push(`Account number mismatch: Expected "${bank.account_number}", found "${accountNumber}"`);
+        
+        console.log('Statement ID missing, attempting to find it');
+        
+        if (!statement || !statement.bank_id || !statement.statement_month || !statement.statement_year) {
+            console.error('Missing required statement data for lookup', {
+                bank_id: statement?.bank_id,
+                month: statement?.statement_month,
+                year: statement?.statement_year
+            });
+            return null;
         }
-    
-        // Update validation status
-        const validationStatus = {
-            is_validated: hasMismatches.length === 0,
-            validation_date: new Date().toISOString(),
-            validated_by: null,
-            mismatches: hasMismatches
-        };
-    
-        // Update statement status
-        const statusUpdate = {
-            status: hasMismatches.length === 0 ? 'validated' : 'validation_issues',
-            verification_date: new Date().toISOString(),
-            assigned_to: statement.status.assigned_to
-        };
-    
-        // Update document size
-        const updatedDocumentDetails = {
-            ...statement.statement_document,
-            document_size: documentSize
-        };
-    
-        // Update database with explicit ID
-        const { data, error } = await supabase
-            .from('acc_cycle_bank_statements')
-            .update({
-                statement_extractions: updatedExtractions,
-                validation_status: validationStatus,
-                status: statusUpdate,
-                statement_document: updatedDocumentDetails
-            })
-            .eq('id', statementId)
-            .select('*')
-            .single();
-    
-        if (error) throw error;
-    
-        // Notify parent component with the updated statement
-        onStatementUpdated(data);
-    
-        // Handle statement range data
-        await handleStatementRangeData();
-    
-        toast({
-            title: 'Success',
-            description: 'Statement data saved successfully'
-        });
+        
+        try {
+            // Look for matching statement in the database
+            console.log('Looking up statement by bank and date', {
+                bank_id: statement.bank_id,
+                month: statement.statement_month,
+                year: statement.statement_year
+            });
+            
+            const { data: foundStatement, error } = await supabase
+                .from('acc_cycle_bank_statements')
+                .select('id')
+                .eq('bank_id', statement.bank_id)
+                .eq('statement_month', statement.statement_month)
+                .eq('statement_year', statement.statement_year)
+                .maybeSingle();
+            
+            if (error) {
+                console.error('Error finding statement ID:', error);
+                throw error;
+            }
+            
+            if (foundStatement && foundStatement.id) {
+                console.log('Found statement ID:', foundStatement.id);
+                
+                // Update the local state
+                setStatement(prev => ({
+                    ...prev,
+                    id: foundStatement.id
+                }));
+                
+                return foundStatement.id;
+            }
+            
+            console.log('No matching statement found in database');
+            return null;
+        } catch (error) {
+            console.error('Error finding statement ID:', error);
+            return null;
+        }
     };
 
     const handleDeleteStatement = () => {
@@ -2156,6 +2165,64 @@ export function BankExtractionDialog({
         }
     }
 
+    // Improved PDF viewer component
+    const PDFViewer = ({ url, loading, error }) => {
+        if (loading) {
+            return (
+                <div className="flex flex-col items-center justify-center h-full space-y-4 py-20">
+                    <Loader2 className="h-12 w-12 animate-spin text-primary" />
+                    <p className="text-gray-500">Loading PDF document...</p>
+                </div>
+            );
+        }
+        
+        if (error) {
+            return (
+                <div className="flex flex-col items-center justify-center h-full space-y-4 py-20 text-center">
+                    <AlertTriangle className="h-12 w-12 text-red-500" />
+                    <p className="text-red-500 font-medium">{error}</p>
+                    <p className="text-gray-500 max-w-md">Unable to load the PDF document. Please check if the file exists and try again.</p>
+                </div>
+            );
+        }
+        
+        if (!url) {
+            return (
+                <div className="flex flex-col items-center justify-center h-full space-y-4 py-20 text-center">
+                    <FileCheck className="h-12 w-12 text-gray-400" />
+                    <p className="text-gray-500">No PDF document available</p>
+                </div>
+            );
+        }
+        
+        // Display the PDF using an iframe
+        return (
+            <div className="w-full h-full rounded-md overflow-hidden border border-gray-200">
+                <iframe 
+                    src={`${url}#toolbar=1&navpanes=1&scrollbar=1`}
+                    className="w-full h-full"
+                    title="PDF Viewer"
+                />
+            </div>
+        );
+    };
+
+    // Enhanced function to construct the public URL for PDF viewing
+    const constructPdfUrl = (pdfPath) => {
+        if (!pdfPath) return null;
+        
+        // Handle both full URLs and storage paths
+        if (pdfPath.startsWith('http')) {
+            console.log('Using direct URL for PDF:', pdfPath);
+            return pdfPath;
+        }
+        
+        // For storage paths, construct a public URL using env var
+        const publicUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/Statement-Cycle/${pdfPath}`;
+        console.log('Constructed public URL for PDF:', publicUrl);
+        return publicUrl;
+    };
+
     return (
         <Dialog open={isOpen} onOpenChange={handleClose}>
             <DialogContent className="w-[95vw] max-w-[1600px] max-h-[95vh] h-[95vh] p-6 flex flex-col overflow-hidden">
@@ -2370,12 +2437,7 @@ export function BankExtractionDialog({
                                                     </div>
                                                 </div>
                                             ) : pdfUrl ? (
-                                                <iframe
-                                                    src={pdfUrl}
-                                                    className="w-full h-full"
-                                                    style={{ height: "calc(100vh - 280px)" }}
-                                                    title="PDF Viewer"
-                                                ></iframe>
+                                                <PDFViewer url={pdfUrl} loading={pdfLoading} error={pdfError} />
                                             ) : statement?.statement_document?.statement_pdf ? (
                                                 <div className="flex items-center justify-center h-full">
                                                     <FileTextIcon className="h-12 w-12 text-gray-300 mb-4" />
