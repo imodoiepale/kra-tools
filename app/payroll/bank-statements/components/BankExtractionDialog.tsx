@@ -2405,13 +2405,29 @@ const findStatementId = async () => {
                 return;
             }
 
-            // Auto-hide loading indicator after 5 seconds regardless of iframe events
+            // Auto-hide loading indicator after a reasonable timeout
             const timeoutId = setTimeout(() => {
-                console.log("Auto-hiding PDF loading indicator after timeout");
                 setLoading(false);
             }, 5000);
 
-            return () => clearTimeout(timeoutId);
+            // Handle iframe load event to properly set loading state
+            const handleIframeLoad = () => {
+                setLoading(false);
+                clearTimeout(timeoutId);
+            };
+
+            // Add load event listener to iframe when it's available
+            const iframe = iframeRef.current;
+            if (iframe) {
+                iframe.addEventListener('load', handleIframeLoad);
+            }
+
+            return () => {
+                clearTimeout(timeoutId);
+                if (iframe) {
+                    iframe.removeEventListener('load', handleIframeLoad);
+                }
+            };
         }, [url]);
 
         // For direct error handling
@@ -2421,15 +2437,10 @@ const findStatementId = async () => {
             setLoading(false);
         };
 
-        // Handle iframe load completion
-        const handleIframeLoad = () => {
-            setLoading(false);
-        };
-
         if (!url) {
             return (
                 <div className="flex flex-col items-center justify-center h-full text-center p-4">
-                    <FileX className="h-12 w-12 text-gray-400 mb-2" />
+                    <FileTextIcon className="h-12 w-12 text-gray-400 mb-2" />
                     <p className="text-gray-500">No PDF document available</p>
                 </div>
             );
@@ -2437,16 +2448,16 @@ const findStatementId = async () => {
 
         return (
             <div className="pdf-container h-full relative">
-                {/* {loading && (
+                {loading && (
                     <div className="absolute inset-0 flex items-center justify-center bg-white bg-opacity-80 z-10">
-                    <div className="flex flex-col items-center">
-                        <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
-                        <p className="mt-2 text-sm text-gray-600">Loading PDF...</p>
+                        <div className="flex flex-col items-center">
+                            <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+                            <p className="mt-2 text-sm text-gray-600">Loading PDF...</p>
+                        </div>
                     </div>
-                </div>
-                )} */}
+                )}
 
-                {error && ( 
+                {error && (
                     <div className="absolute inset-0 flex items-center justify-center bg-white bg-opacity-90 z-10">
                         <div className="flex flex-col items-center text-center max-w-md mx-auto">
                             <AlertTriangle className="h-6 w-6 text-red-500 mb-2" />
@@ -2459,16 +2470,12 @@ const findStatementId = async () => {
                     </div>
                 )}
 
-                {/* Log the URL before passing it to the iframe */}
-                {/* {console.log("PDFViewer URL:", url)} */}
-
                 <iframe
                     ref={iframeRef}
                     src={url}
                     type="application/pdf"
                     className="w-full h-full border-0"
                     onError={handleIframeError}
-                    onLoad={handleIframeLoad}
                     title="PDF Viewer"
                 />
             </div>
