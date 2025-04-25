@@ -13,7 +13,7 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Edit, Lock, Unlock, FileDown, X, Eye, EyeOff, Search } from "lucide-react";
+import { Edit, Lock, Unlock, FileDown, X, Filter, Eye, EyeOff, Search } from "lucide-react";
 import {
     Dialog,
     DialogContent,
@@ -28,6 +28,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import ExcelJS from 'exceljs';
 import { supabase } from '@/lib/supabase';
+import { ClientCategoryFilter } from '@/components/ClientCategoryFilter';
 import { toast } from 'react-hot-toast';
 import { format } from 'date-fns';
 
@@ -238,14 +239,22 @@ const EditCompanyDialog = ({ company, onSave, onLockToggle, onDelete }) => {
     );
 };
 
-export default function CompanyListTable() {
-    const [companies, setCompanies] = useState([]);
+export default function CompanyListTable({ companies = [], updateCompany, toggleLock, deleteCompany, hideFilterButton = false }) {
     const [globalFilter, setGlobalFilter] = useState('');
+    const [isCategoryFilterOpen, setIsCategoryFilterOpen] = useState(false);
+    const [categoryFilters, setCategoryFilters] = useState({});
     const [showStats, setShowStats] = useState(false);
+    const [localCompanies, setLocalCompanies] = useState([]);
 
+    // Update local companies when prop changes
     useEffect(() => {
-        fetchCompanies();
-    }, []);
+        if (Array.isArray(companies) && companies.length > 0) {
+            setLocalCompanies(companies);
+        } else {
+            // Fallback to fetch companies if none are provided
+            fetchCompanies();
+        }
+    }, [companies]);
 
     const fetchCompanies = async () => {
         const { data, error } = await supabase
@@ -259,57 +268,76 @@ export default function CompanyListTable() {
             return;
         }
 
-        setCompanies(data);
+        setLocalCompanies(data);
     };
 
-    const upsertCompany = async (updatedCompany) => {
+    const handleUpdateCompany = async (updatedCompany) => {
         try {
-            const { data, error } = await supabase
-                .from('acc_portal_company_duplicate')
-                .upsert({
-                    id: updatedCompany.id,
-                    acc_client_effective_from: updatedCompany.acc_client_effective_from,
-                    acc_client_effective_to: updatedCompany.acc_client_effective_to,
-                    imm_client_effective_from: updatedCompany.imm_client_effective_from,
-                    imm_client_effective_to: updatedCompany.imm_client_effective_to,
-                    audit_tax_client_effective_from: updatedCompany.audit_tax_client_effective_from,
-                    audit_tax_client_effective_to: updatedCompany.audit_tax_client_effective_to,
-                    cps_sheria_client_effective_from: updatedCompany.cps_sheria_client_effective_from,
-                    cps_sheria_client_effective_to: updatedCompany.cps_sheria_client_effective_to,
-                    is_locked: updatedCompany.is_locked
-                });
+            // Use passed-in updateCompany if available, otherwise fall back to local update
+            if (typeof updateCompany === 'function') {
+                updateCompany(updatedCompany);
+                toast.success('Company updated successfully');
+            } else {
+                const { data, error } = await supabase
+                    .from('acc_portal_company_duplicate')
+                    .upsert({
+                        id: updatedCompany.id,
+                        acc_client_effective_from: updatedCompany.acc_client_effective_from,
+                        acc_client_effective_to: updatedCompany.acc_client_effective_to,
+                        imm_client_effective_from: updatedCompany.imm_client_effective_from,
+                        imm_client_effective_to: updatedCompany.imm_client_effective_to,
+                        audit_tax_client_effective_from: updatedCompany.audit_tax_client_effective_from,
+                        audit_tax_client_effective_to: updatedCompany.audit_tax_client_effective_to,
+                        cps_sheria_client_effective_from: updatedCompany.cps_sheria_client_effective_from,
+                        cps_sheria_client_effective_to: updatedCompany.cps_sheria_client_effective_to,
+                        is_locked: updatedCompany.is_locked
+                    });
 
-            if (error) throw error;
-            toast.success('Company updated successfully');
-            await fetchCompanies();
+                if (error) throw error;
+                toast.success('Company updated successfully');
+                await fetchCompanies();
+            }
         } catch (error) {
             console.error('Error updating company:', error);
             toast.error('Failed to update company');
         }
     };
 
-    const deleteCompany = async (companyId) => {
+    const handleDeleteCompany = async (companyId) => {
         try {
-            const { error } = await supabase
-                .from('acc_portal_company_duplicate')
-                .delete()
-                .eq('id', companyId);
+            // If there's a parent delete function, use it
+            if (typeof deleteCompany === 'function') {
+                deleteCompany(companyId);
+                toast.success('Company deleted successfully');
+            } else {
+                // Otherwise, handle deletion locally
+                const { error } = await supabase
+                    .from('acc_portal_company_duplicate')
+                    .delete()
+                    .eq('id', companyId);
 
-            if (error) throw error;
-            toast.success('Company deleted successfully');
-            await fetchCompanies();
+                if (error) throw error;
+                toast.success('Company deleted successfully');
+                await fetchCompanies();
+            }
         } catch (error) {
             console.error('Error deleting company:', error);
             toast.error('Failed to delete company');
         }
     };
 
-    const toggleLock = async (companyId) => {
-        const companyToUpdate = companies.find(c => c.id === companyId);
+    const handleToggleLock = async (companyId) => {
+        const companyToUpdate = localCompanies.find(c => c.id === companyId);
         if (!companyToUpdate) return;
 
         const updatedCompany = { ...companyToUpdate, is_locked: !companyToUpdate.is_locked };
-        await upsertCompany(updatedCompany);
+        
+        // Use passed-in toggleLock if available, otherwise fall back to handleUpdateCompany
+        if (typeof toggleLock === 'function') {
+            toggleLock(companyId);
+        } else {
+            await handleUpdateCompany(updatedCompany);
+        }
     };
 
     const columns = useMemo(() => [
@@ -374,14 +402,14 @@ export default function CompanyListTable() {
                 <div className="flex justify-center space-x-1">
                     <EditCompanyDialog
                         company={info.row.original}
-                        onSave={upsertCompany}
-                        onLockToggle={toggleLock}
-                        onDelete={deleteCompany}
+                        onSave={handleUpdateCompany}
+                        onLockToggle={handleToggleLock}
+                        onDelete={handleDeleteCompany}
                     />
                     <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => toggleLock(info.row.original.id)}
+                        onClick={() => handleToggleLock(info.row.original.id)}
                         className={`h-6 w-6 p-0 ${info.row.original.is_locked ? "bg-green-100" : "bg-red-100"}`}
                     >
                         {info.row.original.is_locked ? (
@@ -394,10 +422,130 @@ export default function CompanyListTable() {
             ),
             header: 'Actions',
         }),
-    ], [upsertCompany, toggleLock, deleteCompany]);
+    ], [handleUpdateCompany, handleToggleLock, handleDeleteCompany]);
+
+    // Apply category filters to data
+    const filteredData = useMemo(() => {
+        if (Object.keys(categoryFilters).length === 0) return localCompanies;
+        
+        return localCompanies.filter(item => {
+            // Check if any category filter is active
+            const hasActiveFilters = Object.values(categoryFilters).some(categoryStatus => 
+                Object.values(categoryStatus as Record<string, boolean>).some(isSelected => isSelected)
+            );
+            
+            if (!hasActiveFilters) return true;
+            
+            // Get the item's category and status
+            const accStatus = calculateStatus(item.acc_client_effective_from, item.acc_client_effective_to);
+            const immStatus = calculateStatus(item.imm_client_effective_from, item.imm_client_effective_to);
+            const auditStatus = calculateStatus(item.audit_tax_client_effective_from, item.audit_tax_client_effective_to);
+            const sheriaStatus = calculateStatus(item.cps_sheria_client_effective_from, item.cps_sheria_client_effective_to);
+            
+            // Check if ACC category filter matches
+            if (categoryFilters['acc']) {
+                const accFilter = categoryFilters['acc'] as Record<string, boolean>;
+                if ((accStatus === 'Active' && accFilter['active']) || 
+                    (accStatus === 'Inactive' && accFilter['inactive']) || 
+                    accFilter['all']) {
+                    return true;
+                }
+            }
+            
+            // Check if IMM category filter matches
+            if (categoryFilters['imm']) {
+                const immFilter = categoryFilters['imm'] as Record<string, boolean>;
+                if ((immStatus === 'Active' && immFilter['active']) || 
+                    (immStatus === 'Inactive' && immFilter['inactive']) || 
+                    immFilter['all']) {
+                    return true;
+                }
+            }
+            
+            // Check if Audit category filter matches
+            if (categoryFilters['audit']) {
+                const auditFilter = categoryFilters['audit'] as Record<string, boolean>;
+                if ((auditStatus === 'Active' && auditFilter['active']) || 
+                    (auditStatus === 'Inactive' && auditFilter['inactive']) || 
+                    auditFilter['all']) {
+                    return true;
+                }
+            }
+            
+            // Check if Sheria category filter matches
+            if (categoryFilters['sheria']) {
+                const sheriaFilter = categoryFilters['sheria'] as Record<string, boolean>;
+                if ((sheriaStatus === 'Active' && sheriaFilter['active']) || 
+                    (sheriaStatus === 'Inactive' && sheriaFilter['inactive']) || 
+                    sheriaFilter['all']) {
+                    return true;
+                }
+            }
+            
+            // Check if 'all' category has this status selected
+            if (categoryFilters['all']) {
+                const allFilter = categoryFilters['all'] as Record<string, boolean>;
+                if (allFilter['all'] || 
+                    (accStatus === 'Active' && allFilter['active']) || 
+                    (accStatus === 'Inactive' && allFilter['inactive']) || 
+                    (immStatus === 'Active' && allFilter['active']) || 
+                    (immStatus === 'Inactive' && allFilter['inactive']) || 
+                    (auditStatus === 'Active' && allFilter['active']) || 
+                    (auditStatus === 'Inactive' && allFilter['inactive']) || 
+                    (sheriaStatus === 'Active' && allFilter['active']) || 
+                    (sheriaStatus === 'Inactive' && allFilter['inactive'])) {
+                    return true;
+                }
+            }
+            
+            return false;
+        });
+    }, [companies, categoryFilters]);
+    
+    // Calculate statistics for complete and missing entries
+    const calculateStats = () => {
+        const stats = {
+            complete: {},
+            missing: {}
+        };
+
+        // Define fields to check for completeness
+        const fieldsToCheck = [
+            'company_name',
+            'acc_client_effective_from',
+            'acc_client_effective_to',
+            'imm_client_effective_from',
+            'imm_client_effective_to',
+            'audit_tax_client_effective_from',
+            'audit_tax_client_effective_to',
+            'cps_sheria_client_effective_from',
+            'cps_sheria_client_effective_to'
+        ];
+
+        // Initialize stats for each field
+        fieldsToCheck.forEach(field => {
+            stats.complete[field] = 0;
+            stats.missing[field] = 0;
+        });
+
+        // Calculate stats for each field individually
+        filteredData.forEach(item => {
+            fieldsToCheck.forEach(field => {
+                if (item[field] && item[field].toString().trim() !== '') {
+                    stats.complete[field]++;
+                } else {
+                    stats.missing[field]++;
+                }
+            });
+        });
+
+        return stats;
+    };
+
+    const stats = calculateStats();
 
     const table = useReactTable({
-        data: companies,
+        data: filteredData,
         columns,
         getCoreRowModel: getCoreRowModel(),
         getSortedRowModel: getSortedRowModel(),
@@ -435,7 +583,7 @@ export default function CompanyListTable() {
             'Sheria Status'
         ]);
 
-        companies.forEach((company, index) => {
+        filteredData.forEach((company, index) => {
             worksheet.addRow([
                 index + 1,
                 company.company_name,
@@ -464,137 +612,6 @@ export default function CompanyListTable() {
         URL.revokeObjectURL(url);
     };
 
-    // Calculate statistics for complete and missing entries
-    const calculateStats = () => {
-        const stats = {
-            complete: {},
-            missing: {}
-        };
-
-        // Define fields to check for completeness
-        const fieldsToCheck = [
-            'company_name',
-            'acc_client_effective_from',
-            'acc_client_effective_to',
-            'imm_client_effective_from',
-            'imm_client_effective_to',
-            'audit_tax_client_effective_from',
-            'audit_tax_client_effective_to',
-            'cps_sheria_client_effective_from',
-            'cps_sheria_client_effective_to'
-        ];
-
-        // Initialize stats for each field
-        fieldsToCheck.forEach(field => {
-            stats.complete[field] = 0;
-            stats.missing[field] = 0;
-        });
-
-        // Add status fields
-        ['acc_status', 'imm_status', 'audit_status', 'sheria_status'].forEach(field => {
-            stats.complete[field] = 0;
-            stats.missing[field] = 0;
-        });
-
-        // Calculate stats for each field individually
-        companies.forEach(company => {
-            // Check company name
-            if (company.company_name && company.company_name.trim() !== '') {
-                stats.complete.company_name++;
-            } else {
-                stats.missing.company_name++;
-            }
-            
-            // Check ACC dates
-            if (company.acc_client_effective_from) {
-                stats.complete.acc_client_effective_from++;
-            } else {
-                stats.missing.acc_client_effective_from++;
-            }
-            
-            if (company.acc_client_effective_to) {
-                stats.complete.acc_client_effective_to++;
-            } else {
-                stats.missing.acc_client_effective_to++;
-            }
-            
-            // Check ACC status
-            const accStatus = calculateStatus(company.acc_client_effective_from, company.acc_client_effective_to);
-            if (accStatus === 'Active') {
-                stats.complete.acc_status++;
-            } else {
-                stats.missing.acc_status++;
-            }
-            
-            // Check IMM dates
-            if (company.imm_client_effective_from) {
-                stats.complete.imm_client_effective_from++;
-            } else {
-                stats.missing.imm_client_effective_from++;
-            }
-            
-            if (company.imm_client_effective_to) {
-                stats.complete.imm_client_effective_to++;
-            } else {
-                stats.missing.imm_client_effective_to++;
-            }
-            
-            // Check IMM status
-            const immStatus = calculateStatus(company.imm_client_effective_from, company.imm_client_effective_to);
-            if (immStatus === 'Active') {
-                stats.complete.imm_status++;
-            } else {
-                stats.missing.imm_status++;
-            }
-            
-            // Check Audit dates
-            if (company.audit_tax_client_effective_from) {
-                stats.complete.audit_tax_client_effective_from++;
-            } else {
-                stats.missing.audit_tax_client_effective_from++;
-            }
-            
-            if (company.audit_tax_client_effective_to) {
-                stats.complete.audit_tax_client_effective_to++;
-            } else {
-                stats.missing.audit_tax_client_effective_to++;
-            }
-            
-            // Check Audit status
-            const auditStatus = calculateStatus(company.audit_tax_client_effective_from, company.audit_tax_client_effective_to);
-            if (auditStatus === 'Active') {
-                stats.complete.audit_status++;
-            } else {
-                stats.missing.audit_status++;
-            }
-            
-            // Check Sheria dates
-            if (company.cps_sheria_client_effective_from) {
-                stats.complete.cps_sheria_client_effective_from++;
-            } else {
-                stats.missing.cps_sheria_client_effective_from++;
-            }
-            
-            if (company.cps_sheria_client_effective_to) {
-                stats.complete.cps_sheria_client_effective_to++;
-            } else {
-                stats.missing.cps_sheria_client_effective_to++;
-            }
-            
-            // Check Sheria status
-            const sheriaStatus = calculateStatus(company.cps_sheria_client_effective_from, company.cps_sheria_client_effective_to);
-            if (sheriaStatus === 'Active') {
-                stats.complete.sheria_status++;
-            } else {
-                stats.missing.sheria_status++;
-            }
-        });
-
-        return stats;
-    };
-
-    const stats = calculateStats();
-
     return (
         <div className="space-y-2">
             <div className="flex justify-between items-center">
@@ -608,12 +625,12 @@ export default function CompanyListTable() {
                             className="max-w-sm text-[10px] h-7 pl-7"
                         />
                     </div>
-                    <Button 
-                        variant="outline" 
-                        onClick={() => setShowStats(!showStats)} 
-                        size="sm" 
-                        className="text-[10px] h-7"
-                    >
+                    {!hideFilterButton && (
+                        <Button variant="outline" size="sm" onClick={() => setIsCategoryFilterOpen(true)} className="text-[10px] h-7">
+                            <Filter className="mr-1 h-3 w-3" /> Categories Filters
+                        </Button>
+                    )}
+                    <Button variant="outline" size="sm" onClick={() => setShowStats(!showStats)} className="text-[10px] h-7">
                         {showStats ? (
                             <>
                                 <EyeOff className="mr-1 h-3 w-3" /> Hide Statistics
@@ -630,6 +647,13 @@ export default function CompanyListTable() {
                     Export to Excel
                 </Button>
             </div>
+            <ClientCategoryFilter 
+                isOpen={isCategoryFilterOpen} 
+                onClose={() => setIsCategoryFilterOpen(false)} 
+                onApplyFilters={(filters) => setCategoryFilters(filters)}
+                onClearFilters={() => setCategoryFilters({})}
+                selectedFilters={categoryFilters}
+            />
             <ScrollArea className="h-[750px] mb-10 pb-8">
                 <Table className="text-[10px]">
                     <TableHeader>
@@ -666,126 +690,74 @@ export default function CompanyListTable() {
                         {showStats && (
                             <>
                                 <TableRow>
-                                    <TableHead className="bg-blue-50 text-center border border-gray-400 p-1 text-[10px]">Complete</TableHead>
-                                    <TableHead className="bg-blue-50 text-center border border-gray-400 p-1 text-[10px]">
-                                        <span className={stats.complete.company_name === companies.length ? 'text-green-600 font-bold' : ''}>
-                                            {stats.complete.company_name}
-                                        </span>
+                                    <TableHead className="font-bold text-black bg-blue-50 text-center border border-gray-400 p-1 text-[10px]">Complete</TableHead>
+                                    <TableHead className="font-bold text-black bg-blue-50 text-center border border-gray-400 p-1 text-[10px]">
+                                        {stats.complete.company_name || 0}
                                     </TableHead>
-                                    <TableHead colSpan={3} className="bg-blue-50 text-center border border-gray-400 p-1 text-[10px]">
-                                        <div className="flex justify-around">
-                                            <span className={stats.complete.acc_client_effective_from === companies.length ? 'text-green-600 font-bold' : ''}>
-                                                {stats.complete.acc_client_effective_from}
-                                            </span>
-                                            <span className={stats.complete.acc_client_effective_to === companies.length ? 'text-green-600 font-bold' : ''}>
-                                                {stats.complete.acc_client_effective_to}
-                                            </span>
-                                            <span className={stats.complete.acc_status === companies.length ? 'text-green-600 font-bold' : ''}>
-                                                {stats.complete.acc_status}
-                                            </span>
-                                        </div>
+                                    <TableHead className="font-bold text-black bg-blue-50 text-center border border-gray-400 p-1 text-[10px]">
+                                        {stats.complete.acc_client_effective_from || 0}
                                     </TableHead>
-                                    <TableHead colSpan={3} className="bg-blue-50 text-center border border-gray-400 p-1 text-[10px]">
-                                        <div className="flex justify-around">
-                                            <span className={stats.complete.imm_client_effective_from === companies.length ? 'text-green-600 font-bold' : ''}>
-                                                {stats.complete.imm_client_effective_from}
-                                            </span>
-                                            <span className={stats.complete.imm_client_effective_to === companies.length ? 'text-green-600 font-bold' : ''}>
-                                                {stats.complete.imm_client_effective_to}
-                                            </span>
-                                            <span className={stats.complete.imm_status === companies.length ? 'text-green-600 font-bold' : ''}>
-                                                {stats.complete.imm_status}
-                                            </span>
-                                        </div>
+                                    <TableHead className="font-bold text-black bg-blue-50 text-center border border-gray-400 p-1 text-[10px]">
+                                        {stats.complete.acc_client_effective_to || 0}
                                     </TableHead>
-                                    <TableHead colSpan={3} className="bg-blue-50 text-center border border-gray-400 p-1 text-[10px]">
-                                        <div className="flex justify-around">
-                                            <span className={stats.complete.audit_tax_client_effective_from === companies.length ? 'text-green-600 font-bold' : ''}>
-                                                {stats.complete.audit_tax_client_effective_from}
-                                            </span>
-                                            <span className={stats.complete.audit_tax_client_effective_to === companies.length ? 'text-green-600 font-bold' : ''}>
-                                                {stats.complete.audit_tax_client_effective_to}
-                                            </span>
-                                            <span className={stats.complete.audit_status === companies.length ? 'text-green-600 font-bold' : ''}>
-                                                {stats.complete.audit_status}
-                                            </span>
-                                        </div>
+                                    <TableHead className="font-bold text-black bg-blue-50 text-center border border-gray-400 p-1 text-[10px]">-</TableHead>
+                                    <TableHead className="font-bold text-black bg-blue-50 text-center border border-gray-400 p-1 text-[10px]">
+                                        {stats.complete.imm_client_effective_from || 0}
                                     </TableHead>
-                                    <TableHead colSpan={3} className="bg-blue-50 text-center border border-gray-400 p-1 text-[10px]">
-                                        <div className="flex justify-around">
-                                            <span className={stats.complete.cps_sheria_client_effective_from === companies.length ? 'text-green-600 font-bold' : ''}>
-                                                {stats.complete.cps_sheria_client_effective_from}
-                                            </span>
-                                            <span className={stats.complete.cps_sheria_client_effective_to === companies.length ? 'text-green-600 font-bold' : ''}>
-                                                {stats.complete.cps_sheria_client_effective_to}
-                                            </span>
-                                            <span className={stats.complete.sheria_status === companies.length ? 'text-green-600 font-bold' : ''}>
-                                                {stats.complete.sheria_status}
-                                            </span>
-                                        </div>
+                                    <TableHead className="font-bold text-black bg-blue-50 text-center border border-gray-400 p-1 text-[10px]">
+                                        {stats.complete.imm_client_effective_to || 0}
                                     </TableHead>
-                                    <TableHead className="bg-blue-50 text-center border border-gray-400 p-1 text-[10px]"></TableHead>
+                                    <TableHead className="font-bold text-black bg-blue-50 text-center border border-gray-400 p-1 text-[10px]">-</TableHead>
+                                    <TableHead className="font-bold text-black bg-blue-50 text-center border border-gray-400 p-1 text-[10px]">
+                                        {stats.complete.audit_tax_client_effective_from || 0}
+                                    </TableHead>
+                                    <TableHead className="font-bold text-black bg-blue-50 text-center border border-gray-400 p-1 text-[10px]">
+                                        {stats.complete.audit_tax_client_effective_to || 0}
+                                    </TableHead>
+                                    <TableHead className="font-bold text-black bg-blue-50 text-center border border-gray-400 p-1 text-[10px]">-</TableHead>
+                                    <TableHead className="font-bold text-black bg-blue-50 text-center border border-gray-400 p-1 text-[10px]">
+                                        {stats.complete.cps_sheria_client_effective_from || 0}
+                                    </TableHead>
+                                    <TableHead className="font-bold text-black bg-blue-50 text-center border border-gray-400 p-1 text-[10px]">
+                                        {stats.complete.cps_sheria_client_effective_to || 0}
+                                    </TableHead>
+                                    <TableHead className="font-bold text-black bg-blue-50 text-center border border-gray-400 p-1 text-[10px]">-</TableHead>
+                                    <TableHead className="font-bold text-black bg-blue-50 text-center border border-gray-400 p-1 text-[10px]">-</TableHead>
                                 </TableRow>
                                 <TableRow>
-                                    <TableHead className="bg-red-50 text-center border border-gray-400 p-1 text-[10px]">Missing/Inactive</TableHead>
-                                    <TableHead className="bg-red-50 text-center border border-gray-400 p-1 text-[10px]">
-                                        <span className={stats.missing.company_name > 0 ? 'text-red-600 font-bold' : ''}>
-                                            {stats.missing.company_name}
-                                        </span>
+                                    <TableHead className="font-bold text-black bg-red-50 text-center border border-gray-400 p-1 text-[10px]">Missing</TableHead>
+                                    <TableHead className="font-bold text-black bg-red-50 text-center border border-gray-400 p-1 text-[10px]">
+                                        {stats.missing.company_name || 0}
                                     </TableHead>
-                                    <TableHead colSpan={3} className="bg-red-50 text-center border border-gray-400 p-1 text-[10px]">
-                                        <div className="flex justify-around">
-                                            <span className={stats.missing.acc_client_effective_from > 0 ? 'text-red-600 font-bold' : ''}>
-                                                {stats.missing.acc_client_effective_from}
-                                            </span>
-                                            <span className={stats.missing.acc_client_effective_to > 0 ? 'text-red-600 font-bold' : ''}>
-                                                {stats.missing.acc_client_effective_to}
-                                            </span>
-                                            <span className={stats.missing.acc_status > 0 ? 'text-red-600 font-bold' : ''}>
-                                                {stats.missing.acc_status}
-                                            </span>
-                                        </div>
+                                    <TableHead className="font-bold text-black bg-red-50 text-center border border-gray-400 p-1 text-[10px]">
+                                        {stats.missing.acc_client_effective_from || 0}
                                     </TableHead>
-                                    <TableHead colSpan={3} className="bg-red-50 text-center border border-gray-400 p-1 text-[10px]">
-                                        <div className="flex justify-around">
-                                            <span className={stats.missing.imm_client_effective_from > 0 ? 'text-red-600 font-bold' : ''}>
-                                                {stats.missing.imm_client_effective_from}
-                                            </span>
-                                            <span className={stats.missing.imm_client_effective_to > 0 ? 'text-red-600 font-bold' : ''}>
-                                                {stats.missing.imm_client_effective_to}
-                                            </span>
-                                            <span className={stats.missing.imm_status > 0 ? 'text-red-600 font-bold' : ''}>
-                                                {stats.missing.imm_status}
-                                            </span>
-                                        </div>
+                                    <TableHead className="font-bold text-black bg-red-50 text-center border border-gray-400 p-1 text-[10px]">
+                                        {stats.missing.acc_client_effective_to || 0}
                                     </TableHead>
-                                    <TableHead colSpan={3} className="bg-red-50 text-center border border-gray-400 p-1 text-[10px]">
-                                        <div className="flex justify-around">
-                                            <span className={stats.missing.audit_tax_client_effective_from > 0 ? 'text-red-600 font-bold' : ''}>
-                                                {stats.missing.audit_tax_client_effective_from}
-                                            </span>
-                                            <span className={stats.missing.audit_tax_client_effective_to > 0 ? 'text-red-600 font-bold' : ''}>
-                                                {stats.missing.audit_tax_client_effective_to}
-                                            </span>
-                                            <span className={stats.missing.audit_status > 0 ? 'text-red-600 font-bold' : ''}>
-                                                {stats.missing.audit_status}
-                                            </span>
-                                        </div>
+                                    <TableHead className="font-bold text-black bg-red-50 text-center border border-gray-400 p-1 text-[10px]">-</TableHead>
+                                    <TableHead className="font-bold text-black bg-red-50 text-center border border-gray-400 p-1 text-[10px]">
+                                        {stats.missing.imm_client_effective_from || 0}
                                     </TableHead>
-                                    <TableHead colSpan={3} className="bg-red-50 text-center border border-gray-400 p-1 text-[10px]">
-                                        <div className="flex justify-around">
-                                            <span className={stats.missing.cps_sheria_client_effective_from > 0 ? 'text-red-600 font-bold' : ''}>
-                                                {stats.missing.cps_sheria_client_effective_from}
-                                            </span>
-                                            <span className={stats.missing.cps_sheria_client_effective_to > 0 ? 'text-red-600 font-bold' : ''}>
-                                                {stats.missing.cps_sheria_client_effective_to}
-                                            </span>
-                                            <span className={stats.missing.sheria_status > 0 ? 'text-red-600 font-bold' : ''}>
-                                                {stats.missing.sheria_status}
-                                            </span>
-                                        </div>
+                                    <TableHead className="font-bold text-black bg-red-50 text-center border border-gray-400 p-1 text-[10px]">
+                                        {stats.missing.imm_client_effective_to || 0}
                                     </TableHead>
-                                    <TableHead className="bg-red-50 text-center border border-gray-400 p-1 text-[10px]"></TableHead>
+                                    <TableHead className="font-bold text-black bg-red-50 text-center border border-gray-400 p-1 text-[10px]">-</TableHead>
+                                    <TableHead className="font-bold text-black bg-red-50 text-center border border-gray-400 p-1 text-[10px]">
+                                        {stats.missing.audit_tax_client_effective_from || 0}
+                                    </TableHead>
+                                    <TableHead className="font-bold text-black bg-red-50 text-center border border-gray-400 p-1 text-[10px]">
+                                        {stats.missing.audit_tax_client_effective_to || 0}
+                                    </TableHead>
+                                    <TableHead className="font-bold text-black bg-red-50 text-center border border-gray-400 p-1 text-[10px]">-</TableHead>
+                                    <TableHead className="font-bold text-black bg-red-50 text-center border border-gray-400 p-1 text-[10px]">
+                                        {stats.missing.cps_sheria_client_effective_from || 0}
+                                    </TableHead>
+                                    <TableHead className="font-bold text-black bg-red-50 text-center border border-gray-400 p-1 text-[10px]">
+                                        {stats.missing.cps_sheria_client_effective_to || 0}
+                                    </TableHead>
+                                    <TableHead className="font-bold text-black bg-red-50 text-center border border-gray-400 p-1 text-[10px]">-</TableHead>
+                                    <TableHead className="font-bold text-black bg-red-50 text-center border border-gray-400 p-1 text-[10px]">-</TableHead>
                                 </TableRow>
                             </>
                         )}

@@ -13,7 +13,7 @@ import AllDataView from './components/AllDataView';
 
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 
-export default function ClientFileManagement() {
+export default function ClientFileManagement({ filteredCompanies = [] }) {
     const [clients, setClients] = useState([]);
     const [checklist, setChecklist] = useState({});
     const [selectedDate, setSelectedDate] = useState(new Date());
@@ -55,7 +55,7 @@ export default function ClientFileManagement() {
         }
     };
 
-    const filteredClients = clients.filter(client =>
+    const filteredClients = filteredCompanies.filter(client =>
         client.company_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         client.kra_pin.toLowerCase().includes(searchTerm.toLowerCase())
     );

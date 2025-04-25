@@ -41,7 +41,7 @@ const calculateStatus = (from, to) => {
 
 
 
-export default function TaxesPage() {
+export default function TaxesPage({ filteredCompanies = [] }) {
     const [data, setData] = useState({
         companies: [],
         checklist: {},
@@ -124,17 +124,22 @@ export default function TaxesPage() {
         fetchAllData();
     };
 
-    // Filter companies based on search term
-    const filteredCompanies = useMemo(() => {
-        return data.companies.filter(company => {
-            if (!searchTerm) return true;
-            const searchLower = searchTerm.toLowerCase();
-            return (
-                (company.company_name || '').toLowerCase().includes(searchLower) ||
-                (company.kra_pin || '').toLowerCase().includes(searchLower)
+    // Use filteredCompanies if provided, otherwise use data.companies
+    const displayCompanies = React.useMemo(() => {
+        // Start with either filteredCompanies (if provided) or data.companies
+        let companies = filteredCompanies || data.companies;
+        
+        // Apply search filter
+        if (searchTerm) {
+            const term = searchTerm.toLowerCase();
+            companies = companies.filter(company => 
+                company.company_name?.toLowerCase().includes(term) || 
+                company.kra_pin?.toLowerCase().includes(term)
             );
-        });
-    }, [data.companies, searchTerm]);
+        }
+        
+        return companies;
+    }, [filteredCompanies, data.companies, searchTerm]);
 
     // Calculate tax totals for the current tab
     const getTaxTotals = (companies) => {
@@ -172,7 +177,7 @@ export default function TaxesPage() {
                 </TabsList>
                 <TabsContent value="overall">
                     <div className="space-y-2">
-                        <OverallTaxesTable companies={data.companies} />
+                        <OverallTaxesTable companies={displayCompanies} />
                     </div>
                 </TabsContent>
                 {taxTypes.slice(1).map(tax => (
@@ -180,7 +185,7 @@ export default function TaxesPage() {
                         <div className="space-y-2">
                             <TaxTypeComponent
                                 taxType={tax.key}
-                                companies={data.companies}
+                                companies={displayCompanies}
                                 checklist={data.checklist}
                             />
                         </div>
