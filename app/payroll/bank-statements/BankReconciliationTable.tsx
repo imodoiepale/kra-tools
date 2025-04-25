@@ -21,6 +21,7 @@ import { BankExtractionDialog } from './components/BankExtractionDialog'
 import { QuickbooksBalanceDialog } from './components/QuickbooksBalanceDialog'
 import { PasswordInputDialog } from './components/PasswordInputDialog'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { ExtractionsService } from '@/lib/extractionService'
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -99,6 +100,7 @@ interface BankStatement {
         assigned_to: string | null
         verification_date: string | null
     }
+    extraction_performed: boolean
 }
 
 interface Company {
@@ -190,73 +192,73 @@ export function BankReconciliationTable({
     const { toast } = useToast()
 
     // Fetch all companies and banks
-// Improved fetch function with extra logging and error handling
-const fetchCompaniesAndBanks = async () => {
-    console.log("Starting fetchCompaniesAndBanks...");
-    try {
-        setLoading(true);
-        
-        // Fetch all companies from acc_portal_company_duplicate
-        const { data: companiesData, error: companiesError } = await supabase
-            .from('acc_portal_company_duplicate')
-            .select('*');
+    // Improved fetch function with extra logging and error handling
+    const fetchCompaniesAndBanks = async () => {
+        console.log("Starting fetchCompaniesAndBanks...");
+        try {
+            setLoading(true);
 
-        if (companiesError) {
-            console.error('Error fetching companies:', companiesError);
+            // Fetch all companies from acc_portal_company_duplicate
+            const { data: companiesData, error: companiesError } = await supabase
+                .from('acc_portal_company_duplicate')
+                .select('*');
+
+            if (companiesError) {
+                console.error('Error fetching companies:', companiesError);
+                toast({
+                    title: 'Error',
+                    description: 'Failed to fetch companies',
+                    variant: 'destructive',
+                });
+                return false;
+            }
+
+            console.log(`Successfully fetched ${companiesData?.length || 0} companies`);
+
+            // Fetch all banks
+            const { data: banksData, error: banksError } = await supabase
+                .from('acc_portal_banks')
+                .select('*');
+
+            if (banksError) {
+                console.error('Error fetching banks:', banksError);
+                toast({
+                    title: 'Error',
+                    description: 'Failed to fetch banks',
+                    variant: 'destructive',
+                });
+                return false;
+            }
+
+            console.log(`Successfully fetched ${banksData?.length || 0} banks`);
+
+            // Verify data before setting state
+            if (!companiesData || companiesData.length === 0) {
+                console.warn('No companies data returned from API');
+            }
+
+            if (!banksData || banksData.length === 0) {
+                console.warn('No banks data returned from API');
+            }
+
+            // Update state with the fetched data
+            setCompanies(companiesData || []);
+            setAllBanks(banksData || []);
+
+            console.log("State updated with companies and banks");
+            return true;
+        } catch (error) {
+            console.error('Error fetching companies and banks:', error);
             toast({
                 title: 'Error',
-                description: 'Failed to fetch companies',
-                variant: 'destructive',
+                description: 'Failed to fetch companies and banks',
+                variant: 'destructive'
             });
             return false;
+        } finally {
+            setLoading(false);
         }
-
-        console.log(`Successfully fetched ${companiesData?.length || 0} companies`);
-
-        // Fetch all banks
-        const { data: banksData, error: banksError } = await supabase
-            .from('acc_portal_banks')
-            .select('*');
-
-        if (banksError) {
-            console.error('Error fetching banks:', banksError);
-            toast({
-                title: 'Error',
-                description: 'Failed to fetch banks',
-                variant: 'destructive',
-            });
-            return false;
-        }
-
-        console.log(`Successfully fetched ${banksData?.length || 0} banks`);
-        
-        // Verify data before setting state
-        if (!companiesData || companiesData.length === 0) {
-            console.warn('No companies data returned from API');
-        }
-        
-        if (!banksData || banksData.length === 0) {
-            console.warn('No banks data returned from API');
-        }
-
-        // Update state with the fetched data
-        setCompanies(companiesData || []);
-        setAllBanks(banksData || []);
-        
-        console.log("State updated with companies and banks");
-        return true;
-    } catch (error) {
-        console.error('Error fetching companies and banks:', error);
-        toast({
-            title: 'Error',
-            description: 'Failed to fetch companies and banks',
-            variant: 'destructive',
-        });
-        return false;
-    } finally {
-        setLoading(false);
-    }
-};
+    };
 
     const parseDate = (dateString) => {
         if (!dateString) return null;
@@ -450,7 +452,7 @@ const fetchCompaniesAndBanks = async () => {
                 const monthStr = (selectedMonth + 1).toString().padStart(2, '0');
                 const cycleMonthYear = `${selectedYear}-${monthStr}`;
                 console.log(`Initializing data for period: ${cycleMonthYear}`);
-    
+
                 // STEP 1: Get or create statement cycle
                 let cycle;
                 const { data: existingCycle, error: cycleError } = await supabase
@@ -458,11 +460,11 @@ const fetchCompaniesAndBanks = async () => {
                     .select('id')
                     .eq('month_year', cycleMonthYear)
                     .single();
-    
+
                 if (cycleError) {
                     if (cycleError.code === 'PGRST116') { // No rows found
                         console.log('No existing statement cycle found. Creating new cycle...');
-    
+
                         // Create new cycle
                         const { data: newCycle, error: createError } = await supabase
                             .from('statement_cycles')
@@ -473,11 +475,11 @@ const fetchCompaniesAndBanks = async () => {
                             })
                             .select('id')
                             .single();
-    
+
                         if (createError) {
                             throw new Error(`Failed to create statement cycle: ${createError.message}`);
                         }
-    
+
                         cycle = newCycle;
                         console.log('Created new statement cycle:', cycle);
                     } else {
@@ -487,13 +489,13 @@ const fetchCompaniesAndBanks = async () => {
                     cycle = existingCycle;
                     console.log('Found existing statement cycle:', cycle);
                 }
-    
+
                 // Update state with cycle ID
                 setStatementCycleId(cycle?.id || null);
-    
+
                 // STEP 2: Fetch ALL banks (without filtering by searchTerm)
                 fetchCompaniesAndBanks();
-    
+
                 // STEP 3: Fetch bank statements if we have a cycle ID
                 if (cycle?.id) {
                     const { data: statementsData, error: statementsError } = await supabase
@@ -503,14 +505,14 @@ const fetchCompaniesAndBanks = async () => {
                     if (statementsError) {
                         throw new Error(`Failed to fetch statements: ${statementsError.message}`);
                     }
-    
+
                     console.log(`Fetched ${statementsData?.length || 0} bank statements`);
                     setBankStatements(statementsData || []);
                 } else {
                     console.warn('No statement cycle ID - skipping statement fetch');
                     setBankStatements([]);
                 }
-    
+
             } catch (error) {
                 console.error('Error initializing data:', error);
                 toast({
@@ -522,9 +524,9 @@ const fetchCompaniesAndBanks = async () => {
                 setLoading(false);
             }
         };
-    
+
         initializeData();
-    }, [selectedMonth, selectedYear, toast]);
+    }, [selectedMonth, selectedYear]);
 
     const handleUploadStatement = async (bankId: number) => {
         const bank = allBanks.find(b => b.id === bankId)
@@ -550,7 +552,8 @@ const fetchCompaniesAndBanks = async () => {
                 // First check if we need to extract data or already have it
                 const needsExtraction = !statement.statement_extractions ||
                     !statement.statement_extractions.bank_name ||
-                    !statement.statement_extractions.closing_balance;
+                    !statement.statement_extractions.closing_balance ||
+                    !statement.extraction_performed;
 
                 if (needsExtraction && statement.statement_document?.statement_pdf) {
                     // Pre-extract data to avoid redundant extraction in child component
@@ -699,8 +702,8 @@ const fetchCompaniesAndBanks = async () => {
             if (error) throw error
 
             // Update local state
-            setAllBanks(prev => prev.map(b => 
-                b.id === selectedBankForPassword.id 
+            setAllBanks(prev => prev.map(b =>
+                b.id === selectedBankForPassword.id
                     ? { ...b, acc_password: password }
                     : b
             ))
@@ -825,7 +828,7 @@ const fetchCompaniesAndBanks = async () => {
         }
     };
 
-   
+
 
     return (
         <div className="space-y-4">
@@ -993,25 +996,21 @@ const fetchCompaniesAndBanks = async () => {
                                                                 size="sm"
                                                                 onClick={() => handleViewStatement(bank.id)}
                                                                 disabled={loadingExtraction}
+                                                                className="mr-2 text-white bg-green-700 hover:text-white hover:bg-green-600 border-green-200"
                                                             >
-                                                                {loadingExtraction ? (
-                                                                    <>
-                                                                        <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
-                                                                        Extracting...
-                                                                    </>
-                                                                ) : (
-                                                                    <>
-                                                                        <Eye className="h-3.5 w-3.5 mr-1" />
-                                                                        View
-                                                                    </>
-                                                                )}
+
+                                                                <>
+                                                                    <Eye className="h-3.5 w-3.5 mr-1" />
+                                                                    View
+                                                                </>
+
                                                             </Button>
                                                         </div>
                                                     ) : (
                                                         <Button
                                                             variant="outline"
                                                             size="sm"
-                                                            className="relative flex gap-1.5 items-center px-3 py-1.5 border-dashed border-blue-300 bg-blue-50/50 hover:bg-blue-100/60 hover:border-blue-400 text-blue-700 transition-all duration-200 group overflow-hidden"
+                                                            className="relative flex gap-1.5 items-center mr-2 text-white bg-red-600 hover:text-white hover:bg-red-600  border-red-200"
                                                             onClick={() => handleUploadStatement(bank.id)}
                                                         >
                                                             <div className="absolute inset-0 bg-gradient-to-r from-transparent via-blue-100/30 to-transparent group-hover:via-blue-200/50 -translate-x-full group-hover:translate-x-full transition-transform duration-700 ease-in-out"></div>

@@ -284,11 +284,9 @@ export function BankStatementBulkUploadDialog({
 
     const [pdfUrls, setPdfUrls] = useState<Record<string, string>>({});
 
-
     const [showCycleConfirmation, setShowCycleConfirmation] = useState(false);
     const [detectedCycles, setDetectedCycles] = useState({ existing: [], toCreate: [] });
     const [processingFiles, setProcessingFiles] = useState([]);
-
 
     const [extractionCache, setExtractionCache] = useState<Record<string, any>>({});
 
@@ -1985,15 +1983,34 @@ export function BankStatementBulkUploadDialog({
                 pdfPath = pdfUploadData?.path;
             }
 
-            // Update UI to show upload progress
+            // Generate Public URL if path exists
+            let publicUrl = '';
+            if (pdfPath) {
+                const { data: urlData } = supabase.storage.from('Statement-Cycle').getPublicUrl(pdfPath);
+                if (urlData?.publicUrl) {
+                    publicUrl = urlData.publicUrl;
+                    console.log(`Generated public URL for ${item.file.name}: ${publicUrl}`); // Debug log
+                }
+            }
+
+            // Update UI to show upload progress and store path
             setUploadItems(prev => {
                 const updated = [...prev];
                 if (updated[itemIndex]) {
                     updated[itemIndex].uploadProgress = 75;
-                    updated[itemIndex].uploadedPdfPath = pdfPath;
+                    updated[itemIndex].uploadedPdfPath = pdfPath; // Still store the path
                 }
                 return updated;
             });
+
+            // Update the pdfUrls state with the public URL
+            if (publicUrl && (item.originalName || item.file.name)) {
+                const fileNameKey = item.originalName || item.file.name;
+                setPdfUrls(prev => ({
+                    ...prev,
+                    [fileNameKey]: publicUrl
+                }));
+            }
 
             // Parse statement period to determine if this is a multi-month statement
             let isMultiMonth = false;

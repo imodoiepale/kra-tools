@@ -453,12 +453,13 @@ export function BankStatementUploadDialog({
         }
     }
 
+    // Enhanced handlePasswordSubmit function
     const handlePasswordSubmit = async (passwordToTry: string) => {
         if (!pdfFile || !passwordToTry) return;
 
         setApplyingPassword(true);
         try {
-            // First verify the password works
+            // Verify the password works
             const passwordSuccess = await applyPasswordToFiles(pdfFile, passwordToTry);
 
             if (passwordSuccess) {
@@ -472,6 +473,24 @@ export function BankStatementUploadDialog({
                     title: "Success",
                     description: "Password has been successfully applied",
                 });
+
+                // Save password to bank record if it doesn't already have one
+                if (!bank.acc_password && bank.id) {
+                    try {
+                        await supabase
+                            .from('acc_portal_banks')
+                            .update({ acc_password: passwordToTry })
+                            .eq('id', bank.id);
+                        
+                        console.log("Saved password to bank record");
+                        toast({
+                            title: "Password Saved",
+                            description: "Password has been saved for future statements",
+                        });
+                    } catch (saveError) {
+                        console.error("Error saving password to bank record:", saveError);
+                    }
+                }
 
                 // Create a URL for the password-applied PDF for extraction
                 if (fileUrl) {
@@ -487,12 +506,14 @@ export function BankStatementUploadDialog({
                 });
 
                 try {
-                    const extractionResult = await performBankStatementExtraction(
-                        newFileUrl,
+                    // Use the extraction service for consistency
+                    const extractionResult = await ExtractionsService.getExtraction(
+                        pdfFile,
                         {
                             month: cycleMonth,
                             year: cycleYear,
-                            password: passwordToTry
+                            password: passwordToTry,
+                            forceAiExtraction: true // Force a new extraction with the password
                         }
                     );
 
@@ -512,6 +533,7 @@ export function BankStatementUploadDialog({
                     }
 
                     // Continue with upload if no validation issues
+                    console.log("Proceeding to upload with extraction results");
                     handleUpload();
 
                 } catch (extractionError) {
@@ -537,7 +559,6 @@ export function BankStatementUploadDialog({
             setApplyingPassword(false);
         }
     };
-
 
     // Function to check if bank details match and auto-insert bank name
     function validateAndAutoInsertBankName(validationResult, expectedBankName) {
@@ -717,53 +738,118 @@ export function BankStatementUploadDialog({
         return null; // Add a return value to prevent TypeErrors
     }
 
-    // Helper function to parse statement period string into start and end dates
+    // Enhanced function to parse statement period string into start and end dates
     function parseStatementPeriod(periodString) {
         if (!periodString) return null;
 
-        // Try to match various date formats
+        console.log("Parsing statement period:", periodString);
+
+        // Try multiple date formats and period patterns
+        
         // Format: "January 2024" (single month)
         const singleMonthMatch = periodString.match(/(\w+)\s+(\d{4})/i);
         if (singleMonthMatch) {
-            const month = new Date(`${singleMonthMatch[1]} 1, 2000`).getMonth() + 1;
-            const year = parseInt(singleMonthMatch[2]);
-            return {
-                startMonth: month,
-                startYear: year,
-                endMonth: month,
-                endYear: year
-            };
+            try {
+                const month = new Date(`${singleMonthMatch[1]} 1, 2000`).getMonth() + 1;
+                const year = parseInt(singleMonthMatch[2]);
+                console.log(`Parsed single month period: Month ${month}, Year ${year}`);
+                return {
+                    startMonth: month,
+                    startYear: year,
+                    endMonth: month,
+                    endYear: year,
+                    type: 'single-month'
+                };
+            } catch (e) {
+                console.error("Error parsing single month format:", e);
+            }
         }
 
         // Format: "January - March 2024" or "January to March 2024"
         const sameYearMatch = periodString.match(/(\w+)\s*(?:-|to)\s*(\w+)\s+(\d{4})/i);
         if (sameYearMatch) {
-            const startMonth = new Date(`${sameYearMatch[1]} 1, 2000`).getMonth() + 1;
-            const endMonth = new Date(`${sameYearMatch[2]} 1, 2000`).getMonth() + 1;
-            const year = parseInt(sameYearMatch[3]);
-            return {
-                startMonth,
-                startYear: year,
-                endMonth,
-                endYear: year
-            };
+            try {
+                const startMonth = new Date(`${sameYearMatch[1]} 1, 2000`).getMonth() + 1;
+                const endMonth = new Date(`${sameYearMatch[2]} 1, 2000`).getMonth() + 1;
+                const year = parseInt(sameYearMatch[3]);
+                console.log(`Parsed same-year period: ${startMonth}/${year} - ${endMonth}/${year}`);
+                return {
+                    startMonth,
+                    startYear: year,
+                    endMonth,
+                    endYear: year,
+                    type: 'multi-month-same-year'
+                };
+            } catch (e) {
+                console.error("Error parsing same-year format:", e);
+            }
         }
 
         // Format: "January 2024 - March 2024" or "January 2024 to March 2024"
         const differentYearMatch = periodString.match(/(\w+)\s+(\d{4})\s*(?:-|to)\s*(\w+)\s+(\d{4})/i);
         if (differentYearMatch) {
-            const startMonth = new Date(`${differentYearMatch[1]} 1, 2000`).getMonth() + 1;
-            const startYear = parseInt(differentYearMatch[2]);
-            const endMonth = new Date(`${differentYearMatch[3]} 1, 2000`).getMonth() + 1;
-            const endYear = parseInt(differentYearMatch[4]);
-            return {
-                startMonth,
-                startYear,
-                endMonth,
-                endYear
-            };
+            try {
+                const startMonth = new Date(`${differentYearMatch[1]} 1, 2000`).getMonth() + 1;
+                const startYear = parseInt(differentYearMatch[2]);
+                const endMonth = new Date(`${differentYearMatch[3]} 1, 2000`).getMonth() + 1;
+                const endYear = parseInt(differentYearMatch[4]);
+                console.log(`Parsed different-year period: ${startMonth}/${startYear} - ${endMonth}/${endYear}`);
+                return {
+                    startMonth,
+                    startYear,
+                    endMonth,
+                    endYear,
+                    type: 'multi-month-diff-year'
+                };
+            } catch (e) {
+                console.error("Error parsing different-year format:", e);
+            }
         }
 
+        // Format: DD/MM/YYYY - DD/MM/YYYY or MM/DD/YYYY - MM/DD/YYYY
+        const dateRangeMatch = periodString.match(/(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})\s*(?:-|to)\s*(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})/i);
+        if (dateRangeMatch) {
+            try {
+                // Try to determine format (DD/MM/YYYY or MM/DD/YYYY)
+                // Default to DD/MM/YYYY format and validate
+                const d1 = parseInt(dateRangeMatch[1]);
+                const m1 = parseInt(dateRangeMatch[2]);
+                const y1 = parseInt(dateRangeMatch[3]);
+                const d2 = parseInt(dateRangeMatch[4]);
+                const m2 = parseInt(dateRangeMatch[5]);
+                const y2 = parseInt(dateRangeMatch[6]);
+                
+                // Validate date parts (simple validation)
+                const isValidDDMMFormat = d1 <= 31 && m1 <= 12 && d2 <= 31 && m2 <= 12;
+                const isValidMMDDFormat = m1 <= 12 && d1 <= 31 && m2 <= 12 && d2 <= 31;
+                
+                if (isValidDDMMFormat) {
+                    // Assume DD/MM/YYYY
+                    console.log(`Parsed date range (DD/MM/YYYY): ${d1}/${m1}/${y1} - ${d2}/${m2}/${y2}`);
+                    return {
+                        startMonth: m1,
+                        startYear: y1,
+                        endMonth: m2,
+                        endYear: y2,
+                        type: 'date-range'
+                    };
+                } else if (isValidMMDDFormat) {
+                    // Assume MM/DD/YYYY
+                    console.log(`Parsed date range (MM/DD/YYYY): ${m1}/${d1}/${y1} - ${m2}/${d2}/${y2}`);
+                    return {
+                        startMonth: m1,
+                        startYear: y1,
+                        endMonth: m2,
+                        endYear: y2,
+                        type: 'date-range'
+                    };
+                }
+            } catch (e) {
+                console.error("Error parsing date range format:", e);
+            }
+        }
+
+        console.warn("Could not parse statement period:", periodString);
         return null;
     }
 
@@ -771,6 +857,23 @@ export function BankStatementUploadDialog({
     function generateMonthRange(startMonth, startYear, endMonth, endYear) {
         const months = [];
 
+        // Validate input
+        if (!startMonth || !startYear || !endMonth || !endYear) {
+            console.error("Invalid parameters for generateMonthRange", { startMonth, startYear, endMonth, endYear });
+            return months;
+        }
+
+        // Normalize month numbers to ensure they're between 1-12
+        startMonth = Math.max(1, Math.min(12, startMonth));
+        endMonth = Math.max(1, Math.min(12, endMonth));
+
+        // Handle invalid year ranges
+        if (startYear > endYear || (startYear === endYear && startMonth > endMonth)) {
+            console.error("Invalid date range: start date is after end date");
+            return [{ month: startMonth, year: startYear }]; // Return at least the start month
+        }
+
+        // Generate the range
         for (let year = startYear; year <= endYear; year++) {
             const start = year === startYear ? startMonth : 1;
             const end = year === endYear ? endMonth : 12;
@@ -780,6 +883,7 @@ export function BankStatementUploadDialog({
             }
         }
 
+        console.log(`Generated month range: ${months.length} months from ${startMonth}/${startYear} to ${endMonth}/${endYear}`);
         return months;
     }
 
@@ -793,15 +897,28 @@ export function BankStatementUploadDialog({
         try {
             // Parse the period to get start and end months
             const period = extractedData.statement_period;
-            const monthsInRange = getMonthsFromPeriod(period);
+            const parsedPeriod = parseStatementPeriod(period);
             
-            // If we couldn't determine the months, just create a single entry
+            if (!parsedPeriod) {
+                console.warn('Could not parse statement period:', period);
+                return [];
+            }
+            
+            const monthsInRange = generateMonthRange(
+                parsedPeriod.startMonth, 
+                parsedPeriod.startYear, 
+                parsedPeriod.endMonth, 
+                parsedPeriod.endYear
+            );
+            
             if (!monthsInRange || monthsInRange.length === 0) {
                 console.warn('Could not determine months in multi-month period:', period);
-                return;
+                return [];
             }
             
             console.log('Creating entries for months:', monthsInRange);
+            
+            const createdStatements = [];
             
             // Create a statement entry for each month in the range
             for (const { month, year } of monthsInRange) {
@@ -819,7 +936,11 @@ export function BankStatementUploadDialog({
                     .eq('statement_year', year)
                     .single();
                 
-                if (getExistingError) throw getExistingError;
+                if (getExistingError && getExistingError.code !== 'PGRST116') {
+                    // Real error (not "no rows returned")
+                    console.error('Error checking for existing statement:', getExistingError);
+                    throw getExistingError;
+                }
                 
                 // Prepare statement data for this month
                 const monthStatementData = {
@@ -827,7 +948,11 @@ export function BankStatementUploadDialog({
                     statement_month: month,
                     statement_year: year,
                     statement_document: documentPaths,
-                    statement_extractions: extractedData,
+                    statement_extractions: {
+                        ...extractedData,
+                        generated_from_multi_month: true,
+                        original_period: period
+                    },
                     validation_status: {
                         is_validated: false,
                         validation_date: new Date().toISOString(),
@@ -836,57 +961,254 @@ export function BankStatementUploadDialog({
                     }
                 };
                 
+                let resultStatement;
+                
                 if (existingStatement) {
                     // Update existing statement
-                    await supabase
+                    const { data: updatedStatement, error: updateError } = await supabase
                         .from('acc_cycle_bank_statements')
                         .update(monthStatementData)
-                        .eq('id', existingStatement.id);
+                        .eq('id', existingStatement.id)
+                        .select('*')
+                        .single();
+                    
+                    if (updateError) throw updateError;
+                    resultStatement = updatedStatement;
+                    console.log(`Updated existing statement for ${month}/${year}:`, updatedStatement.id);
                 } else {
                     // Create new statement
-                    await supabase
+                    const { data: newStatement, error: insertError } = await supabase
                         .from('acc_cycle_bank_statements')
-                        .insert(monthStatementData);
+                        .insert(monthStatementData)
+                        .select('*')
+                        .single();
+                    
+                    if (insertError) throw insertError;
+                    resultStatement = newStatement;
+                    console.log(`Created new statement for ${month}/${year}:`, newStatement.id);
                 }
+                
+                createdStatements.push(resultStatement);
             }
+            
+            return createdStatements;
         } catch (error) {
             console.error('Error handling multi-month statement:', error);
             throw new Error('Failed to process multi-month statement');
         }
     };
 
-    const getMonthsFromPeriod = (period: string) => {
-        // Implement logic to parse period string into months
-        // For demonstration, assume period is in format "January - March 2024"
-        const match = period.match(/(\w+)\s*(?:-|to)\s*(\w+)\s+(\d{4})/i);
-        if (match) {
-            const startMonth = new Date(`${match[1]} 1, 2000`).getMonth() + 1;
-            const endMonth = new Date(`${match[2]} 1, 2000`).getMonth() + 1;
-            const year = parseInt(match[3]);
-            return generateMonthRange(startMonth, year, endMonth, year);
-        }
-        return null;
-    };
-
-    // Function to handle file upload to Supabase
-    const uploadFileToSupabase = async (file: File, filePath: string) => {
+    // Add a new helper function to handle the actual upload
+    const processUpload = async (extractedData) => {
         try {
-            const { data, error } = await supabase.storage
-                .from('Statement-Cycle')
-                .upload(filePath, file, {
-                    cacheControl: '0',
-                    upsert: true
-                });
+            if (!pdfFile) {
+                throw new Error('No PDF file available for upload');
+            }
 
-            if (error) throw error;
-            return data;
+            // Generate consistent file paths for PDF
+            const pdfFilePath = generateDocumentPath(bank, cycleYear, cycleMonth, 'pdf', pdfFile.name);
+
+            // Upload PDF file with size tracking
+            const { path: uploadedPath, size: pdfSize } = await uploadFileToSupabase(pdfFile, pdfFilePath);
+            console.log(`PDF uploaded to ${uploadedPath} with size ${pdfSize} bytes`);
+
+            // Upload Excel file if available
+            let excelPath = null;
+            let excelSize = null;
+            if (excelFile) {
+                const excelFilePath = generateDocumentPath(bank, cycleYear, cycleMonth, 'excel', excelFile.name);
+                try {
+                    let { path: newExcelPath, size: newExcelSize } = await uploadFileToSupabase(excelFile, excelFilePath);
+                    excelPath = newExcelPath;
+                    excelSize = newExcelSize;
+                    console.log(`Excel uploaded to ${excelPath} with size ${excelSize} bytes`);
+                } catch (excelError) {
+                    console.error("Excel upload error:", excelError);
+                    // Continue with PDF only if Excel upload fails
+                    toast({
+                        title: 'Warning',
+                        description: 'Excel file upload failed, continuing with PDF only',
+                        variant: 'default'
+                    });
+                }
+            }
+
+            // Create a comprehensive document info object
+            const documentInfo = {
+                statement_pdf: uploadedPath,
+                statement_excel: excelPath,
+                document_size: pdfSize,
+                excel_size: excelSize,
+                original_pdf_name: pdfFile.name,
+                original_excel_name: excelFile?.name || null,
+                upload_timestamp: new Date().toISOString(),
+                password: pdfNeedsPassword ? password : null
+            };
+
+            // Determine if this is a multi-month statement
+            let isMultiMonth = false;
+            let statementRangeType = 'single';
+            let monthsInRange = [];
+            
+            if (extractedData?.statement_period) {
+                const parsedPeriod = parseStatementPeriod(extractedData.statement_period);
+                if (parsedPeriod) {
+                    monthsInRange = generateMonthRange(
+                        parsedPeriod.startMonth,
+                        parsedPeriod.startYear,
+                        parsedPeriod.endMonth,
+                        parsedPeriod.endYear
+                    );
+                    
+                    isMultiMonth = monthsInRange.length > 1;
+                    statementRangeType = parsedPeriod.type || 'unknown';
+                    
+                    console.log(`Statement period analysis:`, {
+                        period: extractedData.statement_period,
+                        isMultiMonth,
+                        statementRangeType,
+                        monthsCount: monthsInRange.length,
+                        months: monthsInRange
+                    });
+                }
+            }
+
+            // Create statement data with extracted data and enhanced metadata
+            const statementData = {
+                bank_id: bank.id,
+                company_id: bank.company_id,
+                statement_cycle_id: statementCycleId,
+                statement_month: cycleMonth,
+                statement_year: cycleYear,
+                has_soft_copy: hasSoftCopy,
+                has_hard_copy: hasHardCopy,
+                statement_document: documentInfo,
+                statement_extractions: extractedData ? {
+                    ...extractedData,
+                    is_multi_month: isMultiMonth,
+                    statement_range_type: statementRangeType,
+                    detected_months: monthsInRange
+                } : null,
+                extraction_performed: !!extractedData,
+                extraction_timestamp: extractedData ? new Date().toISOString() : null,
+                validation_status: {
+                    is_validated: validationResults?.isValid || false,
+                    validation_date: validationResults ? new Date().toISOString() : null,
+                    validated_by: null,
+                    mismatches: validationResults?.mismatches || []
+                },
+                status: {
+                    status: 'pending_validation',
+                    assigned_to: null,
+                    verification_date: null
+                }
+            };
+
+            // Handle existing statement update or new statement creation
+            let mainStatement;
+            let additionalStatements = [];
+
+            if (existingStatement) {
+                // Update existing statement
+                const { data, error } = await supabase
+                    .from('acc_cycle_bank_statements')
+                    .update(statementData)
+                    .eq('id', existingStatement.id)
+                    .select('*')
+                    .single();
+
+                if (error) throw error;
+                mainStatement = data;
+                console.log("Updated existing statement:", mainStatement.id);
+            } else {
+                // Create new statement
+                const { data, error } = await supabase
+                    .from('acc_cycle_bank_statements')
+                    .insert(statementData)
+                    .select('*')
+                    .single();
+
+                if (error) throw error;
+                mainStatement = data;
+                console.log("Created new statement:", mainStatement.id);
+            }
+
+            // Handle multi-month statement if needed
+            if (isMultiMonth && extractedData) {
+                try {
+                    additionalStatements = await handleMultiMonthStatement(
+                        statementData,
+                        bank,
+                        extractedData,
+                        documentInfo
+                    );
+                    
+                    console.log(`Created ${additionalStatements.length} additional statements for multi-month range`);
+                    
+                    // Update the main statement to reflect it's part of a multi-month set
+                    if (mainStatement) {
+                        const { error: updateError } = await supabase
+                            .from('acc_cycle_bank_statements')
+                            .update({
+                                related_statements: additionalStatements.map(s => s.id),
+                                statement_extractions: {
+                                    ...mainStatement.statement_extractions,
+                                    is_multi_month: true,
+                                    multi_month_statement_ids: additionalStatements.map(s => s.id)
+                                }
+                            })
+                            .eq('id', mainStatement.id);
+                        
+                        if (updateError) {
+                            console.error("Error updating main statement with multi-month info:", updateError);
+                        }
+                    }
+                } catch (multiMonthError) {
+                    console.error("Error processing multi-month statements:", multiMonthError);
+                    // Continue with main statement
+                    toast({
+                        title: 'Warning',
+                        description: 'Failed to create additional months from multi-month statement',
+                        variant: 'default'
+                    });
+                }
+            }
+
+            // Set the uploaded statement and show extraction dialog
+            setUploadedStatement(mainStatement);
+            onStatementUploaded(mainStatement);
+            
+            // Show extraction dialog for reviewing/editing extracted data
+            if (extractedData) {
+                setShowExtractionDialog(true);
+            }
+
+            // Clear URL objects
+            if (fileUrl) {
+                URL.revokeObjectURL(fileUrl);
+            }
+            
+            setUploading(false);
+            
+            toast({
+                title: 'Success',
+                description: isMultiMonth 
+                    ? `Uploaded statement for ${monthsInRange.length} months (${extractedData.statement_period})`
+                    : 'Statement uploaded successfully',
+            });
+            
+            return mainStatement;
         } catch (error) {
-            console.error('Supabase upload error:', error);
+            console.error('Upload error:', error);
+            setUploading(false);
+            toast({
+                title: 'Upload Error',
+                description: error.message || 'An error occurred during upload',
+                variant: 'destructive'
+            });
             throw error;
         }
     };
-
-    // In BankStatementUploadDialog.tsx, modify the handleUpload function:
 
     const handleUpload = async () => {
         if (!pdfFile) {
@@ -944,111 +1266,9 @@ export function BankStatementUploadDialog({
 
         } catch (error) {
             console.error('Upload/extraction error:', error);
+            setUploading(false);
             toast({
                 title: 'Error',
-                description: error.message || 'An error occurred during upload',
-                variant: 'destructive'
-            });
-            setUploading(false);
-        }
-    };
-
-    // Add a new helper function to handle the actual upload
-    const processUpload = async (extractedData) => {
-        try {
-            // Upload PDF file
-            const pdfFileName = `bank_statement_${bank.company_id}_${bank.id}_${cycleYear}_${cycleMonth}.pdf`;
-            const pdfFilePath = `statement_documents/${cycleYear}/${cycleMonth}/${bank.company_name}/${pdfFileName}`;
-
-            const { data: pdfUploadData, error: pdfUploadError } = await supabase.storage
-                .from('Statement-Cycle')
-                .upload(pdfFilePath, pdfFile, {
-                    cacheControl: '0',
-                    upsert: true
-                });
-
-            if (pdfUploadError) throw pdfUploadError;
-
-            // Upload Excel file if available
-            let excelFilePath = null;
-            if (excelFile) {
-                // Excel upload logic (unchanged)
-                // ...
-            }
-
-            // Document info
-            const documentInfo = {
-                statement_pdf: pdfUploadData.path,
-                statement_excel: excelFilePath,
-                document_size: pdfFile.size,
-                file_name: pdfFile.name,
-                password: pdfNeedsPassword ? password : null
-            };
-
-            // Create statement data with extracted data
-            const statementData = {
-                bank_id: bank.id,
-                company_id: bank.company_id,
-                statement_cycle_id: statementCycleId,
-                statement_month: cycleMonth,
-                statement_year: cycleYear,
-                has_soft_copy: hasSoftCopy,
-                has_hard_copy: hasHardCopy,
-                statement_document: documentInfo,
-                statement_extractions: extractedData,
-                extraction_performed: !!extractedData,
-                extraction_timestamp: extractedData ? new Date().toISOString() : null,
-                validation_status: {
-                    is_validated: validationResults?.isValid || false,
-                    validation_date: validationResults ? new Date().toISOString() : null,
-                    validated_by: null,
-                    mismatches: validationResults?.mismatches || []
-                },
-                status: {
-                    status: 'pending_validation',
-                    assigned_to: null,
-                    verification_date: null
-                }
-            };
-
-            // Check for existing statement to update
-            if (existingStatement) {
-                // Update existing statement
-                const { data, error } = await supabase
-                    .from('acc_cycle_bank_statements')
-                    .update(statementData)
-                    .eq('id', existingStatement.id)
-                    .select('*')
-                    .single();
-
-                if (error) throw error;
-                setUploadedStatement(data);
-                onStatementUploaded(data);
-            } else {
-                // Create new statement
-                const { data, error } = await supabase
-                    .from('acc_cycle_bank_statements')
-                    .insert(statementData)
-                    .select('*')
-                    .single();
-
-                if (error) throw error;
-                setUploadedStatement(data);
-                onStatementUploaded(data);
-            }
-
-            // Show extraction dialog for reviewing/editing extracted data
-            if (extractedData) {
-                setShowExtractionDialog(true);
-            }
-
-            URL.revokeObjectURL(fileUrl);
-            setUploading(false);
-        } catch (error) {
-            console.error('Upload error:', error);
-            setUploading(false);
-            toast({
-                title: 'Upload Error',
                 description: error.message || 'An error occurred during upload',
                 variant: 'destructive'
             });
@@ -1069,13 +1289,11 @@ export function BankStatementUploadDialog({
 
             // Upload PDF if provided
             if (pdfFile) {
-                const pdfFileName = `bank_statement_${bank.company_id}_${bank.id}_${cycleYear}_${cycleMonth}.pdf`;
-                const pdfFilePath = `${bank.company_id}/${bank.id}/${cycleYear}/${cycleMonth}/${pdfFileName}`;
-
+                const pdfFilePath = generateDocumentPath(bank, cycleYear, cycleMonth, 'pdf', pdfFile.name);
                 try {
-                    await uploadFileToSupabase(pdfFile, pdfFilePath);
-                    pdfPath = pdfFilePath;
-                    documentSize = pdfFile.size;
+                    const { path: uploadedPath, size: pdfSize } = await uploadFileToSupabase(pdfFile, pdfFilePath);
+                    pdfPath = uploadedPath;
+                    documentSize = pdfSize;
                 } catch (error) {
                     console.error("PDF upload error:", error);
                     toast({
@@ -1090,12 +1308,12 @@ export function BankStatementUploadDialog({
 
             // Upload Excel if provided
             if (excelFile) {
-                const excelFileName = `bank_statement_${bank.company_id}_${bank.id}_${cycleYear}_${cycleMonth}.xlsx`;
-                const excelFilePath = `${bank.company_id}/${bank.id}/${cycleYear}/${cycleMonth}/${excelFileName}`;
-
+                const excelFilePath = generateDocumentPath(bank, cycleYear, cycleMonth, 'excel', excelFile.name);
                 try {
-                    await uploadFileToSupabase(excelFile, excelFilePath);
-                    excelPath = excelFilePath;
+                    let { path: newExcelPath, size: newExcelSize } = await uploadFileToSupabase(excelFile, excelFilePath);
+                    excelPath = newExcelPath;
+                    documentSize = newExcelSize;
+                    console.log(`Excel uploaded to ${excelPath} with size ${documentSize} bytes`);
                 } catch (excelError) {
                     console.error("Excel upload error:", excelError);
                     // Continue with PDF only if Excel upload fails
@@ -1578,13 +1796,22 @@ export function BankStatementUploadDialog({
             {showExtractionDialog && uploadedStatement && (
                 <BankExtractionDialog
                     isOpen={showExtractionDialog}
-                    onClose={() => setShowExtractionDialog(false)}
+                    onClose={() => {
+                        setShowExtractionDialog(false);
+                        // Update the UI after closing to reflect any changes
+                        if (uploadedStatement) {
+                            onStatementUploaded(uploadedStatement);
+                        }
+                    }}
                     bank={bank}
                     statement={uploadedStatement}
                     pdfPassword={passwordApplied ? password : null}
                     onStatementUpdated={(updatedStatement) => {
-                        onStatementUploaded(updatedStatement);
-                        setShowExtractionDialog(false);
+                        if (updatedStatement) {
+                            setUploadedStatement(updatedStatement);
+                            onStatementUploaded(updatedStatement);
+                        }
+                        // Keep dialog open to allow reviewing the extraction results
                     }}
                 />
             )}

@@ -39,7 +39,7 @@ interface BankStatementBulkUploadDialogProps {
     onUploadsComplete?: () => void;
 }
 
-export function BankStatementBulkUploadDialog({
+export default function BankStatementBulkUploadDialog({
     isOpen,
     onClose,
     banks = [],

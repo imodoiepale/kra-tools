@@ -613,11 +613,11 @@ export function BankExtractionDialog({
         }
     };
     // Always call loadPdfDocument when dialog opens or statement changes
-    // useEffect(() => {
-    //     if (isOpen && statement?.statement_document?.statement_pdf) {
-    //         loadPdfDocument();
-    //     }
-    // }, [isOpen, statement?.statement_document?.statement_pdf]);
+    useEffect(() => {
+        if (isOpen && statement?.statement_document?.statement_pdf) {
+            loadPdfDocument();
+        }
+    }, [isOpen, statement?.statement_document?.statement_pdf]);
 
     // Effect to handle dialog opening and PDF preparation
     useEffect(() => {
