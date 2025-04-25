@@ -1021,7 +1021,7 @@ const findStatementId = async () => {
             .eq('bank_id', statement.bank_id)
             .eq('statement_month', statement.statement_month)
             .eq('statement_year', statement.statement_year)
-            .maybeSingle();
+            .maybeSingle(); // Use maybeSingle instead of single
         
         if (error) {
             console.error('Error finding statement ID:', error);
@@ -2399,7 +2399,6 @@ const findStatementId = async () => {
             // Reset states when URL changes
             setLoading(true);
             setError(null);
-            console.log("URL in PDFViewer changed:", url ? "URL present" : "No URL");
 
             if (!url) {
                 setLoading(false);
@@ -2419,6 +2418,11 @@ const findStatementId = async () => {
         const handleIframeError = (e) => {
             console.error("Error loading PDF in iframe:", e);
             setError("Failed to load the PDF document.");
+            setLoading(false);
+        };
+
+        // Handle iframe load completion
+        const handleIframeLoad = () => {
             setLoading(false);
         };
 
@@ -2456,7 +2460,7 @@ const findStatementId = async () => {
                 )}
 
                 {/* Log the URL before passing it to the iframe */}
-                {console.log("PDFViewer URL:", url)}
+                {/* {console.log("PDFViewer URL:", url)} */}
 
                 <iframe
                     ref={iframeRef}
@@ -2464,6 +2468,7 @@ const findStatementId = async () => {
                     type="application/pdf"
                     className="w-full h-full border-0"
                     onError={handleIframeError}
+                    onLoad={handleIframeLoad}
                     title="PDF Viewer"
                 />
             </div>
@@ -2517,8 +2522,7 @@ const findStatementId = async () => {
                 console.log('Statement has PDF path, attempting to load');
                 loadPdfDocument(currentStatement);
             } else {
-                // No PDF path and no ID to fetch a complete statement
-                console.log('No PDF document available and no ID to fetch');
+                console.log('No PDF document available in statement');
                 setPdfError('No PDF document available');
                 setPdfLoading(false);
             }
@@ -3451,5 +3455,5 @@ const findStatementId = async () => {
                 </DialogFooter>
             </DialogContent>
         </Dialog>
-    );
+    };
 }
