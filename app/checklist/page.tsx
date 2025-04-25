@@ -10,8 +10,8 @@ import { Input } from "@/components/ui/input";
 import { Filter, Search } from "lucide-react";
 import CompanyListTable from './taxes/components/CompanyListTable';
 import { supabase } from '@/lib/supabase';
-import ClientFileManagement from './file-management/page';
-import TaxesPage from './taxes/page';
+import ClientFileManagement from './file-management/components/ClientFileManagement';
+import TaxesPage from './taxes/components/TaxesPageComponent';
 import { ClientCategoryFilter } from '@/components/ClientCategoryFilter';
 import { toast } from 'react-hot-toast';
 

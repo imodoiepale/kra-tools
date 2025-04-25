@@ -13,10 +13,17 @@ import {
     flexRender,
     createColumnHelper,
 } from '@tanstack/react-table';
+import { Company, ChecklistItem } from './MonthlyTable.types';
+
+interface AllDataViewProps {
+  filteredClients: Company[];
+  checklist: Record<string, ChecklistItem>;
+  selectedDate: Date;
+}
 
 const columnHelper = createColumnHelper();
 
-export default function AllDataView({ filteredClients, checklist, selectedDate }) {
+export default function AllDataView({ filteredClients, checklist, selectedDate }: AllDataViewProps) {
     const year = selectedDate.getFullYear();
     const currentMonth = new Date().getMonth();
     const startMonth = 6; // July is the 7th month (0-indexed)
@@ -24,7 +31,7 @@ export default function AllDataView({ filteredClients, checklist, selectedDate }
 
     const [sorting, setSorting] = useState([]);
 
-    const getStatusCounts = (clients, year, month) => {
+    const getStatusCounts = (clients: Company[], year: number, month: string) => {
         const received = clients.filter(client => checklist[client.company_name]?.file_management?.[year]?.[month]?.receivedAt).length;
         const delivered = clients.filter(client => checklist[client.company_name]?.file_management?.[year]?.[month]?.filesDelivered).length;
         const total = clients.length;

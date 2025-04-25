@@ -25,10 +25,11 @@ import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 import ConfirmDocumentDialog from './ConfirmDocumentDialog';
 import DeliveryDialog from './DeliveryDialog';
+import { MonthlyTableProps } from './MonthlyTable.types';
 
 const columnHelper = createColumnHelper();
 
-export default function MonthlyTable({ clients = [], checklist, selectedDate, updateClientStatus }) {
+export default function MonthlyTable({ clients = [], checklist, selectedDate, updateClientStatus }: MonthlyTableProps) {
     const [globalFilter, setGlobalFilter] = useState('');
     const [showTotals, setShowTotals] = useState(true);
     const [columnVisibility, setColumnVisibility] = useState({});

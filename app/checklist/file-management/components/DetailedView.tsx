@@ -9,10 +9,15 @@ import { CheckCircle, XCircle } from "lucide-react";
 import { format } from "date-fns";
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
+import { Company, ChecklistItem } from './MonthlyTable.types';
 
+interface DetailedViewProps {
+  filteredClients: Company[];
+  checklist: Record<string, ChecklistItem>;
+  selectedDate: Date;
+}
 
-
-const exportToExcel = async () => {
+const exportToExcel = async (selectedCompany: string | null, months: { monthIndex: number; monthKey: string; year: number }[], checklist: Record<string, ChecklistItem>) => {
     if (!selectedCompany) return;
 
     const workbook = new ExcelJS.Workbook();
@@ -75,16 +80,16 @@ const exportToExcel = async () => {
     // Generate Excel file
     const buffer = await workbook.xlsx.writeBuffer();
     const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    saveAs(blob, `file_management_${selectedCompany}_${format(selectedDate, 'MMMM_yyyy')}.xlsx`);
+    saveAs(blob, `file_management_${selectedCompany}_${format(new Date(), 'MMMM_yyyy')}.xlsx`);
 };
 
-export default function DetailedView({ filteredClients, checklist, selectedDate }) {
-    const [selectedCompany, setSelectedCompany] = useState(null);
+export default function DetailedView({ filteredClients, checklist, selectedDate }: DetailedViewProps) {
+    const [selectedCompany, setSelectedCompany] = useState<string | null>(null);
     const year = selectedDate.getFullYear();
     const currentMonth = new Date().getMonth();
     const monthsToShow = 12;
 
-    const formatDateTime = (dateTimeString) => {
+    const formatDateTime = (dateTimeString: string | undefined) => {
         if (!dateTimeString) return { date: '-', time: '-' };
         const date = new Date(dateTimeString);
         return {
@@ -127,7 +132,7 @@ export default function DetailedView({ filteredClients, checklist, selectedDate 
                 <div className="flex justify-between items-center mb-1">
                     <h2 className="text-2xl font-bold">Detailed View</h2>
                     {selectedCompany && (
-                        <Button onClick={exportToExcel} className="mb-4">
+                        <Button onClick={() => exportToExcel(selectedCompany, months, checklist)} className="mb-4">
                             Export to Excel
                         </Button>
                     )}
