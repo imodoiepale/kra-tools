@@ -1,11 +1,11 @@
 // @ts-nocheck
 import { useState, useEffect, useRef } from 'react'
 import {
-    Loader2, Save, ChevronLeft, ChevronRight,
-    AlertTriangle, CheckCircle, Check, Trash,
-    Plus, X, ChevronsUpDown, CalendarIcon, Eye,
-    FileCheck, DollarSign, Building, Calendar,
-    FileTextIcon, Download,
+    Loader2, ChevronDown, AlertTriangle, DownloadCloud, Download, Check, FileText as FileTextIcon, X, ExternalLink, Layers,
+    ChevronLeft, ChevronRight, Save,
+    CheckCircle, Trash, FileCheck,
+    Plus, ChevronsUpDown, CalendarIcon, Eye,
+    DollarSign, Building, Calendar,
     ZoomOut,
     ZoomIn,
     Calculator
@@ -69,19 +69,8 @@ import {
 
 import { ExtractionsService } from '@/lib/extractionService';
 
-import { Document, Page, pdfjs } from 'react-pdf';
-import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
-import 'react-pdf/dist/esm/Page/TextLayer.css';
-
-
-// pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.js`;
-
-// Importing PDF.js functionality
-import * as pdfjsLib from 'pdfjs-dist';
+// We'll need the PDFDocumentProxy type for functionality
 import { PDFDocumentProxy } from 'pdfjs-dist';
-
-// Initialize PDF.js worker
-pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 
 interface Bank {
     id: number
@@ -548,7 +537,10 @@ export function BankExtractionDialog({
     }, [skipExtraction, preExtractedData]);
 
     const getFileUrl = async (path) => {
-        if (!path) return null;
+        if (!path) {
+            console.error('No path provided to getFileUrl');
+            return null;
+        }
 
         try {
             console.log('Getting signed URL for:', path);
@@ -562,6 +554,20 @@ export function BankExtractionDialog({
                 // Fallback to public URL if signed URL fails
                 const publicUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/Statement-Cycle/${path}`;
                 console.log('Using fallback public URL:', publicUrl);
+                
+                // Verify the URL is accessible by making a HEAD request
+                try {
+                    const response = await fetch(publicUrl, { method: 'HEAD' });
+                    if (!response.ok) {
+                        console.error(`Public URL is not accessible: ${response.status} ${response.statusText}`);
+                        throw new Error(`URL not accessible: ${response.status}`);
+                    }
+                    console.log('Public URL is accessible');
+                } catch (fetchError) {
+                    console.error('Error checking public URL accessibility:', fetchError);
+                    // Continue anyway, the PDFViewer will handle the error
+                }
+                
                 return publicUrl;
             }
 
@@ -570,18 +576,24 @@ export function BankExtractionDialog({
         } catch (error) {
             console.error('Error in getFileUrl:', error);
 
-            // Last resort fallback
-            return `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/Statement-Cycle/${path}`;
+            // Last resort fallback with better error reporting
+            const fallbackUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/Statement-Cycle/${path}`;
+            console.log('Using last resort fallback URL:', fallbackUrl);
+            
+            // Add a query parameter to help with debugging
+            return `${fallbackUrl}?fallback=true&t=${Date.now()}`;
         }
     };
     
-    // Improved function to load and display PDF in the extraction dialog
+    // Direct, simplified function to load and display PDF in the extraction dialog
     const loadPdfDocument = async (statementToLoad = statement) => {
         try {
             console.log('Loading PDF document for statement:', statementToLoad?.id);
 
+            // Reset states
             setPdfLoading(true);
             setPdfError(null);
+            setPdfUrl(null); // Clear any existing URL first
 
             if (!statementToLoad?.statement_document?.statement_pdf) {
                 console.log('No PDF document available to load');
@@ -593,23 +605,52 @@ export function BankExtractionDialog({
             const storagePath = statementToLoad.statement_document.statement_pdf;
             console.log('PDF storage path:', storagePath);
 
-            const pdfUrl = await getFileUrl(storagePath);
-
-            if (!pdfUrl) {
-                console.error('Failed to get URL for PDF');
-                setPdfError('Failed to access PDF document');
+            // Show a toast to indicate we're fetching the document
+            toast({
+                title: "Loading Document",
+                description: "Preparing document for viewing...",
+                variant: "default"
+            });
+            
+            try {
+                // Get the direct URL from Supabase
+                const pdfUrl = await getFileUrl(storagePath);
+                
+                if (!pdfUrl) {
+                    throw new Error('Failed to get URL for PDF');
+                }
+                
+                // Add a more extensive cache buster with timestamp AND random value to avoid any caching issues
+                const cacheBuster = `cache=${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
+                const urlWithCache = `${pdfUrl}${pdfUrl.includes('?') ? '&' : '?'}${cacheBuster}`;
+                
+                console.log('Setting PDF URL for display:', urlWithCache);
+                
+                // Set the URL - this will trigger the PDFViewer component to show it
+                setPdfUrl(urlWithCache);
+                
+                // IMPORTANT: Immediately clear loading state to prevent infinite loading indicator
                 setPdfLoading(false);
-                return;
+                
+            } catch (urlError) {
+                console.error('Error getting file URL:', urlError);
+                setPdfError(`Failed to access PDF document: ${urlError.message}`);
+                setPdfLoading(false);
+                toast({
+                    title: "Error",
+                    description: "Failed to access the document. Please try again.",
+                    variant: "destructive"
+                });
             }
-
-            console.log('Setting PDF URL for display:', pdfUrl);
-            setPdfUrl(pdfUrl);
-
-            // Rest of your PDF loading code...
         } catch (error) {
             console.error('Error in loadPdfDocument:', error);
-            setPdfError('Failed to load PDF document');
+            setPdfError(`Failed to load PDF document: ${error.message || 'Unknown error'}`);
             setPdfLoading(false);
+            toast({
+                title: "Error",
+                description: "There was a problem loading the document.",
+                variant: "destructive"
+            });
         }
     };
     // Always call loadPdfDocument when dialog opens or statement changes
@@ -624,6 +665,11 @@ export function BankExtractionDialog({
         if (isOpen) {
             console.log('BankExtractionDialog opened with statement:', statement);
             console.log('PDF path in statement:', statement?.statement_document?.statement_pdf);
+            
+            // Reset states when dialog opens - immediately set loading to false
+            setLoading(false); // Forces no loading state 
+            setPdfLoading(false); // No PDF loading animation
+            setPdfError(null);
 
             // If we don't have a statement_document object or PDF path, try to find it
             if (!statement?.statement_document?.statement_pdf && statement?.id) {
@@ -2223,7 +2269,7 @@ const findStatementId = async () => {
                     .eq('bank_id', statement.bank_id)
                     .eq('statement_month', statement.statement_month)
                     .eq('statement_year', statement.statement_year)
-                    .maybeSingle();
+                    .maybeSingle(); // Use maybeSingle instead of single
                 
                 if (foundStatement && foundStatement.id) {
                     statementId = foundStatement.id;
@@ -2369,74 +2415,12 @@ const findStatementId = async () => {
         }
     }, [accountNumber]);
 
-    // Add the following functions to handle password-protected PDFs
-    async function isPdfPasswordProtected(pdf) {
-        try {
-            await pdf.authenticatePassword('');
-            return false;
-        } catch (error) {
-            return true;
-        }
-    }
-
-    async function applyPasswordToFiles(pdf, password) {
-        try {
-            await pdf.authenticatePassword(password);
-            console.log('Password applied successfully');
-            return true;
-        } catch (error) {
-            console.error('Error applying password:', error);
-            return false;
-        }
-    }
-
+    // Bare minimum PDF and image viewer component - zero loading states
     const PDFViewer = ({ url }) => {
-        const [loading, setLoading] = useState(true);
-        const [error, setError] = useState(null);
-        const iframeRef = useRef(null);
-
-        useEffect(() => {
-            // Reset states when URL changes
-            setLoading(true);
-            setError(null);
-
-            if (!url) {
-                setLoading(false);
-                return;
-            }
-
-            // Auto-hide loading indicator after a reasonable timeout
-            const timeoutId = setTimeout(() => {
-                setLoading(false);
-            }, 5000);
-
-            // Handle iframe load event to properly set loading state
-            const handleIframeLoad = () => {
-                setLoading(false);
-                clearTimeout(timeoutId);
-            };
-
-            // Add load event listener to iframe when it's available
-            const iframe = iframeRef.current;
-            if (iframe) {
-                iframe.addEventListener('load', handleIframeLoad);
-            }
-
-            return () => {
-                clearTimeout(timeoutId);
-                if (iframe) {
-                    iframe.removeEventListener('load', handleIframeLoad);
-                }
-            };
-        }, [url]);
-
-        // For direct error handling
-        const handleIframeError = (e) => {
-            console.error("Error loading PDF in iframe:", e);
-            setError("Failed to load the PDF document.");
-            setLoading(false);
-        };
-
+        // No loading states at all - just direct rendering
+        console.log('Direct PDF rendering for URL:', url ? url.substring(0, 50) + '...' : 'none');
+        
+        // Handle cases when no URL is provided
         if (!url) {
             return (
                 <div className="flex flex-col items-center justify-center h-full text-center p-4">
@@ -2446,38 +2430,45 @@ const findStatementId = async () => {
             );
         }
 
+        // Check if this URL is for an image
+        const isImageUrl = url.match(/\.(jpeg|jpg|gif|png)$/i) !== null;
+
+        if (isImageUrl) {
+            // For image files, use a simple image tag
+            return (
+                <div className="h-full flex items-center justify-center">
+                    <img 
+                        src={url} 
+                        alt="Statement Document" 
+                        className="max-w-full max-h-full object-contain"
+                    />
+                </div>
+            );
+        }
+        
+        // For PDF files, direct iframe and open button
         return (
-            <div className="pdf-container h-full relative">
-                {loading && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-white bg-opacity-80 z-10">
-                        <div className="flex flex-col items-center">
-                            <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
-                            <p className="mt-2 text-sm text-gray-600">Loading PDF...</p>
-                        </div>
-                    </div>
-                )}
-
-                {error && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-white bg-opacity-90 z-10">
-                        <div className="flex flex-col items-center text-center max-w-md mx-auto">
-                            <AlertTriangle className="h-6 w-6 text-red-500 mb-2" />
-                            <h3 className="text-lg font-semibold text-gray-800">Error Loading PDF</h3>
-                            <p className="text-gray-600">{error}</p>
-                            <p className="mt-3 text-sm text-gray-500">
-                                Try refreshing the page or contact support if the problem persists.
-                            </p>
-                        </div>
-                    </div>
-                )}
-
-                <iframe
-                    ref={iframeRef}
-                    src={url}
-                    type="application/pdf"
-                    className="w-full h-full border-0"
-                    onError={handleIframeError}
-                    title="PDF Viewer"
-                />
+            <div className="h-full flex flex-col">
+                {/* Bare iframe - no frills */}
+                <div className="flex-grow" style={{ height: 'calc(100% - 40px)' }}>
+                    <iframe 
+                        src={url} 
+                        className="w-full h-full border-0"
+                        title="PDF Document"
+                    />
+                </div>
+                
+                {/* Open in new tab button */}
+                <div className="p-2 bg-gray-50 border-t flex justify-end">
+                    <Button
+                        size="sm"
+                        variant="default"
+                        onClick={() => window.open(url, '_blank')}
+                    >
+                        <ExternalLink className="h-4 w-4 mr-2" />
+                        Open in New Tab
+                    </Button>
+                </div>
             </div>
         );
     };
@@ -2691,11 +2682,7 @@ const findStatementId = async () => {
                                         className="border rounded  relative flex-1 overflow-auto"
                                     >
                                         <div className="h-full">
-                                            {loading ? (
-                                                <div className="flex items-center justify-center h-full">
-                                                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                                                </div>
-                                            ) : pdfNeedsPassword ? (
+                                            {pdfNeedsPassword ? (
                                                 // Password form component
                                                 <div className="flex flex-col items-center justify-center h-full">
                                                     <div className="bg-blue-50 p-6 rounded-lg shadow-sm border border-blue-200 max-w-md">
@@ -3462,5 +3449,5 @@ const findStatementId = async () => {
                 </DialogFooter>
             </DialogContent>
         </Dialog>
-    };
+    );
 }
