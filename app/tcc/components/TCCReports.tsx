@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogTrigger, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ArrowUpDown, Search, Eye, EyeOff, ImageIcon, MoreHorizontal, Download, ChevronLeftIcon, ChevronRightIcon, Filter } from "lucide-react";
+import { ArrowUpDown, Search, Eye, EyeOff, ImageIcon, MoreHorizontal, Download, ChevronLeftIcon, ChevronRightIcon, Filter, FileIcon } from "lucide-react";
 import { createClient } from '@supabase/supabase-js';
 import * as ExcelJS from 'exceljs';
 import { ClientCategoryFilter } from "@/components/ClientCategoryFilter";
@@ -500,7 +500,8 @@ export function TCCReports() {
                                                     report.pdf_link && report.pdf_link !== "no doc" ? (
                                                         <Dialog>
                                                             <DialogTrigger asChild>
-                                                                <button className="text-blue-500 hover:underline">
+                                                                <button className="text-blue-500 hover:underline flex items-center">
+                                                                    <FileIcon className="mr-1 h-4 w-4" />
                                                                     View
                                                                 </button>
                                                             </DialogTrigger>
@@ -528,7 +529,8 @@ export function TCCReports() {
                                                     report.screenshot_link && report.screenshot_link !== "no doc" ? (
                                                         <Dialog>
                                                             <DialogTrigger asChild>
-                                                                <button className="text-blue-500 hover:underline">
+                                                                <button className="text-blue-500 hover:underline flex items-center">
+                                                                    <ImageIcon className="mr-1 h-4 w-4" />
                                                                     View
                                                                 </button>
                                                             </DialogTrigger>
@@ -563,7 +565,7 @@ export function TCCReports() {
                                     </TableRow>
                                 ))}
                                 {/* Add a spacer row at the bottom to ensure visibility of all items */}
-                                <TableRow className="h-10"></TableRow>
+                                <TableRow key="spacer-row" className="h-10"></TableRow>
                             </TableBody>
                         </Table>
                     </ScrollArea>
@@ -638,7 +640,7 @@ export function TCCReports() {
                                                         )
                                                     })}
                                                     {/* Add a spacer row at the bottom to ensure visibility of all items */}
-                                                    <TableRow className="h-10"></TableRow>
+                                                    <TableRow key="detailed-spacer-row" className="h-10"></TableRow>
                                                 </TableBody>
                                             </Table>
                                         </div>
