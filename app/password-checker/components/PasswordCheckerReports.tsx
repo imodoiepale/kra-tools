@@ -524,19 +524,19 @@ export function PasswordCheckerReports() {
         </Button>
       </div>
 
-      <div className="rounded-md border">
+      <div className="rounded-md border flex-1 flex flex-col">
         
         <div className="overflow-x-auto">
 
-          <div className="max-h-[calc(100vh-300px)] overflow-y-auto">
+          <div className="max-h-[calc(100vh-300px)] overflow-y-auto" style={{overflowY: 'auto'}}>
 
 
-            <Table className="text-sm pb-4">
+            <Table className="text-xs pb-4">
               <TableHeader>
                 <TableRow>
-                  <TableHead className="text-center border-r border-black">Index</TableHead>
+                  <TableHead className="text-center border-r border-gray-300">Index</TableHead>
 
-                  <TableHead className="border-r border-black">
+                  <TableHead className="border-r border-gray-300">
 
                     <button
                       className="flex items-center font-semibold"
@@ -547,7 +547,7 @@ export function PasswordCheckerReports() {
                       Company Name {getSortIcon("company_name")}
                     </button>
                   </TableHead>
-                  <TableHead className="text-center border-r border-black">
+                  <TableHead className="text-center border-r border-gray-300">
                     <button
                       className="flex items-center font-semibold justify-center"
                       onClick={() => handleSort("kra_pin")}
@@ -556,8 +556,8 @@ export function PasswordCheckerReports() {
                       KRA PIN {getSortIcon("kra_pin")}
                     </button>
                   </TableHead>
-                  <TableHead className="text-center border-r border-black">KRA Password</TableHead>
-                  <TableHead className="text-center border-r border-black">
+                  <TableHead className="text-center border-r border-gray-300">KRA Password</TableHead>
+                  <TableHead className="text-center border-r border-gray-300">
                     <button
                       className="flex items-center font-semibold justify-center"
                       onClick={() => handleSort("status")}
@@ -567,7 +567,7 @@ export function PasswordCheckerReports() {
 
                     </button>
                   </TableHead>
-                  <TableHead className="text-center border-r border-black">
+                  <TableHead className="text-center border-r border-gray-300">
                     <button
                       className="flex items-center font-semibold justify-center"
                       onClick={() => handleSort("last_checked")}
@@ -575,7 +575,7 @@ export function PasswordCheckerReports() {
                       Last Checked {getSortIcon("last_checked")}
                     </button>
                   </TableHead>
-                  <TableHead className="text-center border-r border-black">
+                  <TableHead className="text-center border-r border-gray-300">
                     <button
                       className="flex items-center font-semibold justify-center"
                       onClick={() => handleSort("client_category")}
@@ -590,36 +590,36 @@ export function PasswordCheckerReports() {
                 </TableRow>
                 {showStatsRows && (
                   <>
-                    <TableRow className="bg-blue-50">
-                      <TableCell className="text-center text-[10px] font-bold border-r border-black">Complete</TableCell>
-                      <TableCell className="text-center text-[10px] border-r border-black">
+                    <TableRow className="bg-gray-100">
+                      <TableCell className="text-center text-[10px] font-bold border-r border-gray-300">Complete</TableCell>
+                      <TableCell className="text-center text-[10px] border-r border-gray-300">
                         <span className={stats.complete.company_name === filteredCompanies.length ? 'text-green-600 font-bold' : ''}>
                           {stats.complete.company_name}
                         </span>
                       </TableCell>
-                      <TableCell className="text-center text-[10px] border-r border-black">
+                      <TableCell className="text-center text-[10px] border-r border-gray-300">
                         <span className={stats.complete.kra_pin === filteredCompanies.length ? 'text-green-600 font-bold' : ''}>
                           {stats.complete.kra_pin}
                         </span>
                       </TableCell>
-                      <TableCell className="text-center text-[10px] border-r border-black">
+                      <TableCell className="text-center text-[10px] border-r border-gray-300">
                         <span className={stats.complete.kra_password === filteredCompanies.length ? 'text-green-600 font-bold' : ''}>
                           {stats.complete.kra_password}
                         </span>
 
                       </TableCell>
 
-                      <TableCell className="text-center text-[10px] border-r border-black">
+                      <TableCell className="text-center text-[10px] border-r border-gray-300">
                         <span className={stats.complete.status === filteredCompanies.length ? 'text-green-600 font-bold' : ''}>
                           {stats.complete.status}
                         </span>
                       </TableCell>
-                      <TableCell className="text-center text-[10px] border-r border-black">
+                      <TableCell className="text-center text-[10px] border-r border-gray-300">
                         <span className={stats.complete.last_checked === filteredCompanies.length ? 'text-green-600 font-bold' : ''}>
                           {stats.complete.last_checked}
                         </span>
                       </TableCell>
-                      <TableCell className="text-center text-[10px] border-r border-black">
+                      <TableCell className="text-center text-[10px] border-r border-gray-300">
                         <span className={stats.complete.client_category === filteredCompanies.length ? 'text-green-600 font-bold' : ''}>
                           {stats.complete.client_category}
                         </span>
@@ -627,34 +627,34 @@ export function PasswordCheckerReports() {
                       <TableCell></TableCell>
                     </TableRow>
                   
-                    <TableRow className="bg-red-50">
-                      <TableCell className="text-center text-[10px] font-bold border-r border-black">Missing</TableCell>
-                      <TableCell className="text-center text-[10px] border-r border-black">
+                    <TableRow className="bg-gray-50">
+                      <TableCell className="text-center text-[10px] font-bold border-r border-gray-300">Missing</TableCell>
+                      <TableCell className="text-center text-[10px] border-r border-gray-300">
                         <span className={stats.missing.company_name > 0 ? 'text-red-600 font-bold' : ''}>
                           {stats.missing.company_name}
                         </span>
                       </TableCell>
-                      <TableCell className="text-center text-[10px] border-r border-black">
+                      <TableCell className="text-center text-[10px] border-r border-gray-300">
                         <span className={stats.missing.kra_pin > 0 ? 'text-red-600 font-bold' : ''}>
                           {stats.missing.kra_pin}
                         </span>
                       </TableCell>
-                      <TableCell className="text-center text-[10px] border-r border-black">
+                      <TableCell className="text-center text-[10px] border-r border-gray-300">
                         <span className={stats.missing.kra_password > 0 ? 'text-red-600 font-bold' : ''}>
                           {stats.missing.kra_password}
                         </span>
                       </TableCell>
-                      <TableCell className="text-center text-[10px] border-r border-black">
+                      <TableCell className="text-center text-[10px] border-r border-gray-300">
                         <span className={stats.missing.status > 0 ? 'text-red-600 font-bold' : ''}>
                           {stats.missing.status}
                         </span>
                       </TableCell>
-                      <TableCell className="text-center text-[10px] border-r border-black">
+                      <TableCell className="text-center text-[10px] border-r border-gray-300">
                         <span className={stats.missing.last_checked > 0 ? 'text-red-600 font-bold' : ''}>
                           {stats.missing.last_checked}
                         </span>
                       </TableCell>
-                      <TableCell className="text-center text-[10px] border-r border-black">
+                      <TableCell className="text-center text-[10px] border-r border-gray-300">
                         <span className={stats.missing.client_category > 0 ? 'text-red-600 font-bold' : ''}>
                           {stats.missing.client_category}
                         </span>
@@ -669,26 +669,26 @@ export function PasswordCheckerReports() {
                   <TableRow
                     key={company.id}
                     className={`h-10 ${
-                      index % 2 === 0 ? "bg-white" : "bg-blue-50"
+                      index % 2 === 0 ? "bg-white" : "bg-gray-50"
                     }`}
                   >
-                    <TableCell className="text-center border-r border-black">{index + 1}</TableCell>
-                    <TableCell className="border-r border-black">
+                    <TableCell className="text-center border-r border-gray-300">{index + 1}</TableCell>
+                    <TableCell className="border-r border-gray-300">
                       {company.company_name || (
                         <span className="font-bold text-red-600">Missing</span>
                       )}
                     </TableCell>
-                    <TableCell className="text-center border-r border-black">
+                    <TableCell className="text-center border-r border-gray-300">
                       {company.kra_pin || (
                         <span className="font-bold text-red-600">Missing</span>
                       )}
                     </TableCell>
-                    <TableCell className="text-center border-r border-black">
+                    <TableCell className="text-center border-r border-gray-300">
                       {company.kra_password || (
                         <span className="font-bold text-red-600">Missing</span>
                       )}
                     </TableCell>
-                    <TableCell className="text-center border-r border-black">
+                    <TableCell className="text-center border-r border-gray-300">
                       <span
                         className={`inline-flex items-center justify-center px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(
                           formatStatusDisplay(company.status)
@@ -697,19 +697,19 @@ export function PasswordCheckerReports() {
                         {formatStatusDisplay(company.status)}
                       </span>
                     </TableCell>
-                    <TableCell className="text-center border-r border-black">
+                    <TableCell className="text-center border-r border-gray-300">
                       {company.last_checked ? (
                         new Date(company.last_checked).toLocaleString()
                       ) : (
                         <span className="font-bold text-red-600">Missing</span>
                       )}
                     </TableCell>
-                    <TableCell className="text-center border-r border-black">
+                    <TableCell className="text-center border-r border-gray-300">
                       {company.client_category || (
                         <span className="text-gray-500">N/A</span>
                       )}
                     </TableCell>
-                    <TableCell className="text-center border-r border-black">
+                    <TableCell className="text-center border-r border-gray-300">
                       <div className="flex justify-center space-x-2">
                         <Dialog>
                           <DialogTrigger asChild>
@@ -824,6 +824,8 @@ export function PasswordCheckerReports() {
                   </TableRow>
                 ))}
               </TableBody>
+              {/* Spacer row to ensure last items are visible */}
+              <tr><td className="py-4"></td></tr>
             </Table>
           </div>
         </div>

@@ -257,10 +257,10 @@ export function PINProfileReports() {
                     selectedFilters={categoryFilters}
                 />
             </div>
-            <div className="border rounded-md">
-                <ScrollArea className="h-[70vh]">
+            <div className="border rounded-md flex-1 flex flex-col">
+                <ScrollArea className="h-[75vh]" style={{overflowY: 'auto'}}>
                     <Table>
-                        <TableHeader className="sticky top-0 bg-white z-10">
+                        <TableHeader className="sticky top-0 bg-white z-10 text-xs">
                             <TableRow>
                                 {[
                                     { key: 'index', label: 'Index', alwaysVisible: true },
@@ -270,7 +270,7 @@ export function PINProfileReports() {
                                     { key: 'profile', label: 'PIN Profile', alwaysVisible: true },
                                 ].map(({ key, label, alwaysVisible }) => (
                                     (alwaysVisible || visibleColumns[key]) && (
-                                        <TableHead key={key} className={`font-bold border-r border-black ${key === 'index' ? 'text-center sticky left-0 bg-white' : key === 'company_name' ? '' : 'text-center'}`}>
+                                        <TableHead key={key} className={`font-bold border-r border-gray-300 text-xs py-1 px-2 ${key === 'index' ? 'text-center sticky left-0 bg-white' : key === 'company_name' ? '' : 'text-center'}`}>
                                             <div className={`flex items-center ${key === 'company_name' ? '' : 'justify-center'}`}>
                                                 {label}
                                                 {key !== 'profile' && (
@@ -283,47 +283,47 @@ export function PINProfileReports() {
                             </TableRow>
                             {showStatsRows && (
                                 <>
-                                    <TableRow className="bg-blue-50">
-                                        <TableCell className="text-center text-[10px] font-bold border-r border-black sticky left-0 bg-blue-50">Complete</TableCell>
-                                        <TableCell className="text-center text-[10px] border-r border-black">
+                                    <TableRow className="bg-gray-100">
+                                        <TableCell className="text-center text-[10px] font-bold border-r border-gray-300 sticky left-0 bg-gray-100 py-0.5">Complete</TableCell>
+                                        <TableCell className="text-center text-[10px] border-r border-gray-300 py-0.5">
                                             <span className={stats.complete.company_name === filteredReports.length ? 'text-green-600 font-bold' : ''}>
                                                 {stats.complete.company_name}
                                             </span>
                                         </TableCell>
-                                        <TableCell className="text-center text-[10px] border-r border-black">
+                                        <TableCell className="text-center text-[10px] border-r border-gray-300 py-0.5">
                                             <span className={stats.complete.company_pin === filteredReports.length ? 'text-green-600 font-bold' : ''}>
                                                 {stats.complete.company_pin}
                                             </span>
                                         </TableCell>
-                                        <TableCell className="text-center text-[10px] border-r border-black">
+                                        <TableCell className="text-center text-[10px] border-r border-gray-300 py-0.5">
                                             <span className={stats.complete.extraction_date === filteredReports.length ? 'text-green-600 font-bold' : ''}>
                                                 {stats.complete.extraction_date}
                                             </span>
                                         </TableCell>
-                                        <TableCell className="text-center text-[10px] border-r border-black">
+                                        <TableCell className="text-center text-[10px] border-r border-gray-300 py-0.5">
                                             <span className={stats.complete.pdf_link === filteredReports.length ? 'text-green-600 font-bold' : ''}>
                                                 {stats.complete.pdf_link}
                                             </span>
                                         </TableCell>
                                     </TableRow>
-                                    <TableRow className="bg-red-50">
-                                        <TableCell className="text-center text-[10px] font-bold border-r border-black sticky left-0 bg-red-50">Missing</TableCell>
-                                        <TableCell className="text-center text-[10px] border-r border-black">
+                                    <TableRow className="bg-gray-50">
+                                        <TableCell className="text-center text-[10px] font-bold border-r border-gray-300 sticky left-0 bg-gray-50 py-0.5">Missing</TableCell>
+                                        <TableCell className="text-center text-[10px] border-r border-gray-300 py-0.5">
                                             <span className={stats.missing.company_name > 0 ? 'text-red-600 font-bold' : ''}>
                                                 {stats.missing.company_name}
                                             </span>
                                         </TableCell>
-                                        <TableCell className="text-center text-[10px] border-r border-black">
+                                        <TableCell className="text-center text-[10px] border-r border-gray-300 py-0.5">
                                             <span className={stats.missing.company_pin > 0 ? 'text-red-600 font-bold' : ''}>
                                                 {stats.missing.company_pin}
                                             </span>
                                         </TableCell>
-                                        <TableCell className="text-center text-[10px] border-r border-black">
+                                        <TableCell className="text-center text-[10px] border-r border-gray-300 py-0.5">
                                             <span className={stats.missing.extraction_date > 0 ? 'text-red-600 font-bold' : ''}>
                                                 {stats.missing.extraction_date}
                                             </span>
                                         </TableCell>
-                                        <TableCell className="text-center text-[10px] border-r border-black">
+                                        <TableCell className="text-center text-[10px] border-r border-gray-300 py-0.5">
                                             <span className={stats.missing.pdf_link > 0 ? 'text-red-600 font-bold' : ''}>
                                                 {stats.missing.pdf_link}
                                             </span>
@@ -332,14 +332,14 @@ export function PINProfileReports() {
                                 </>
                             )}
                         </TableHeader>
-                        <TableBody>
+                        <TableBody className="text-xs">
                             {sortedReports.map((report, index) => (
-                                <TableRow key={report.id} className={index % 2 === 0 ? 'bg-white' : 'bg-blue-50'}>
+                                <TableRow key={report.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} style={{height: '24px'}}>
                                     {[
                                         { key: 'index', content: index + 1, alwaysVisible: true },
                                         { key: 'company_name', content: report.company_name },
-                                        { key: 'company_pin', content: report.company_pin === "MISSING PIN/PASSWORD" ? <span className="text-red-500">Missing</span> : report.company_pin },
-                                        { key: 'extraction_date', content: <span className="text-center">{report.extraction_date}</span> },
+                                        { key: 'company_pin', content: report.company_pin === "MISSING PIN/PASSWORD" ? <span className="text-red-500 text-xs">Missing</span> : report.company_pin },
+                                        { key: 'extraction_date', content: <span className="text-center text-xs">{report.extraction_date}</span> },
                                         {
                                             key: 'profile',
                                             content: (
@@ -349,7 +349,7 @@ export function PINProfileReports() {
                                                             <DialogTrigger asChild>
 
 
-                                                                <Button variant='outline' className="text-blue-500 hover:underline text-xs px-1.5 py-0.5 flex items-center justify-center">
+                                                                <Button variant='outline' className="text-blue-500 hover:underline text-[10px] px-1 py-0 h-5 flex items-center justify-center">
                                                                     <Eye className="inline-block mr-1 h-2.5 w-2.5" />
                                                                     View PIN Profile
                                                                 </Button>
@@ -366,8 +366,8 @@ export function PINProfileReports() {
                                                         </Dialog>
                                                     </div>
                                                 ) : (
-                                                    <span className="text-gray-500 flex items-center justify-center">
-                                                        <Image src={report.pdf_link || ''} alt={`PIN Profile for ${report.company_name}`} className="inline-block mr-1 h-4 w-4" />
+                                                    <span className="text-gray-500 text-xs flex items-center justify-center">
+                                                        <Image src={report.pdf_link || ''} alt={`PIN Profile for ${report.company_name}`} className="inline-block mr-1 h-3 w-3" />
                                                         Missing
                                                     </span>
                                                 )
@@ -376,7 +376,7 @@ export function PINProfileReports() {
                                         }
                                     ].map(({ key, content, alwaysVisible }) => (
                                         (alwaysVisible || visibleColumns[key]) && (
-                                            <TableCell key={key} className={`border-r border-black ${key === 'index' ? 'font-bold text-center sticky left-0 bg-inherit' : ''}`}>
+                                            <TableCell key={key} className={`border-r border-gray-300 py-0.5 px-2 text-xs ${key === 'index' ? 'font-bold text-center sticky left-0 bg-inherit' : 'whitespace-nowrap'}`}>
                                                 {content}
                                             </TableCell>
                                         )
@@ -384,6 +384,8 @@ export function PINProfileReports() {
                                 </TableRow>
                             ))}
                         </TableBody>
+                        {/* Spacer row to ensure last items are visible */}
+                        <tr><td className="py-4"></td></tr>
                     </Table>
                 </ScrollArea>
             </div>

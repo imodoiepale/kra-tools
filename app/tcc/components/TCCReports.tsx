@@ -377,8 +377,8 @@ export function TCCReports() {
                         selectedFilters={categoryFilters}
                     />
                 </div>
-                <div className="border rounded-md">
-                    <ScrollArea className="h-[70vh]">
+                <div className="border rounded-md flex-1 flex flex-col">
+                    <ScrollArea className="h-[75vh]" style={{overflowY: 'auto'}}>
                         <Table>
                             <TableHeader className="sticky top-0 bg-white z-10">
                                 <TableRow>
@@ -392,7 +392,7 @@ export function TCCReports() {
                                         { key: 'screenshot', label: 'Screenshot', alwaysVisible: true }
                                     ].map(({ key, label, alwaysVisible }) => (
                                         (alwaysVisible || visibleColumns[key]) && (
-                                            <TableHead key={key} className={`font-bold border-r border-black ${key === 'index' ? 'text-center sticky left-0 bg-white' : ''}`}>
+                                            <TableHead key={key} className={`font-bold border-r border-gray-300 ${key === 'index' ? 'text-center sticky left-0 bg-white' : ''}`}>
                                                 <div className="flex items-center justify-between">
                                                     {label}
                                                     {key !== 'tcc_cert' && key !== 'screenshot' && key !== 'status' && (
@@ -405,67 +405,67 @@ export function TCCReports() {
                                 </TableRow>
                                 {showStatsRows && (
                                     <>
-                                        <TableRow className="bg-blue-50">
-                                            <TableCell className="text-center text-[10px] font-bold border-r border-black sticky left-0 bg-blue-50">Complete</TableCell>
-                                            <TableCell className="text-center text-[10px] border-r border-black">
+                                        <TableRow className="bg-gray-100">
+                                            <TableCell className="text-center text-[10px] font-bold border-r border-gray-300 sticky left-0 bg-gray-100">Complete</TableCell>
+                                            <TableCell className="text-center text-[10px] border-r border-gray-300">
                                                 <span className={stats.complete.company_name === filteredReports.length ? 'text-green-600 font-bold' : ''}>
                                                     {stats.complete.company_name}
                                                 </span>
                                             </TableCell>
-                                            <TableCell className="text-center text-[10px] border-r border-black">
+                                            <TableCell className="text-center text-[10px] border-r border-gray-300">
                                                 <span className={stats.complete.company_pin === filteredReports.length ? 'text-green-600 font-bold' : ''}>
                                                     {stats.complete.company_pin}
                                                 </span>
                                             </TableCell>
-                                            <TableCell className="text-center text-[10px] border-r border-black">
+                                            <TableCell className="text-center text-[10px] border-r border-gray-300">
                                                 <span className={stats.complete.expiry_date === filteredReports.length ? 'text-green-600 font-bold' : ''}>
                                                     {stats.complete.expiry_date}
                                                 </span>
                                             </TableCell>
-                                            <TableCell className="text-center text-[10px] border-r border-black">
+                                            <TableCell className="text-center text-[10px] border-r border-gray-300">
                                                 <span className={stats.complete.extraction_date === filteredReports.length ? 'text-green-600 font-bold' : ''}>
                                                     {stats.complete.extraction_date}
                                                 </span>
                                             </TableCell>
-                                            <TableCell className="text-center text-[10px] border-r border-black">
+                                            <TableCell className="text-center text-[10px] border-r border-gray-300">
                                                 <span className={stats.complete.pdf_link === filteredReports.length ? 'text-green-600 font-bold' : ''}>
                                                     {stats.complete.pdf_link}
                                                 </span>
                                             </TableCell>
-                                            <TableCell className="text-center text-[10px] border-r border-black">
+                                            <TableCell className="text-center text-[10px] border-r border-gray-300">
                                                 <span className={stats.complete.screenshot_link === filteredReports.length ? 'text-green-600 font-bold' : ''}>
                                                     {stats.complete.screenshot_link}
                                                 </span>
                                             </TableCell>
                                         </TableRow>
-                                        <TableRow className="bg-red-50">
-                                            <TableCell className="text-center text-[10px] font-bold border-r border-black sticky left-0 bg-red-50">Missing</TableCell>
-                                            <TableCell className="text-center text-[10px] border-r border-black">
+                                        <TableRow className="bg-gray-50">
+                                            <TableCell className="text-center text-[10px] font-bold border-r border-gray-300 sticky left-0 bg-gray-50">Missing</TableCell>
+                                            <TableCell className="text-center text-[10px] border-r border-gray-300">
                                                 <span className={stats.missing.company_name > 0 ? 'text-red-600 font-bold' : ''}>
                                                     {stats.missing.company_name}
                                                 </span>
                                             </TableCell>
-                                            <TableCell className="text-center text-[10px] border-r border-black">
+                                            <TableCell className="text-center text-[10px] border-r border-gray-300">
                                                 <span className={stats.missing.company_pin > 0 ? 'text-red-600 font-bold' : ''}>
                                                     {stats.missing.company_pin}
                                                 </span>
                                             </TableCell>
-                                            <TableCell className="text-center text-[10px] border-r border-black">
+                                            <TableCell className="text-center text-[10px] border-r border-gray-300">
                                                 <span className={stats.missing.expiry_date > 0 ? 'text-red-600 font-bold' : ''}>
                                                     {stats.missing.expiry_date}
                                                 </span>
                                             </TableCell>
-                                            <TableCell className="text-center text-[10px] border-r border-black">
+                                            <TableCell className="text-center text-[10px] border-r border-gray-300">
                                                 <span className={stats.missing.extraction_date > 0 ? 'text-red-600 font-bold' : ''}>
                                                     {stats.missing.extraction_date}
                                                 </span>
                                             </TableCell>
-                                            <TableCell className="text-center text-[10px] border-r border-black">
+                                            <TableCell className="text-center text-[10px] border-r border-gray-300">
                                                 <span className={stats.missing.pdf_link > 0 ? 'text-red-600 font-bold' : ''}>
                                                     {stats.missing.pdf_link}
                                                 </span>
                                             </TableCell>
-                                            <TableCell className="text-center text-[10px] border-r border-black">
+                                            <TableCell className="text-center text-[10px] border-r border-gray-300">
                                                 <span className={stats.missing.screenshot_link > 0 ? 'text-red-600 font-bold' : ''}>
                                                     {stats.missing.screenshot_link}
                                                 </span>
@@ -476,7 +476,7 @@ export function TCCReports() {
                             </TableHeader>
                             <TableBody>
                                 {filteredReports.map((report, index) => (
-                                    <TableRow key={report.id} className={index % 2 === 0 ? 'bg-white' : 'bg-blue-50'}>
+                                    <TableRow key={report.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                                         {[
                                             { key: 'index', content: index + 1, alwaysVisible: true },
                                             { key: 'company_name', content: report.company_name },
@@ -501,14 +501,7 @@ export function TCCReports() {
                                                         <Dialog>
                                                             <DialogTrigger asChild>
                                                                 <button className="text-blue-500 hover:underline">
-                                                                    <Image 
-                                                                        src={report.pdf_link || ''} 
-                                                                        alt={`TCC Report for ${report.company_name}`}
-                                                                        width={24}
-                                                                        height={24}
-                                                                        className="inline-block mr-1"
-                                                                    />
-                                                                    View TCC
+                                                                    View
                                                                 </button>
                                                             </DialogTrigger>
                                                             <DialogContent className="w-full max-w-5xl max-h-[90vh]">
@@ -523,13 +516,6 @@ export function TCCReports() {
                                                         </Dialog>
                                                     ) : (
                                                         <span className="text-gray-500">
-                                                            <Image 
-                                                                src={report.pdf_link || ''} 
-                                                                alt={`TCC Report for ${report.company_name}`}
-                                                                width={24}
-                                                                height={24}
-                                                                className="inline-block mr-1"
-                                                            />
                                                             Missing
                                                         </span>
                                                     )
@@ -543,8 +529,7 @@ export function TCCReports() {
                                                         <Dialog>
                                                             <DialogTrigger asChild>
                                                                 <button className="text-blue-500 hover:underline">
-                                                                    <ImageIcon className="inline-block mr-1 h-4 w-4" />
-                                                                    View Screenshot
+                                                                    View
                                                                 </button>
                                                             </DialogTrigger>
                                                             <DialogContent className="w-full max-w-5xl max-h-[90vh]">
@@ -562,7 +547,6 @@ export function TCCReports() {
                                                         </Dialog>
                                                     ) : (
                                                         <span className="text-gray-500">
-                                                            <ImageIcon className="inline-block mr-1 h-4 w-4" />
                                                             Missing
                                                         </span>
                                                     )
@@ -571,13 +555,15 @@ export function TCCReports() {
                                             }
                                         ].map(({ key, content, alwaysVisible }) => (
                                             (alwaysVisible || visibleColumns[key]) && (
-                                                <TableCell key={key} className={`border-r border-black ${key === 'index' ? 'font-bold text-center sticky left-0 bg-inherit' : ''}`}>
+                                                <TableCell key={key} className={`border-r border-gray-300 ${key === 'index' ? 'font-bold text-center sticky left-0 bg-inherit' : ''}`}>
                                                     {content}
                                                 </TableCell>
                                             )
                                         ))}
                                     </TableRow>
                                 ))}
+                                {/* Add a spacer row at the bottom to ensure visibility of all items */}
+                                <TableRow className="h-10"></TableRow>
                             </TableBody>
                         </Table>
                     </ScrollArea>
@@ -585,21 +571,21 @@ export function TCCReports() {
             </TabsContent>
             <TabsContent value="detailed">
                 <div className="flex space-x-8 mb-4">
-                    <ScrollArea className="h-[600px] w-85 rounded-md border">
+                    <ScrollArea className="h-[600px] w-85 rounded-md border border-gray-300" style={{overflowY: 'auto'}}>
                         {reports.map((report, index) => (
                             <React.Fragment key={report.id}>
                                 <div
                                     className={`p-2 cursor-pointer transition-colors duration-200 text-xs uppercase ${
                                         selectedCompany?.id === report.id
-                                            ? 'bg-blue-500 text-white font-bold'
-                                            : 'hover:bg-blue-100'
+                                            ? 'bg-gray-500 text-white font-bold'
+                                            : 'hover:bg-gray-100'
                                     }`}
                                     onClick={() => setSelectedCompany(report)}
                                 >
                                     {report.company_name}
                                 </div>
                                 {index < reports.length - 1 && (
-                                    <div className="border-b border-gray-200"></div>
+                                    <div className="border-b border-gray-300"></div>
                                 )}
                             </React.Fragment>
                         ))}
@@ -616,15 +602,15 @@ export function TCCReports() {
                                         <div className='text-xs'>
                                             <h4 className="font-medium my-3 text-sm">Full Table Data</h4>
                                             <Table>
-                                                <TableHeader>
+                                                <TableHeader className="bg-gray-100">
                                                     <TableRow>
-                                                        <TableHead className="text-center text-xs">Serial No</TableHead>
-                                                        <TableHead className="text-xs">PIN</TableHead>
-                                                        <TableHead className="text-xs">Taxpayer Name</TableHead>
-                                                        <TableHead className="text-xs">Status</TableHead>
-                                                        <TableHead className="text-xs">Certificate Date</TableHead>
-                                                        <TableHead className="text-xs">Expiry Date</TableHead>
-                                                        <TableHead className="text-xs">Certificate Serial No</TableHead>
+                                                        <TableHead className="text-center text-xs border-r border-gray-300">Serial No</TableHead>
+                                                        <TableHead className="text-xs border-r border-gray-300">PIN</TableHead>
+                                                        <TableHead className="text-xs border-r border-gray-300">Taxpayer Name</TableHead>
+                                                        <TableHead className="text-xs border-r border-gray-300">Status</TableHead>
+                                                        <TableHead className="text-xs border-r border-gray-300">Certificate Date</TableHead>
+                                                        <TableHead className="text-xs border-r border-gray-300">Expiry Date</TableHead>
+                                                        <TableHead className="text-xs border-r border-gray-300">Certificate Serial No</TableHead>
                                                     </TableRow>
                                                 </TableHeader>
                                                 <TableBody>
@@ -632,10 +618,10 @@ export function TCCReports() {
                                                         const isApproved = row.Status === 'Approved'
                                                         return (
                                                             <TableRow key={index}>
-                                                                <TableCell className="text-center text-xs">{row.SerialNo}</TableCell>
-                                                                <TableCell className="text-xs">{row.PIN}</TableCell>
-                                                                <TableCell className="text-xs">{row.TaxPayerName}</TableCell>
-                                                                <TableCell>
+                                                                <TableCell className="text-center text-xs border-r border-gray-300">{row.SerialNo}</TableCell>
+                                                                <TableCell className="text-xs border-r border-gray-300">{row.PIN}</TableCell>
+                                                                <TableCell className="text-xs border-r border-gray-300">{row.TaxPayerName}</TableCell>
+                                                                <TableCell className="border-r border-gray-300">
                                                                     <span className={`px-2 py-1 rounded-full text-xxs font-semibold ${row.Status === 'Approved' ? 'bg-green-100 text-green-800' :
                                                                         row.Status === 'Expired' ? 'bg-red-100 text-red-800' :
                                                                             'bg-yellow-100 text-yellow-800'
@@ -643,14 +629,16 @@ export function TCCReports() {
                                                                         {row.Status}
                                                                     </span>
                                                                 </TableCell>
-                                                                <TableCell className="font-bold text-xs">{row.CertificateDate}</TableCell>
-                                                                <TableCell className={`font-bold text-xs ${isApproved ? 'text-green-500' : 'text-red-500'}`}>
+                                                                <TableCell className="font-bold text-xs border-r border-gray-300">{row.CertificateDate}</TableCell>
+                                                                <TableCell className={`font-bold text-xs border-r border-gray-300 ${isApproved ? 'text-green-500' : 'text-red-500'}`}>
                                                                     {row.ExpiryDate}
                                                                 </TableCell>
-                                                                <TableCell className="text-xs">{row.CertificateSerialNo}</TableCell>
+                                                                <TableCell className="text-xs border-r border-gray-300">{row.CertificateSerialNo}</TableCell>
                                                             </TableRow>
                                                         )
                                                     })}
+                                                    {/* Add a spacer row at the bottom to ensure visibility of all items */}
+                                                    <TableRow className="h-10"></TableRow>
                                                 </TableBody>
                                             </Table>
                                         </div>

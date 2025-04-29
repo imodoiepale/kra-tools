@@ -200,16 +200,16 @@ export function WHVATExtractorReports() {
         return (
             <ScrollArea className="h-[calc(100vh-20rem)] overflow-auto">
                 <Table className="w-full text-xs">
-                    <TableHeader>
+                    <TableHeader className="text-xs">
                         <TableRow>
                             {headers.map((header, index) => (
-                                <TableHead key={index} onClick={() => handleSort(header)} className="px-1 py-0.5">
+                                <TableHead key={index} onClick={() => handleSort(header)} className="px-1 py-0.5 border-r border-gray-300 text-xs">
                                     {header} <ArrowUpDown className="inline h-2 w-2" />
                                 </TableHead>
                             ))}
                         </TableRow>
                     </TableHeader>
-                    <TableBody>
+                    <TableBody className="text-xs">
                         {sortedData.map((row, rowIndex) => {
                             if (row[10] && row[11] !== undefined) {
                                 // This is a total row
@@ -231,7 +231,7 @@ export function WHVATExtractorReports() {
                             } else {
                                 // This is a data row
                                 return (
-                                    <TableRow key={rowIndex}>
+                                    <TableRow key={rowIndex} style={{height: '24px'}}>
                                         {row.slice(0, 10).map((cell, cellIndex) => (
                                             <TableCell key={cellIndex} className="px-1 py-0.5">
                                                 {cellIndex === 8 && !isNaN(parseFloat(cell)) ? formatAmount(parseFloat(cell)) : cell}
@@ -253,7 +253,7 @@ export function WHVATExtractorReports() {
             const monthName = new Date(year, monthNum - 1).toLocaleString('default', { month: 'long' });
             return (
                 <Table className="text-xs">
-                    <TableBody>
+                    <TableBody className="text-xs">
                         <TableRow>
                             <TableCell colSpan={10} className="text-left font-bold uppercase text-red-600 text-xs">
                                 No records found for {monthName} {year}
@@ -286,18 +286,18 @@ export function WHVATExtractorReports() {
                     Total for this month: {formatAmount(total)}
                 </div>
                 <Table className="w-full text-xs">
-                    <TableHeader>
+                    <TableHeader className="text-xs">
                         <TableRow>
                             {headers.map((header, index) => (
-                                <TableHead key={index} onClick={() => handleSort(header)} className="px-1 py-0.5">
+                                <TableHead key={index} onClick={() => handleSort(header)} className="px-1 py-0.5 border-r border-gray-300 text-xs">
                                     {header} <ArrowUpDown className="inline h-2 w-2" />
                                 </TableHead>
                             ))}
                         </TableRow>
                     </TableHeader>
-                    <TableBody>
+                    <TableBody className="text-xs">
                         {sortedData.map((row, rowIndex) => (
-                            <TableRow key={rowIndex}>
+                            <TableRow key={rowIndex} style={{height: '24px'}}>
                                 {row.map((cell, cellIndex) => (
                                     <TableCell key={cellIndex} className="px-1 py-0.5">
                                         {cellIndex === 8 ? formatAmount(parseFloat(cell)) : cell}
@@ -567,21 +567,21 @@ export function WHVATExtractorReports() {
                             <TabsContent value="totals">
                                 <ScrollArea className="h-[calc(100vh-20rem)] overflow-auto">
                                     <Table>
-                                        <TableHeader>
+                                        <TableHeader className="text-xs">
                                             <TableRow>
                                                 <TableHead>Month</TableHead>
                                                 <TableHead>Total</TableHead>
                                             </TableRow>
                                         </TableHeader>
-                                        <TableBody>
+                                        <TableBody className="text-xs">
                                             {filteredData && Object.entries(filteredData).map(([month, data]) => {
                                                 const [year, monthNum] = month.split('-');
                                                 const monthName = new Date(year, monthNum - 1).toLocaleString('default', { month: 'long' });
                                                 const total = calculateTotal(data);
                                                 return (
                                                     <TableRow key={month}>
-                                                        <TableCell>{`${monthName} ${year}`}</TableCell>
-                                                        <TableCell>
+                                                        <TableCell className="border-r border-gray-300 py-0.5 px-2 text-xs whitespace-nowrap">{`${monthName} ${year}`}</TableCell>
+                                                        <TableCell className="border-r border-gray-300 py-0.5 px-2 text-xs whitespace-nowrap">
                                                             {data.tableData && data.tableData.length > 0
                                                                 ? <span className="font-bold text-green-600">{formatAmount(total)}</span>
                                                                 : (
@@ -620,33 +620,33 @@ export function WHVATExtractorReports() {
                     Total Companies: {getFilteredSortedSummary().length}
                 </div>
             </div>
-            <ScrollArea className="h-[650px] overflow-auto">
+            <ScrollArea className="h-[650px] overflow-auto" style={{overflowY: 'auto'}}>
                 <Table>
-                    <TableHeader>
+                    <TableHeader className="text-xs">
                         <TableRow>
-                            <TableHead className="font-bold text-center">#</TableHead>
-                            <TableHead onClick={() => handleSummarySort('company')} className="cursor-pointer select-none">
+                            <TableHead className="font-bold text-center border-r border-gray-300 text-xs py-1 px-2">#</TableHead>
+                            <TableHead onClick={() => handleSummarySort('company')} className="cursor-pointer select-none border-r border-gray-300 text-xs py-1 px-2">
                                 Company <ArrowUpDown className="ml-2 h-4 w-4" />
                             </TableHead>
-                            <TableHead onClick={() => handleSummarySort('latestExtractionDate')} className="cursor-pointer select-none">
+                            <TableHead onClick={() => handleSummarySort('latestExtractionDate')} className="cursor-pointer select-none border-r border-gray-300 text-xs py-1 px-2">
                                 Latest Extraction Date <ArrowUpDown className="ml-2 h-4 w-4" />
                             </TableHead>
-                            <TableHead onClick={() => handleSummarySort('numberOfExtractions')} className="cursor-pointer select-none">
+                            <TableHead onClick={() => handleSummarySort('numberOfExtractions')} className="cursor-pointer select-none border-r border-gray-300 text-xs py-1 px-2">
                                 Number of Extractions <ArrowUpDown className="ml-2 h-4 w-4" />
                             </TableHead>
-                            <TableHead onClick={() => handleSummarySort('totalAmount')} className="cursor-pointer select-none">
+                            <TableHead onClick={() => handleSummarySort('totalAmount')} className="cursor-pointer select-none border-r border-gray-300 text-xs py-1 px-2">
                                 Total Amount <ArrowUpDown className="ml-2 h-4 w-4" />
                             </TableHead>
                         </TableRow>
                     </TableHeader>
-                    <TableBody>
+                    <TableBody className="text-xs">
                         {getFilteredSortedSummary().map((company, index) => (
-                            <TableRow key={company.company_name} className={index % 2 === 0 ? 'bg-white' : 'bg-blue-50'}>
-                                <TableCell className="font-bold text-center">{index + 1}</TableCell>
-                                <TableCell>{company.company_name}</TableCell>
-                                <TableCell>{company.latestExtractionDate}</TableCell>
-                                <TableCell>{company.numberOfExtractions}</TableCell>
-                                <TableCell className="font-bold text-green-600">{company.totalAmount}</TableCell>
+                            <TableRow key={company.company_name} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                                <TableCell className="font-bold text-center border-r border-gray-300 py-0.5 px-2 text-xs">{index + 1}</TableCell>
+                                <TableCell className="border-r border-gray-300 py-0.5 px-2 text-xs whitespace-nowrap">{company.company_name}</TableCell>
+                                <TableCell className="border-r border-gray-300 py-0.5 px-2 text-xs whitespace-nowrap">{company.latestExtractionDate}</TableCell>
+                                <TableCell className="border-r border-gray-300 py-0.5 px-2 text-xs whitespace-nowrap">{company.numberOfExtractions}</TableCell>
+                                <TableCell className="font-bold text-green-600 border-r border-gray-300 py-0.5 px-2 text-xs">{company.totalAmount}</TableCell>
                             </TableRow>
                         ))}
                     </TableBody>
@@ -661,7 +661,7 @@ export function WHVATExtractorReports() {
                 <CardTitle className="text-blue-700">WH VAT Extractor Reports</CardTitle>
             </CardHeader>
             <CardContent>
-                <Tabs value={view} onValueChange={setView} className="mb-4">
+                <Tabs value={view} onValueChange={setView} className="mb-2">
                     <TabsList>
                         <TabsTrigger value="summary">Summary</TabsTrigger>
                         <TabsTrigger value="detailed">Detailed</TabsTrigger>

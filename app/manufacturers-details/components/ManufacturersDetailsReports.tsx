@@ -396,13 +396,13 @@ export function ManufacturersDetailsReports() {
         selectedFilters={categoryFilters}
       />
 
-      <div className="rounded-md border">
+      <div className="rounded-md border flex-1 flex flex-col">
         <div className="overflow-x-auto">
-          <div className="max-h-[calc(100vh-340px)] overflow-y-auto">
+          <div className="max-h-[calc(100vh-340px)] overflow-y-auto" style={{overflowY: 'auto'}}>
             <Table className="text-[11px] pb-2 text-black">
               <TableHeader>
                 <TableRow>
-                  <TableHead className="text-center text-[12px] text-black font-bold">Index</TableHead>
+                  <TableHead className="text-center text-[12px] text-black font-bold border-r border-gray-300 py-1 px-2">Index</TableHead>
                   {Object.entries(visibleColumns).map(([column, isVisible]) => (
                     isVisible && (
                       <TableHead
@@ -417,11 +417,11 @@ export function ManufacturersDetailsReports() {
                       </TableHead>
                     )
                   ))}
-                  <TableHead className="text-center text-[12px] text-black font-bold">Actions</TableHead>
+                  <TableHead className="text-center text-[12px] text-black font-bold border-r border-gray-300 py-1 px-2">Actions</TableHead>
                 </TableRow>
                 {showStatsRows && (
                   <>
-                    <TableRow className="bg-blue-50">
+                    <TableRow className="bg-gray-100">
                       <TableCell className="text-center text-[10px] font-bold">Complete</TableCell>
                       {Object.entries(visibleColumns).map(([column, isVisible]) => {
                         if (!isVisible) return null;
@@ -437,7 +437,7 @@ export function ManufacturersDetailsReports() {
                       })}
                       <TableCell></TableCell>
                     </TableRow>
-                    <TableRow className="bg-red-50">
+                    <TableRow className="bg-gray-50">
                       <TableCell className="text-center text-[10px] font-bold">Missing</TableCell>
                       {Object.entries(visibleColumns).map(([column, isVisible]) => {
                         if (!isVisible) return null;
@@ -458,7 +458,7 @@ export function ManufacturersDetailsReports() {
               </TableHeader>
               <TableBody>
                 {filteredManufacturers.map((manufacturer, index) => (
-                  <TableRow key={manufacturer.id} className={`h-8 ${index % 2 === 0 ? 'bg-white' : 'bg-blue-50'}`}>
+                  <TableRow key={manufacturer.id} className={`h-8 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}>
                     <TableCell className="text-center font-bold">{index + 1}</TableCell>
                     {Object.entries(visibleColumns).map(([column, isVisible]) => (
                       isVisible && (
@@ -510,6 +510,8 @@ export function ManufacturersDetailsReports() {
                 ))}
                 
               </TableBody>
+              {/* Spacer row to ensure last items are visible */}
+              <tr><td className="py-4"></td></tr>
             </Table>
           </div>
         </div>
