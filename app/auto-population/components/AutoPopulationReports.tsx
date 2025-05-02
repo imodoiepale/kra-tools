@@ -7,11 +7,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { ArrowUpDown, Download, MoreHorizontal, Play, RefreshCw, Filter, Eye, EyeOff } from "lucide-react";
+import { ArrowUpDown, Download, MoreHorizontal, Play, RefreshCw, Filter, Eye, EyeOff, Upload } from "lucide-react";
 import * as ExcelJS from 'exceljs';
 import { supabase } from '@/lib/supabase';
 import { Checkbox } from '../../../components/ui/checkbox';
 import { ClientCategoryFilter } from '@/components/ClientCategoryFilter';
+import { FileUploadModal } from './FileUploadModal';
 
 export function AutoPopulationReports() {
     const [reports, setReports] = useState([]);
@@ -34,6 +35,8 @@ export function AutoPopulationReports() {
     const [isCategoryFilterOpen, setIsCategoryFilterOpen] = useState(false);
     const [categoryFilters, setCategoryFilters] = useState({});
     const [showStatsRows, setShowStatsRows] = useState(true);
+    const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+    const [uploadCompany, setUploadCompany] = useState(null);
 
     useEffect(() => {
         fetchReports();
@@ -363,8 +366,29 @@ export function AutoPopulationReports() {
 
     const stats = calculateStats();
 
-    const renderFileButton = (file, detailed = false) => {
-        if (!file) return <span className="text-red-500 font-bold">Missing</span>;
+    const renderFileButton = (file, detailed = false, report = null) => {
+        if (!file) {
+            return (
+                <div className="flex flex-col items-center gap-1">
+                    <span className="text-red-500 font-bold">Missing</span>
+                    {report && (
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            className="px-2 py-1 h-7 text-xs"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setUploadCompany(report);
+                                setIsUploadModalOpen(true);
+                            }}
+                        >
+                            <Upload className="mr-1 h-3 w-3" />
+                            Upload
+                        </Button>
+                    )}
+                </div>
+            );
+        }
         return (
             <Button
                 key={file.path}
@@ -465,7 +489,7 @@ export function AutoPopulationReports() {
                         <Table>
                             <TableHeader>
                                 <TableRow>
-                                    <TableHead className="border-r border-black">
+                                    <TableHead className="border-r border-gray-300">
                                         <Checkbox
                                             checked={selectedReports.length === filteredReports.length}
                                             onCheckedChange={toggleSelectAll}
@@ -481,7 +505,7 @@ export function AutoPopulationReports() {
                                         { key: 'sec_f', label: 'Sec F - Purchase', center: true },
                                     ].map(({ key, label, alwaysVisible, center }) => (
                                         (alwaysVisible || visibleColumns[key]) && (
-                                            <TableHead key={key} className="border-r border-black">
+                                            <TableHead key={key} className="border-r border-gray-300 text-xs font-semibold">
                                                 <div className={`flex items-center ${center ? 'justify-center' : ''}`}>
                                                     {label}
                                                     {!['index', 'vat3', 'sec_b_with_vat', 'sec_b_without_vat', 'sec_f'].includes(key) && (
@@ -497,69 +521,69 @@ export function AutoPopulationReports() {
                                 </TableRow>
                                 {showStatsRows && (
                                     <>
-                                        <TableRow className="bg-blue-50">
-                                            <TableCell className="border-r border-black"></TableCell>
-                                            <TableCell className="text-center text-[10px] font-bold border-r border-black">Complete</TableCell>
-                                            <TableCell className="text-center text-[10px] border-r border-black">
+                                        <TableRow className="bg-gray-100">
+                                            <TableCell className="border-r border-gray-300"></TableCell>
+                                            <TableCell className="text-center text-[10px] font-bold border-r border-gray-300">Complete</TableCell>
+                                            <TableCell className="text-center text-[10px] border-r border-gray-300">
                                                 <span className={stats.complete.companyName === filteredReports.length ? 'text-green-600 font-bold' : ''}>
                                                     {stats.complete.companyName}
                                                 </span>
                                             </TableCell>
-                                            <TableCell className="text-center text-[10px] border-r border-black">
+                                            <TableCell className="text-center text-[10px] border-r border-gray-300">
                                                 <span className={stats.complete.lastUpdated === filteredReports.length ? 'text-green-600 font-bold' : ''}>
                                                     {stats.complete.lastUpdated}
                                                 </span>
                                             </TableCell>
-                                            <TableCell className="text-center text-[10px] border-r border-black">
+                                            <TableCell className="text-center text-[10px] border-r border-gray-300">
                                                 <span className={stats.complete.vat3 === filteredReports.length ? 'text-green-600 font-bold' : ''}>
                                                     {stats.complete.vat3}
                                                 </span>
                                             </TableCell>
-                                            <TableCell className="text-center text-[10px] border-r border-black">
+                                            <TableCell className="text-center text-[10px] border-r border-gray-300">
                                                 <span className={stats.complete.sec_b_with_vat === filteredReports.length ? 'text-green-600 font-bold' : ''}>
                                                     {stats.complete.sec_b_with_vat}
                                                 </span>
                                             </TableCell>
-                                            <TableCell className="text-center text-[10px] border-r border-black">
+                                            <TableCell className="text-center text-[10px] border-r border-gray-300">
                                                 <span className={stats.complete.sec_b_without_vat === filteredReports.length ? 'text-green-600 font-bold' : ''}>
                                                     {stats.complete.sec_b_without_vat}
                                                 </span>
                                             </TableCell>
-                                            <TableCell className="text-center text-[10px] border-r border-black">
+                                            <TableCell className="text-center text-[10px] border-r border-gray-300">
                                                 <span className={stats.complete.sec_f === filteredReports.length ? 'text-green-600 font-bold' : ''}>
                                                     {stats.complete.sec_f}
                                                 </span>
                                             </TableCell>
                                         </TableRow>
-                                        <TableRow className="bg-red-50">
-                                            <TableCell className="border-r border-black"></TableCell>
-                                            <TableCell className="text-center text-[10px] font-bold border-r border-black">Missing</TableCell>
-                                            <TableCell className="text-center text-[10px] border-r border-black">
+                                        <TableRow className="bg-gray-50">
+                                            <TableCell className="border-r border-gray-300"></TableCell>
+                                            <TableCell className="text-center text-[10px] font-bold border-r border-gray-300">Missing</TableCell>
+                                            <TableCell className="text-center text-[10px] border-r border-gray-300">
                                                 <span className={stats.missing.companyName > 0 ? 'text-red-600 font-bold' : ''}>
                                                     {stats.missing.companyName}
                                                 </span>
                                             </TableCell>
-                                            <TableCell className="text-center text-[10px] border-r border-black">
+                                            <TableCell className="text-center text-[10px] border-r border-gray-300">
                                                 <span className={stats.missing.lastUpdated > 0 ? 'text-red-600 font-bold' : ''}>
                                                     {stats.missing.lastUpdated}
                                                 </span>
                                             </TableCell>
-                                            <TableCell className="text-center text-[10px] border-r border-black">
+                                            <TableCell className="text-center text-[10px] border-r border-gray-300">
                                                 <span className={stats.missing.vat3 > 0 ? 'text-red-600 font-bold' : ''}>
                                                     {stats.missing.vat3}
                                                 </span>
                                             </TableCell>
-                                            <TableCell className="text-center text-[10px] border-r border-black">
+                                            <TableCell className="text-center text-[10px] border-r border-gray-300">
                                                 <span className={stats.missing.sec_b_with_vat > 0 ? 'text-red-600 font-bold' : ''}>
                                                     {stats.missing.sec_b_with_vat}
                                                 </span>
                                             </TableCell>
-                                            <TableCell className="text-center text-[10px] border-r border-black">
+                                            <TableCell className="text-center text-[10px] border-r border-gray-300">
                                                 <span className={stats.missing.sec_b_without_vat > 0 ? 'text-red-600 font-bold' : ''}>
                                                     {stats.missing.sec_b_without_vat}
                                                 </span>
                                             </TableCell>
-                                            <TableCell className="text-center text-[10px] border-r border-black">
+                                            <TableCell className="text-center text-[10px] border-r border-gray-300">
                                                 <span className={stats.missing.sec_f > 0 ? 'text-red-600 font-bold' : ''}>
                                                     {stats.missing.sec_f}
                                                 </span>
@@ -572,40 +596,41 @@ export function AutoPopulationReports() {
                                 {filteredReports.map((report, index) => (
                                     <TableRow
                                         key={report.id}
-                                        className={`${index % 2 === 0 ? 'bg-white' : 'bg-blue-50'} ${report.isMissing ? 'bg-red-100' : ''
+                                        className={`${index % 2 === 0 ? 'bg-gray-100' : 'bg-white'} ${report.isMissing ? 'bg-red-100' : ''
                                             }`}
                                     >
-                                        <TableCell className="border-r border-black">
+                                        <TableCell className="border-r border-gray-300">
                                             <Checkbox
                                                 checked={selectedReports.includes(report.id)}
                                                 onCheckedChange={() => toggleSelectReport(report.id)}
                                             />
                                         </TableCell>
-                                        <TableCell className="border-r border-black">{index + 1}</TableCell>
-                                        {visibleColumns.company_name && <TableCell>{report.companyName}</TableCell>}
-                                        {visibleColumns.last_updated && <TableCell>{new Date(report.lastUpdated).toLocaleString()}</TableCell>}
+                                        <TableCell className="border-r border-gray-300 text-xs">{index + 1}</TableCell>
+                                        {visibleColumns.company_name && <TableCell className="border-r border-gray-300 text-xs">{report.companyName}</TableCell>}
+                                        {visibleColumns.last_updated && <TableCell className="border-r border-gray-300 text-xs">{new Date(report.lastUpdated).toLocaleString()}</TableCell>}
                                         {visibleColumns.vat3 && (
-                                            <TableCell className="text-center">
-                                                {renderFileButton(findFile(getMostRecentExtraction(report)?.files, 'vat3'))}
+                                            <TableCell className="text-center border-r border-gray-300">
+                                                {renderFileButton(findFile(getMostRecentExtraction(report)?.files, 'vat3'), false, report)}
                                             </TableCell>
                                         )}
                                         {visibleColumns.sec_b_with_vat && (
-                                            <TableCell className="text-center">
-                                                {renderFileButton(findFile(getMostRecentExtraction(report)?.files, 'sec_b_with_vat'))}
+                                            <TableCell className="text-center border-r border-gray-300">
+                                                {renderFileButton(findFile(getMostRecentExtraction(report)?.files, 'sec_b_with_vat'), false, report)}
                                             </TableCell>
                                         )}
                                         {visibleColumns.sec_b_without_vat && (
-                                            <TableCell className="text-center">
-                                                {renderFileButton(findFile(getMostRecentExtraction(report)?.files, 'sec_b_without_vat'))}
+                                            <TableCell className="text-center border-r border-gray-300">
+                                                {renderFileButton(findFile(getMostRecentExtraction(report)?.files, 'sec_b_without_vat'), false, report)}
                                             </TableCell>
                                         )}
                                         {visibleColumns.sec_f && (
-                                            <TableCell className="text-center">
-                                                {renderFileButton(findFile(getMostRecentExtraction(report)?.files, 'sec_f'))}
+                                            <TableCell className="text-center border-r border-gray-300">
+                                                {renderFileButton(findFile(getMostRecentExtraction(report)?.files, 'sec_f'), false, report)}
                                             </TableCell>
                                         )}
                                     </TableRow>
                                 ))}
+                                <TableRow key="spacer-row" className="h-4" />
                             </TableBody>
                         </Table>
                     </ScrollArea>
@@ -629,10 +654,10 @@ export function AutoPopulationReports() {
                                     key={report.id}
                                     className={`p-2 cursor-pointer transition-colors duration-200 text-xs ${
                                         selectedCompany?.id === report.id
-                                            ? 'bg-blue-500 text-white font-bold'
+                                            ? 'bg-gray-500 text-white font-bold'
                                             : report.isMissing
                                                 ? 'bg-red-100 hover:bg-red-200'
-                                                : 'hover:bg-blue-100'
+                                                : 'hover:bg-gray-100'
                                     }`}
                                     onClick={() => setSelectedCompany(report)}
                                 >
@@ -659,36 +684,38 @@ export function AutoPopulationReports() {
                                         <div className="space-y-4">
                                             <Table>
                                                 <TableHeader>
-                                                    <TableRow>
-                                                        <TableHead className="text-xs text-center">Index</TableHead>
-                                                        <TableHead className="text-xs ">Month</TableHead>
-                                                        <TableHead className="text-xs ">Last Updated</TableHead>
-                                                        <TableHead className="text-xs text-center">VAT3 - Template</TableHead>
-                                                        <TableHead className="text-xs text-center">Sec B - Sales 16%</TableHead>
-                                                        <TableHead className="text-xs text-center">Sec B - Sales 0%</TableHead>
-                                                        <TableHead className="text-xs text-center">Sec F - Purchase</TableHead>
+                                                    <TableRow className="bg-gray-100">
+                                                        <TableHead className="text-xs text-center border-r border-gray-300">Index</TableHead>
+                                                        <TableHead className="text-xs border-r border-gray-300">Month</TableHead>
+                                                        <TableHead className="text-xs border-r border-gray-300">Last Updated</TableHead>
+                                                        <TableHead className="text-xs text-center border-r border-gray-300">VAT3 - Template</TableHead>
+                                                        <TableHead className="text-xs text-center border-r border-gray-300">Sec B - Sales 16%</TableHead>
+                                                        <TableHead className="text-xs text-center border-r border-gray-300">Sec B - Sales 0%</TableHead>
+                                                        <TableHead className="text-xs text-center border-r border-gray-300">Sec F - Purchase</TableHead>
                                                     </TableRow>
                                                 </TableHeader>
                                                 <TableBody>
                                                     {selectedCompany.extractions
                                                         .sort((a, b) => new Date(b.monthYear) - new Date(a.monthYear))
                                                         .map((extraction, index) => (
-                                                            <TableRow key={index} className={index % 2 === 0 ? 'bg-white' : 'bg-blue-50'}>
-                                                                <TableCell className="text-xs p-1 text-center">{index + 1}</TableCell>
-                                                                <TableCell className="text-xs p-1 whitespace-nowrap ">{extraction.monthYear}</TableCell>
-                                                                <TableCell className="text-xs p-1 whitespace-nowrap ">
+                                                            <TableRow key={index} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                                                                <TableCell className="text-xs p-1 text-center border-r border-gray-300">{index + 1}</TableCell>
+                                                                <TableCell className="text-xs p-1 whitespace-nowrap border-r border-gray-300">{extraction.monthYear}</TableCell>
+                                                                <TableCell className="text-xs p-1 whitespace-nowrap border-r border-gray-300">
                                                                     {extraction.extractionDate ? (
                                                                         new Date(extraction.extractionDate).toLocaleString()
                                                                     ) : (
                                                                         <span className="text-red-500">Missing</span>
                                                                     )}
                                                                 </TableCell>
-                                                                <TableCell className="text-xs p-1 text-center">{renderFileButton(findFile(extraction.files, 'vat3'), true)}</TableCell>
-                                                                <TableCell className="text-xs p-1 text-center">{renderFileButton(findFile(extraction.files, 'sec_b_with_vat'), true)}</TableCell>
-                                                                <TableCell className="text-xs p-1 text-center">{renderFileButton(findFile(extraction.files, 'sec_b_without_vat'), true)}</TableCell>
-                                                                <TableCell className="text-xs p-1 text-center">{renderFileButton(findFile(extraction.files, 'sec_f'), true)}</TableCell>
+                                                                <TableCell className="text-xs p-1 text-center border-r border-gray-300">{renderFileButton(findFile(extraction.files, 'vat3'), true, selectedCompany)}</TableCell>
+                                                                <TableCell className="text-xs p-1 text-center border-r border-gray-300">{renderFileButton(findFile(extraction.files, 'sec_b_with_vat'), true, selectedCompany)}</TableCell>
+                                                                <TableCell className="text-xs p-1 text-center border-r border-gray-300">{renderFileButton(findFile(extraction.files, 'sec_b_without_vat'), true, selectedCompany)}</TableCell>
+                                                                <TableCell className="text-xs p-1 text-center border-r border-gray-300">{renderFileButton(findFile(extraction.files, 'sec_f'), true, selectedCompany)}</TableCell>
                                                             </TableRow>
                                                         ))}
+                                                    {/* Add a spacer row at the bottom to ensure visibility of all items */}
+                                                    <TableRow key="detailed-spacer-row" className="h-10"></TableRow>
                                                 </TableBody>
                                             </Table>
                                         </div>
@@ -699,6 +726,20 @@ export function AutoPopulationReports() {
                     </div>
                 </div>
             </TabsContent>
+            
+            {/* File Upload Modal */}
+            {uploadCompany && (
+                <FileUploadModal
+                    isOpen={isUploadModalOpen}
+                    onClose={() => {
+                        setIsUploadModalOpen(false);
+                        setUploadCompany(null);
+                    }}
+                    companyName={uploadCompany.companyName}
+                    companyId={uploadCompany.id}
+                    onUploadComplete={fetchReports}
+                />
+            )}
         </Tabs>
     );
 }

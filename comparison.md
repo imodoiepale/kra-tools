@@ -32,6 +32,7 @@ This document compares how documents are submitted to the database in both the a
        .eq('id', company.id)
        .single();
 
+
    // Prepare the documents object with existing documents
    const currentDocuments = currentRecord?.documents || {};
    const updatedDocuments = {
