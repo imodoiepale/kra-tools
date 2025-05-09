@@ -4,7 +4,6 @@
 
 import { useEffect, useState } from 'react'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { supabase } from '@/lib/supabase'
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogClose } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
@@ -14,6 +13,8 @@ import ExcelJS from 'exceljs'
 import { Checkbox } from "@/components/ui/checkbox"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuCheckboxItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { ClientCategoryFilter } from "@/components/ClientCategoryFilter"
+import { fetchSuppliers, type Supplier } from '../utils/suppliers'
+import { supabase } from '@/lib/supabase'
 
 interface Manufacturer {
   id: number
@@ -38,9 +39,9 @@ interface Manufacturer {
 }
 
 export function ManufacturersDetailsReports() {
-  const [manufacturers, setManufacturers] = useState<Manufacturer[]>([])
+  const [manufacturers, setManufacturers] = useState<Supplier[]>([])
   const [searchTerm, setSearchTerm] = useState('')
-  const [editingManufacturer, setEditingManufacturer] = useState<Manufacturer | null>(null)
+  const [editingManufacturer, setEditingManufacturer] = useState<Supplier | null>(null)
   const [visibleColumns, setVisibleColumns] = useState({
     supplier_name_as_per_pin: { visible: true, label: 'Supplier Name as Per Pin' },
     pin_no: { visible: true, label: 'PIN Number' },
@@ -65,15 +66,11 @@ export function ManufacturersDetailsReports() {
   const [showStatsRows, setShowStatsRows] = useState(true)
 
   const fetchReports = async () => {
-    const { data, error } = await supabase
-      .from('acc_portal_kra_suppliers')
-      .select('*')
-      .order('pin_no', { ascending: true })
-
-    if (error) {
-      console.error('Error fetching reports:', error)
-    } else {
+    try {
+      const data = await fetchSuppliers()
       setManufacturers(data || [])
+    } catch (error) {
+      console.error('Error fetching reports:', error)
     }
   }
 
@@ -81,11 +78,11 @@ export function ManufacturersDetailsReports() {
     fetchReports()
   }, [])
 
-  const handleEdit = (manufacturer: Manufacturer) => {
+  const handleEdit = (manufacturer: Supplier) => {
     setEditingManufacturer(manufacturer)
   }
 
-  const handleSave = async (updatedManufacturer: Manufacturer) => {
+  const handleSave = async (updatedManufacturer: Supplier) => {
     const { id, ...updateData } = updatedManufacturer
     const { error } = await supabase
       .from('acc_portal_kra_suppliers')
@@ -174,22 +171,22 @@ export function ManufacturersDetailsReports() {
 
   const renderTotalsRow = () => (
     <>
-      <TableRow className="bg-gray-100 border-b">
+      <TableRow className="bg-gray-100 border-b border-gray-200">
         {Object.keys(totals).map((key) => (
           <TableCell key={key} className="font-bold uppercase px-1 text-center" style={{ height: '10px', fontSize: '10px' }}>{key === 'overall' ? 'Total' : key}</TableCell>
         ))}
       </TableRow>
-      <TableRow className="bg-gray-100 border-b">
+      <TableRow className="bg-gray-100 border-b border-gray-200">
         {Object.keys(totals).map((key) => (
           <TableCell key={key} className="text-center px-1" style={{ height: '10px', fontSize: '10px' }}>{totals[key].complete}</TableCell>
         ))}
       </TableRow>
-      <TableRow className="bg-gray-100 border-b">
+      <TableRow className="bg-gray-100 border-b border-gray-200">
         {Object.keys(totals).map((key) => (
           <TableCell key={key} className="text-center px-1" style={{ height: '10px', fontSize: '10px' }}>{totals[key].pending}</TableCell>
         ))}
       </TableRow>
-      <TableRow className="bg-gray-100 border-b">
+      <TableRow className="bg-gray-100 border-b border-gray-200">
         {Object.keys(totals).map((key) => (
           <TableCell key={key} className="text-center px-1 bg-red-100" style={{ height: '10px', fontSize: '10px' }}>{totals[key].missing}</TableCell>
         ))}
@@ -287,14 +284,14 @@ export function ManufacturersDetailsReports() {
   const sortedManufacturers = [...uniqueManufacturers].sort((a, b) => {
     if (sortConfig.key !== null) {
       if (a[sortConfig.key] < b[sortConfig.key]) {
-        return sortConfig.direction === 'ascending' ? -1 : 1
+        return sortConfig.direction === 'ascending' ? -1 : 1;
       }
       if (a[sortConfig.key] > b[sortConfig.key]) {
-        return sortConfig.direction === 'ascending' ? 1 : -1
+        return sortConfig.direction === 'ascending' ? 1 : -1;
       }
     }
-    return 0
-  })
+    return 0;
+  });
 
   const filteredManufacturers = sortedManufacturers.filter(manufacturer => {
     // Apply search filter
@@ -336,12 +333,12 @@ export function ManufacturersDetailsReports() {
   });
 
   const requestSort = (key: string) => {
-    let direction = 'ascending'
+    let direction = 'ascending';
     if (sortConfig.key === key && sortConfig.direction === 'ascending') {
-      direction = 'descending'
+      direction = 'descending';
     }
-    setSortConfig({ key, direction })
-  }
+    setSortConfig({ key, direction });
+  };
 
   return (
     <div className="space-y-4">
@@ -407,79 +404,79 @@ export function ManufacturersDetailsReports() {
       <div className="rounded-md border flex-1 flex flex-col">
         <div className="overflow-x-auto">
           <div className="max-h-[calc(100vh-340px)] overflow-y-auto" style={{ overflowY: 'auto' }}>
-            <Table className="text-[11px] pb-2 text-black">
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="text-center text-[12px] text-black font-bold border-r border-gray-300 py-1 px-2">Index</TableHead>
-                  {Object.entries(visibleColumns).map(([column, isVisible]) => (
-                    isVisible && (
+            <Table className="text-[11px] pb-2 text-black border-collapse">
+              <TableHeader className="bg-gray-50">
+                <TableRow className="border-b border-gray-200">
+                  <TableHead className="text-center text-[12px] text-black font-bold border border-gray-200 py-2 px-3">Index</TableHead>
+                  {Object.entries(visibleColumns).map(([column, config]) => (
+                    config.visible && (
                       <TableHead
                         key={column}
-                        className={`cursor-pointer text-[12px] text-black font-bold capitalize ${column === 'pin_no' ? 'text-left' : 'text-center'}`}
+                        className={`cursor-pointer text-[12px] text-black font-bold capitalize border border-gray-200 py-2 px-3 ${column === 'pin_no' ? 'text-left' : 'text-center'}`}
                         onClick={() => requestSort(column)}
                       >
-                        {column.replace(/_/g, ' ').charAt(0).toUpperCase() + column.replace(/_/g, ' ').slice(1)}
+                        {config.label}
                         {sortConfig.key === column && (
                           <span>{sortConfig.direction === 'ascending' ? ' ▲' : ' ▼'}</span>
                         )}
                       </TableHead>
                     )
                   ))}
-                  <TableHead className="text-center text-[12px] text-black font-bold border-r border-gray-300 py-1 px-2">Actions</TableHead>
+                  <TableHead className="text-center text-[12px] text-black font-bold border border-gray-200 py-2 px-3">Actions</TableHead>
                 </TableRow>
                 {showStatsRows && (
                   <>
-                    <TableRow className="bg-gray-100">
-                      <TableCell className="text-center text-[10px] font-bold">Complete</TableCell>
-                      {Object.entries(visibleColumns).map(([column, isVisible]) => {
-                        if (!isVisible) return null;
+                    <TableRow className="bg-gray-100 border-b border-gray-200">
+                      <TableCell className="text-center text-[10px] font-bold border border-gray-200">Complete</TableCell>
+                      {Object.entries(visibleColumns).map(([column, config]) => {
+                        if (!config.visible) return null;
                         const completeCount = manufacturers.filter(m => m[column] && m[column].toString().trim() !== '').length;
                         const percentage = Math.round((completeCount / manufacturers.length) * 100);
                         return (
-                          <TableCell key={`complete-${column}`} className="text-center text-[10px]">
+                          <TableCell key={`complete-${column}`} className="text-center text-[10px] border border-gray-200">
                             <span className={percentage === 100 ? 'text-green-600 font-bold' : ''}>
                               {completeCount}
                             </span>
                           </TableCell>
                         );
                       })}
-                      <TableCell></TableCell>
+                      <TableCell className="border border-gray-200"></TableCell>
                     </TableRow>
-                    <TableRow className="bg-gray-50">
-                      <TableCell className="text-center text-[10px] font-bold">Missing</TableCell>
-                      {Object.entries(visibleColumns).map(([column, isVisible]) => {
-                        if (!isVisible) return null;
+                    <TableRow className="bg-gray-50 border-b border-gray-200">
+                      <TableCell className="text-center text-[10px] font-bold border border-gray-200">Missing</TableCell>
+                      {Object.entries(visibleColumns).map(([column, config]) => {
+                        if (!config.visible) return null;
                         const missingCount = manufacturers.filter(m => !m[column] || m[column].toString().trim() === '').length;
                         const percentage = Math.round((missingCount / manufacturers.length) * 100);
                         return (
-                          <TableCell key={`missing-${column}`} className="text-center text-[10px]">
+                          <TableCell key={`missing-${column}`} className="text-center text-[10px] border border-gray-200">
                             <span className={percentage > 0 ? 'text-red-600 font-bold' : ''}>
                               {missingCount}
                             </span>
                           </TableCell>
                         );
                       })}
-                      <TableCell></TableCell>
+                      <TableCell className="border border-gray-200"></TableCell>
                     </TableRow>
                   </>
                 )}
               </TableHeader>
               <TableBody>
                 {filteredManufacturers.map((manufacturer, index) => (
-                  <TableRow key={manufacturer.id} className={`h-8 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}>
-                    <TableCell className="text-center font-bold">{index + 1}</TableCell>
-                    {Object.entries(visibleColumns).map(([column, isVisible]) => (
-                      isVisible && (
-                        <TableCell key={column} className={`${column === 'pin_no' ? 'text-left whitespace-nowrap font-bold' : 'text-center'}`}>
+                  <TableRow key={manufacturer.id} className={`h-8 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-gray-100`}>
+                    <TableCell className="text-center font-bold border border-gray-200">{index + 1}</TableCell>
+                    {Object.entries(visibleColumns).map(([column, config]) => (
+                      config.visible && (
+                        <TableCell key={column} className={`border border-gray-200 py-2 px-3 ${column === 'pin_no' ? 'text-left whitespace-nowrap font-bold' : 'text-center'}`}>
                           {manufacturer[column] ? (
-                            column === 'manufacturer_name' ? manufacturer[column].toUpperCase() : manufacturer[column]
+                            manufacturer[column]
                           ) : (
                             <span className="font-bold text-red-500">Missing</span>
                           )}
                         </TableCell>
                       )
                     ))}
-                    <TableCell className="text-center">
+                    <TableCell className="text-center border border-gray-200">
                       <div className="flex justify-center space-x-2">
                         <Dialog>
                           <DialogTrigger asChild>
@@ -509,16 +506,11 @@ export function ManufacturersDetailsReports() {
                             </DialogClose>
                           </DialogContent>
                         </Dialog>
-                        {/* <Button variant="destructive" size="sm" onClick={() => handleDelete(manufacturer.id)}>
-                          <Trash2 className="h-4 w-4" />
-                        </Button> */}
                       </div>
                     </TableCell>
                   </TableRow>
                 ))}
-
               </TableBody>
-
               {/* Spacer row to ensure last items are visible */}
 
               <tr><td className="py-4"></td></tr>

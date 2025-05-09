@@ -114,10 +114,7 @@ export function ManufacturersDetailsReports() {
   }
 
   const toggleColumnVisibility = (column: string) => {
-    setVisibleColumns(prev => ({
-      ...prev,
-      [column]: { ...prev[column], visible: !prev[column].visible }
-    }))
+    setVisibleColumns(prev => ({ ...prev, [column]: !prev[column] }))
   }
 
   const calculateTotals = () => {
@@ -177,22 +174,22 @@ export function ManufacturersDetailsReports() {
 
   const renderTotalsRow = () => (
     <>
-      <TableRow className="bg-gray-100 border-b">
+      <TableRow className="bg-gray-100 border-b border-gray-200">
         {Object.keys(totals).map((key) => (
           <TableCell key={key} className="font-bold uppercase px-1 text-center" style={{ height: '10px', fontSize: '10px' }}>{key === 'overall' ? 'Total' : key}</TableCell>
         ))}
       </TableRow>
-      <TableRow className="bg-gray-100 border-b">
+      <TableRow className="bg-gray-100 border-b border-gray-200">
         {Object.keys(totals).map((key) => (
           <TableCell key={key} className="text-center px-1" style={{ height: '10px', fontSize: '10px' }}>{totals[key].complete}</TableCell>
         ))}
       </TableRow>
-      <TableRow className="bg-gray-100 border-b">
+      <TableRow className="bg-gray-100 border-b border-gray-200">
         {Object.keys(totals).map((key) => (
           <TableCell key={key} className="text-center px-1" style={{ height: '10px', fontSize: '10px' }}>{totals[key].pending}</TableCell>
         ))}
       </TableRow>
-      <TableRow className="bg-gray-100 border-b">
+      <TableRow className="bg-gray-100 border-b border-gray-200">
         {Object.keys(totals).map((key) => (
           <TableCell key={key} className="text-center px-1 bg-red-100" style={{ height: '10px', fontSize: '10px' }}>{totals[key].missing}</TableCell>
         ))}
@@ -206,7 +203,7 @@ export function ManufacturersDetailsReports() {
 
     // Add headers
     const headers = Object.keys(manufacturers[0])
-      .filter(key => visibleColumns[key].visible)
+      .filter(key => visibleColumns[key])
       .map(header => {
         return header
           .split(/(?=[A-Z])/)
@@ -218,7 +215,7 @@ export function ManufacturersDetailsReports() {
     // Add data
     manufacturers.forEach((manufacturer, index) => {
       const row = Object.keys(manufacturers[0])
-        .filter(key => visibleColumns[key].visible)
+        .filter(key => visibleColumns[key])
         .map(header => manufacturer[header])
       worksheet.addRow([index + 1, ...row])
     })
@@ -290,14 +287,14 @@ export function ManufacturersDetailsReports() {
   const sortedManufacturers = [...uniqueManufacturers].sort((a, b) => {
     if (sortConfig.key !== null) {
       if (a[sortConfig.key] < b[sortConfig.key]) {
-        return sortConfig.direction === 'ascending' ? -1 : 1
+        return sortConfig.direction === 'ascending' ? -1 : 1;
       }
       if (a[sortConfig.key] > b[sortConfig.key]) {
-        return sortConfig.direction === 'ascending' ? 1 : -1
+        return sortConfig.direction === 'ascending' ? 1 : -1;
       }
     }
-    return 0
-  })
+    return 0;
+  });
 
   const filteredManufacturers = sortedManufacturers.filter(manufacturer => {
     // Apply search filter
@@ -309,19 +306,19 @@ export function ManufacturersDetailsReports() {
     });
 
     if (!matchesSearch) return false;
-    
+
     // Apply category filters
     if (Object.keys(categoryFilters).length > 0) {
       // Check if any category filter is active
-      const hasActiveFilters = Object.values(categoryFilters).some(categoryStatus => 
+      const hasActiveFilters = Object.values(categoryFilters).some(categoryStatus =>
         Object.values(categoryStatus as Record<string, boolean>).some(isSelected => isSelected)
       );
-      
+
       if (hasActiveFilters) {
         // Get the manufacturer's category and status
         const category = manufacturer.category || 'all';
         const status = manufacturer.status === 'active' ? 'active' : 'inactive';
-        
+
         // Check if this category has any filters
         const categoryFilter = categoryFilters[category] as Record<string, boolean> | undefined;
         if (!categoryFilter) {
@@ -329,22 +326,22 @@ export function ManufacturersDetailsReports() {
           const allCategoryFilter = categoryFilters['all'] as Record<string, boolean> | undefined;
           return allCategoryFilter?.[status] || allCategoryFilter?.['all'];
         }
-        
+
         // Check if this specific status is selected for this category
         return categoryFilter[status] || categoryFilter['all'];
       }
     }
-    
+
     return true;
   });
 
   const requestSort = (key: string) => {
-    let direction = 'ascending'
+    let direction = 'ascending';
     if (sortConfig.key === key && sortConfig.direction === 'ascending') {
-      direction = 'descending'
+      direction = 'descending';
     }
-    setSortConfig({ key, direction })
-  }
+    setSortConfig({ key, direction });
+  };
 
   return (
     <div className="space-y-4">
@@ -364,13 +361,13 @@ export function ManufacturersDetailsReports() {
               <Button variant="outline" size="sm">Column Visibility</Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent>
-              {Object.entries(visibleColumns).map(([column, config]) => (
+              {Object.keys(visibleColumns).map((column) => (
                 <DropdownMenuCheckboxItem
                   key={column}
-                  checked={config.visible}
+                  checked={visibleColumns[column]}
                   onCheckedChange={() => toggleColumnVisibility(column)}
                 >
-                  {config.label}
+                  {column.replace(/_/g, ' ').charAt(0).toUpperCase() + column.replace(/_/g, ' ').slice(1)}
                 </DropdownMenuCheckboxItem>
               ))}
             </DropdownMenuContent>
@@ -389,19 +386,19 @@ export function ManufacturersDetailsReports() {
           <Filter className="h-4 w-4 mr-2" />
           Categories
         </Button>
-        <Button 
-          variant="outline" 
-          onClick={() => setShowStatsRows(!showStatsRows)} 
+        <Button
+          variant="outline"
+          onClick={() => setShowStatsRows(!showStatsRows)}
           size="sm"
         >
           {showStatsRows ? <EyeOff className="h-4 w-4 mr-2" /> : <Eye className="h-4 w-4 mr-2" />}
           {showStatsRows ? 'Hide Stats' : 'Show Stats'}
         </Button>
       </div>
-      
-      <ClientCategoryFilter 
-        isOpen={isCategoryFilterOpen} 
-        onClose={() => setIsCategoryFilterOpen(false)} 
+
+      <ClientCategoryFilter
+        isOpen={isCategoryFilterOpen}
+        onClose={() => setIsCategoryFilterOpen(false)}
         onApplyFilters={(filters) => setCategoryFilters(filters)}
         onClearFilters={() => setCategoryFilters({})}
         selectedFilters={categoryFilters}
@@ -409,16 +406,16 @@ export function ManufacturersDetailsReports() {
 
       <div className="rounded-md border flex-1 flex flex-col">
         <div className="overflow-x-auto">
-          <div className="max-h-[calc(100vh-340px)] overflow-y-auto" style={{overflowY: 'auto'}}>
-            <Table className="text-[11px] pb-2 text-black">
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="text-center text-[12px] text-black font-bold border-r border-gray-300 py-1 px-2">Index</TableHead>
+          <div className="max-h-[calc(100vh-340px)] overflow-y-auto" style={{ overflowY: 'auto' }}>
+            <Table className="text-[11px] pb-2 text-black border-collapse">
+              <TableHeader className="bg-gray-50">
+                <TableRow className="border-b border-gray-200">
+                  <TableHead className="text-center text-[12px] text-black font-bold border border-gray-200 py-2 px-3">Index</TableHead>
                   {Object.entries(visibleColumns).map(([column, config]) => (
                     config.visible && (
                       <TableHead
                         key={column}
-                        className={`cursor-pointer text-[12px] text-black font-bold capitalize ${column === 'pin_no' ? 'text-left' : 'text-center'}`}
+                        className={`cursor-pointer text-[12px] text-black font-bold capitalize border border-gray-200 py-2 px-3 ${column === 'pin_no' ? 'text-left' : 'text-center'}`}
                         onClick={() => requestSort(column)}
                       >
                         {config.label}
@@ -428,52 +425,52 @@ export function ManufacturersDetailsReports() {
                       </TableHead>
                     )
                   ))}
-                  <TableHead className="text-center text-[12px] text-black font-bold border-r border-gray-300 py-1 px-2">Actions</TableHead>
+                  <TableHead className="text-center text-[12px] text-black font-bold border border-gray-200 py-2 px-3">Actions</TableHead>
                 </TableRow>
                 {showStatsRows && (
                   <>
-                    <TableRow className="bg-gray-100">
-                      <TableCell className="text-center text-[10px] font-bold">Complete</TableCell>
+                    <TableRow className="bg-gray-100 border-b border-gray-200">
+                      <TableCell className="text-center text-[10px] font-bold border border-gray-200">Complete</TableCell>
                       {Object.entries(visibleColumns).map(([column, config]) => {
                         if (!config.visible) return null;
                         const completeCount = manufacturers.filter(m => m[column] && m[column].toString().trim() !== '').length;
                         const percentage = Math.round((completeCount / manufacturers.length) * 100);
                         return (
-                          <TableCell key={`complete-${column}`} className="text-center text-[10px]">
+                          <TableCell key={`complete-${column}`} className="text-center text-[10px] border border-gray-200">
                             <span className={percentage === 100 ? 'text-green-600 font-bold' : ''}>
                               {completeCount}
                             </span>
                           </TableCell>
                         );
                       })}
-                      <TableCell></TableCell>
+                      <TableCell className="border border-gray-200"></TableCell>
                     </TableRow>
-                    <TableRow className="bg-gray-50">
-                      <TableCell className="text-center text-[10px] font-bold">Missing</TableCell>
+                    <TableRow className="bg-gray-50 border-b border-gray-200">
+                      <TableCell className="text-center text-[10px] font-bold border border-gray-200">Missing</TableCell>
                       {Object.entries(visibleColumns).map(([column, config]) => {
                         if (!config.visible) return null;
                         const missingCount = manufacturers.filter(m => !m[column] || m[column].toString().trim() === '').length;
                         const percentage = Math.round((missingCount / manufacturers.length) * 100);
                         return (
-                          <TableCell key={`missing-${column}`} className="text-center text-[10px]">
+                          <TableCell key={`missing-${column}`} className="text-center text-[10px] border border-gray-200">
                             <span className={percentage > 0 ? 'text-red-600 font-bold' : ''}>
-                              {missingCount} 
+                              {missingCount}
                             </span>
                           </TableCell>
                         );
                       })}
-                      <TableCell></TableCell>
+                      <TableCell className="border border-gray-200"></TableCell>
                     </TableRow>
                   </>
                 )}
               </TableHeader>
               <TableBody>
                 {filteredManufacturers.map((manufacturer, index) => (
-                  <TableRow key={manufacturer.id} className={`h-8 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}>
-                    <TableCell className="text-center font-bold">{index + 1}</TableCell>
+                  <TableRow key={manufacturer.id} className={`h-8 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-gray-100`}>
+                    <TableCell className="text-center font-bold border border-gray-200">{index + 1}</TableCell>
                     {Object.entries(visibleColumns).map(([column, config]) => (
                       config.visible && (
-                        <TableCell key={column} className={`${column === 'pin_no' ? 'text-left whitespace-nowrap font-bold' : 'text-center'}`}>
+                        <TableCell key={column} className={`border border-gray-200 py-2 px-3 ${column === 'pin_no' ? 'text-left whitespace-nowrap font-bold' : 'text-center'}`}>
                           {manufacturer[column] ? (
                             manufacturer[column]
                           ) : (
@@ -482,7 +479,7 @@ export function ManufacturersDetailsReports() {
                         </TableCell>
                       )
                     ))}
-                    <TableCell className="text-center">
+                    <TableCell className="text-center border border-gray-200">
                       <div className="flex justify-center space-x-2">
                         <Dialog>
                           <DialogTrigger asChild>
@@ -512,16 +509,11 @@ export function ManufacturersDetailsReports() {
                             </DialogClose>
                           </DialogContent>
                         </Dialog>
-                        {/* <Button variant="destructive" size="sm" onClick={() => handleDelete(manufacturer.id)}>
-                          <Trash2 className="h-4 w-4" />
-                        </Button> */}
                       </div>
                     </TableCell>
                   </TableRow>
                 ))}
-                
               </TableBody>
-
               {/* Spacer row to ensure last items are visible */}
 
               <tr><td className="py-4"></td></tr>

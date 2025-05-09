@@ -1,4 +1,4 @@
-const kra_pins = ["A000126392P", "A000127562N", "A000166696A"];
+const kra_pins = ["P051561163Z", "P051561480D", "P051561903T"];
 const type = "suppliers";
 
 const requests = kra_pins.map(kra_pin => {
