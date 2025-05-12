@@ -1,4 +1,5 @@
 // components/ManufacturersDetails.tsx
+// @ts-nocheck
 "use client";
 
 import { useState, useEffect } from 'react'
@@ -7,26 +8,49 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow,TableFooter } from "@/components/ui/table"
-import { ManufacturersDetailsRunning } from './components/ManufacturersDetailsRunning'
-import { ManufacturersDetailsReports } from './components/ManufacturersDetailsReports'
-import { supabase } from '@/lib/supabase'
+import { ManufacturersDetailsRunning } from '../customers/components/ManufacturersDetailsRunning'
+import { fetchCustomers, type Customer } from '../customers/utils/customers'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { motion } from "framer-motion"
+import { ManufacturersDetailsReports } from '../customers/components/ManufacturersDetailsReports'
+import { Input } from "@/components/ui/input"
+import { Search, ArrowUpDown } from "lucide-react"
+import { kraService } from '../services/kra-service'
 
 interface Manufacturer {
     id: number;
-    company_name: string;
-    kra_pin: string;
+    customer_name_as_per_pin: string;
+    pin_no: string;
     last_checked_at: string | null;
+}
+
+interface ManufacturersDetailsRunningProps {
+    onComplete: () => void
+    shouldStop: boolean
+    initialResults?: Array<{
+        kra_pin: string
+        success: boolean
+        data: any
+    }>
+    initialSummary?: {
+        successful: number
+        failed: number
+    }
 }
 
 export default function ManufacturersDetailsCustomers() {
     const [isChecking, setIsChecking] = useState(false)
     const [activeTab, setActiveTab] = useState("reports")
-    const [shouldStop, setShouldStop] = useState(false)
     const [manufacturers, setManufacturers] = useState<Manufacturer[]>([])
     const [selectedManufacturers, setSelectedManufacturers] = useState<number[]>([])
     const [runOption, setRunOption] = useState<'all' | 'selected'>('all')
+    const [searchTerm, setSearchTerm] = useState('')
+    const [kraResults, setKraResults] = useState<any[]>([])
+    const [kraSummary, setKraSummary] = useState<any>(null)
+    const [sortConfig, setSortConfig] = useState<{
+        key: keyof Manufacturer | '';
+        direction: 'ascending' | 'descending';
+    }>({ key: '', direction: 'ascending' })
 
     useEffect(() => {
         fetchManufacturers()
@@ -34,41 +58,66 @@ export default function ManufacturersDetailsCustomers() {
 
     const fetchManufacturers = async () => {
         console.log('Fetching manufacturers data...');
-        const { data, error } = await supabase
-            .from('acc_portal_company_duplicate')
-            .select('id, company_name, kra_pin')
-            .order('id', { ascending: true });
-
-        if (error) {
-            console.error('Error fetching manufacturers:', error);
-        } else {
+        try {
+            const data = await fetchCustomers();
             console.log('Manufacturers data fetched successfully:', data);
-            setManufacturers(data as Manufacturer[] || []);
+            setManufacturers(data || []);
+        } catch (error) {
+            console.error('Error fetching manufacturers:', error);
         }
-
-        console.log('Manufacturers state updated:', manufacturers);
     }
+
+    const filteredManufacturers = manufacturers.filter(manufacturer => {
+        const searchLower = searchTerm.toLowerCase();
+        return (
+            manufacturer.pin_no?.toLowerCase().includes(searchLower) ||
+            manufacturer.customer_name_as_per_pin?.toLowerCase().includes(searchLower)
+        );
+    });
+
+    const handleSort = (key: keyof Manufacturer) => {
+        setSortConfig(current => ({
+            key,
+            direction: current.key === key && current.direction === 'ascending' 
+                ? 'descending' 
+                : 'ascending'
+        }));
+    };
+
+    const sortedManufacturers = [...filteredManufacturers].sort((a, b) => {
+        if (sortConfig.key === '') return 0;
+
+        const aValue = a[sortConfig.key];
+        const bValue = b[sortConfig.key];
+
+        // Put missing values at the top when sorting
+        if (!aValue && !bValue) return 0;
+        if (!aValue) return sortConfig.direction === 'ascending' ? -1 : 1;
+        if (!bValue) return sortConfig.direction === 'ascending' ? 1 : -1;
+
+        if (aValue < bValue) return sortConfig.direction === 'ascending' ? -1 : 1;
+        if (aValue > bValue) return sortConfig.direction === 'ascending' ? 1 : -1;
+        return 0;
+    });
 
     const handleStartCheck = async () => {
         setIsChecking(true)
-        setShouldStop(false)
         try {
-            const response = await fetch('/api/manufacturers-details', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    stop: shouldStop,
-                    runOption,
-                    selectedIds: runOption === 'selected' ? selectedManufacturers : []
-                })
+            let kraPins;
+            if (runOption === 'selected') {
+                kraPins = manufacturers
+                    .filter(m => selectedManufacturers.includes(m.id))
+                    .map(m => m.pin_no);
+            } else {
+                kraPins = manufacturers.map(m => m.pin_no);
+            }
+
+            const { results, summary } = await kraService.startManufacturerDetailsCheck({
+                kraPins,
+                type: 'customers'
             });
-
-            if (!response.ok) throw new Error('API request failed')
-
-            const data = await response.json()
-            console.log('Manufacturers details check completed:', data)
+            setKraResults(results)
+            setKraSummary(summary)
             setActiveTab("running")
         } catch (error) {
             console.error('Error starting manufacturers details check:', error)
@@ -76,11 +125,6 @@ export default function ManufacturersDetailsCustomers() {
         } finally {
             setIsChecking(false)
         }
-    }
-
-    const handleStopCheck = () => {
-        setShouldStop(true)
-        alert('Stopping all automations...')
     }
 
     const handleCheckboxChange = (id: number) => {
@@ -107,103 +151,139 @@ export default function ManufacturersDetailsCustomers() {
                             <Card>
                                 <CardHeader>
                                     <CardTitle>Start Manufacturers Details Check</CardTitle>
-                                    <CardDescription>Begin the manufacturers details extraction process for all companies.</CardDescription>
+                                    <CardDescription>Begin the manufacturers details extraction process for all customer pins.</CardDescription>
                                 </CardHeader>
                                 <CardContent>
-                                    <div className="mb-4">
-                                        <label className="block mb-2">Run option:</label>
-                                        <Select value={runOption} onValueChange={(value) => setRunOption(value as 'all' | 'selected')}>
-                                            <SelectTrigger className="w-[180px]">
-                                                <SelectValue placeholder="Select run option" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem value="all">All Companies</SelectItem>
-                                                <SelectItem value="selected">Selected Companies</SelectItem>
-                                            </SelectContent>
-                                        </Select>
-                                    </div>
-                                    {runOption === 'selected' && (
-                                        <div className="flex">
-                                            <motion.div
-                                                className="pr-2"
-                                                initial={{ width: "100%" }}
-                                                animate={{ width: selectedManufacturers.length > 0 ? "50%" : "100%" }}
-                                                transition={{ duration: 0.3 }}
-                                            >
-                                                <div className="max-h-[580px] overflow-y-auto">
-                                                    <Table>
-                                                        <TableHeader>
-                                                            <TableRow>
-                                                                <TableHead className="w-[50px] sticky top-0 bg-white">Select</TableHead>
-                                                                <TableHead className="sticky top-0 bg-white">#</TableHead>
-                                                                <TableHead className="sticky top-0 bg-white">Company Name</TableHead>
-                                                                <TableHead className="sticky top-0 bg-white">KRA PIN</TableHead>
-                                                            </TableRow>
-                                                        </TableHeader>
-                                                        <TableBody>
-                                                            {manufacturers.map((manufacturer, index) => (
-                                                                <TableRow key={manufacturer.id}>
-                                                                    <TableCell>
-                                                                        <Checkbox
-                                                                            checked={selectedManufacturers.includes(manufacturer.id)}
-                                                                            onCheckedChange={() => handleCheckboxChange(manufacturer.id)}
-                                                                        />
-                                                                    </TableCell>
-                                                                    <TableCell className="text-center">{index + 1}</TableCell>
-                                                                    <TableCell>{manufacturer.company_name}</TableCell>
-                                                                    <TableCell>{manufacturer.kra_pin}</TableCell>
-                                                                </TableRow>
-                                                            ))}
-                                                        </TableBody>
-                                                    </Table>
-                                                </div>
-                                            </motion.div>
-                                            {selectedManufacturers.length > 0 && (
+                                    <div className="space-y-4">
+                                        <div className="flex items-center space-x-2">
+                                            <label className="text-sm font-medium">Run option:</label>
+                                            <Select value={runOption} onValueChange={(value) => setRunOption(value as 'all' | 'selected')}>
+                                                <SelectTrigger className="w-[180px]">
+                                                    <SelectValue placeholder="Select run option" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="all">All Customer Pins</SelectItem>
+                                                    <SelectItem value="selected">Selected Customer Pin</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+
+                                        <div className="relative">
+                                            <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                                            <Input
+                                                placeholder="Search by PIN or customer name..."
+                                                value={searchTerm}
+                                                onChange={(e) => setSearchTerm(e.target.value)}
+                                                className="pl-8"
+                                            />
+                                        </div>
+
+                                        {runOption === 'selected' && (
+                                            <div className="flex">
                                                 <motion.div
-                                                    className="pl-2"
-                                                    initial={{ width: "0%", opacity: 0 }}
-                                                    animate={{ width: "50%", opacity: 1 }}
+                                                    className="pr-2"
+                                                    initial={{ width: "100%" }}
+                                                    animate={{ width: selectedManufacturers.length > 0 ? "50%" : "100%" }}
                                                     transition={{ duration: 0.3 }}
                                                 >
-                                                    <div className="mb-4">
-                                                        <h3 className="text-lg font-semibold mb-2">Selected Companies</h3>
+                                                    <div className="max-h-[580px] overflow-y-auto">
                                                         <Table>
                                                             <TableHeader>
                                                                 <TableRow>
-                                                                    <TableHead>#</TableHead>
-                                                                    <TableHead>Company Name</TableHead>
-                                                                    <TableHead>KRA PIN</TableHead>
+                                                                    <TableHead className="w-[50px] sticky top-0 bg-white">Select</TableHead>
+                                                                    <TableHead className="sticky top-0 bg-white">#</TableHead>
+                                                                    <TableHead className="sticky top-0 bg-white">
+                                                                        <Button 
+                                                                            variant="ghost" 
+                                                                            onClick={() => handleSort('pin_no')}
+                                                                            className="h-8 p-0"
+                                                                        >
+                                                                            PIN Number
+                                                                            <ArrowUpDown className="ml-2 h-4 w-4" />
+                                                                        </Button>
+                                                                    </TableHead>
+                                                                    <TableHead className="sticky top-0 bg-white">
+                                                                        <Button 
+                                                                            variant="ghost" 
+                                                                            onClick={() => handleSort('customer_name_as_per_pin')}
+                                                                            className="h-8 p-0"
+                                                                        >
+                                                                            Customer Name As Per Pin
+                                                                            <ArrowUpDown className="ml-2 h-4 w-4" />
+                                                                        </Button>
+                                                                    </TableHead>
                                                                 </TableRow>
                                                             </TableHeader>
                                                             <TableBody>
-                                                                {manufacturers.filter(m => selectedManufacturers.includes(m.id)).map((manufacturer, index) => (
-                                                                    <TableRow key={manufacturer.id} className="bg-blue-100">
-                                                                        <TableCell>{index + 1}</TableCell>
-                                                                        <TableCell>{manufacturer.company_name}</TableCell>
-                                                                        <TableCell>{manufacturer.kra_pin}</TableCell>
+                                                                {sortedManufacturers.map((manufacturer, index) => (
+                                                                    <TableRow key={manufacturer.id}>
+                                                                        <TableCell>
+                                                                            <Checkbox
+                                                                                checked={selectedManufacturers.includes(manufacturer.id)}
+                                                                                onCheckedChange={() => handleCheckboxChange(manufacturer.id)}
+                                                                            />
+                                                                        </TableCell>
+                                                                        <TableCell className="text-center">{index + 1}</TableCell>
+                                                                        <TableCell>
+                                                                            {manufacturer.pin_no ? manufacturer.pin_no : <span className="text-red-500 font-medium">Missing</span>}
+                                                                        </TableCell>
+                                                                        <TableCell>
+                                                                            {manufacturer.customer_name_as_per_pin ? manufacturer.customer_name_as_per_pin : <span className="text-red-500 font-medium">Missing</span>}
+                                                                        </TableCell>
                                                                     </TableRow>
                                                                 ))}
                                                             </TableBody>
-                                                            <TableFooter>
-                                                                <TableRow>
-                                                                    <TableCell colSpan={4}>
-                                                                        <div className="flex space-x-2">
-                                                                            <Button onClick={handleStartCheck} disabled={isChecking || selectedManufacturers.length === 0} size="sm">
-                                                                                {isChecking ? 'Starting...' : 'Start Manufacturers Details Check'}
-                                                                            </Button>
-                                                                            <Button onClick={handleStopCheck} disabled={!isChecking} variant="destructive" size="sm">
-                                                                                Stop Manufacturers Details Check
-                                                                            </Button>
-                                                                        </div>
-                                                                    </TableCell>
-                                                                </TableRow>
-                                                            </TableFooter>
                                                         </Table>
                                                     </div>
                                                 </motion.div>
-                                            )}
-                                        </div>
-                                    )}
+                                                {selectedManufacturers.length > 0 && (
+                                                    <motion.div
+                                                        className="pl-2"
+                                                        initial={{ width: "0%", opacity: 0 }}
+                                                        animate={{ width: "50%", opacity: 1 }}
+                                                        transition={{ duration: 0.3 }}
+                                                    >
+                                                        <div className="mb-4">
+                                                            <h3 className="text-lg font-semibold mb-2">Selected Customer Pin</h3>
+                                                            <Table>
+                                                                <TableHeader>
+                                                                    <TableRow>
+                                                                        <TableHead>#</TableHead>
+                                                                        <TableHead>PIN Number</TableHead>
+                                                                        <TableHead>Customer Name As Per Pin</TableHead>
+                                                                    </TableRow>
+                                                                </TableHeader>
+                                                                <TableBody>
+                                                                    {manufacturers.filter(m => selectedManufacturers.includes(m.id)).map((manufacturer, index) => (
+                                                                        <TableRow key={manufacturer.id} className="bg-blue-100">
+                                                                            <TableCell>{index + 1}</TableCell>
+                                                                            <TableCell>
+                                                                                {manufacturer.pin_no ? manufacturer.pin_no : <span className="text-red-500 font-medium">Missing</span>}
+                                                                            </TableCell>
+                                                                            <TableCell>
+                                                                                {manufacturer.customer_name_as_per_pin ? manufacturer.customer_name_as_per_pin : <span className="text-red-500 font-medium">Missing</span>}
+                                                                            </TableCell>
+                                                                        </TableRow>
+                                                                    ))}
+                                                                </TableBody>
+                                                                <TableFooter>
+                                                                    <TableRow>
+                                                                        <TableCell colSpan={4}>
+                                                                            <div className="flex space-x-2">
+                                                                                <Button onClick={handleStartCheck} disabled={isChecking || selectedManufacturers.length === 0} size="sm">
+                                                                                    {isChecking ? 'Starting...' : 'Start Manufacturers Details Check'}
+                                                                                </Button>
+                                                                            </div>
+                                                                        </TableCell>
+                                                                    </TableRow>
+                                                                </TableFooter>
+                                                            </Table>
+                                                        </div>
+                                                    </motion.div>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
                                 </CardContent>
                                 {runOption === 'all' && (
                                     <CardFooter>
@@ -211,16 +291,17 @@ export default function ManufacturersDetailsCustomers() {
                                             <Button onClick={handleStartCheck} disabled={isChecking} size="sm">
                                                 {isChecking ? 'Starting...' : 'Start Manufacturers Details Check'}
                                             </Button>
-                                            <Button onClick={handleStopCheck} disabled={!isChecking} variant="destructive" size="sm">
-                                                Stop Manufacturers Details Check
-                                            </Button>
                                         </div>
                                     </CardFooter>
                                 )}
                             </Card>
                         </TabsContent>
                         <TabsContent value="running">
-                            <ManufacturersDetailsRunning onComplete={() => setActiveTab("reports")} shouldStop={shouldStop} />
+                            <ManufacturersDetailsRunning 
+                                onComplete={() => setActiveTab("reports")} 
+                                initialResults={kraResults}
+                                initialSummary={kraSummary}
+                            />
                         </TabsContent>
                         <TabsContent value="reports">
                             <ManufacturersDetailsReports />

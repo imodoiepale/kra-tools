@@ -15,6 +15,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuCheckboxItem, DropdownMe
 import { ClientCategoryFilter } from "@/components/ClientCategoryFilter"
 import { fetchSuppliers, type Supplier } from '../utils/suppliers'
 import { supabase } from '@/lib/supabase'
+import { TablePagination } from "@/components/TablePagination"
 
 interface Manufacturer {
   id: number
@@ -64,6 +65,8 @@ export function ManufacturersDetailsReports() {
   const [isCategoryFilterOpen, setIsCategoryFilterOpen] = useState(false)
   const [categoryFilters, setCategoryFilters] = useState({})
   const [showStatsRows, setShowStatsRows] = useState(true)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pageSize, setPageSize] = useState(25)
 
   const fetchReports = async () => {
     try {
@@ -340,6 +343,20 @@ export function ManufacturersDetailsReports() {
     return true;
   });
 
+  const paginatedManufacturers = filteredManufacturers.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
+  )
+
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page)
+  }
+
+  const handlePageSizeChange = (size: string) => {
+    setPageSize(Number(size))
+    setCurrentPage(1) // Reset to first page when changing page size
+  }
+
   const requestSort = (key: string) => {
     let direction = 'ascending';
     if (sortConfig.key === key && sortConfig.direction === 'ascending') {
@@ -349,8 +366,8 @@ export function ManufacturersDetailsReports() {
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex justify-between items-center">
+    <div className="flex flex-col h-[calc(100vh-180px)]">
+      <div className="flex justify-between items-center mb-4">
         <h3 className="text-lg font-medium">Manufacturers Details Reports</h3>
         <div className="space-x-2">
           <Button variant="outline" onClick={fetchReports} size="sm">
@@ -380,7 +397,7 @@ export function ManufacturersDetailsReports() {
           {/* <Button variant="destructive" onClick={handleDeleteAll} size="sm">Delete All</Button> */}
         </div>
       </div>
-      <div className="flex space-x-2">
+      <div className="flex space-x-2 mb-4">
         <Input
           placeholder="Search Manufacturers..."
           value={searchTerm}
@@ -409,16 +426,16 @@ export function ManufacturersDetailsReports() {
         selectedFilters={categoryFilters}
       />
 
-      <div className="rounded-md border flex-1 flex flex-col">
-        <div className="overflow-x-auto">
-          <div className="max-h-[calc(100vh-340px)] overflow-y-auto" style={{ overflowY: 'auto' }}>
-            <Table className="text-[11px] pb-2 text-black border-collapse">
+      <div className="flex-1 flex flex-col min-h-0">
+        <div className="rounded-md border flex-1 flex flex-col overflow-hidden">
+          <div className="flex-1 overflow-auto">
+            <Table className="text-[11px] text-black border-collapse w-full">
               <TableHeader className="bg-gray-50">
                 <TableRow className="border-b border-gray-200">
                   <TableHead className="sticky top-0 bg-white text-center text-[12px] text-black font-bold border border-gray-200 py-2 px-3">Index</TableHead>
                   {Object.entries(visibleColumns).map(([column, config]) => (
                     config.visible && (
-                      <TableHead key={column} className="sticky top-0 bg-white border border-gray-400 ">
+                      <TableHead key={column} className="sticky top-0 bg-white border border-gray-200 ">
                         <Button 
                           variant="ghost" 
                           onClick={() => requestSort(column)}
@@ -470,7 +487,7 @@ export function ManufacturersDetailsReports() {
                 )}
               </TableHeader>
               <TableBody>
-                {filteredManufacturers.map((manufacturer, index) => (
+                {paginatedManufacturers.map((manufacturer, index) => (
                   <TableRow key={manufacturer.id} className={`h-8 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-gray-100`}>
                     <TableCell className="font-bold border border-gray-200">{index + 1}</TableCell>
                     {Object.entries(visibleColumns).map(([column, config]) => (
@@ -527,8 +544,17 @@ export function ManufacturersDetailsReports() {
 
           </div>
 
-        </div>
+          <div className="border-t bg-white">
+            <TablePagination
+              currentPage={currentPage}
+              pageSize={pageSize}
+              totalItems={filteredManufacturers.length}
+              onPageChange={handlePageChange}
+              onPageSizeChange={handlePageSizeChange}
+            />
+          </div>
 
+        </div>
       </div>
 
     </div>

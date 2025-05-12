@@ -1,29 +1,29 @@
 //@ts-nocheck
 import { supabase } from '@/lib/supabase';
 
-export interface Supplier {
+export interface Customer {
     id: number;
-    supplier_name_as_per_pin: string;
+    customer_name_as_per_pin: string;
     pin_no: string;
     last_checked_at: string | null;
 }
 
-export async function fetchSuppliers() {
+export async function fetchCustomers() {
     try {
-        let allData: Supplier[] = [];
+        let allData: Customer[] = [];
         let page = 0;
         const pageSize = 1000; // Supabase's maximum limit
         let hasMore = true;
 
         while (hasMore) {
             const { data, error, count } = await supabase
-                .from('acc_portal_kra_suppliers')
+                .from('acc_portal_kra_customers')
                 .select('*', { count: 'exact' })
                 .order('pin_no', { ascending: true })
                 .range(page * pageSize, (page + 1) * pageSize - 1);
 
             if (error) {
-                console.error('Error fetching suppliers:', error);
+                console.error('Error fetching customers:', error);
                 throw error;
             }
 
@@ -37,29 +37,29 @@ export async function fetchSuppliers() {
             }
         }
 
-        return allData as Supplier[];
+        return allData as Customer[];
     } catch (error) {
-        console.error('Error in fetchSuppliers:', error);
+        console.error('Error in fetchCustomers:', error);
         throw error;
     }
 }
 
-export async function fetchSuppliersByPinNo() {
+export async function fetchCustomersByPinNo() {
     try {
-        let allData: Supplier[] = [];
+        let allData: Customer[] = [];
         let page = 0;
         const pageSize = 1000; // Supabase's maximum limit
         let hasMore = true;
 
         while (hasMore) {
             const { data, error, count } = await supabase
-                .from('acc_portal_kra_suppliers')
-                .select('id, pin_no, supplier_name_as_per_pin', { count: 'exact' })
+                .from('acc_portal_kra_customers')
+                .select('id, pin_no, customer_name_as_per_pin', { count: 'exact' })
                 .order('pin_no', { ascending: true })
                 .range(page * pageSize, (page + 1) * pageSize - 1);
 
             if (error) {
-                console.error('Error fetching suppliers:', error);
+                console.error('Error fetching customers:', error);
                 throw error;
             }
 
@@ -73,9 +73,9 @@ export async function fetchSuppliersByPinNo() {
             }
         }
 
-        return allData as Supplier[];
+        return allData as Customer[];
     } catch (error) {
-        console.error('Error in fetchSuppliersByPinNo:', error);
+        console.error('Error in fetchCustomersByPinNo:', error);
         throw error;
     }
 }

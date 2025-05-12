@@ -9,28 +9,30 @@ import ManufacturersDetailsCustomers from "./customers/page";
 
 export default function ManufacturersDetailsPage() {
     return (
-        <div className="p-4 w-full">
-            <Card>
-                <CardHeader>
+        <div className="h-[calc(100vh-80px)] p-4 flex flex-col">
+            <Card className="flex-1 flex flex-col overflow-hidden">
+                <CardHeader className="flex-none">
                     <CardTitle>Manufacturers Details Checker</CardTitle>
                     <CardDescription>Extract and validate manufacturers details from KRA</CardDescription>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="">
                     <Tabs defaultValue="companies">
                         <TabsList>
                             <TabsTrigger value="companies">Companies</TabsTrigger>
                             <TabsTrigger value="suppliers">Suppliers</TabsTrigger>
                             <TabsTrigger value="customers">Customers</TabsTrigger>
                         </TabsList>
-                        <TabsContent value="companies">
-                            <ManufacturersDetailsCompanies />
-                        </TabsContent>
-                        <TabsContent value="suppliers">
-                            <ManufacturersDetailsSuppliers />
-                        </TabsContent>
-                        <TabsContent value="customers">
-                           <ManufacturersDetailsCustomers />
-                        </TabsContent>
+                        <div className="flex-1 overflow-hidden px-6 py-4">
+                            <TabsContent value="companies" className="h-full m-0 data-[state=active]:flex">
+                                <ManufacturersDetailsCompanies />
+                            </TabsContent>
+                            <TabsContent value="suppliers" className="h-full m-0 data-[state=active]:flex">
+                                <ManufacturersDetailsSuppliers />
+                            </TabsContent>
+                            <TabsContent value="customers" className="h-full m-0 data-[state=active]:flex">
+                                <ManufacturersDetailsCustomers />
+                            </TabsContent>
+                        </div>
                     </Tabs>
                 </CardContent>
             </Card>

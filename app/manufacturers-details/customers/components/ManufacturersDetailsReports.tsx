@@ -4,16 +4,18 @@
 
 import { useEffect, useState } from 'react'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { supabase } from '@/lib/supabase'
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogClose } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Trash2, RefreshCw, Download, Eye, EyeOff, Filter } from 'lucide-react'
+import { Trash2, RefreshCw, Download, Eye, EyeOff, Filter, ArrowUpDown } from 'lucide-react'
 import ExcelJS from 'exceljs'
 import { Checkbox } from "@/components/ui/checkbox"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuCheckboxItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { ClientCategoryFilter } from "@/components/ClientCategoryFilter"
+import { fetchCustomers, type Customer } from '../utils/customers'
+import { supabase } from '@/lib/supabase'
+import { TablePagination } from "@/components/TablePagination"
 
 interface Manufacturer {
   id: number
@@ -38,9 +40,9 @@ interface Manufacturer {
 }
 
 export function ManufacturersDetailsReports() {
-  const [manufacturers, setManufacturers] = useState<Manufacturer[]>([])
+  const [manufacturers, setManufacturers] = useState<Customer[]>([])
   const [searchTerm, setSearchTerm] = useState('')
-  const [editingManufacturer, setEditingManufacturer] = useState<Manufacturer | null>(null)
+  const [editingManufacturer, setEditingManufacturer] = useState<Customer | null>(null)
   const [visibleColumns, setVisibleColumns] = useState({
     customer_name_as_per_pin: { visible: true, label: 'Customer Name as Per Pin' },
     pin_no: { visible: true, label: 'PIN Number' },
@@ -63,17 +65,15 @@ export function ManufacturersDetailsReports() {
   const [isCategoryFilterOpen, setIsCategoryFilterOpen] = useState(false)
   const [categoryFilters, setCategoryFilters] = useState({})
   const [showStatsRows, setShowStatsRows] = useState(true)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pageSize, setPageSize] = useState(25)
 
   const fetchReports = async () => {
-    const { data, error } = await supabase
-      .from('acc_portal_kra_customers')
-      .select('*')
-      .order('pin_no', { ascending: true })
-
-    if (error) {
-      console.error('Error fetching reports:', error)
-    } else {
+    try {
+      const data = await fetchCustomers()
       setManufacturers(data || [])
+    } catch (error) {
+      console.error('Error fetching reports:', error)
     }
   }
 
@@ -81,11 +81,11 @@ export function ManufacturersDetailsReports() {
     fetchReports()
   }, [])
 
-  const handleEdit = (manufacturer: Manufacturer) => {
+  const handleEdit = (manufacturer: Customer) => {
     setEditingManufacturer(manufacturer)
   }
 
-  const handleSave = async (updatedManufacturer: Manufacturer) => {
+  const handleSave = async (updatedManufacturer: Customer) => {
     const { id, ...updateData } = updatedManufacturer
     const { error } = await supabase
       .from('acc_portal_kra_customers')
@@ -286,6 +286,14 @@ export function ManufacturersDetailsReports() {
 
   const sortedManufacturers = [...uniqueManufacturers].sort((a, b) => {
     if (sortConfig.key !== null) {
+      const aValue = a[sortConfig.key];
+      const bValue = b[sortConfig.key];
+
+      // Put missing values at the top when sorting
+      if (!aValue && !bValue) return 0;
+      if (!aValue) return sortConfig.direction === 'ascending' ? -1 : 1;
+      if (!bValue) return sortConfig.direction === 'ascending' ? 1 : -1;
+
       if (a[sortConfig.key] < b[sortConfig.key]) {
         return sortConfig.direction === 'ascending' ? -1 : 1;
       }
@@ -335,6 +343,20 @@ export function ManufacturersDetailsReports() {
     return true;
   });
 
+  const paginatedManufacturers = filteredManufacturers.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
+  )
+
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page)
+  }
+
+  const handlePageSizeChange = (size: string) => {
+    setPageSize(Number(size))
+    setCurrentPage(1) // Reset to first page when changing page size
+  }
+
   const requestSort = (key: string) => {
     let direction = 'ascending';
     if (sortConfig.key === key && sortConfig.direction === 'ascending') {
@@ -344,8 +366,8 @@ export function ManufacturersDetailsReports() {
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex justify-between items-center">
+    <div className="flex flex-col h-[calc(100vh-180px)]">
+      <div className="flex justify-between items-center mb-4">
         <h3 className="text-lg font-medium">Manufacturers Details Reports</h3>
         <div className="space-x-2">
           <Button variant="outline" onClick={fetchReports} size="sm">
@@ -375,7 +397,7 @@ export function ManufacturersDetailsReports() {
           {/* <Button variant="destructive" onClick={handleDeleteAll} size="sm">Delete All</Button> */}
         </div>
       </div>
-      <div className="flex space-x-2">
+      <div className="flex space-x-2 mb-4">
         <Input
           placeholder="Search Manufacturers..."
           value={searchTerm}
@@ -404,28 +426,28 @@ export function ManufacturersDetailsReports() {
         selectedFilters={categoryFilters}
       />
 
-      <div className="rounded-md border flex-1 flex flex-col">
-        <div className="overflow-x-auto">
-          <div className="max-h-[calc(100vh-340px)] overflow-y-auto" style={{ overflowY: 'auto' }}>
-            <Table className="text-[11px] pb-2 text-black border-collapse">
+      <div className="flex-1 flex flex-col min-h-0">
+        <div className="rounded-md border flex-1 flex flex-col overflow-hidden">
+          <div className="flex-1 overflow-auto">
+            <Table className="text-[11px] text-black border-collapse w-full">
               <TableHeader className="bg-gray-50">
                 <TableRow className="border-b border-gray-200">
-                  <TableHead className="text-center text-[12px] text-black font-bold border border-gray-200 py-2 px-3">Index</TableHead>
+                  <TableHead className="sticky top-0 bg-white text-center text-[12px] text-black font-bold border border-gray-200 py-2 px-3">Index</TableHead>
                   {Object.entries(visibleColumns).map(([column, config]) => (
                     config.visible && (
-                      <TableHead
-                        key={column}
-                        className={`cursor-pointer text-[12px] text-black font-bold capitalize border border-gray-200 py-2 px-3 ${column === 'pin_no' ? 'text-left' : 'text-center'}`}
-                        onClick={() => requestSort(column)}
-                      >
-                        {config.label}
-                        {sortConfig.key === column && (
-                          <span>{sortConfig.direction === 'ascending' ? ' ▲' : ' ▼'}</span>
-                        )}
+                      <TableHead key={column} className="sticky top-0 bg-white border border-gray-200 ">
+                        <Button 
+                          variant="ghost" 
+                          onClick={() => requestSort(column)}
+                          className="h-8 p-0 text-[12px] text-black font-bold capitalize py-2 px-3"
+                        >
+                          {config.label}
+                          <ArrowUpDown className="ml-2 h-4 w-4" />
+                        </Button>
                       </TableHead>
                     )
                   ))}
-                  <TableHead className="text-center text-[12px] text-black font-bold border border-gray-200 py-2 px-3">Actions</TableHead>
+                  <TableHead className="sticky top-0 bg-white text-center text-[12px] text-black font-bold border border-gray-200 py-2 px-3">Actions</TableHead>
                 </TableRow>
                 {showStatsRows && (
                   <>
@@ -465,12 +487,12 @@ export function ManufacturersDetailsReports() {
                 )}
               </TableHeader>
               <TableBody>
-                {filteredManufacturers.map((manufacturer, index) => (
+                {paginatedManufacturers.map((manufacturer, index) => (
                   <TableRow key={manufacturer.id} className={`h-8 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-gray-100`}>
-                    <TableCell className="text-center font-bold border border-gray-200">{index + 1}</TableCell>
+                    <TableCell className="font-bold border border-gray-200">{index + 1}</TableCell>
                     {Object.entries(visibleColumns).map(([column, config]) => (
                       config.visible && (
-                        <TableCell key={column} className={`border border-gray-200 py-2 px-3 ${column === 'pin_no' ? 'text-left whitespace-nowrap font-bold' : 'text-center'}`}>
+                        <TableCell key={column} className={`border border-gray-200 py-2 px-3 ${column === 'pin_no' ? 'text-left whitespace-nowrap font-bold' : ''}`}>
                           {manufacturer[column] ? (
                             manufacturer[column]
                           ) : (
@@ -523,7 +545,15 @@ export function ManufacturersDetailsReports() {
           </div>
 
         </div>
-
+        <div className="border-t bg-white">
+          <TablePagination
+            currentPage={currentPage}
+            pageSize={pageSize}
+            totalItems={filteredManufacturers.length}
+            onPageChange={handlePageChange}
+            onPageSizeChange={handlePageSizeChange}
+          />
+        </div>
       </div>
 
     </div>

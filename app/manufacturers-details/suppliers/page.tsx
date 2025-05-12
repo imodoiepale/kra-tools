@@ -1,4 +1,5 @@
 // components/ManufacturersDetails.tsx
+// @ts-nocheck
 "use client";
 
 import { useState, useEffect } from 'react'
@@ -7,14 +8,14 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow,TableFooter } from "@/components/ui/table"
-import { ManufacturersDetailsRunning } from './components/ManufacturersDetailsRunning'
-import { fetchSuppliers, type Supplier } from './utils/suppliers'
+import { ManufacturersDetailsRunning } from '../suppliers/components/ManufacturersDetailsRunning'
+import { fetchSuppliers, type Supplier } from '../suppliers/utils/suppliers'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { motion } from "framer-motion"
-import { ManufacturersDetailsReports } from './components/ManufacturersDetailsReports'
+import { ManufacturersDetailsReports } from '../suppliers/components/ManufacturersDetailsReports'
 import { Input } from "@/components/ui/input"
 import { Search, ArrowUpDown } from "lucide-react"
-import { kraService } from './services/kra-service'
+import { kraService } from '../services/kra-service'
 
 interface Manufacturer {
     id: number;
@@ -111,7 +112,10 @@ export default function ManufacturersDetailsSuppliers() {
                 kraPins = manufacturers.map(m => m.pin_no);
             }
 
-            const { results, summary } = await kraService.startManufacturerDetailsCheck(kraPins);
+            const { results, summary } = await kraService.startManufacturerDetailsCheck({
+                kraPins,
+                type: 'suppliers'
+            });
             setKraResults(results)
             setKraSummary(summary)
             setActiveTab("running")
