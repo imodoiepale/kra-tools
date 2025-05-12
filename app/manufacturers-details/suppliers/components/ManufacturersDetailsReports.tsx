@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogClose } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Trash2, RefreshCw, Download, Eye, EyeOff, Filter } from 'lucide-react'
+import { Trash2, RefreshCw, Download, Eye, EyeOff, Filter, ArrowUpDown } from 'lucide-react'
 import ExcelJS from 'exceljs'
 import { Checkbox } from "@/components/ui/checkbox"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuCheckboxItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
@@ -283,6 +283,14 @@ export function ManufacturersDetailsReports() {
 
   const sortedManufacturers = [...uniqueManufacturers].sort((a, b) => {
     if (sortConfig.key !== null) {
+      const aValue = a[sortConfig.key];
+      const bValue = b[sortConfig.key];
+
+      // Put missing values at the top when sorting
+      if (!aValue && !bValue) return 0;
+      if (!aValue) return sortConfig.direction === 'ascending' ? -1 : 1;
+      if (!bValue) return sortConfig.direction === 'ascending' ? 1 : -1;
+
       if (a[sortConfig.key] < b[sortConfig.key]) {
         return sortConfig.direction === 'ascending' ? -1 : 1;
       }
@@ -407,22 +415,22 @@ export function ManufacturersDetailsReports() {
             <Table className="text-[11px] pb-2 text-black border-collapse">
               <TableHeader className="bg-gray-50">
                 <TableRow className="border-b border-gray-200">
-                  <TableHead className="text-center text-[12px] text-black font-bold border border-gray-200 py-2 px-3">Index</TableHead>
+                  <TableHead className="sticky top-0 bg-white text-center text-[12px] text-black font-bold border border-gray-200 py-2 px-3">Index</TableHead>
                   {Object.entries(visibleColumns).map(([column, config]) => (
                     config.visible && (
-                      <TableHead
-                        key={column}
-                        className={`cursor-pointer text-[12px] text-black font-bold capitalize border border-gray-200 py-2 px-3 ${column === 'pin_no' ? 'text-left' : 'text-center'}`}
-                        onClick={() => requestSort(column)}
-                      >
-                        {config.label}
-                        {sortConfig.key === column && (
-                          <span>{sortConfig.direction === 'ascending' ? ' ▲' : ' ▼'}</span>
-                        )}
+                      <TableHead key={column} className="sticky top-0 bg-white border border-gray-400 ">
+                        <Button 
+                          variant="ghost" 
+                          onClick={() => requestSort(column)}
+                          className="h-8 p-0 text-[12px] text-black font-bold capitalize py-2 px-3"
+                        >
+                          {config.label}
+                          <ArrowUpDown className="ml-2 h-4 w-4" />
+                        </Button>
                       </TableHead>
                     )
                   ))}
-                  <TableHead className="text-center text-[12px] text-black font-bold border border-gray-200 py-2 px-3">Actions</TableHead>
+                  <TableHead className="sticky top-0 bg-white text-center text-[12px] text-black font-bold border border-gray-200 py-2 px-3">Actions</TableHead>
                 </TableRow>
                 {showStatsRows && (
                   <>
@@ -464,10 +472,10 @@ export function ManufacturersDetailsReports() {
               <TableBody>
                 {filteredManufacturers.map((manufacturer, index) => (
                   <TableRow key={manufacturer.id} className={`h-8 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-gray-100`}>
-                    <TableCell className="text-center font-bold border border-gray-200">{index + 1}</TableCell>
+                    <TableCell className="font-bold border border-gray-200">{index + 1}</TableCell>
                     {Object.entries(visibleColumns).map(([column, config]) => (
                       config.visible && (
-                        <TableCell key={column} className={`border border-gray-200 py-2 px-3 ${column === 'pin_no' ? 'text-left whitespace-nowrap font-bold' : 'text-center'}`}>
+                        <TableCell key={column} className={`border border-gray-200 py-2 px-3 ${column === 'pin_no' ? 'text-left whitespace-nowrap font-bold' : ''}`}>
                           {manufacturer[column] ? (
                             manufacturer[column]
                           ) : (

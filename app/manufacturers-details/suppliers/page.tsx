@@ -13,7 +13,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { motion } from "framer-motion"
 import { ManufacturersDetailsReports } from './components/ManufacturersDetailsReports'
 import { Input } from "@/components/ui/input"
-import { Search } from "lucide-react"
+import { Search, ArrowUpDown } from "lucide-react"
+import { kraService } from './services/kra-service'
 
 interface Manufacturer {
     id: number;
@@ -22,14 +23,33 @@ interface Manufacturer {
     last_checked_at: string | null;
 }
 
+interface ManufacturersDetailsRunningProps {
+    onComplete: () => void
+    shouldStop: boolean
+    initialResults?: Array<{
+        kra_pin: string
+        success: boolean
+        data: any
+    }>
+    initialSummary?: {
+        successful: number
+        failed: number
+    }
+}
+
 export default function ManufacturersDetailsSuppliers() {
     const [isChecking, setIsChecking] = useState(false)
     const [activeTab, setActiveTab] = useState("reports")
-    const [shouldStop, setShouldStop] = useState(false)
     const [manufacturers, setManufacturers] = useState<Manufacturer[]>([])
     const [selectedManufacturers, setSelectedManufacturers] = useState<number[]>([])
     const [runOption, setRunOption] = useState<'all' | 'selected'>('all')
     const [searchTerm, setSearchTerm] = useState('')
+    const [kraResults, setKraResults] = useState<any[]>([])
+    const [kraSummary, setKraSummary] = useState<any>(null)
+    const [sortConfig, setSortConfig] = useState<{
+        key: keyof Manufacturer | '';
+        direction: 'ascending' | 'descending';
+    }>({ key: '', direction: 'ascending' })
 
     useEffect(() => {
         fetchManufacturers()
@@ -54,9 +74,33 @@ export default function ManufacturersDetailsSuppliers() {
         );
     });
 
+    const handleSort = (key: keyof Manufacturer) => {
+        setSortConfig(current => ({
+            key,
+            direction: current.key === key && current.direction === 'ascending' 
+                ? 'descending' 
+                : 'ascending'
+        }));
+    };
+
+    const sortedManufacturers = [...filteredManufacturers].sort((a, b) => {
+        if (sortConfig.key === '') return 0;
+
+        const aValue = a[sortConfig.key];
+        const bValue = b[sortConfig.key];
+
+        // Put missing values at the top when sorting
+        if (!aValue && !bValue) return 0;
+        if (!aValue) return sortConfig.direction === 'ascending' ? -1 : 1;
+        if (!bValue) return sortConfig.direction === 'ascending' ? 1 : -1;
+
+        if (aValue < bValue) return sortConfig.direction === 'ascending' ? -1 : 1;
+        if (aValue > bValue) return sortConfig.direction === 'ascending' ? 1 : -1;
+        return 0;
+    });
+
     const handleStartCheck = async () => {
         setIsChecking(true)
-        setShouldStop(false)
         try {
             let kraPins;
             if (runOption === 'selected') {
@@ -67,38 +111,9 @@ export default function ManufacturersDetailsSuppliers() {
                 kraPins = manufacturers.map(m => m.pin_no);
             }
 
-            // Process each KRA PIN through the webhook
-            const requests = kraPins.map(kra_pin => {
-                const url = `https://primary-production-079f.up.railway.app/webhook-test/manufucturerDetails?kra_pin=${encodeURIComponent(kra_pin)}&type=suppliers`;
-                
-                return fetch(url)
-                    .then(res => res.json())
-                    .then(data => ({ kra_pin, success: true, data }))
-                    .catch(error => ({ kra_pin, success: false, error }));
-            });
-
-            // Process all requests concurrently
-            const results = await Promise.all(requests);
-            console.log("All Results:", results);
-
-            // Still notify the API about the process starting
-            const response = await fetch('/api/kra-automation-for-components', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    kra_pins: kraPins,
-                    type: 'suppliers',
-                    stop: shouldStop,
-                    webhook_results: results
-                })
-            });
-
-            if (!response.ok) throw new Error('API request failed')
-
-            const data = await response.json()
-            console.log('Manufacturers details check started:', data)
+            const { results, summary } = await kraService.startManufacturerDetailsCheck(kraPins);
+            setKraResults(results)
+            setKraSummary(summary)
             setActiveTab("running")
         } catch (error) {
             console.error('Error starting manufacturers details check:', error)
@@ -106,11 +121,6 @@ export default function ManufacturersDetailsSuppliers() {
         } finally {
             setIsChecking(false)
         }
-    }
-
-    const handleStopCheck = () => {
-        setShouldStop(true)
-        alert('Stopping all automations...')
     }
 
     const handleCheckboxChange = (id: number) => {
@@ -178,12 +188,30 @@ export default function ManufacturersDetailsSuppliers() {
                                                                 <TableRow>
                                                                     <TableHead className="w-[50px] sticky top-0 bg-white">Select</TableHead>
                                                                     <TableHead className="sticky top-0 bg-white">#</TableHead>
-                                                                    <TableHead className="sticky top-0 bg-white">PIN Number</TableHead>
-                                                                    <TableHead className="sticky top-0 bg-white">Supplier Name As Per Pin</TableHead>
+                                                                    <TableHead className="sticky top-0 bg-white">
+                                                                        <Button 
+                                                                            variant="ghost" 
+                                                                            onClick={() => handleSort('pin_no')}
+                                                                            className="h-8 p-0"
+                                                                        >
+                                                                            PIN Number
+                                                                            <ArrowUpDown className="ml-2 h-4 w-4" />
+                                                                        </Button>
+                                                                    </TableHead>
+                                                                    <TableHead className="sticky top-0 bg-white">
+                                                                        <Button 
+                                                                            variant="ghost" 
+                                                                            onClick={() => handleSort('supplier_name_as_per_pin')}
+                                                                            className="h-8 p-0"
+                                                                        >
+                                                                            Supplier Name As Per Pin
+                                                                            <ArrowUpDown className="ml-2 h-4 w-4" />
+                                                                        </Button>
+                                                                    </TableHead>
                                                                 </TableRow>
                                                             </TableHeader>
                                                             <TableBody>
-                                                                {filteredManufacturers.map((manufacturer, index) => (
+                                                                {sortedManufacturers.map((manufacturer, index) => (
                                                                     <TableRow key={manufacturer.id}>
                                                                         <TableCell>
                                                                             <Checkbox
@@ -241,9 +269,6 @@ export default function ManufacturersDetailsSuppliers() {
                                                                                 <Button onClick={handleStartCheck} disabled={isChecking || selectedManufacturers.length === 0} size="sm">
                                                                                     {isChecking ? 'Starting...' : 'Start Manufacturers Details Check'}
                                                                                 </Button>
-                                                                                <Button onClick={handleStopCheck} disabled={!isChecking} variant="destructive" size="sm">
-                                                                                    Stop Manufacturers Details Check
-                                                                                </Button>
                                                                             </div>
                                                                         </TableCell>
                                                                     </TableRow>
@@ -262,16 +287,17 @@ export default function ManufacturersDetailsSuppliers() {
                                             <Button onClick={handleStartCheck} disabled={isChecking} size="sm">
                                                 {isChecking ? 'Starting...' : 'Start Manufacturers Details Check'}
                                             </Button>
-                                            <Button onClick={handleStopCheck} disabled={!isChecking} variant="destructive" size="sm">
-                                                Stop Manufacturers Details Check
-                                            </Button>
                                         </div>
                                     </CardFooter>
                                 )}
                             </Card>
                         </TabsContent>
                         <TabsContent value="running">
-                            <ManufacturersDetailsRunning onComplete={() => setActiveTab("reports")} shouldStop={shouldStop} />
+                            <ManufacturersDetailsRunning 
+                                onComplete={() => setActiveTab("reports")} 
+                                initialResults={kraResults}
+                                initialSummary={kraSummary}
+                            />
                         </TabsContent>
                         <TabsContent value="reports">
                             <ManufacturersDetailsReports />
