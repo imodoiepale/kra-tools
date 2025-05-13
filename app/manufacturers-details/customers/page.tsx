@@ -7,7 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow,TableFooter } from "@/components/ui/table"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableFooter } from "@/components/ui/table"
 import { ManufacturersDetailsRunning } from '../customers/components/ManufacturersDetailsRunning'
 import { fetchCustomers, type Customer } from '../customers/utils/customers'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -16,6 +16,7 @@ import { ManufacturersDetailsReports } from '../customers/components/Manufacture
 import { Input } from "@/components/ui/input"
 import { Search, ArrowUpDown } from "lucide-react"
 import { kraService } from '../services/kra-service'
+import { Badge } from "@/components/ui/badge"
 
 interface Manufacturer {
     id: number;
@@ -43,7 +44,7 @@ export default function ManufacturersDetailsCustomers() {
     const [activeTab, setActiveTab] = useState("reports")
     const [manufacturers, setManufacturers] = useState<Manufacturer[]>([])
     const [selectedManufacturers, setSelectedManufacturers] = useState<number[]>([])
-    const [runOption, setRunOption] = useState<'all' | 'selected'>('all')
+    const [runOption, setRunOption] = useState<'all' | 'selected' | 'missing'>('all')
     const [searchTerm, setSearchTerm] = useState('')
     const [kraResults, setKraResults] = useState<any[]>([])
     const [kraSummary, setKraSummary] = useState<any>(null)
@@ -55,6 +56,17 @@ export default function ManufacturersDetailsCustomers() {
     useEffect(() => {
         fetchManufacturers()
     }, [])
+
+    useEffect(() => {
+        if (runOption === 'missing') {
+            const missingCustomers = manufacturers
+                .filter(m => !m.customer_name_as_per_pin)
+                .map(m => m.id);
+            setSelectedManufacturers(missingCustomers);
+        } else if (runOption === 'all') {
+            setSelectedManufacturers([]);
+        }
+    }, [runOption, manufacturers]);
 
     const fetchManufacturers = async () => {
         console.log('Fetching manufacturers data...');
@@ -78,8 +90,8 @@ export default function ManufacturersDetailsCustomers() {
     const handleSort = (key: keyof Manufacturer) => {
         setSortConfig(current => ({
             key,
-            direction: current.key === key && current.direction === 'ascending' 
-                ? 'descending' 
+            direction: current.key === key && current.direction === 'ascending'
+                ? 'descending'
                 : 'ascending'
         }));
     };
@@ -104,7 +116,7 @@ export default function ManufacturersDetailsCustomers() {
         setIsChecking(true)
         try {
             let kraPins;
-            if (runOption === 'selected') {
+            if (runOption === 'selected' || runOption === 'missing') {
                 kraPins = manufacturers
                     .filter(m => selectedManufacturers.includes(m.id))
                     .map(m => m.pin_no);
@@ -157,13 +169,14 @@ export default function ManufacturersDetailsCustomers() {
                                     <div className="space-y-4">
                                         <div className="flex items-center space-x-2">
                                             <label className="text-sm font-medium">Run option:</label>
-                                            <Select value={runOption} onValueChange={(value) => setRunOption(value as 'all' | 'selected')}>
+                                            <Select value={runOption} onValueChange={(value) => setRunOption(value as 'all' | 'selected' | 'missing')}>
                                                 <SelectTrigger className="w-[180px]">
                                                     <SelectValue placeholder="Select run option" />
                                                 </SelectTrigger>
                                                 <SelectContent>
                                                     <SelectItem value="all">All Customer Pins</SelectItem>
                                                     <SelectItem value="selected">Selected Customer Pin</SelectItem>
+                                                    <SelectItem value="missing">Selected Missing</SelectItem>
                                                 </SelectContent>
                                             </Select>
                                         </div>
@@ -178,7 +191,7 @@ export default function ManufacturersDetailsCustomers() {
                                             />
                                         </div>
 
-                                        {runOption === 'selected' && (
+                                        {(runOption === 'selected' || runOption === 'missing') && (
                                             <div className="flex">
                                                 <motion.div
                                                     className="pr-2"
@@ -186,15 +199,15 @@ export default function ManufacturersDetailsCustomers() {
                                                     animate={{ width: selectedManufacturers.length > 0 ? "50%" : "100%" }}
                                                     transition={{ duration: 0.3 }}
                                                 >
-                                                    <div className="max-h-[580px] overflow-y-auto">
+                                                    <div className="max-h-[580px] overflow-y-auto mt-2">
                                                         <Table>
                                                             <TableHeader>
                                                                 <TableRow>
                                                                     <TableHead className="w-[50px] sticky top-0 bg-white">Select</TableHead>
                                                                     <TableHead className="sticky top-0 bg-white">#</TableHead>
                                                                     <TableHead className="sticky top-0 bg-white">
-                                                                        <Button 
-                                                                            variant="ghost" 
+                                                                        <Button
+                                                                            variant="ghost"
                                                                             onClick={() => handleSort('pin_no')}
                                                                             className="h-8 p-0"
                                                                         >
@@ -203,8 +216,8 @@ export default function ManufacturersDetailsCustomers() {
                                                                         </Button>
                                                                     </TableHead>
                                                                     <TableHead className="sticky top-0 bg-white">
-                                                                        <Button 
-                                                                            variant="ghost" 
+                                                                        <Button
+                                                                            variant="ghost"
                                                                             onClick={() => handleSort('customer_name_as_per_pin')}
                                                                             className="h-8 p-0"
                                                                         >
@@ -220,7 +233,8 @@ export default function ManufacturersDetailsCustomers() {
                                                                         <TableCell>
                                                                             <Checkbox
                                                                                 checked={selectedManufacturers.includes(manufacturer.id)}
-                                                                                onCheckedChange={() => handleCheckboxChange(manufacturer.id)}
+                                                                                onCheckedChange={() => runOption === 'selected' && handleCheckboxChange(manufacturer.id)}
+                                                                                disabled={runOption === 'missing'}
                                                                             />
                                                                         </TableCell>
                                                                         <TableCell className="text-center">{index + 1}</TableCell>
@@ -245,39 +259,41 @@ export default function ManufacturersDetailsCustomers() {
                                                     >
                                                         <div className="mb-4">
                                                             <h3 className="text-lg font-semibold mb-2">Selected Customer Pin</h3>
-                                                            <Table>
-                                                                <TableHeader>
-                                                                    <TableRow>
-                                                                        <TableHead>#</TableHead>
-                                                                        <TableHead>PIN Number</TableHead>
-                                                                        <TableHead>Customer Name As Per Pin</TableHead>
-                                                                    </TableRow>
-                                                                </TableHeader>
-                                                                <TableBody>
-                                                                    {manufacturers.filter(m => selectedManufacturers.includes(m.id)).map((manufacturer, index) => (
-                                                                        <TableRow key={manufacturer.id} className="bg-blue-100">
-                                                                            <TableCell>{index + 1}</TableCell>
-                                                                            <TableCell>
-                                                                                {manufacturer.pin_no ? manufacturer.pin_no : <span className="text-red-500 font-medium">Missing</span>}
-                                                                            </TableCell>
-                                                                            <TableCell>
-                                                                                {manufacturer.customer_name_as_per_pin ? manufacturer.customer_name_as_per_pin : <span className="text-red-500 font-medium">Missing</span>}
-                                                                            </TableCell>
+                                                            <div className="max-h-[580px] overflow-y-auto">
+                                                                <Table>
+                                                                    <TableHeader>
+                                                                        <TableRow>
+                                                                            <TableHead>#</TableHead>
+                                                                            <TableHead>PIN Number</TableHead>
+                                                                            <TableHead>
+                                                                                Customer Name As Per Pin
+                                                                                {selectedManufacturers.length > 0 && (
+                                                                                    <Badge variant="secondary" className="ml-2">
+                                                                                        {selectedManufacturers.length}
+                                                                                    </Badge>
+                                                                                )}</TableHead>
                                                                         </TableRow>
-                                                                    ))}
-                                                                </TableBody>
-                                                                <TableFooter>
-                                                                    <TableRow>
-                                                                        <TableCell colSpan={4}>
-                                                                            <div className="flex space-x-2">
-                                                                                <Button onClick={handleStartCheck} disabled={isChecking || selectedManufacturers.length === 0} size="sm">
-                                                                                    {isChecking ? 'Starting...' : 'Start Manufacturers Details Check'}
-                                                                                </Button>
-                                                                            </div>
-                                                                        </TableCell>
-                                                                    </TableRow>
-                                                                </TableFooter>
-                                                            </Table>
+                                                                    </TableHeader>
+                                                                    <TableBody>
+                                                                        {manufacturers.filter(m => selectedManufacturers.includes(m.id)).map((manufacturer, index) => (
+                                                                            <TableRow key={manufacturer.id} className="bg-blue-100">
+                                                                                <TableCell>{index + 1}</TableCell>
+                                                                                <TableCell>
+                                                                                    {manufacturer.pin_no ? manufacturer.pin_no : <span className="text-red-500 font-medium">Missing</span>}
+                                                                                </TableCell>
+                                                                                <TableCell>
+                                                                                    {manufacturer.customer_name_as_per_pin ? manufacturer.customer_name_as_per_pin : <span className="text-red-500 font-medium">Missing</span>}
+                                                                                </TableCell>
+                                                                            </TableRow>
+                                                                        ))}
+                                                                    </TableBody>
+                                                                </Table>
+                                                            </div>
+                                                            <div className="flex space-x-2">
+                                                                <Button onClick={handleStartCheck} disabled={isChecking || selectedManufacturers.length === 0} size="sm">
+                                                                    {isChecking ? 'Starting...' : 'Start Manufacturers Details Check'}
+                                                                </Button>
+                                                            </div>
                                                         </div>
                                                     </motion.div>
                                                 )}
@@ -297,8 +313,8 @@ export default function ManufacturersDetailsCustomers() {
                             </Card>
                         </TabsContent>
                         <TabsContent value="running">
-                            <ManufacturersDetailsRunning 
-                                onComplete={() => setActiveTab("reports")} 
+                            <ManufacturersDetailsRunning
+                                onComplete={() => setActiveTab("reports")}
                                 initialResults={kraResults}
                                 initialSummary={kraSummary}
                             />
