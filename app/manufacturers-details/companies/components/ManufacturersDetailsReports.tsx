@@ -13,7 +13,7 @@ import { Trash2, RefreshCw, Download, Eye, EyeOff, Filter } from 'lucide-react'
 import ExcelJS from 'exceljs'
 import { Checkbox } from "@/components/ui/checkbox"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuCheckboxItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { ClientCategoryFilter } from "@/components/ClientCategoryFilter"
+import ClientCategoryFilter from '@/components/ClientCategoryFilter-updated-ui';
 
 interface Manufacturer {
   id: number
@@ -53,19 +53,96 @@ export function ManufacturersDetailsReports() {
   })
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'ascending' })
   const [isCategoryFilterOpen, setIsCategoryFilterOpen] = useState(false)
-  const [categoryFilters, setCategoryFilters] = useState({})
+  const [categoryFilters, setCategoryFilters] = useState<{
+    [key: string]: {
+      [key: string]: boolean;
+    };
+  }>({})
   const [showStatsRows, setShowStatsRows] = useState(true)
 
   const fetchReports = async () => {
-    const { data, error } = await supabase
-      .from('ManufacturersDetails')
-      .select('*')
-      .order('company_name', { ascending: true })
+    try {
+      // Fetch companies from acc_portal_company_duplicate
+      const { data: companiesData, error: companiesError } = await supabase
+        .from('acc_portal_company_duplicate')
+        .select('*')
+        .order('company_name', { ascending: true });
 
-    if (error) {
-      console.error('Error fetching reports:', error)
-    } else {
-      setManufacturers(data || [])
+      if (companiesError) {
+        console.error('Error fetching companies:', companiesError);
+        return;
+      }
+
+      // Fetch manufacturer details
+      const { data: manufacturersData, error: manufacturersError } = await supabase
+        .from('ManufacturersDetails')
+        .select('*');
+
+      if (manufacturersError) {
+        console.error('Error fetching manufacturer details:', manufacturersError);
+        return;
+      }
+
+      // Map companies with their manufacturer details
+      const mappedData = companiesData.map(company => {
+        const manufacturerDetails = manufacturersData.find(m => m.kra_pin === company.kra_pin) || {};
+        return {
+          id: company.id,
+          company_name: company.company_name,
+          kra_pin: company.kra_pin,
+          manufacturer_name: manufacturerDetails.manufacturer_name || null,
+          mobile_number: manufacturerDetails.mobile_number || null,
+          main_email_address: manufacturerDetails.main_email_address || null,
+          business_reg_cert_no: manufacturerDetails.business_reg_cert_no || null,
+          business_reg_date: manufacturerDetails.business_reg_date || null,
+          business_commencement_date: manufacturerDetails.business_commencement_date || null,
+          postal_code: manufacturerDetails.postal_code || null,
+          po_box: manufacturerDetails.po_box || null,
+          town: manufacturerDetails.town || null,
+          desc_addr: manufacturerDetails.desc_addr || null,
+          category: manufacturerDetails.category || null,
+          status: manufacturerDetails.status || null
+        };
+      });
+
+      setManufacturers(mappedData);
+    } catch (error) {
+      console.error('Error in fetchReports:', error);
+    }
+  }
+
+  const handleSave = async (updatedManufacturer: Manufacturer) => {
+    try {
+      const { id, ...updateData } = updatedManufacturer;
+      
+      // First, check if a record exists in ManufacturersDetails for this kra_pin
+      const { data: existingData } = await supabase
+        .from('ManufacturersDetails')
+        .select('*')
+        .eq('kra_pin', updateData.kra_pin)
+        .single();
+
+      if (existingData) {
+        // Update existing record
+        const { error } = await supabase
+          .from('ManufacturersDetails')
+          .update(updateData)
+          .eq('kra_pin', updateData.kra_pin);
+
+        if (error) throw error;
+      } else {
+        // Insert new record
+        const { error } = await supabase
+          .from('ManufacturersDetails')
+          .insert([updateData]);
+
+        if (error) throw error;
+      }
+
+      setManufacturers(manufacturers.map(m => m.id === updatedManufacturer.id ? updatedManufacturer : m));
+      setEditingManufacturer(null);
+    } catch (error) {
+      console.error('Error updating manufacturer:', error);
     }
   }
 
@@ -75,21 +152,6 @@ export function ManufacturersDetailsReports() {
 
   const handleEdit = (manufacturer: Manufacturer) => {
     setEditingManufacturer(manufacturer)
-  }
-
-  const handleSave = async (updatedManufacturer: Manufacturer) => {
-    const { id, ...updateData } = updatedManufacturer
-    const { error } = await supabase
-      .from('ManufacturersDetails')
-      .update(updateData)
-      .eq('id', id)
-
-    if (error) {
-      console.error('Error updating manufacturer:', error)
-    } else {
-      setManufacturers(manufacturers.map(m => m.id === updatedManufacturer.id ? updatedManufacturer : m))
-      setEditingManufacturer(null)
-    }
   }
 
   const handleDelete = async (id: number) => {
@@ -286,7 +348,23 @@ export function ManufacturersDetailsReports() {
       }
     }
     return 0
-  })
+  });
+
+  const getUniqueCategories = () => {
+    const categories = new Set<string>();
+    manufacturers.forEach(m => {
+      if (m.category) categories.add(m.category);
+    });
+    return Array.from(categories);
+  };
+
+  const getUniqueStatuses = () => {
+    const statuses = new Set<string>();
+    manufacturers.forEach(m => {
+      if (m.status) statuses.add(m.status);
+    });
+    return Array.from(statuses);
+  };
 
   const filteredManufacturers = sortedManufacturers.filter(manufacturer => {
     // Apply search filter
@@ -301,31 +379,43 @@ export function ManufacturersDetailsReports() {
     
     // Apply category filters
     if (Object.keys(categoryFilters).length > 0) {
-      // Check if any category filter is active
-      const hasActiveFilters = Object.values(categoryFilters).some(categoryStatus => 
-        Object.values(categoryStatus as Record<string, boolean>).some(isSelected => isSelected)
-      );
+      const manufacturerCategory = manufacturer.category || 'uncategorized';
+      const manufacturerStatus = manufacturer.status || 'inactive';
+
+      // Check if any filter is selected for this category
+      const categoryFilter = categoryFilters[manufacturerCategory] || categoryFilters['all'];
       
-      if (hasActiveFilters) {
-        // Get the manufacturer's category and status
-        const category = manufacturer.category || 'all';
-        const status = manufacturer.status === 'active' ? 'active' : 'inactive';
-        
-        // Check if this category has any filters
-        const categoryFilter = categoryFilters[category] as Record<string, boolean> | undefined;
-        if (!categoryFilter) {
-          // Check if 'all' category has this status selected
-          const allCategoryFilter = categoryFilters['all'] as Record<string, boolean> | undefined;
-          return allCategoryFilter?.[status] || allCategoryFilter?.['all'];
-        }
-        
-        // Check if this specific status is selected for this category
-        return categoryFilter[status] || categoryFilter['all'];
+      if (categoryFilter) {
+        // If specific status is selected, check if it matches
+        if (categoryFilter[manufacturerStatus]) return true;
+        // If 'all' is selected for this category
+        if (categoryFilter['all']) return true;
+        // No matching status selected
+        return false;
       }
+      
+      // If no filter for this category, check 'all' category
+      const allCategoryFilter = categoryFilters['all'];
+      if (allCategoryFilter) {
+        if (allCategoryFilter[manufacturerStatus]) return true;
+        if (allCategoryFilter['all']) return true;
+      }
+      
+      // No matching filters
+      return false;
     }
     
     return true;
   });
+
+  const handleApplyFilters = (filters: any) => {
+    setCategoryFilters(filters);
+    setIsCategoryFilterOpen(false);
+  };
+
+  const handleClearFilters = () => {
+    setCategoryFilters({});
+  };
 
   const requestSort = (key: string) => {
     let direction = 'ascending'
@@ -389,11 +479,13 @@ export function ManufacturersDetailsReports() {
       </div>
       
       <ClientCategoryFilter 
-        isOpen={isCategoryFilterOpen} 
-        onClose={() => setIsCategoryFilterOpen(false)} 
-        onApplyFilters={(filters) => setCategoryFilters(filters)}
-        onClearFilters={() => setCategoryFilters({})}
+        isOpen={isCategoryFilterOpen}
+        onClose={() => setIsCategoryFilterOpen(false)}
+        onApplyFilters={handleApplyFilters}
+        onClearFilters={handleClearFilters}
         selectedFilters={categoryFilters}
+        categories={getUniqueCategories()}
+        statuses={getUniqueStatuses()}
       />
 
       <div className="rounded-md border flex-1 flex flex-col">
