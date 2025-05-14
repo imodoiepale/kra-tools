@@ -96,35 +96,60 @@ export default function PinCheckerDetails() {
         }
     };
 
+    // In pin-checker-details.tsx
     const handleStartCheck = async () => {
-        if (isChecking) {
-            alert('An automation is already running. Please wait for it to complete or stop it before starting a new one.');
-            return;
-        }
-
         try {
+            // First, force reset the automation status regardless of current state
+            const { error: resetError } = await supabase
+                .from("PinCheckerDetails_AutomationProgress")
+                .update({
+                    progress: 0,
+                    status: "Not Started",
+                    logs: [],
+                    last_updated: new Date().toISOString()
+                })
+                .eq("id", 1);
+
+            if (resetError) {
+                console.error('Error resetting automation status:', resetError);
+                // Continue anyway, as the API might handle this
+            } else {
+                console.log('Automation status reset successfully');
+            }
+
+            // Prepare the IDs to send (ensure it's always an array)
+            const idsToSend = runOption === 'selected'
+                ? selectedCompanies.map(id => Number(id))
+                : [];
+
+            console.log('Sending IDs:', idsToSend);
+
+            // Now start the automation
             const response = await fetch('/api/pin-checker-details', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
+                body: JSON.stringify({
                     action: "start",
                     runOption,
-                    selectedIds: runOption === 'selected' ? selectedCompanies : []
+                    selectedIds: idsToSend
                 })
-            })
+            });
 
-            if (!response.ok) throw new Error('API request failed')
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(`API request failed: ${errorData.message || 'Unknown error'}`);
+            }
 
-            const data = await response.json()
-            console.log('PIN Checker Details started:', data)
-            setIsChecking(true)
-            setStatus("Running")
-            setActiveTab("running")
+            const data = await response.json();
+            console.log('PIN Checker Details started:', data);
+            setIsChecking(true);
+            setStatus("Running");
+            setActiveTab("running");
         } catch (error) {
-            console.error('Error starting PIN Checker Details:', error)
-            alert('Failed to start PIN Checker Details. Please try again.')
+            console.error('Error starting PIN Checker Details:', error);
+            alert(`Failed to start PIN Checker Details: ${error.message}`);
         }
-    }
+    };
 
     const handleStopCheck = async () => {
         if (!isChecking) {

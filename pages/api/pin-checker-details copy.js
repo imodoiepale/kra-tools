@@ -4,6 +4,7 @@ import fs from "fs/promises";
 import { existsSync } from "fs";
 import path from "path";
 import os from "os";
+import ExcelJS from "exceljs";
 import { createWorker } from "tesseract.js";
 import { createClient } from "@supabase/supabase-js";
 
@@ -28,6 +29,7 @@ export default async function handler(req, res) {
             return res.status(200).json(progress);
         }
 
+        // Add this to your API handler
         if (action === "reset") {
             await updateAutomationProgress(0, "Not Started", []);
             return res.status(200).json({ message: "Automation status reset successfully." });
@@ -36,16 +38,18 @@ export default async function handler(req, res) {
         if (action === "stop") {
             stopRequested = true;
             await updateAutomationProgress(0, "Stopped", []);
-
+            
             // Force terminate any running automation
             if (runningAutomation) {
                 clearTimeout(runningAutomation);
                 runningAutomation = null;
             }
-
+            
             return res.status(200).json({ message: "Automation stopped successfully." });
         }
 
+        // In the API handler
+        // In your API handler
         if (action === "start") {
             // Always reset the automation status first
             await updateAutomationProgress(0, "Not Started", []);
@@ -93,6 +97,7 @@ export default async function handler(req, res) {
             }
         }
 
+
         return res.status(400).json({ message: "Invalid action." });
     } catch (error) {
         console.error("API handler error:", error);
@@ -137,6 +142,7 @@ async function updateAutomationProgress(progress, status, logs) {
 }
 
 async function processCompanies(runOption, selectedIds) {
+
     let chromePath = null;
     const chrome64Path = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
     const chrome32Path = 'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe';
@@ -158,11 +164,11 @@ async function processCompanies(runOption, selectedIds) {
 
     try {
         let allCompanies = await readSupabaseData(runOption, selectedIds);
-
+        
         // Identify companies with and without KRA PINs
         const companiesWithPin = [];
         const companiesWithoutPin = [];
-
+        
         allCompanies.forEach(company => {
             if (company.kra_pin) {
                 companiesWithPin.push(company);
@@ -170,7 +176,7 @@ async function processCompanies(runOption, selectedIds) {
                 companiesWithoutPin.push(company);
             }
         });
-
+        
         // Process companies without KRA PINs in parallel (no need to wait)
         if (companiesWithoutPin.length > 0) {
             console.log(`Processing ${companiesWithoutPin.length} companies without KRA PIN in parallel...`);
@@ -201,7 +207,7 @@ async function processCompanies(runOption, selectedIds) {
                 return saveCompanyDetails(skippedData);
             })).catch(error => console.error("Error processing companies without KRA PIN:", error));
         }
-
+        
         // Continue with companies that have KRA PINs
         const companies = companiesWithPin;
         const allCompanyData = [];
@@ -212,28 +218,13 @@ async function processCompanies(runOption, selectedIds) {
 
         await page.goto("https://itax.kra.go.ke/KRA-Portal/");
 
-        // Initialize first company separately to establish the session
-        if (companies.length > 0) {
-            await processFirstCompany(companies[0], page, allCompanyData);
-
-            // Update progress for first company
-            if (companies.length > 1) {
-                await updateAutomationProgress(
-                    Math.round((1 / companies.length) * 100),
-                    "Running",
-                    allCompanyData
-                );
-            }
-        }
-
-        // Process the rest of the companies more efficiently
-        for (let i = 1; i < companies.length; i++) {
+        for (let i = 0; i < companies.length; i++) {
             // Check if stop was requested
             if (stopRequested) {
                 console.log("Automation stopped by user request.");
                 await updateAutomationProgress(
-                    Math.round(((i) / companies.length) * 100),
-                    "Stopped",
+                    Math.round(((i) / companies.length) * 100), 
+                    "Stopped", 
                     allCompanyData
                 );
                 break;
@@ -241,62 +232,25 @@ async function processCompanies(runOption, selectedIds) {
 
             const company = companies[i];
             try {
-                // Process subsequent companies more efficiently
-                const organizedData = await processSubsequentCompany(company, page);
+                // Process company in a more efficient way
+                const organizedData = await processCompanyData(company, page, i > 0);
                 allCompanyData.push(organizedData);
-                console.log(`Processed ${company.company_name} (${i + 1}/${companies.length})`);
+                console.log(`Processed ${company.company_name} (${i+1}/${companies.length})`);
                 await saveCompanyDetails(organizedData);
+
+                // Only write Excel file at the end of processing or every 10 companies
+                // if (i === companies.length - 1 || i % 10 === 0) {
+                //     const workbook = createExcelFile(allCompanyData);
+                //     const formattedDate = `${now.getDate().toString().padStart(2, '0')}.${(now.getMonth() + 1).toString().padStart(2, '0')}.${now.getFullYear()}`;
+                //     const excelFilePath = path.join(downloadFolderPath, `PIN CHECKER DETAILS - OBLIGATIONS - ${formattedDate}.xlsx`);
+                //     await workbook.xlsx.writeFile(excelFilePath);
+                // }
 
                 const progress = Math.round(((i + 1) / companies.length) * 100);
                 await updateAutomationProgress(progress, "Running", allCompanyData);
             } catch (error) {
                 console.error(`Error processing company ${company.company_name}:`, error);
-
-                // If there's an error, try to navigate back to PIN checker page
-                try {
-                    await page.evaluate(() => pinchecker());
-                    await page.waitForSelector('#captcha_img', { state: 'visible', timeout: 3000 });
-                } catch (navError) {
-                    console.error("Failed to navigate back to PIN checker after error:", navError);
-                    // If navigation failed, try to reload the page
-                    await page.goto("https://itax.kra.go.ke/KRA-Portal/");
-                    await page.locator("#logid").click();
-                    await page.evaluate(() => pinchecker());
-                    await page.waitForSelector('#captcha_img', { state: 'visible', timeout: 3000 });
-                }
-
-                // Record the error and continue
-                const errorData = {
-                    company_name: company.company_name,
-                    income_tax_company_status: 'No obligation',
-                    income_tax_company_effective_from: 'No obligation',
-                    income_tax_company_effective_to: 'No obligation',
-                    vat_status: 'No obligation',
-                    vat_effective_from: 'No obligation',
-                    vat_effective_to: 'No obligation',
-                    paye_status: 'No obligation',
-                    paye_effective_from: 'No obligation',
-                    paye_effective_to: 'No obligation',
-                    rent_income_mri_status: 'No obligation',
-                    rent_income_mri_effective_from: 'No obligation',
-                    rent_income_mri_effective_to: 'No obligation',
-                    resident_individual_status: 'No obligation',
-                    resident_individual_effective_from: 'No obligation',
-                    resident_individual_effective_to: 'No obligation',
-                    turnover_tax_status: 'No obligation',
-                    turnover_tax_effective_from: 'No obligation',
-                    turnover_tax_effective_to: 'No obligation',
-                    error_message: error.message,
-                    last_checked_at: new Date().toISOString()
-                };
-
-                allCompanyData.push(errorData);
-                await saveCompanyDetails(errorData);
-                await updateAutomationProgress(
-                    Math.round(((i + 1) / companies.length) * 100),
-                    "Running",
-                    allCompanyData
-                );
+                await updateAutomationProgress(Math.round(((i + 1) / companies.length) * 100), "Running", { companyName: company.company_name, error: error.message });
             }
         }
 
@@ -328,7 +282,7 @@ async function readSupabaseData(runOption, selectedIds) {
             console.error("Supabase query error:", error);
             throw new Error(`Error reading data from 'acc_portal_company_duplicate' table: ${error.message}`);
         }
-
+        
         console.log(`Retrieved ${data?.length || 0} companies`);
         return data || [];
     } catch (error) {
@@ -337,49 +291,11 @@ async function readSupabaseData(runOption, selectedIds) {
     }
 }
 
-async function processFirstCompany(company, page, allCompanyData) {
-    console.log("Processing first company:", company.company_name);
-
-    // Initial login process
-    await page.locator("#logid").click();
-    await page.evaluate(() => pinchecker());
-    await page.waitForSelector('#captcha_img', { state: 'visible', timeout: 5000 });
-
-    const organizedData = await solveCaptchaAndGetData(company, page);
-    allCompanyData.push(organizedData);
-    console.log(`Processed ${company.company_name} (1/${company.length})`);
-    await saveCompanyDetails(organizedData);
-
-    return organizedData;
-}
-
-async function processSubsequentCompany(company, page) {
+async function processCompanyData(company, page, isSubsequentCompany = false) {
     console.log("Processing company:", company.company_name);
 
-    // For subsequent companies, go back to PIN checker efficiently
-    try {
-        const pinInputExists = await page.locator('input[name="vo\\.pinNo"]').isVisible()
-            .catch(() => false);
-
-        if (!pinInputExists) {
-            // If we can't see the PIN input, navigate back to PIN checker
-            await page.evaluate(() => pinchecker());
-            await page.waitForSelector('#captcha_img', { state: 'visible', timeout: 3000 });
-        }
-    } catch (error) {
-        console.error("Error navigating to PIN checker, trying full navigation:", error);
-        // If initial navigation failed, try the full navigation path
-        await page.goto("https://itax.kra.go.ke/KRA-Portal/");
-        await page.locator("#logid").click();
-        await page.evaluate(() => pinchecker());
-        await page.waitForSelector('#captcha_img', { state: 'visible', timeout: 5000 });
-    }
-
-    return await solveCaptchaAndGetData(company, page);
-}
-
-async function solveCaptchaAndGetData(company, page) {
-    // This check is a safeguard (should never be reached at this point)
+    // This check should never be reached since we filter companies without KRA PIN earlier,
+    // but keeping it as a safeguard
     if (!company.kra_pin) {
         return {
             company_name: company.company_name,
@@ -405,126 +321,122 @@ async function solveCaptchaAndGetData(company, page) {
         };
     }
 
-    const maxAttempts = 5;
-    let attempts = 0;
+    if (isSubsequentCompany) {
+        // For subsequent companies, just search the PIN directly without reloading the page
+        await page.evaluate(() => pinchecker());
+        await page.waitForSelector('#captcha_img', { state: 'visible' });
+        await loginToKRA(page, company, true);
+    } else {
+        // For the first company, do the full login process
+        await loginToKRA(page, company, false);
+    }
+    await clickObligationDetails(page);
 
-    while (attempts < maxAttempts) {
-        try {
-            // Take a screenshot of the CAPTCHA
-            await page.waitForLoadState('networkidle');
+    const tableContent = await page.evaluate(() => {
+        const table = document.querySelector(
+            "#pinCheckerForm > div:nth-child(9) > center > div > table > tbody > tr:nth-child(5) > td > fieldset > div > table"
+        );
+        return table ? table.innerText : "Table not found";
+    });
+
+    return organizeData(company.company_name, tableContent);
+}
+
+async function loginToKRA(page, company, isAlreadyOnPinCheckerPage = false) {
+    try {
+        if (!isAlreadyOnPinCheckerPage) {
+            await page.goto("https://itax.kra.go.ke/KRA-Portal/");
+            await page.locator("#logid").click();
+            await page.evaluate(() => pinchecker());
+            // Wait for the captcha to appear instead of arbitrary timeout
+            await page.waitForSelector('#captcha_img', { state: 'visible' });
+        }
+
+        const maxAttempts = 5;
+        let attempts = 0;
+
+        while (attempts < maxAttempts) {
+            // Optimize CAPTCHA processing
             const image = await page.waitForSelector("#captcha_img");
             const imagePath = path.join(os.tmpdir(), `ocr_${Date.now()}.png`);
             await image.screenshot({ path: imagePath });
 
-            const worker = await createWorker('eng', 1);
-            console.log("Extracting Text...");
-            const ret = await worker.recognize(imagePath);
+            // Create worker only once and reuse it for better performance
+            const worker = await createWorker('eng', 1, {
+                langPath: path.join(os.tmpdir(), 'tessdata'),
+                cachePath: path.join(os.tmpdir(), 'tesscache'),
+                cacheMethod: 'refresh',
+            });
 
-            const text1 = ret.data.text.slice(0, -1); // Omit the last character
-            const text = text1.slice(0, -1);
-            const numbers = text.match(/\d+/g);
-            console.log('Extracted Numbers:', numbers);
-
-            if (!numbers || numbers.length < 2) {
-                throw new Error("Unable to extract valid numbers from the text.");
-            }
-
-            let result;
-            if (text.includes("+")) {
-                result = Number(numbers[0]) + Number(numbers[1]);
-            } else if (text.includes("-")) {
-                result = Number(numbers[0]) - Number(numbers[1]);
-            } else {
-                throw new Error("Unsupported operator.");
-            }
-
-            console.log(`CAPTCHA solution: ${numbers[0]} ${text.includes("+") ? "+" : "-"} ${numbers[1]} = ${result}`);
-            await worker.terminate();
-
-            // Fill in the CAPTCHA and PIN
-            await page.locator("#captcahText").clear();
-            await page.type("#captcahText", result.toString());
-            await page.locator('input[name="vo\\.pinNo"]').clear();
-            await page.locator('input[name="vo\\.pinNo"]').fill(company.kra_pin);
-            await page.getByRole("button", { name: "Consult" }).click();
-
-            // Check if login was successful by looking for error message with a short timeout
-            const isInvalidLogin = await page.locator('b:has-text("Wrong result")').isVisible({ timeout: 1000 })
-                .catch(() => false);
-
-            if (isInvalidLogin) {
-                console.log("Wrong result of the arithmetic operation, retrying...");
+            try {
+                const ret = await worker.recognize(imagePath);
+                // Extract text and clean it more efficiently
+                const text = ret.data.text.trim();
+                const captchaMatch = text.match(/(\d+)\s*([+\-])\s*(\d+)/i);
+                
+                if (!captchaMatch) {
+                    console.log(`Invalid CAPTCHA text: "${text}". Retrying...`);
+                    attempts++;
+                    continue;
+                }
+                
+                const num1 = parseInt(captchaMatch[1], 10);
+                const operator = captchaMatch[2];
+                const num2 = parseInt(captchaMatch[3], 10);
+                
+                let result;
+                if (operator === '+') {
+                    result = num1 + num2;
+                } else if (operator === '-') {
+                    result = num1 - num2;
+                } else {
+                    console.log(`Unsupported operator: ${operator}. Retrying...`);
+                    attempts++;
+                    continue;
+                }
+                
+                await worker.terminate();
+                
+                await page.type("#captcahText", result.toString());
+                await page.locator('input[name="vo\\.pinNo"]').fill(company.kra_pin);
+                await page.getByRole("button", { name: "Consult" }).click();
+            } catch (error) {
+                console.error("Error processing CAPTCHA:", error);
                 attempts++;
                 continue;
             }
 
-            // Wait for content to load
-            await page.waitForSelector('fieldset[value="obligationDetailsDiv"]', { state: 'visible', timeout: 5000 })
-                .catch(() => console.log("Obligation details section not found within timeout"));
+            // Check if login was successful
+            const isInvalidLogin = await page.waitForSelector('b:has-text("Wrong result of the arithmetic operation.")', { state: 'visible', timeout: 1000 })
+                .catch(() => false);
 
-            // Click on Obligation Details
-            let obligationClicked = false;
-            for (let clickAttempt = 0; clickAttempt < 3; clickAttempt++) {
-                try {
-                    await page.getByRole("group", { name: "Obligation Details" }).click({ timeout: 2000 });
-                    obligationClicked = true;
-                    break;
-                } catch (error) {
-                    console.log(`Click attempt ${clickAttempt + 1} failed:`, error.message);
-                    await page.waitForTimeout(500);
-                }
+            if (!isInvalidLogin) {
+                console.log("Login successful");
+                return; // Exit the function if login is successful
             }
 
-            if (!obligationClicked) {
-                throw new Error("Failed to click Obligation Details after multiple attempts");
-            }
-
-            // Wait for the table to load
-            await page.waitForSelector('#pinCheckerForm > div:nth-child(9) > center > div > table > tbody > tr:nth-child(5) > td > fieldset > div > table',
-                { state: 'visible', timeout: 5000 })
-                .catch(() => console.log("Obligation details table not found within timeout"));
-
-            // Extract the table content
-            const tableContent = await page.evaluate(() => {
-                const table = document.querySelector(
-                    "#pinCheckerForm > div:nth-child(9) > center > div > table > tbody > tr:nth-child(5) > td > fieldset > div > table"
-                );
-                return table ? table.innerText : "Table not found";
-            });
-
-            return organizeData(company.company_name, tableContent);
-        } catch (error) {
-            console.error(`Attempt ${attempts + 1} failed:`, error.message);
+            console.log("Wrong result of the arithmetic operation, retrying...");
             attempts++;
-
-            if (attempts >= maxAttempts) {
-                return {
-                    company_name: company.company_name,
-                    income_tax_company_status: 'No obligation',
-                    income_tax_company_effective_from: 'No obligation',
-                    income_tax_company_effective_to: 'No obligation',
-                    vat_status: 'No obligation',
-                    vat_effective_from: 'No obligation',
-                    vat_effective_to: 'No obligation',
-                    paye_status: 'No obligation',
-                    paye_effective_from: 'No obligation',
-                    paye_effective_to: 'No obligation',
-                    rent_income_mri_status: 'No obligation',
-                    rent_income_mri_effective_from: 'No obligation',
-                    rent_income_mri_effective_to: 'No obligation',
-                    resident_individual_status: 'No obligation',
-                    resident_individual_effective_from: 'No obligation',
-                    resident_individual_effective_to: 'No obligation',
-                    turnover_tax_status: 'No obligation',
-                    turnover_tax_effective_from: 'No obligation',
-                    turnover_tax_effective_to: 'No obligation',
-                    error_message: `Failed after ${maxAttempts} attempts: ${error.message}`
-                };
-            }
-
-            // Short pause before retrying
-            await page.waitForTimeout(500);
         }
+
+        throw new Error("Max login attempts reached. Unable to log in.");
+    } catch (error) {
+        console.error("Error during KRA login:", error);
+        throw error;
+    }
+}
+
+async function clickObligationDetails(page) {
+    try {
+        // Wait for the Obligation Details group to be visible instead of arbitrary timeout
+        await page.waitForSelector('fieldset[value="obligationDetailsDiv"]', { state: 'visible', timeout: 5000 });
+        await page.getByRole("group", { name: "Obligation Details" }).click();
+        // Wait for the obligation table to load
+        await page.waitForSelector('#pinCheckerForm > div:nth-child(9) > center > div > table > tbody > tr:nth-child(5) > td > fieldset > div > table', { state: 'visible', timeout: 5000 })
+        return true;
+    } catch (error) {
+        console.error("Error clicking Obligation Details:", error);
+        return false;
     }
 }
 
@@ -553,20 +465,8 @@ function organizeData(companyName, tableContent) {
         error_message: ''
     };
 
-    if (!tableContent || tableContent === "Table not found") {
-        data.error_message = "Could not find obligation details table";
-        return data;
-    }
-
     for (const line of lines) {
-        // Skip header row
-        if (line.startsWith('Obligation Name') || line.length < 5) continue;
-
-        const parts = line.split("\t").map(part => part.trim());
-        // Ensure we have at least name and status
-        if (parts.length < 2) continue;
-
-        const [obligationName, currentStatus, effectiveFromDate = "", effectiveToDate = ""] = parts;
+        const [obligationName, currentStatus, effectiveFromDate, effectiveToDate = ""] = line.split("\t");
 
         switch (obligationName) {
             case 'Income Tax - PAYE':
@@ -613,4 +513,128 @@ async function saveCompanyDetails(details) {
 
     const { error } = await supabase.from('PinCheckerDetails').upsert(detailsWithTimestamp, { onConflict: "company_name" });
     if (error) throw error;
+}
+
+function createExcelFile(companyData) {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet("Company Obligations");
+
+    const headers = [
+        "Index",
+        "Company Name",
+        "Income Tax - Company Current Status",
+        "Income Tax - Company Effective From Date",
+        "Income Tax - Company Effective To Date",
+        "Value Added Tax (VAT) Current Status",
+        "Value Added Tax (VAT) Effective From Date",
+        "Value Added Tax (VAT) Effective To Date",
+        "Income Tax - PAYE Current Status",
+        "Income Tax - PAYE Effective From Date",
+        "Income Tax - PAYE Effective To Date",
+        "Income Tax - Rent Income (MRI) Current Status",
+        "Income Tax - Rent Income (MRI) Effective From Date",
+        "Income Tax - Rent Income (MRI) Effective To Date",
+        "Income Tax - Resident Individual Current Status",
+        "Income Tax - Resident Individual Effective From Date",
+        "Income Tax - Resident Individual Effective To Date",
+        "Income Tax - Turnover Tax Current Status",
+        "Income Tax - Turnover Tax Effective From Date",
+        "Income Tax - Turnover Tax Effective To Date",
+        "Error"
+    ];
+
+    const headerRow = worksheet.getRow(3);
+    headers.forEach((header, index) => {
+        const cell = headerRow.getCell(index + 2);
+        cell.value = header;
+        cell.font = { bold: true };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } }; // Yellow background
+        cell.border = {
+            top: { style: 'thin' },
+            left: { style: 'thin' },
+            bottom: { style: 'thin' },
+            right: { style: 'thin' }
+        };
+    });
+
+    const colors = {
+        companyTax: 'FFB3E0F0',
+        vat: 'FFF0D9B3',
+        paye: 'FFD9F0B3',
+        rentIncome: 'FFE0B3F0',
+        residentIndividual: 'FFB3F0D9',
+        turnoverTax: 'FFB3F0D9'
+    };
+
+    companyData.forEach((company, index) => {
+        const rowIndex = index + 4; // Start from row 4 (row 3 is header)
+        const row = worksheet.getRow(rowIndex);
+
+        let values = [
+            index + 1,
+            company.company_name,
+            company.income_tax_company_status,
+            company.income_tax_company_effective_from,
+            company.income_tax_company_effective_to,
+            company.vat_status,
+            company.vat_effective_from,
+            company.vat_effective_to,
+            company.paye_status,
+            company.paye_effective_from,
+            company.paye_effective_to,
+            company.rent_income_mri_status,
+            company.rent_income_mri_effective_from,
+            company.rent_income_mri_effective_to,
+            company.resident_individual_status,
+            company.resident_individual_effective_from,
+            company.resident_individual_effective_to,
+            company.turnover_tax_status,
+            company.turnover_tax_effective_from,
+            company.turnover_tax_effective_to,
+            company.error_message || ""
+        ];
+
+        values.forEach((value, cellIndex) => {
+            const cell = row.getCell(cellIndex + 2);
+            cell.value = value;
+            cell.border = {
+                top: { style: 'thin' },
+                left: { style: 'thin' },
+                bottom: { style: 'thin' },
+                right: { style: 'thin' }
+            };
+            cell.alignment = { vertical: 'middle', horizontal: 'center' };
+        });
+
+        row.getCell(4).fill = row.getCell(5).fill = row.getCell(6).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: colors.companyTax } };
+        row.getCell(7).fill = row.getCell(8).fill = row.getCell(9).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: colors.vat } };
+        row.getCell(10).fill = row.getCell(11).fill = row.getCell(12).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: colors.paye } };
+        row.getCell(13).fill = row.getCell(14).fill = row.getCell(15).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: colors.rentIncome } };
+        row.getCell(16).fill = row.getCell(17).fill = row.getCell(18).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: colors.residentIndividual } };
+        row.getCell(19).fill = row.getCell(20).fill = row.getCell(21).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFB3F0D9' } }; // Turnover Tax color
+
+        for (let i = 4; i <= 21; i++) {
+            const cell = row.getCell(i);
+            if (!cell.value || cell.value === "No obligation") {
+                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFC0CB' } }; // Light red
+            }
+        }
+
+        if (company.error_message) {
+            row.getCell(22).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFF0000' } }; // Red
+        }
+    });
+
+    worksheet.columns.forEach(column => {
+        let maxLength = 0;
+        column.eachCell({ includeEmpty: true }, (cell) => {
+            const columnLength = cell.value ? cell.value.toString().length : 0;
+            if (columnLength > maxLength) {
+                maxLength = columnLength;
+            }
+        });
+        column.width = maxLength + 2;
+    });
+
+    return workbook;
 }
