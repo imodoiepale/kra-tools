@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow,TableFoot
 import { supabase } from '@/lib/supabase'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { motion } from "framer-motion"
-import { ManufacturersDetailsRunning } from '../suppliers/components/ManufacturersDetailsRunning';
+import { ManufacturersDetailsRunning } from '../suppliers+customers/components/ManufacturersDetailsRunning';
 import { ManufacturersDetailsReports } from './components/ManufacturersDetailsReports';
 
 interface Manufacturer {

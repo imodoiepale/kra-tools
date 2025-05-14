@@ -13,9 +13,9 @@ import ExcelJS from 'exceljs'
 import { Checkbox } from "@/components/ui/checkbox"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuCheckboxItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { ClientCategoryFilter } from "@/components/ClientCategoryFilter"
-import { fetchSuppliers, type Supplier } from '../utils/suppliers'
 import { supabase } from '@/lib/supabase'
 import { TablePagination } from "@/components/TablePagination"
+import { fetchSuppliers, type Supplier } from '../utils/suppliers';
 
 interface Manufacturer {
   id: number

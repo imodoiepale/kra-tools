@@ -8,15 +8,16 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableFooter } from "@/components/ui/table"
-import { ManufacturersDetailsRunning } from '../suppliers/components/ManufacturersDetailsRunning'
-import { fetchSuppliers, type Supplier } from '../suppliers/utils/suppliers'
+import { ManufacturersDetailsRunning } from './components/ManufacturersDetailsRunning'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { motion } from "framer-motion"
-import { ManufacturersDetailsReports } from '../suppliers/components/ManufacturersDetailsReports'
+import { ManufacturersDetailsReports } from './components/ManufacturersDetailsReports'
 import { Input } from "@/components/ui/input"
 import { Search, ArrowUpDown } from "lucide-react"
 import { kraService } from '../services/kra-service'
 import { Badge } from "@/components/ui/badge"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { fetchSuppliers, type Supplier } from './utils/suppliers';
 
 interface Manufacturer {
     id: number;
@@ -46,6 +47,8 @@ export default function ManufacturersDetailsSuppliers() {
     const [selectedManufacturers, setSelectedManufacturers] = useState<number[]>([])
     const [runOption, setRunOption] = useState<'all' | 'selected' | 'missing'>('all')
     const [searchTerm, setSearchTerm] = useState('')
+    const [newPins, setNewPins] = useState('')
+    const [dialogOpen, setDialogOpen] = useState(false)
     const [kraResults, setKraResults] = useState<any[]>([])
     const [kraSummary, setKraSummary] = useState<any>(null)
     const [sortConfig, setSortConfig] = useState<{
@@ -126,7 +129,7 @@ export default function ManufacturersDetailsSuppliers() {
 
             const { results, summary } = await kraService.startManufacturerDetailsCheck({
                 kraPins,
-                type: 'suppliers'
+                type: 'suppliers_and_customers'
             });
             setKraResults(results)
             setKraSummary(summary)
@@ -180,6 +183,76 @@ export default function ManufacturersDetailsSuppliers() {
                                                 </SelectContent>
                                             </Select>
                                         </div>
+
+                                        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+                                            <DialogTrigger asChild>
+                                                <Button size="sm">
+                                                    Process New Supplier PIN
+                                                </Button>
+                                            </DialogTrigger>
+                                            <DialogContent className="sm:max-w-md">
+                                                <DialogHeader>
+                                                    <DialogTitle>Process New Supplier PINs</DialogTitle>
+                                                    <DialogDescription>
+                                                        Enter multiple PINs (one per line) to process them in batch.
+                                                    </DialogDescription>
+                                                </DialogHeader>
+                                                <div className="space-y-4">
+                                                    <div className="flex flex-col space-y-2">
+                                                        <label className="text-sm font-medium">Enter Manufacturer PINs (one per line)</label>
+                                                        <textarea
+                                                            placeholder="Enter manufacturer PINs (one per line)"
+                                                            value={newPins}
+                                                            onChange={(e) => setNewPins(e.target.value)}
+                                                            className="min-h-[100px] w-full p-2 border rounded-md"
+                                                        />
+                                                        <div className="text-sm text-muted-foreground">
+                                                            {newPins.split('\n').filter(pin => pin.trim()).length} PINs entered
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex space-x-2">
+                                                        <Button
+                                                            onClick={() => {
+                                                                const kraPins = newPins
+                                                                    .split('\n')
+                                                                    .map(pin => pin.trim())
+                                                                    .filter(pin => pin.length > 0);
+
+                                                                if (kraPins.length > 0) {
+                                                                    kraService.startManufacturerDetailsCheck({
+                                                                        kraPins,
+                                                                        type: 'suppliers_and_customers'
+                                                                    }).then(({ results, summary }) => {
+                                                                        setKraResults(results);
+                                                                        setKraSummary(summary);
+                                                                        setActiveTab("running");
+                                                                        setNewPins('');
+                                                                        setDialogOpen(false);
+                                                                    }).catch(error => {
+                                                                        console.error('Error checking PINs:', error);
+                                                                        alert('Failed to check PINs. Please try again.');
+                                                                    });
+                                                                }
+                                                            }}
+                                                            size="sm"
+                                                            disabled={!newPins.trim()}
+                                                        >
+                                                            Start Manufacturers Check
+                                                        </Button>
+                                                        <Button
+                                                            onClick={() => {
+                                                                setNewPins('');
+                                                                setShowPinInput(false);
+                                                            }}
+                                                            variant="outline"
+                                                            size="sm"
+                                                        >
+                                                            Cancel
+                                                        </Button>
+                                                    </div>
+                                                </div>
+                                            </DialogContent>
+                                        </Dialog>
 
                                         <div className="relative">
                                             <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
