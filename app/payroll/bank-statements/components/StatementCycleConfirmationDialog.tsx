@@ -72,23 +72,21 @@ export function StatementCycleConfirmationDialog({
                 {/* Enhanced summary display in the dialog header */}
                 <DialogHeader>
                     <DialogTitle className="text-xl">Confirm Statement Cycles</DialogTitle>
-                    <DialogDescription className="space-y-2">
-                        <p>
-                            Based on the statement periods <span className="font-medium">{statementPeriod}</span>, the following statement cycles are detected:
-                        </p>
-                        <div className="mt-2 space-y-1">
-                            <div className="text-sm font-medium">Files being processed:</div>
-                            <ul className="text-sm list-disc pl-5">
-                                {files.map((file, index) => (
-                                    <li key={index}>
-                                        {file.name} 
-                                        {file.period && <span className="text-muted-foreground ml-1">({file.period})</span>}
-                                        {file.matchedBank && <span className="text-blue-600 ml-1">- {file.matchedBank.bank_name}</span>}
-                                    </li>
-                                ))}
-                            </ul>
-                        </div>
+                    <DialogDescription>
+                        Based on the statement periods <span className="font-medium">{statementPeriod}</span>, the following statement cycles are detected:
                     </DialogDescription>
+                    <div className="mt-3 space-y-2">
+                        <div className="text-sm font-medium">Files being processed:</div>
+                        <ul className="text-sm list-disc pl-5">
+                            {files.map((file, index) => (
+                                <li key={index}>
+                                    {file.name} 
+                                    {file.period && <span className="text-muted-foreground ml-1">({file.period})</span>}
+                                    {file.matchedBank && <span className="text-blue-600 ml-1">- {file.matchedBank.bank_name}</span>}
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
                 </DialogHeader>
 
                 <div className="flex-1 overflow-auto py-4 space-y-4">
