@@ -296,7 +296,7 @@ export default function ManufacturersDetailsSuppliers() {
                                                                             onClick={() => handleSort('manufacturer_name')}
                                                                             className="h-8 p-0"
                                                                         >
-                                                                            Supplier Name As Per Pin
+                                                                            Manufacturer's Name
                                                                             <ArrowUpDown className="ml-2 h-4 w-4" />
                                                                         </Button>
                                                                     </TableHead>
@@ -341,7 +341,7 @@ export default function ManufacturersDetailsSuppliers() {
                                                                             <TableHead>#</TableHead>
                                                                             <TableHead>PIN Number</TableHead>
                                                                             <TableHead>
-                                                                                Supplier Name As Per Pin
+                                                                                Manufacturer's Name
                                                                                 {selectedManufacturers.length > 0 && (
                                                                                     <Badge variant="secondary" className="ml-2">
                                                                                         {selectedManufacturers.length}

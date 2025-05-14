@@ -44,7 +44,7 @@ export function ManufacturersDetailsReports() {
   const [searchTerm, setSearchTerm] = useState('')
   const [editingManufacturer, setEditingManufacturer] = useState<Supplier | null>(null)
   const [visibleColumns, setVisibleColumns] = useState({
-    manufacturer_name: { visible: true, label: 'Supplier Name as Per Pin' },
+    manufacturer_name: { visible: true, label: 'Manufacturer\'s Name' },
     pin_no: { visible: true, label: 'PIN Number' },
     itax_office_no: { visible: false, label: 'Office Number' },
     itax_telephone_no: { visible: true, label: 'Telephone Number' },
