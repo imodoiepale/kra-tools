@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabase';
 
 export interface Customer {
     id: number;
-    customer_name_as_per_pin: string;
+    manufacturer_name: string;
     pin_no: string;
     last_checked_at: string | null;
 }
@@ -17,7 +17,7 @@ export async function fetchCustomers() {
 
         while (hasMore) {
             const { data, error, count } = await supabase
-                .from('acc_portal_kra_customers')
+                .from('acc_portal_kra_pins_suppliers_and_customers')
                 .select('*', { count: 'exact' })
                 .order('pin_no', { ascending: true })
                 .range(page * pageSize, (page + 1) * pageSize - 1);
@@ -53,8 +53,8 @@ export async function fetchCustomersByPinNo() {
 
         while (hasMore) {
             const { data, error, count } = await supabase
-                .from('acc_portal_kra_customers')
-                .select('id, pin_no, customer_name_as_per_pin', { count: 'exact' })
+                .from('acc_portal_kra_pins_suppliers_and_customers')
+                .select('id, pin_no, manufacturer_name', { count: 'exact' })
                 .order('pin_no', { ascending: true })
                 .range(page * pageSize, (page + 1) * pageSize - 1);
 

@@ -20,7 +20,7 @@ import { Badge } from "@/components/ui/badge"
 
 interface Manufacturer {
     id: number;
-    customer_name_as_per_pin: string;
+    manufacturer_name: string;
     pin_no: string;
     last_checked_at: string | null;
 }
@@ -60,7 +60,7 @@ export default function ManufacturersDetailsCustomers() {
     useEffect(() => {
         if (runOption === 'missing') {
             const missingCustomers = manufacturers
-                .filter(m => !m.customer_name_as_per_pin)
+                .filter(m => !m.manufacturer_name)
                 .map(m => m.id);
             setSelectedManufacturers(missingCustomers);
         } else if (runOption === 'all') {
@@ -83,7 +83,7 @@ export default function ManufacturersDetailsCustomers() {
         const searchLower = searchTerm.toLowerCase();
         return (
             manufacturer.pin_no?.toLowerCase().includes(searchLower) ||
-            manufacturer.customer_name_as_per_pin?.toLowerCase().includes(searchLower)
+            manufacturer.manufacturer_name?.toLowerCase().includes(searchLower)
         );
     });
 
@@ -218,7 +218,7 @@ export default function ManufacturersDetailsCustomers() {
                                                                     <TableHead className="sticky top-0 bg-white">
                                                                         <Button
                                                                             variant="ghost"
-                                                                            onClick={() => handleSort('customer_name_as_per_pin')}
+                                                                            onClick={() => handleSort('manufacturer_name')}
                                                                             className="h-8 p-0"
                                                                         >
                                                                             Customer Name As Per Pin
@@ -242,7 +242,7 @@ export default function ManufacturersDetailsCustomers() {
                                                                             {manufacturer.pin_no ? manufacturer.pin_no : <span className="text-red-500 font-medium">Missing</span>}
                                                                         </TableCell>
                                                                         <TableCell>
-                                                                            {manufacturer.customer_name_as_per_pin ? manufacturer.customer_name_as_per_pin : <span className="text-red-500 font-medium">Missing</span>}
+                                                                            {manufacturer.manufacturer_name ? manufacturer.manufacturer_name : <span className="text-red-500 font-medium">Missing</span>}
                                                                         </TableCell>
                                                                     </TableRow>
                                                                 ))}
@@ -282,7 +282,7 @@ export default function ManufacturersDetailsCustomers() {
                                                                                     {manufacturer.pin_no ? manufacturer.pin_no : <span className="text-red-500 font-medium">Missing</span>}
                                                                                 </TableCell>
                                                                                 <TableCell>
-                                                                                    {manufacturer.customer_name_as_per_pin ? manufacturer.customer_name_as_per_pin : <span className="text-red-500 font-medium">Missing</span>}
+                                                                                    {manufacturer.manufacturer_name ? manufacturer.manufacturer_name : <span className="text-red-500 font-medium">Missing</span>}
                                                                                 </TableCell>
                                                                             </TableRow>
                                                                         ))}

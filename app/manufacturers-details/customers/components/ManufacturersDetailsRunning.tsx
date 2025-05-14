@@ -102,7 +102,7 @@ export function ManufacturersDetailsRunning({
         const fetchProgress = async () => {
             // Get initial count of customers to process
             const { data: customerData } = await supabase
-                .from('acc_portal_kra_customers')
+                .from('acc_portal_kra_pins_suppliers_and_customers')
                 .select('pin_no')
 
             setTotalCompanies(customerData?.length || 0)

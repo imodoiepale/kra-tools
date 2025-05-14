@@ -19,7 +19,7 @@ import { TablePagination } from "@/components/TablePagination"
 
 interface Manufacturer {
   id: number
-  supplier_name_as_per_pin: string
+  manufacturer_name: string
   pin_no: string
   itax_office_no: string
   itax_telephone_no: string
@@ -44,7 +44,7 @@ export function ManufacturersDetailsReports() {
   const [searchTerm, setSearchTerm] = useState('')
   const [editingManufacturer, setEditingManufacturer] = useState<Supplier | null>(null)
   const [visibleColumns, setVisibleColumns] = useState({
-    supplier_name_as_per_pin: { visible: true, label: 'Supplier Name as Per Pin' },
+    manufacturer_name: { visible: true, label: 'Supplier Name as Per Pin' },
     pin_no: { visible: true, label: 'PIN Number' },
     itax_office_no: { visible: false, label: 'Office Number' },
     itax_telephone_no: { visible: true, label: 'Telephone Number' },
@@ -88,7 +88,7 @@ export function ManufacturersDetailsReports() {
   const handleSave = async (updatedManufacturer: Supplier) => {
     const { id, ...updateData } = updatedManufacturer
     const { error } = await supabase
-      .from('acc_portal_kra_suppliers')
+      .from('acc_portal_kra_pins_suppliers_and_customers')
       .update(updateData)
       .eq('id', id)
 
@@ -102,7 +102,7 @@ export function ManufacturersDetailsReports() {
 
   const handleDelete = async (id: number) => {
     const { error } = await supabase
-      .from('acc_portal_kra_suppliers')
+      .from('acc_portal_kra_pins_suppliers_and_customers')
       .delete()
       .eq('id', id)
 

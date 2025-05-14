@@ -15,7 +15,7 @@ const getAllKraPins = async () => {
 
   while (true) {
     const { data, error } = await supabase
-      .from('acc_portal_kra_suppliers')
+      .from('acc_portal_kra_pins_suppliers_and_customers')
       .select('pin_no')
       .not('pin_no', 'is', null)
       .range(page * pageSize, (page + 1) * pageSize - 1);
