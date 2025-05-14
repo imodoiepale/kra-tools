@@ -170,89 +170,91 @@ export default function ManufacturersDetailsSuppliers() {
                                 </CardHeader>
                                 <CardContent>
                                     <div className="space-y-4">
-                                        <div className="flex items-center space-x-2">
-                                            <label className="text-sm font-medium">Run option:</label>
-                                            <Select value={runOption} onValueChange={(value) => setRunOption(value as 'all' | 'selected' | 'missing')}>
-                                                <SelectTrigger className="w-[180px]">
-                                                    <SelectValue placeholder="Select run option" />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    <SelectItem value="all">All Supplier Pins</SelectItem>
-                                                    <SelectItem value="selected">Selected Supplier Pin</SelectItem>
-                                                    <SelectItem value="missing">Selected Missing</SelectItem>
-                                                </SelectContent>
-                                            </Select>
-                                        </div>
+                                        <div className="flex justify-between">
+                                            <div className="flex items-center space-x-2">
+                                                <label className="text-sm font-medium">Run option:</label>
+                                                <Select value={runOption} onValueChange={(value) => setRunOption(value as 'all' | 'selected' | 'missing')}>
+                                                    <SelectTrigger className="w-[180px]">
+                                                        <SelectValue placeholder="Select run option" />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        <SelectItem value="all">All Supplier Pins</SelectItem>
+                                                        <SelectItem value="selected">Selected Supplier Pin</SelectItem>
+                                                        <SelectItem value="missing">Selected Missing</SelectItem>
+                                                    </SelectContent>
+                                                </Select>
+                                            </div>
 
-                                        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-                                            <DialogTrigger asChild>
-                                                <Button size="sm">
-                                                    Process New Supplier PIN
-                                                </Button>
-                                            </DialogTrigger>
-                                            <DialogContent className="sm:max-w-md">
-                                                <DialogHeader>
-                                                    <DialogTitle>Process New Supplier PINs</DialogTitle>
-                                                    <DialogDescription>
-                                                        Enter multiple PINs (one per line) to process them in batch.
-                                                    </DialogDescription>
-                                                </DialogHeader>
-                                                <div className="space-y-4">
-                                                    <div className="flex flex-col space-y-2">
-                                                        <label className="text-sm font-medium">Enter Manufacturer PINs (one per line)</label>
-                                                        <textarea
-                                                            placeholder="Enter manufacturer PINs (one per line)"
-                                                            value={newPins}
-                                                            onChange={(e) => setNewPins(e.target.value)}
-                                                            className="min-h-[100px] w-full p-2 border rounded-md"
-                                                        />
-                                                        <div className="text-sm text-muted-foreground">
-                                                            {newPins.split('\n').filter(pin => pin.trim()).length} PINs entered
+                                            <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+                                                <DialogTrigger asChild>
+                                                    <Button size="sm">
+                                                        Process New Supplier PIN
+                                                    </Button>
+                                                </DialogTrigger>
+                                                <DialogContent className="sm:max-w-md">
+                                                    <DialogHeader>
+                                                        <DialogTitle>Process New Supplier PINs</DialogTitle>
+                                                        <DialogDescription>
+                                                            Enter multiple PINs (one per line) to process them in batch.
+                                                        </DialogDescription>
+                                                    </DialogHeader>
+                                                    <div className="space-y-4">
+                                                        <div className="flex flex-col space-y-2">
+                                                            <label className="text-sm font-medium">Enter Manufacturer PINs (one per line)</label>
+                                                            <textarea
+                                                                placeholder="Enter manufacturer PINs (one per line)"
+                                                                value={newPins}
+                                                                onChange={(e) => setNewPins(e.target.value)}
+                                                                className="min-h-[100px] w-full p-2 border rounded-md"
+                                                            />
+                                                            <div className="text-sm text-muted-foreground">
+                                                                {newPins.split('\n').filter(pin => pin.trim()).length} PINs entered
+                                                            </div>
+                                                        </div>
+                                                        <div className="flex space-x-2">
+                                                            <Button
+                                                                onClick={() => {
+                                                                    const kraPins = newPins
+                                                                        .split('\n')
+                                                                        .map(pin => pin.trim())
+                                                                        .filter(pin => pin.length > 0);
+
+                                                                    if (kraPins.length > 0) {
+                                                                        kraService.startManufacturerDetailsCheck({
+                                                                            kraPins,
+                                                                            type: 'suppliers_and_customers'
+                                                                        }).then(({ results, summary }) => {
+                                                                            setKraResults(results);
+                                                                            setKraSummary(summary);
+                                                                            setActiveTab("running");
+                                                                            setNewPins('');
+                                                                            setDialogOpen(false);
+                                                                        }).catch(error => {
+                                                                            console.error('Error checking PINs:', error);
+                                                                            alert('Failed to check PINs. Please try again.');
+                                                                        });
+                                                                    }
+                                                                }}
+                                                                size="sm"
+                                                                disabled={!newPins.trim()}
+                                                            >
+                                                                Start Manufacturers Check
+                                                            </Button>
+                                                            <Button
+                                                                onClick={() => {
+                                                                    setNewPins('');
+                                                                    setShowPinInput(false);
+                                                                }}
+                                                                variant="outline"
+                                                                size="sm"
+                                                            >
+                                                                Cancel
+                                                            </Button>
                                                         </div>
                                                     </div>
-                                                    <div className="flex space-x-2">
-                                                        <Button
-                                                            onClick={() => {
-                                                                const kraPins = newPins
-                                                                    .split('\n')
-                                                                    .map(pin => pin.trim())
-                                                                    .filter(pin => pin.length > 0);
-
-                                                                if (kraPins.length > 0) {
-                                                                    kraService.startManufacturerDetailsCheck({
-                                                                        kraPins,
-                                                                        type: 'suppliers_and_customers'
-                                                                    }).then(({ results, summary }) => {
-                                                                        setKraResults(results);
-                                                                        setKraSummary(summary);
-                                                                        setActiveTab("running");
-                                                                        setNewPins('');
-                                                                        setDialogOpen(false);
-                                                                    }).catch(error => {
-                                                                        console.error('Error checking PINs:', error);
-                                                                        alert('Failed to check PINs. Please try again.');
-                                                                    });
-                                                                }
-                                                            }}
-                                                            size="sm"
-                                                            disabled={!newPins.trim()}
-                                                        >
-                                                            Start Manufacturers Check
-                                                        </Button>
-                                                        <Button
-                                                            onClick={() => {
-                                                                setNewPins('');
-                                                                setShowPinInput(false);
-                                                            }}
-                                                            variant="outline"
-                                                            size="sm"
-                                                        >
-                                                            Cancel
-                                                        </Button>
-                                                    </div>
-                                                </div>
-                                            </DialogContent>
-                                        </Dialog>
+                                                </DialogContent>
+                                            </Dialog>
+                                        </div>
 
                                         <div className="relative">
                                             <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
