@@ -22,7 +22,7 @@ export default function PinCheckerDetails() {
     const [progress, setProgress] = useState(0)
     const [status, setStatus] = useState("Not Started")
     const [companies, setCompanies] = useState([])
-    const [selectedCompanies, setSelectedCompanies] = useState([])
+    const [selectedCompanies, setSelectedCompanies] = useState<number[]>([])
     const [runOption, setRunOption] = useState('all')
     const [clientType, setClientType] = useState('all')
     const [selectedCompany, setSelectedCompany] = useState<any>(null);
@@ -44,7 +44,8 @@ export default function PinCheckerDetails() {
         
         let query = supabase
             .from('acc_portal_company_duplicate')
-            .select('id, company_name, kra_pin, acc_client_effective_from, acc_client_effective_to, audit_tax_client_effective_from, audit_tax_client_effective_to');
+            .select('id, company_name, kra_pin, acc_client_effective_from, acc_client_effective_to, audit_client_effective_from, audit_client_effective_to')
+            .order('company_name', { ascending: true });
 
         const { data, error } = await query;
 
@@ -58,17 +59,19 @@ export default function PinCheckerDetails() {
             if (clientType === 'acc') {
                 return company.acc_client_effective_from <= currentDate && company.acc_client_effective_to >= currentDate;
             } else if (clientType === 'audit') {
-                return company.audit_tax_client_effective_from <= currentDate && company.audit_tax_client_effective_to >= currentDate;
+                return company.audit_client_effective_from <= currentDate && company.audit_client_effective_to >= currentDate;
             } else {
                 // All clients - either ACC or Audit
                 const isAccClient = company.acc_client_effective_from <= currentDate && company.acc_client_effective_to >= currentDate;
-                const isAuditClient = company.audit_tax_client_effective_from <= currentDate && company.audit_tax_client_effective_to >= currentDate;
+                const isAuditClient = company.audit_client_effective_from <= currentDate && company.audit_client_effective_to >= currentDate;
                 return isAccClient || isAuditClient;
             }
         });
 
         console.log('Filtered companies:', filteredData); // Debug log
         setCompanies(filteredData || []);
+        // Reset selected companies when the company list changes
+        setSelectedCompanies([]);
     };
 
     const checkProgress = async () => {
@@ -149,10 +152,16 @@ export default function PinCheckerDetails() {
         }
     }
 
-    const handleCheckboxChange = (id: string) => {
-        setSelectedCompanies((prev: string[] | never[]) =>
-            prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
-        )
+    const handleCheckboxChange = (id: number) => {
+        // Find the company by ID
+        const company = companies.find(c => Number(c.id) === id);
+        
+        // Only allow selection if the company has a KRA PIN
+        if (company && company.kra_pin) {
+            setSelectedCompanies((prev: number[]) =>
+                prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+            );
+        }
     }
 
     return (
@@ -221,7 +230,7 @@ export default function PinCheckerDetails() {
                                                                         checked={selectedCompanies.length === companies.length}
                                                                         onCheckedChange={(checked) => {
                                                                             if (checked) {
-                                                                                setSelectedCompanies(companies.map(c => c.id))
+                                                                                setSelectedCompanies(companies.map(c => Number(c.id)))
                                                                             } else {
                                                                                 setSelectedCompanies([])
                                                                             }
@@ -240,20 +249,27 @@ export default function PinCheckerDetails() {
                                                         </TableHeader>
                                                         <TableBody>
                                                             {companies.map((company, index) => (
-                                                                <TableRow key={company.id}>
+                                                                <TableRow key={company.id} className={`${selectedCompanies.includes(Number(company.id)) ? "bg-blue-50" : ""} ${!company.kra_pin ? "bg-red-50" : ""}`}>
                                                                     <TableCell>
                                                                         <Checkbox
-                                                                            checked={selectedCompanies.includes(company.id)}
-                                                                            onCheckedChange={() => handleCheckboxChange(company.id)}
+                                                                            disabled={!company.kra_pin}
+                                                                            checked={selectedCompanies.includes(Number(company.id))}
+                                                                            onCheckedChange={() => handleCheckboxChange(Number(company.id))}
                                                                         />
                                                                     </TableCell>
                                                                     <TableCell className="text-center">{index + 1}</TableCell>
                                                                     <TableCell>{company.company_name}</TableCell>
-                                                                    <TableCell>{company.kra_pin}</TableCell>
+                                                                    <TableCell>
+                                                                        {company.kra_pin ? (
+                                                                            company.kra_pin
+                                                                        ) : (
+                                                                            <span className="text-red-500 font-semibold">Missing PIN</span>
+                                                                        )}
+                                                                    </TableCell>
                                                                     <TableCell>{formatDateForDisplay(company.acc_client_effective_from)}</TableCell>
                                                                     <TableCell>{formatDateForDisplay(company.acc_client_effective_to)}</TableCell>
-                                                                    <TableCell>{formatDateForDisplay(company.audit_tax_client_effective_from)}</TableCell>
-                                                                    <TableCell>{formatDateForDisplay(company.audit_tax_client_effective_to)}</TableCell>
+                                                                    <TableCell>{formatDateForDisplay(company.audit_client_effective_from)}</TableCell>
+                                                                    <TableCell>{formatDateForDisplay(company.audit_client_effective_to)}</TableCell>
                                                                     <TableCell>
                                                                         <Button
                                                                             variant="outline"
@@ -298,11 +314,17 @@ export default function PinCheckerDetails() {
                                                                     <TableRow key={company.id} className="bg-blue-100">
                                                                         <TableCell>{index + 1}</TableCell>
                                                                         <TableCell>{company.company_name}</TableCell>
-                                                                        <TableCell>{company.kra_pin}</TableCell>
+                                                                        <TableCell>
+                                                                        {company.kra_pin ? (
+                                                                            company.kra_pin
+                                                                        ) : (
+                                                                            <span className="text-red-500 font-semibold">Missing PIN</span>
+                                                                        )}
+                                                                    </TableCell>
                                                                         <TableCell>{formatDateForDisplay(company.acc_client_effective_from)}</TableCell>
                                                                         <TableCell>{formatDateForDisplay(company.acc_client_effective_to)}</TableCell>
-                                                                        <TableCell>{formatDateForDisplay(company.audit_tax_client_effective_from)}</TableCell>
-                                                                        <TableCell>{formatDateForDisplay(company.audit_tax_client_effective_to)}</TableCell>
+                                                                        <TableCell>{formatDateForDisplay(company.audit_client_effective_from)}</TableCell>
+                                                                        <TableCell>{formatDateForDisplay(company.audit_client_effective_to)}</TableCell>
                                                                     </TableRow>
                                                                 ))}
                                                             </TableBody>

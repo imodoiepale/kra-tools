@@ -1,0 +1,864 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KRA Automation Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        .slide-in {
+            animation: slideIn 0.3s forwards;
+        }
+        
+        .slide-out {
+            animation: slideOut 0.3s forwards;
+        }
+        
+        @keyframes slideIn {
+            from { transform: translateX(100%); }
+            to { transform: translateX(0); }
+        }
+        
+        @keyframes slideOut {
+            from { transform: translateX(0); }
+            to { transform: translateX(100%); }
+        }
+        
+        .status-badge {
+            @apply px-2 py-1 rounded-full text-xs font-medium;
+        }
+        
+        .status-success {
+            @apply bg-green-100 text-green-800;
+        }
+        
+        .status-failed {
+            @apply bg-red-100 text-red-800;
+        }
+        
+        .status-in-progress {
+            @apply bg-yellow-100 text-yellow-800;
+        }
+        
+        .status-pending {
+            @apply bg-gray-100 text-gray-800;
+        }
+        
+        .automation-type {
+            @apply px-3 py-1 rounded-full text-xs font-medium;
+        }
+        
+        .type-authentication {
+            @apply bg-purple-100 text-purple-800;
+        }
+        
+        .type-extraction {
+            @apply bg-blue-100 text-blue-800;
+        }
+        
+        .type-compliance {
+            @apply bg-green-100 text-green-800;
+        }
+        
+        .type-verification {
+            @apply bg-yellow-100 text-yellow-800;
+        }
+        
+        .type-communication {
+            @apply bg-pink-100 text-pink-800;
+        }
+        
+        .log-entry {
+            @apply border-l-4 pl-4 py-2 mb-2;
+        }
+        
+        .log-info {
+            @apply border-blue-500 bg-blue-50 text-blue-800;
+        }
+        
+        .log-error {
+            @apply border-red-500 bg-red-50 text-red-800;
+        }
+        
+        .log-success {
+            @apply border-green-500 bg-green-50 text-green-800;
+        }
+        
+        .log-warning {
+            @apply border-yellow-500 bg-yellow-50 text-yellow-800;
+        }
+        
+        .sidebar-overlay {
+            background-color: rgba(0, 0, 0, 0.5);
+        }
+        
+        .table-row:hover {
+            @apply bg-gray-50 cursor-pointer;
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <div class="flex h-screen overflow-hidden">
+        <!-- Sidebar Navigation -->
+        <div class="hidden md:flex md:flex-shrink-0">
+            <div class="flex flex-col w-64 border-r border-gray-200 bg-white">
+                <div class="h-0 flex-1 flex flex-col pt-5 pb-4 overflow-y-auto">
+                    <div class="flex items-center flex-shrink-0 px-4">
+                        <img class="h-8 w-auto" src="https://www.kra.go.ke/images/logo.png" alt="KRA Logo">
+                        <span class="ml-2 text-xl font-bold text-gray-900">Automation Dashboard</span>
+                    </div>
+                    <nav class="mt-5 flex-1 px-2 space-y-1">
+                        <a href="#" class="group flex items-center px-2 py-2 text-sm font-medium rounded-md text-white bg-indigo-600">
+                            <i class="fas fa-tachometer-alt mr-3 flex-shrink-0 h-6 w-6 text-indigo-300"></i>
+                            Dashboard
+                        </a>
+                        <a href="#" class="group flex items-center px-2 py-2 text-sm font-medium rounded-md text-gray-600 hover:text-gray-900 hover:bg-gray-50">
+                            <i class="fas fa-cog mr-3 flex-shrink-0 h-6 w-6 text-gray-400 group-hover:text-gray-500"></i>
+                            Settings
+                        </a>
+                        <a href="#" class="group flex items-center px-2 py-2 text-sm font-medium rounded-md text-gray-600 hover:text-gray-900 hover:bg-gray-50">
+                            <i class="fas fa-history mr-3 flex-shrink-0 h-6 w-6 text-gray-400 group-hover:text-gray-500"></i>
+                            Audit Logs
+                        </a>
+                        <a href="#" class="group flex items-center px-2 py-2 text-sm font-medium rounded-md text-gray-600 hover:text-gray-900 hover:bg-gray-50">
+                            <i class="fas fa-users mr-3 flex-shrink-0 h-6 w-6 text-gray-400 group-hover:text-gray-500"></i>
+                            Companies
+                        </a>
+                        <a href="#" class="group flex items-center px-2 py-2 text-sm font-medium rounded-md text-gray-600 hover:text-gray-900 hover:bg-gray-50">
+                            <i class="fas fa-file-alt mr-3 flex-shrink-0 h-6 w-6 text-gray-400 group-hover:text-gray-500"></i>
+                            Reports
+                        </a>
+                    </nav>
+                </div>
+                <div class="flex-shrink-0 flex border-t border-gray-200 p-4">
+                    <div class="flex items-center">
+                        <div>
+                            <img class="inline-block h-9 w-9 rounded-full" src="https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-1.2.1&ixid=eyJhcHBfaWQiOjEyMDd9&auto=format&fit=facearea&facepad=2&w=256&h=256&q=80" alt="">
+                        </div>
+                        <div class="ml-3">
+                            <p class="text-sm font-medium text-gray-700">Admin User</p>
+                            <p class="text-xs font-medium text-gray-500">Administrator</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Main Content -->
+        <div class="flex flex-col flex-1 overflow-hidden">
+            <!-- Top Navigation -->
+            <div class="relative z-10 flex-shrink-0 flex h-16 bg-white shadow">
+                <button class="px-4 border-r border-gray-200 text-gray-500 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-indigo-500 md:hidden">
+                    <span class="sr-only">Open sidebar</span>
+                    <i class="fas fa-bars h-6 w-6"></i>
+                </button>
+                <div class="flex-1 px-4 flex justify-between">
+                    <div class="flex-1 flex">
+                        <div class="w-full flex md:ml-0">
+                            <label for="search-field" class="sr-only">Search</label>
+                            <div class="relative w-full text-gray-400 focus-within:text-gray-600">
+                                <div class="absolute inset-y-0 left-0 flex items-center pointer-events-none">
+                                    <i class="fas fa-search h-5 w-5"></i>
+                                </div>
+                                <input id="search-field" class="block w-full h-full pl-8 pr-3 py-2 border-transparent text-gray-900 placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-0 focus:border-transparent sm:text-sm" placeholder="Search automations" type="search">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="ml-4 flex items-center md:ml-6">
+                        <button type="button" class="bg-white p-1 rounded-full text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                            <span class="sr-only">View notifications</span>
+                            <i class="fas fa-bell h-6 w-6"></i>
+                        </button>
+                        <div class="ml-3 relative">
+                            <div>
+                                <button type="button" class="max-w-xs bg-white flex items-center text-sm rounded-full focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500" id="user-menu-button" aria-expanded="false" aria-haspopup="true">
+                                    <span class="sr-only">Open user menu</span>
+                                    <img class="h-8 w-8 rounded-full" src="https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-1.2.1&ixid=eyJhcHBfaWQiOjEyMDd9&auto=format&fit=facearea&facepad=2&w=256&h=256&q=80" alt="">
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Main Dashboard Content -->
+            <div class="flex-1 overflow-auto focus:outline-none">
+                <div class="max-w-7xl mx-auto px-4 sm:px-6 md:px-8">
+                    <div class="py-6">
+                        <!-- Page header -->
+                        <div class="flex justify-between items-center mb-6">
+                            <h1 class="text-2xl font-bold text-gray-900">KRA Automation Dashboard</h1>
+                            <div class="flex space-x-3">
+                                <div class="relative">
+                                    <select id="filter-type" class="appearance-none bg-white border border-gray-300 rounded-md pl-3 pr-8 py-2 text-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
+                                        <option value="">All Types</option>
+                                        <option value="authentication">Authentication</option>
+                                        <option value="extraction">Data Extraction</option>
+                                        <option value="compliance">Compliance</option>
+                                        <option value="verification">Verification</option>
+                                        <option value="communication">Communication</option>
+                                    </select>
+                                    <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
+                                        <i class="fas fa-chevron-down text-xs"></i>
+                                    </div>
+                                </div>
+                                <div class="relative">
+                                    <select id="filter-status" class="appearance-none bg-white border border-gray-300 rounded-md pl-3 pr-8 py-2 text-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
+                                        <option value="">All Statuses</option>
+                                        <option value="success">Success</option>
+                                        <option value="failed">Failed</option>
+                                        <option value="in-progress">In Progress</option>
+                                    </select>
+                                    <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
+                                        <i class="fas fa-chevron-down text-xs"></i>
+                                    </div>
+                                </div>
+                                <button id="refresh-btn" class="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                                    <i class="fas fa-sync-alt mr-2"></i> Refresh
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- Automation Table -->
+                        <div class="bg-white shadow rounded-lg overflow-hidden">
+                            <div class="overflow-x-auto">
+                                <table class="min-w-full divide-y divide-gray-200">
+                                    <thead class="bg-gray-50">
+                                        <tr>
+                                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Automation</th>
+                                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
+                                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Run</th>
+                                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Next Run</th>
+                                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="bg-white divide-y divide-gray-200" id="automation-table-body">
+                                        <!-- Rows will be populated by JavaScript -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Side Sheet Overlay (hidden by default) -->
+    <div id="side-sheet-overlay" class="fixed inset-0 overflow-hidden z-50 hidden">
+        <div class="absolute inset-0 overflow-hidden">
+            <div class="absolute inset-0 bg-gray-500 bg-opacity-75 sidebar-overlay transition-opacity" id="side-sheet-backdrop"></div>
+            <div class="fixed inset-y-0 right-0 pl-10 max-w-full flex">
+                <div class="w-screen max-w-md">
+                    <div class="h-full flex flex-col bg-white shadow-xl overflow-y-scroll">
+                        <div class="flex-1 py-6 overflow-y-auto px-4 sm:px-6">
+                            <div class="flex items-start justify-between">
+                                <h2 class="text-lg font-medium text-gray-900" id="side-sheet-title">Automation Details</h2>
+                                <div class="ml-3 h-7 flex items-center">
+                                    <button id="close-side-sheet" class="bg-white rounded-md text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                        <span class="sr-only">Close panel</span>
+                                        <i class="fas fa-times h-6 w-6"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <div class="mt-8">
+                                <div class="flow-root">
+                                    <div class="mb-6">
+                                        <h3 class="text-md font-medium text-gray-900 mb-2">Automation Metadata</h3>
+                                        <div class="bg-gray-50 p-4 rounded-lg">
+                                            <div class="grid grid-cols-2 gap-4">
+                                                <div>
+                                                    <p class="text-sm text-gray-500">Name</p>
+                                                    <p class="text-sm font-medium text-gray-900" id="detail-name">-</p>
+                                                </div>
+                                                <div>
+                                                    <p class="text-sm text-gray-500">Type</p>
+                                                    <p class="text-sm font-medium text-gray-900" id="detail-type">-</p>
+                                                </div>
+                                                <div>
+                                                    <p class="text-sm text-gray-500">Frequency</p>
+                                                    <p class="text-sm font-medium text-gray-900" id="detail-frequency">-</p>
+                                                </div>
+                                                <div>
+                                                    <p class="text-sm text-gray-500">Last Run</p>
+                                                    <p class="text-sm font-medium text-gray-900" id="detail-last-run">-</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="mb-6">
+                                        <div class="flex justify-between items-center mb-2">
+                                            <h3 class="text-md font-medium text-gray-900">Companies</h3>
+                                            <div class="flex items-center">
+                                                <button id="select-all-companies" class="text-sm text-indigo-600 hover:text-indigo-500 mr-4">Select All</button>
+                                                <button id="deselect-all-companies" class="text-sm text-indigo-600 hover:text-indigo-500">Deselect All</button>
+                                            </div>
+                                        </div>
+                                        <div class="bg-gray-50 p-4 rounded-lg max-h-60 overflow-y-auto" id="company-list">
+                                            <!-- Company checkboxes will be populated here -->
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="mb-6">
+                                        <h3 class="text-md font-medium text-gray-900 mb-2">Run Automation</h3>
+                                        <div class="flex space-x-3">
+                                            <button id="run-selected-btn" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                                                Run Selected
+                                            </button>
+                                            <button id="run-all-btn" class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                                                Run All
+                                            </button>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="mb-6">
+                                        <div class="flex justify-between items-center mb-2">
+                                            <h3 class="text-md font-medium text-gray-900">Execution Status</h3>
+                                            <span class="text-sm text-gray-500" id="selected-count">0 companies selected</span>
+                                        </div>
+                                        <div class="bg-gray-50 p-4 rounded-lg max-h-60 overflow-y-auto" id="execution-status">
+                                            <!-- Execution status will be shown here -->
+                                            <p class="text-sm text-gray-500">No companies selected for execution</p>
+                                        </div>
+                                    </div>
+                                    
+                                    <div>
+                                        <div class="flex justify-between items-center mb-2">
+                                            <h3 class="text-md font-medium text-gray-900">Recent Logs</h3>
+                                            <button id="download-logs-btn" class="text-sm text-indigo-600 hover:text-indigo-500">
+                                                <i class="fas fa-download mr-1"></i> Download
+                                            </button>
+                                        </div>
+                                        <div class="bg-gray-50 p-4 rounded-lg max-h-60 overflow-y-auto" id="recent-logs">
+                                            <!-- Log entries will be populated here -->
+                                            <p class="text-sm text-gray-500">No recent logs available</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // Sample data for automations
+        const automations = [
+            {
+                id: '1',
+                name: 'KRA Portal Login',
+                description: 'Automates login using credentials stored in Supabase',
+                type: 'authentication',
+                cron_schedule: 'Every 30 minutes',
+                last_run_at: '2023-05-15T10:30:00',
+                next_run_at: '2023-05-15T11:00:00',
+                status: 'success',
+                companies: [
+                    { id: 'c1', name: 'Company A', status: 'success', last_run: '2023-05-15T10:30:00' },
+                    { id: 'c2', name: 'Company B', status: 'success', last_run: '2023-05-15T10:30:00' },
+                    { id: 'c3', name: 'Company C', status: 'failed', last_run: '2023-05-15T10:30:00' }
+                ],
+                logs: [
+                    { type: 'info', message: 'Starting login process for Company A', timestamp: '2023-05-15T10:30:05' },
+                    { type: 'success', message: 'Successfully logged in to Company A', timestamp: '2023-05-15T10:30:15' },
+                   { type: 'info', message: 'Starting login process for Company B', timestamp: '2023-05-15T10:30:20' },
+                                { type: 'success', message: 'Successfully logged in to Company B', timestamp: '2023-05-15T10:30:30' },
+                                { type: 'info', message: 'Starting login process for Company C', timestamp: '2023-05-15T10:30:35' },
+                                { type: 'error', message: 'Failed to login to Company C: Invalid credentials', timestamp: '2023-05-15T10:30:45' }
+                            ]
+                        },
+                        {
+                            id: '2',
+                            name: 'Tax Compliance Check',
+                            description: 'Verifies tax compliance status for all registered companies',
+                            type: 'compliance',
+                            cron_schedule: 'Daily at 9:00 AM',
+                            last_run_at: '2023-05-15T09:00:00',
+                            next_run_at: '2023-05-16T09:00:00',
+                            status: 'in-progress',
+                            companies: [
+                                { id: 'c4', name: 'Company D', status: 'success', last_run: '2023-05-15T09:00:00' },
+                                { id: 'c5', name: 'Company E', status: 'in-progress', last_run: '2023-05-15T09:00:00' }
+                            ],
+                            logs: [
+                                { type: 'info', message: 'Starting tax compliance check', timestamp: '2023-05-15T09:00:00' },
+                                { type: 'success', message: 'Company D compliance verified', timestamp: '2023-05-15T09:05:00' },
+                                { type: 'info', message: 'Processing Company E compliance check', timestamp: '2023-05-15T09:10:00' }
+                            ]
+                        },
+                        {
+                            id: '3',
+                            name: 'VAT Data Extraction',
+                            description: 'Extracts VAT return data from KRA portal',
+                            type: 'extraction',
+                            cron_schedule: 'Weekly on Monday',
+                            last_run_at: '2023-05-08T08:00:00',
+                            next_run_at: '2023-05-15T08:00:00',
+                            status: 'failed',
+                            companies: [
+                                { id: 'c6', name: 'Company F', status: 'failed', last_run: '2023-05-08T08:00:00' },
+                                { id: 'c7', name: 'Company G', status: 'failed', last_run: '2023-05-08T08:00:00' }
+                            ],
+                            logs: [
+                                { type: 'error', message: 'Rate limit exceeded for VAT data extraction', timestamp: '2023-05-08T08:15:00' },
+                                { type: 'warning', message: 'Retry attempt failed', timestamp: '2023-05-08T08:30:00' }
+                            ]
+                        },
+                        {
+                            id: '4',
+                            name: 'Document Verification',
+                            description: 'Verifies submitted tax documents and certificates',
+                            type: 'verification',
+                            cron_schedule: 'Every 6 hours',
+                            last_run_at: '2023-05-15T06:00:00',
+                            next_run_at: '2023-05-15T12:00:00',
+                            status: 'pending',
+                            companies: [
+                                { id: 'c8', name: 'Company H', status: 'pending', last_run: '2023-05-15T06:00:00' },
+                                { id: 'c9', name: 'Company I', status: 'pending', last_run: '2023-05-15T06:00:00' }
+                            ],
+                            logs: [
+                                { type: 'info', message: 'Document verification queue updated', timestamp: '2023-05-15T06:00:00' }
+                            ]
+                        },
+                        {
+                            id: '5',
+                            name: 'Payment Notification',
+                            description: 'Sends payment reminders and receipt confirmations',
+                            type: 'communication',
+                            cron_schedule: 'Daily at 3:00 PM',
+                            last_run_at: '2023-05-14T15:00:00',
+                            next_run_at: '2023-05-15T15:00:00',
+                            status: 'success',
+                            companies: [
+                                { id: 'c10', name: 'Company J', status: 'success', last_run: '2023-05-14T15:00:00' },
+                                { id: 'c11', name: 'Company K', status: 'success', last_run: '2023-05-14T15:00:00' }
+                            ],
+                            logs: [
+                                { type: 'success', message: 'Payment notifications sent to all companies', timestamp: '2023-05-14T15:05:00' },
+                                { type: 'info', message: 'Email delivery confirmation received', timestamp: '2023-05-14T15:10:00' }
+                            ]
+                        }
+                    ];
+
+                    // State management
+                    let currentAutomation = null;
+                    let selectedCompanies = new Set();
+                    let filteredAutomations = [...automations];
+
+                    // DOM elements
+                    const automationTableBody = document.getElementById('automation-table-body');
+                    const sideSheetOverlay = document.getElementById('side-sheet-overlay');
+                    const sideSheetTitle = document.getElementById('side-sheet-title');
+                    const closeSideSheetButton = document.getElementById('close-side-sheet');
+                    const filterType = document.getElementById('filter-type');
+                    const filterStatus = document.getElementById('filter-status');
+                    const refreshButton = document.getElementById('refresh-btn');
+
+                    // Side sheet elements
+                    const detailName = document.getElementById('detail-name');
+                    const detailType = document.getElementById('detail-type');
+                    const detailFrequency = document.getElementById('detail-frequency');
+                    const detailLastRun = document.getElementById('detail-last-run');
+                    const companyList = document.getElementById('company-list');
+                    const selectAllButton = document.getElementById('select-all-companies');
+                    const deselectAllButton = document.getElementById('deselect-all-companies');
+                    const runSelectedButton = document.getElementById('run-selected-btn');
+                    const runAllButton = document.getElementById('run-all-btn');
+                    const selectedCount = document.getElementById('selected-count');
+                    const executionStatus = document.getElementById('execution-status');
+                    const recentLogs = document.getElementById('recent-logs');
+                    const downloadLogsButton = document.getElementById('download-logs-btn');
+
+                    // Initialize
+                    function init() {
+                        renderTable();
+                        bindEventListeners();
+                    }
+
+                    // Event listeners
+                    function bindEventListeners() {
+                        closeSideSheetButton.addEventListener('click', closeSideSheet);
+                        sideSheetOverlay.addEventListener('click', (e) => {
+                            if (e.target === sideSheetOverlay || e.target.id === 'side-sheet-backdrop') {
+                                closeSideSheet();
+                            }
+                        });
+
+                        filterType.addEventListener('change', applyFilters);
+                        filterStatus.addEventListener('change', applyFilters);
+                        refreshButton.addEventListener('click', refreshData);
+
+                        selectAllButton.addEventListener('click', selectAllCompanies);
+                        deselectAllButton.addEventListener('click', deselectAllCompanies);
+                        runSelectedButton.addEventListener('click', runSelected);
+                        runAllButton.addEventListener('click', runAll);
+                        downloadLogsButton.addEventListener('click', downloadLogs);
+                    }
+
+                    // Render table
+                    function renderTable() {
+                        automationTableBody.innerHTML = '';
+
+                        filteredAutomations.forEach(automation => {
+                            const row = createTableRow(automation);
+                            automationTableBody.appendChild(row);
+                        });
+                    }
+
+                    // Create table row
+                    function createTableRow(automation) {
+                        const row = document.createElement('tr');
+                        row.className = 'table-row';
+                        row.dataset.id = automation.id;
+
+                        row.innerHTML = `
+                <td class="px-6 py-4 whitespace-nowrap">
+                    <div class="text-sm font-medium text-gray-900">${automation.name}</div>
+                    <div class="text-sm text-gray-500">${automation.description}</div>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                    <span class="automation-type type-${automation.type}">${formatType(automation.type)}</span>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    ${formatDate(automation.last_run_at)}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    ${formatDate(automation.next_run_at)}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                    <span class="status-badge status-${automation.status}">${formatStatus(automation.status)}</span>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                    <button onclick="openSideSheet('${automation.id}')" class="text-indigo-600 hover:text-indigo-900">
+                        View Details
+                    </button>
+                </td>
+            `;
+
+                        return row;
+                    }
+
+                    // Format type
+                    function formatType(type) {
+                        const types = {
+                            authentication: 'Authentication',
+                            extraction: 'Data Extraction',
+                            compliance: 'Compliance',
+                            verification: 'Verification',
+                            communication: 'Communication'
+                        };
+                        return types[type] || type;
+                    }
+
+                    // Format status
+                    function formatStatus(status) {
+                        const statuses = {
+                            success: 'Success',
+                            failed: 'Failed',
+                            'in-progress': 'In Progress',
+                            pending: 'Pending'
+                        };
+                        return statuses[status] || status;
+                    }
+
+                    // Format date
+                    function formatDate(dateString) {
+                        const date = new Date(dateString);
+                        return date.toLocaleString('en-US', {
+                            year: 'numeric',
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                        });
+                    }
+
+                    // Open side sheet
+                    function openSideSheet(automationId) {
+                        currentAutomation = automations.find(a => a.id === automationId);
+                        if (!currentAutomation) return;
+
+                        // Update side sheet content
+                        sideSheetTitle.textContent = currentAutomation.name;
+                        detailName.textContent = currentAutomation.name;
+                        detailType.textContent = formatType(currentAutomation.type);
+                        detailFrequency.textContent = currentAutomation.cron_schedule;
+                        detailLastRun.textContent = formatDate(currentAutomation.last_run_at);
+
+                        // Render company list
+                        renderCompanyList();
+
+                        // Render logs
+                        renderLogs();
+
+                        // Reset execution status
+                        executionStatus.innerHTML = '<p class="text-sm text-gray-500">No companies selected for execution</p>';
+                        updateSelectedCount();
+
+                        // Show side sheet
+                        sideSheetOverlay.classList.remove('hidden');
+                        setTimeout(() => {
+                            sideSheetOverlay.querySelector('.w-screen').classList.add('slide-in');
+                        }, 10);
+                    }
+
+                    // Close side sheet
+                    function closeSideSheet() {
+                        sideSheetOverlay.querySelector('.w-screen').classList.add('slide-out');
+                        setTimeout(() => {
+                            sideSheetOverlay.classList.add('hidden');
+                            sideSheetOverlay.querySelector('.w-screen').classList.remove('slide-in', 'slide-out');
+                            currentAutomation = null;
+                            selectedCompanies.clear();
+                        }, 300);
+                    }
+
+                    // Render company list
+                    function renderCompanyList() {
+                        if (!currentAutomation) return;
+
+                        companyList.innerHTML = '';
+
+                        currentAutomation.companies.forEach(company => {
+                            const companyItem = document.createElement('div');
+                            companyItem.className = 'flex items-center py-2';
+
+                            companyItem.innerHTML = `
+                    <input type="checkbox" id="company-${company.id}" class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                           ${selectedCompanies.has(company.id) ? 'checked' : ''}>
+                    <label for="company-${company.id}" class="ml-3 block text-sm text-gray-700">
+                        ${company.name}
+                    </label>
+                    <span class="ml-auto status-badge status-${company.status}">${formatStatus(company.status)}</span>
+                `;
+
+                            const checkbox = companyItem.querySelector('input');
+                            checkbox.addEventListener('change', (e) => {
+                                if (e.target.checked) {
+                                    selectedCompanies.add(company.id);
+                                } else {
+                                    selectedCompanies.delete(company.id);
+                                }
+                                updateSelectedCount();
+                            });
+
+                            companyList.appendChild(companyItem);
+                        });
+                    }
+
+                    // Update selected count
+                    function updateSelectedCount() {
+                        selectedCount.textContent = `${selectedCompanies.size} companies selected`;
+                    }
+
+                    // Select all companies
+                    function selectAllCompanies() {
+                        if (!currentAutomation) return;
+
+                        selectedCompanies.clear();
+                        currentAutomation.companies.forEach(company => {
+                            selectedCompanies.add(company.id);
+                        });
+
+                        renderCompanyList();
+                        updateSelectedCount();
+                    }
+
+                    // Deselect all companies
+                    function deselectAllCompanies() {
+                        selectedCompanies.clear();
+                        renderCompanyList();
+                        updateSelectedCount();
+                    }
+
+                    // Run selected
+                    function runSelected() {
+                        if (!currentAutomation || selectedCompanies.size === 0) return;
+
+                        const selectedCompanyList = Array.from(selectedCompanies).map(id => {
+                            const company = currentAutomation.companies.find(c => c.id === id);
+                            return company ? company.name : '';
+                        }).filter(Boolean);
+
+                        const statusHtml = selectedCompanyList.map(name => `
+                <div class="flex items-center justify-between py-2">
+                    <span class="text-sm text-gray-700">${name}</span>
+                    <span class="status-badge status-in-progress">Running...</span>
+                </div>
+            `).join('');
+
+                        executionStatus.innerHTML = statusHtml;
+
+                        // Simulate execution
+                        simulateExecution(selectedCompanyList);
+                    }
+
+                    // Run all
+                    function runAll() {
+                        if (!currentAutomation) return;
+
+                        // Select all companies
+                        selectAllCompanies();
+
+                        // Run selected
+                        runSelected();
+                    }
+
+                    // Simulate execution
+                    function simulateExecution(companyNames) {
+                        let completed = 0;
+
+                        companyNames.forEach((name, index) => {
+                            setTimeout(() => {
+                                const statusElements = executionStatus.querySelectorAll('.status-badge');
+                                const status = Math.random() > 0.2 ? 'success' : 'failed';
+
+                                statusElements[index].className = `status-badge status-${status}`;
+                                statusElements[index].textContent = formatStatus(status);
+
+                                completed++;
+
+                                // Add log entry
+                                const logType = status === 'success' ? 'success' : 'error';
+                                const logMessage = status === 'success'
+                                    ? `Successfully executed automation for ${name}`
+                                    : `Failed to execute automation for ${name}`;
+
+                                addLogEntry(logType, logMessage);
+
+                                if (completed === companyNames.length) {
+                                    // Update automation status in the main table
+                                    updateAutomationStatus();
+                                }
+                            }, (index + 1) * 2000);
+                        });
+                    }
+
+                    // Add log entry
+                    function addLogEntry(type, message) {
+                        const logEntry = document.createElement('div');
+                        logEntry.className = `log-entry log-${type}`;
+                        logEntry.innerHTML = `
+                <p class="text-sm">
+                    <span class="font-medium">${formatStatus(type)}</span>: ${message}
+                </p>
+                <p class="text-xs text-gray-500 mt-1">${new Date().toLocaleString()}</p>
+            `;
+
+                        recentLogs.prepend(logEntry);
+
+                        // Limit to last 10 logs
+                        if (recentLogs.children.length > 10) {
+                            recentLogs.removeChild(recentLogs.lastChild);
+                        }
+                    }
+
+                    // Render logs
+                    function renderLogs() {
+                        if (!currentAutomation || !currentAutomation.logs) {
+                            recentLogs.innerHTML = '<p class="text-sm text-gray-500">No recent logs available</p>';
+                            return;
+                        }
+
+                        recentLogs.innerHTML = '';
+
+                        currentAutomation.logs.forEach(log => {
+                            const logEntry = document.createElement('div');
+                            logEntry.className = `log-entry log-${log.type}`;
+                            logEntry.innerHTML = `
+                    <p class="text-sm">
+                        <span class="font-medium">${formatStatus(log.type)}</span>: ${log.message}
+                    </p>
+                    <p class="text-xs text-gray-500 mt-1">${formatDate(log.timestamp)}</p>
+                `;
+                            recentLogs.appendChild(logEntry);
+                        });
+                    }
+
+                    // Download logs
+                    function downloadLogs() {
+                        if (!currentAutomation) return;
+
+                        const logData = currentAutomation.logs.map(log => {
+                            return `[${formatDate(log.timestamp)}] ${log.type.toUpperCase()}: ${log.message}`;
+                        }).join('\n');
+
+                        const blob = new Blob([logData], { type: 'text/plain' });
+                        const url = window.URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `${currentAutomation.name.replace(/\s+/g, '_')}_logs.txt`;
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        window.URL.revokeObjectURL(url);
+                    }
+
+                    // Apply filters
+                    function applyFilters() {
+                        const typeFilter = filterType.value;
+                        const statusFilter = filterStatus.value;
+
+                        filteredAutomations = automations.filter(automation => {
+                            const typeMatch = !typeFilter || automation.type === typeFilter;
+                            const statusMatch = !statusFilter || automation.status === statusFilter;
+                            return typeMatch && statusMatch;
+                        });
+
+                        renderTable();
+                    }
+
+                    // Refresh data
+                    function refreshData() {
+                        // Simulate API call to refresh data
+                        refreshButton.innerHTML = '<i class="fas fa-sync-alt fa-spin mr-2"></i> Refreshing...';
+                        refreshButton.disabled = true;
+
+                        setTimeout(() => {
+                            // Update some automation statuses
+                            const randomIndex = Math.floor(Math.random() * automations.length);
+                            automations[randomIndex].status = ['success', 'failed', 'in-progress'].sort(() => Math.random() - 0.5)[0];
+                            automations[randomIndex].last_run_at = new Date().toISOString();
+
+                            // Re-render table
+                            renderTable();
+
+                            // Reset refresh button
+                            refreshButton.innerHTML = '<i class="fas fa-sync-alt mr-2"></i> Refresh';
+                            refreshButton.disabled = false;
+                        }, 1500);
+                    }
+
+                    // Update automation status in main table
+                    function updateAutomationStatus() {
+                        if (!currentAutomation) return;
+
+                        const allSuccess = Array.from(selectedCompanies).every(id => {
+                            const company = currentAutomation.companies.find(c => c.id === id);
+                            return company && company.status === 'success';
+                        });
+
+                        const anyFailed = Array.from(selectedCompanies).some(id => {
+                            const company = currentAutomation.companies.find(c => c.id === id);
+                            return company && company.status === 'failed';
+                        });
+
+                        currentAutomation.status = anyFailed ? 'failed' : (allSuccess ? 'success' : 'in-progress');
+                        currentAutomation.last_run_at = new Date().toISOString();
+
+                        renderTable();
+                    }
+
+                    // Initialize the application
+                    window.addEventListener('DOMContentLoaded', init);
+                </script>
+    </body>
+    
+    </html>

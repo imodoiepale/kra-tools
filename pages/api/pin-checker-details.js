@@ -85,21 +85,64 @@ async function updateAutomationProgress(progress, status, logs) {
 
 async function processCompanies(runOption, selectedIds) {
 
+    let chromePath = null;
     const chrome64Path = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
     const chrome32Path = 'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe';
 
-    // Launch Chromium using the chosen Chrome executable
+    if (existsSync(chrome64Path)) {
+        chromePath = chrome64Path;
+    } else if (existsSync(chrome32Path)) {
+        chromePath = chrome32Path;
+    }
+
     const browser = await chromium.launch({
         headless: false,
-        // executablePath: chrome32Path || chrome64Path,
-        channel: "msedge"
+        executablePath: chromePath,
+        channel: "chrome"
     });
-
+    console.log("Browser launched");
     const context = await browser.newContext();
     const page = await context.newPage();
 
     try {
-        let companies = await readSupabaseData(runOption, selectedIds);
+        let allCompanies = await readSupabaseData(runOption, selectedIds);
+        
+        // Filter out companies without KRA PIN and create a list of skipped companies
+        const skippedCompanies = [];
+        const companies = allCompanies.filter(company => {
+            if (!company.kra_pin) {
+                skippedCompanies.push({
+                    company_name: company.company_name,
+                    income_tax_company_status: 'No obligation',
+                    income_tax_company_effective_from: 'No obligation',
+                    income_tax_company_effective_to: 'No obligation',
+                    vat_status: 'No obligation',
+                    vat_effective_from: 'No obligation',
+                    vat_effective_to: 'No obligation',
+                    paye_status: 'No obligation',
+                    paye_effective_from: 'No obligation',
+                    paye_effective_to: 'No obligation',
+                    rent_income_mri_status: 'No obligation',
+                    rent_income_mri_effective_from: 'No obligation',
+                    rent_income_mri_effective_to: 'No obligation',
+                    resident_individual_status: 'No obligation',
+                    resident_individual_effective_from: 'No obligation',
+                    resident_individual_effective_to: 'No obligation',
+                    turnover_tax_status: 'No obligation',
+                    turnover_tax_effective_from: 'No obligation',
+                    turnover_tax_effective_to: 'No obligation',
+                    error_message: "KRA PIN Missing - Skipped",
+                    last_checked_at: new Date().toISOString()
+                });
+                return false;
+            }
+            return true;
+        });
+        
+        // Save the skipped companies to the database
+        for (const skippedCompany of skippedCompanies) {
+            await saveCompanyDetails(skippedCompany);
+        }
         const allCompanyData = [];
         const now = new Date();
         const formattedDateTime = `${now.getDate()}.${now.getMonth() + 1}.${now.getFullYear()}`;
@@ -154,7 +197,7 @@ async function readSupabaseData(runOption, selectedIds) {
         const { data, error } = await query;
 
         if (error) {
-            throw new Error(`Error reading data from 'PasswordChecker' table: ${error.message}`);
+            throw new Error(`Error reading data from 'acc_portal_company_duplicate' table: ${error.message}`);
         }
         return data;
     } catch (error) {
@@ -166,10 +209,30 @@ async function readSupabaseData(runOption, selectedIds) {
 async function processCompanyData(company, page) {
     console.log("Processing company:", company.company_name);
 
+    // This check should never be reached since we filter companies without KRA PIN earlier,
+    // but keeping it as a safeguard
     if (!company.kra_pin) {
         return {
             company_name: company.company_name,
-            error: "KRA PIN Missing"
+            income_tax_company_status: 'No obligation',
+            income_tax_company_effective_from: 'No obligation',
+            income_tax_company_effective_to: 'No obligation',
+            vat_status: 'No obligation',
+            vat_effective_from: 'No obligation',
+            vat_effective_to: 'No obligation',
+            paye_status: 'No obligation',
+            paye_effective_from: 'No obligation',
+            paye_effective_to: 'No obligation',
+            rent_income_mri_status: 'No obligation',
+            rent_income_mri_effective_from: 'No obligation',
+            rent_income_mri_effective_to: 'No obligation',
+            resident_individual_status: 'No obligation',
+            resident_individual_effective_from: 'No obligation',
+            resident_individual_effective_to: 'No obligation',
+            turnover_tax_status: 'No obligation',
+            turnover_tax_effective_from: 'No obligation',
+            turnover_tax_effective_to: 'No obligation',
+            error_message: "KRA PIN Missing - Skipped"
         };
     }
 
@@ -187,76 +250,81 @@ async function processCompanyData(company, page) {
 }
 
 async function loginToKRA(page, company) {
-    await page.goto("https://itax.kra.go.ke/KRA-Portal/");
-    await page.locator("#logid").click();
-    await page.evaluate(() => pinchecker());
-    await page.waitForTimeout(1000);
+    try {
+        await page.goto("https://itax.kra.go.ke/KRA-Portal/");
+        await page.locator("#logid").click();
+        await page.evaluate(() => pinchecker());
+        await page.waitForTimeout(1000);
 
-    const maxAttempts = 5;
-    let attempts = 0;
+        const maxAttempts = 5;
+        let attempts = 0;
 
-    while (attempts < maxAttempts) {
-        const image = await page.waitForSelector("#captcha_img");
-        const imagePath = path.join(os.tmpdir(), "ocr.png");
-        await image.screenshot({ path: imagePath });
+        while (attempts < maxAttempts) {
+            const image = await page.waitForSelector("#captcha_img");
+            const imagePath = path.join(os.tmpdir(), "ocr.png");
+            await image.screenshot({ path: imagePath });
 
-        const worker = await createWorker('eng', 1);
+            const worker = await createWorker('eng', 1);
 
+            const ret = await worker.recognize(imagePath);
+            const text1 = ret.data.text.slice(0, -1); // Omit the last character
+            const text = text1.slice(0, -1);
+            const numbers = text.match(/\d+/g);
 
-        const ret = await worker.recognize(imagePath);
-        const text1 = ret.data.text.slice(0, -1); // Omit the last character
-        const text = text1.slice(0, -1);
-        const numbers = text.match(/\d+/g);
+            if (!numbers || numbers.length < 2) {
+                console.log("Unable to extract valid numbers from the CAPTCHA. Retrying...");
+                attempts++;
+                continue;
+            }
 
-        if (!numbers || numbers.length < 2) {
-            console.log("Unable to extract valid numbers from the CAPTCHA. Retrying...");
+            let result;
+            if (text.includes("+")) {
+                result = Number(numbers[0]) + Number(numbers[1]);
+            } else if (text.includes("-")) {
+                result = Number(numbers[0]) - Number(numbers[1]);
+            } else {
+                console.log("Unsupported operator in CAPTCHA. Retrying...");
+                attempts++;
+                continue;
+            }
+
+            await worker.terminate();
+
+            await page.type("#captcahText", result.toString());
+            await page.locator('input[name="vo\\.pinNo"]').fill(company.kra_pin);
+            await page.getByRole("button", { name: "Consult" }).click();
+
+            // Check if login was successful
+            const isInvalidLogin = await page.waitForSelector('b:has-text("Wrong result of the arithmetic operation.")', { state: 'visible', timeout: 1000 })
+                .catch(() => false);
+
+            if (!isInvalidLogin) {
+                console.log("Login successful");
+                return; // Exit the function if login is successful
+            }
+
+            console.log("Wrong result of the arithmetic operation, retrying...");
             attempts++;
-            continue;
         }
 
-        let result;
-        if (text.includes("+")) {
-            result = Number(numbers[0]) + Number(numbers[1]);
-        } else if (text.includes("-")) {
-            result = Number(numbers[0]) - Number(numbers[1]);
-        } else {
-            console.log("Unsupported operator in CAPTCHA. Retrying...");
-            attempts++;
-            continue;
-        }
-
-        await worker.terminate();
-
-        await page.type("#captcahText", result.toString());
-        await page.locator('input[name="vo\\.pinNo"]').fill(company.kra_pin);
-        await page.getByRole("button", { name: "Consult" }).click();
-
-        // Check if login was successful
-        const isInvalidLogin = await page.waitForSelector('b:has-text("Wrong result of the arithmetic operation.")', { state: 'visible', timeout: 1000 })
-            .catch(() => false);
-
-        if (!isInvalidLogin) {
-            console.log("Login successful");
-            return; // Exit the function if login is successful
-        }
-
-        console.log("Wrong result of the arithmetic operation, retrying...");
-        attempts++;
+        throw new Error("Max login attempts reached. Unable to log in.");
+    } catch (error) {
+        console.error("Error during KRA login:", error);
+        throw error;
     }
-
-    throw new Error("Max login attempts reached. Unable to log in.");
 }
 
 async function clickObligationDetails(page) {
     try {
+        await page.waitForTimeout(1000); // Wait for page to load completely
         await page.getByRole("group", { name: "Obligation Details" }).click();
+        await page.waitForTimeout(1000); // Wait for details to load
         return true;
     } catch (error) {
         console.error("Error clicking Obligation Details:", error);
         return false;
     }
 }
-
 
 function organizeData(companyName, tableContent) {
     const lines = tableContent.split("\n").map(line => line.trim()).filter(line => line);
@@ -279,7 +347,8 @@ function organizeData(companyName, tableContent) {
         resident_individual_effective_to: 'No obligation',
         turnover_tax_status: 'No obligation',
         turnover_tax_effective_from: 'No obligation',
-        turnover_tax_effective_to: 'No obligation'
+        turnover_tax_effective_to: 'No obligation',
+        error_message: ''
     };
 
     for (const line of lines) {
@@ -323,7 +392,12 @@ function organizeData(companyName, tableContent) {
 }
 
 async function saveCompanyDetails(details) {
-    const { error } = await supabase.from('PinCheckerDetails').upsert(details, { onConflict: "company_name" });
+    const detailsWithTimestamp = {
+        ...details,
+        last_checked_at: new Date().toISOString()
+    };
+
+    const { error } = await supabase.from('PinCheckerDetails').upsert(detailsWithTimestamp, { onConflict: "company_name" });
     if (error) throw error;
 }
 
@@ -331,7 +405,6 @@ function createExcelFile(companyData) {
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet("Company Obligations");
 
-    // Add headers
     const headers = [
         "Index",
         "Company Name",
@@ -356,7 +429,6 @@ function createExcelFile(companyData) {
         "Error"
     ];
 
-    // Add headers starting from row 3, column 2
     const headerRow = worksheet.getRow(3);
     headers.forEach((header, index) => {
         const cell = headerRow.getCell(index + 2);
@@ -371,16 +443,15 @@ function createExcelFile(companyData) {
         };
     });
 
-    // Define colors for each tax type
     const colors = {
         companyTax: 'FFB3E0F0',
         vat: 'FFF0D9B3',
         paye: 'FFD9F0B3',
         rentIncome: 'FFE0B3F0',
-        residentIndividual: 'FFB3F0D9'
+        residentIndividual: 'FFB3F0D9',
+        turnoverTax: 'FFB3F0D9'
     };
 
-    // Add company data
     companyData.forEach((company, index) => {
         const rowIndex = index + 4; // Start from row 4 (row 3 is header)
         const row = worksheet.getRow(rowIndex);
@@ -406,10 +477,9 @@ function createExcelFile(companyData) {
             company.turnover_tax_status,
             company.turnover_tax_effective_from,
             company.turnover_tax_effective_to,
-            company.error || ""
+            company.error_message || ""
         ];
 
-        // Add values starting from column 2
         values.forEach((value, cellIndex) => {
             const cell = row.getCell(cellIndex + 2);
             cell.value = value;
@@ -422,33 +492,25 @@ function createExcelFile(companyData) {
             cell.alignment = { vertical: 'middle', horizontal: 'center' };
         });
 
-        // Apply colors to cells
-        row.getCell(2).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFFFF' } }; // White for index
-        row.getCell(3).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFFFF' } }; // White for company name
-        row.getCell(3).alignment = { vertical: 'middle', horizontal: 'left' }; // Left align company name
-
         row.getCell(4).fill = row.getCell(5).fill = row.getCell(6).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: colors.companyTax } };
         row.getCell(7).fill = row.getCell(8).fill = row.getCell(9).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: colors.vat } };
         row.getCell(10).fill = row.getCell(11).fill = row.getCell(12).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: colors.paye } };
         row.getCell(13).fill = row.getCell(14).fill = row.getCell(15).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: colors.rentIncome } };
         row.getCell(16).fill = row.getCell(17).fill = row.getCell(18).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: colors.residentIndividual } };
-        row.getCell(19).fill = row.getCell(20).fill = row.getCell(21).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: colors.turnoverTax } };
+        row.getCell(19).fill = row.getCell(20).fill = row.getCell(21).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFB3F0D9' } }; // Turnover Tax color
 
-        // Set light red color for empty cells
-        for (let i = 4; i <= 19; i++) {
+        for (let i = 4; i <= 21; i++) {
             const cell = row.getCell(i);
             if (!cell.value || cell.value === "No obligation") {
                 cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFC0CB' } }; // Light red
             }
         }
 
-        // Set red color for error cell if there's an error
-        if (company.error) {
-            row.getCell(19).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFF0000' } }; // Red
+        if (company.error_message) {
+            row.getCell(22).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFF0000' } }; // Red
         }
     });
 
-    // Autofit columns
     worksheet.columns.forEach(column => {
         let maxLength = 0;
         column.eachCell({ includeEmpty: true }, (cell) => {

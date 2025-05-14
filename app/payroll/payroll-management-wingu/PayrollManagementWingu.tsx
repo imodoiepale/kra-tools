@@ -86,7 +86,7 @@ export default function PayrollManagementWingu({
         { id: 'index', label: 'Index (#)', defaultVisible: true },
         { id: 'companyName', label: 'Company Name', defaultVisible: true },
         { id: 'kraPin', label: 'KRA PIN', defaultVisible: true },
-        { id: 'obligationDate', label: 'Obligation Date', defaultVisible: false },
+        { id: 'obligationDate', label: 'PAYE Obligation Date', defaultVisible: true },
         { id: 'numberOfEmployees', label: 'No. of Employees(Wingu)', defaultVisible: false },
         { id: 'numberOfEmployeesBcl', label: 'No. of Employees(BCL)', defaultVisible: false },
         { id: 'finalizationDate', label: 'Finalization Date', defaultVisible: true },
@@ -280,7 +280,7 @@ export default function PayrollManagementWingu({
                     />
                     <ObligationFilters
                         payrollRecords={payrollRecords}
-                        onFilterChange={handleObligationFilterChange}
+                        setSelectedObligations={setSelectedObligations}
                         selectedObligations={selectedObligations}
                     />
                     <CategoryFilters

@@ -1,6 +1,6 @@
 // @ts-nocheck
-import { useState, useRef, useCallback } from 'react'
-import { Trash2, Upload, Loader2, Download, Building2, Eye, FileUp } from 'lucide-react'
+import { useState } from 'react'
+import { Trash2, Upload, Loader2, Download, Building2, Eye } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
     Dialog,
@@ -32,7 +32,6 @@ import { DocumentType } from '../../../types'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/hooks/use-toast'
 import { DocumentViewer } from '../../components/DocumentViewer'
-import { cn } from '@/lib/utils'
 
 
 interface DocumentUploadDialogProps {
@@ -44,7 +43,6 @@ interface DocumentUploadDialogProps {
     label: string;
     isNilFiling: boolean;
     companyName: string;
-    isLoading?: boolean;
     allDocuments?: {
         type: DocumentType;
         label: string;
@@ -61,7 +59,6 @@ export function DocumentUploadDialog({
     label,
     isNilFiling,
     companyName,
-    isLoading = false,
     allDocuments
 }: DocumentUploadDialogProps) {
     const [uploadDialog, setUploadDialog] = useState(false)
@@ -73,11 +70,6 @@ export function DocumentUploadDialog({
     const [bulkFiles, setBulkFiles] = useState<Map<DocumentType, { file: File; label: string }>>(new Map());
     const [isSubmitting, setIsSubmitting] = useState(false)
     const [isViewerOpen, setIsViewerOpen] = useState(false)
-    const [isDragging, setIsDragging] = useState(false)
-    const [draggedFiles, setDraggedFiles] = useState<File[]>([])
-    const [processingStatus, setProcessingStatus] = useState<Map<string, 'pending' | 'success' | 'error'>>(new Map())
-    const fileInputRef = useRef<HTMLInputElement>(null)
-    const dropZoneRef = useRef<HTMLDivElement>(null)
     const { toast } = useToast()
 
     const getFileExtension = (path: string): string => {
@@ -101,37 +93,9 @@ export function DocumentUploadDialog({
         }
     }
 
-    // Intelligent document type detection based on filename
-    const detectDocumentType = (filename: string): DocumentType | undefined => {
-        const lowerFilename = filename.toLowerCase();
-        const ext = getFileExtension(filename);
-        
-        // Document type detection rules
-        if (ext === 'csv') {
-            if (lowerFilename.includes('paye') || lowerFilename.includes('p9')) {
-                return 'paye_csv';
-            } else if (lowerFilename.includes('hslevy') || lowerFilename.includes('housing')) {
-                return 'hslevy_csv';
-            }
-        } else if (ext === 'zip' && (lowerFilename.includes('kra') || lowerFilename.includes('itax'))) {
-            return 'zip_file_kra';
-        } else if ((ext === 'xls' || ext === 'xlsx')) {
-            if (lowerFilename.includes('shif') || lowerFilename.includes('health')) {
-                return 'shif_exl';
-            } else if (lowerFilename.includes('nssf') || lowerFilename.includes('pension')) {
-                return 'nssf_exl';
-            }
-        }
-        
-        // If no specific match, return the current documentType as default
-        return documentType;
-    }
-
     const handleFileSelect = (file: File, docType?: DocumentType) => {
-        // Try to detect document type if not provided
-        const detectedType = docType || detectDocumentType(file.name);
         setSelectedFile(file)
-        setSelectedDocType(detectedType)
+        setSelectedDocType(docType)
         setConfirmUploadDialog(true)
     }
 
@@ -304,81 +268,6 @@ export function DocumentUploadDialog({
         }
     }
 
-    // Drag and drop handlers
-    const handleDragEnter = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-        e.preventDefault();
-        e.stopPropagation();
-        setIsDragging(true);
-    }, []);
-
-    const handleDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-        e.preventDefault();
-        e.stopPropagation();
-        setIsDragging(false);
-    }, []);
-
-    const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-        e.preventDefault();
-        e.stopPropagation();
-    }, []);
-
-    const handleDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-        e.preventDefault();
-        e.stopPropagation();
-        setIsDragging(false);
-        
-        const files = Array.from(e.dataTransfer.files);
-        if (files.length === 0) return;
-        
-        if (activeTab === 'single') {
-            // In single mode, just use the first file
-            const file = files[0];
-            const detectedType = detectDocumentType(file.name);
-            handleFileSelect(file, detectedType);
-        } else {
-            // In bulk mode, process all files
-            setDraggedFiles(files);
-            processDroppedFiles(files);
-        }
-    }, [activeTab]);
-
-    // Process multiple dropped files
-    const processDroppedFiles = (files: File[]) => {
-        // Reset processing status
-        setProcessingStatus(new Map());
-        
-        // Process each file
-        files.forEach(file => {
-            const detectedType = detectDocumentType(file.name);
-            if (detectedType) {
-                // Update processing status
-                setProcessingStatus(prev => {
-                    const newStatus = new Map(prev);
-                    newStatus.set(file.name, 'pending');
-                    return newStatus;
-                });
-                
-                // Add to bulk files
-                const docLabel = allDocuments?.find(doc => doc.type === detectedType)?.label || 'Unknown';
-                handleBulkFileSelect(file, detectedType, docLabel);
-                
-                // Update status to success
-                setProcessingStatus(prev => {
-                    const newStatus = new Map(prev);
-                    newStatus.set(file.name, 'success');
-                    return newStatus;
-                });
-            } else {
-                // Update status to error if we couldn't detect the type
-                setProcessingStatus(prev => {
-                    const newStatus = new Map(prev);
-                    newStatus.set(file.name, 'error');
-                    return newStatus;
-                });
-            }
-        });
-    };
-
     if (isNilFiling) {
         return (
             <Button
@@ -400,14 +289,8 @@ export function DocumentUploadDialog({
                         ? "bg-green-500 hover:bg-green-600 h-6 text-xs px-2"
                         : "bg-yellow-500 hover:bg-yellow-600 h-6 text-xs px-2"}
                     onClick={() => existingDocument ? setIsViewerOpen(true) : setUploadDialog(true)}
-                    disabled={isLoading}
                 >
-                    {isLoading ? (
-                        <div className="flex items-center gap-1">
-                            <Loader2 className="h-3 w-3 animate-spin" />
-                            <span>Loading...</span>
-                        </div>
-                    ) : existingDocument ? (
+                    {existingDocument ? (
                         <div className="flex items-center gap-1">
                             <Eye className="h-3 w-3" />
                             <span>{getDocumentType(existingDocument)}</span>
@@ -417,7 +300,7 @@ export function DocumentUploadDialog({
                     )}
                 </Button>
 
-                {existingDocument && !isLoading && (
+                {existingDocument && (
                     <Button
                         size="sm"
                         variant="destructive"
@@ -465,53 +348,16 @@ export function DocumentUploadDialog({
                         <TabsContent value="single" className="space-y-4">
                             <div className="space-y-2">
                                 <Label>File</Label>
-                                <div 
-                                    ref={dropZoneRef}
-                                    onDragEnter={handleDragEnter}
-                                    onDragOver={handleDragOver}
-                                    onDragLeave={handleDragLeave}
-                                    onDrop={handleDrop}
-                                    className={cn(
-                                        "border-2 border-dashed rounded-md p-6 text-center cursor-pointer transition-colors",
-                                        isDragging 
-                                            ? "border-blue-500 bg-blue-50" 
-                                            : "border-gray-300 hover:border-blue-400"
-                                    )}
-                                    onClick={() => fileInputRef.current?.click()}
-                                >
-                                    <div className="flex flex-col items-center justify-center gap-2">
-                                        <FileUp className={cn(
-                                            "h-8 w-8 transition-colors",
-                                            isDragging ? "text-blue-500" : "text-gray-400"
-                                        )} />
-                                        <div className="text-sm font-medium">
-                                            {isDragging 
-                                                ? "Drop file here" 
-                                                : "Drag & drop file here or click to browse"
-                                            }
-                                        </div>
-                                        <p className="text-xs text-gray-500">
-                                            Supports {documentType.includes('csv') ? 'CSV, ZIP, PDF' : 'Excel, ZIP, PDF'} files
-                                        </p>
-                                        {selectedFile && (
-                                            <div className="mt-2 text-sm text-blue-500 font-medium">
-                                                Selected: {selectedFile.name}
-                                            </div>
-                                        )}
-                                    </div>
-                                    <Input
-                                        ref={fileInputRef}
-                                        type="file"
-                                        className="hidden"
-                                        onChange={(e) => {
-                                            const file = e.target.files?.[0]
-                                            if (file) {
-                                                handleFileSelect(file, documentType)
-                                            }
-                                        }}
-                                        accept={documentType.includes('csv') ? '.csv, .zip, .pdf' : '.xlsx, .xls, .zip, .pdf'}
-                                    />
-                                </div>
+                                <Input
+                                    type="file"
+                                    onChange={(e) => {
+                                        const file = e.target.files?.[0]
+                                        if (file) {
+                                            handleFileSelect(file, documentType)
+                                        }
+                                    }}
+                                    accept={documentType.includes('csv') ? '.csv, .zip, .pdf' : '.xlsx, .xls, .zip, .pdf'}
+                                />
                                 {isSubmitting && (
                                     <div className="flex items-center gap-2 text-sm text-blue-500">
                                         <Loader2 className="h-4 w-4 animate-spin" />
@@ -542,64 +388,6 @@ export function DocumentUploadDialog({
                         <TabsContent value="bulk" className="space-y-4">
                             {allDocuments && allDocuments.length > 0 ? (
                                 <div className="space-y-4">
-                                    <div 
-                                        ref={dropZoneRef}
-                                        onDragEnter={handleDragEnter}
-                                        onDragOver={handleDragOver}
-                                        onDragLeave={handleDragLeave}
-                                        onDrop={handleDrop}
-                                        className={cn(
-                                            "border-2 border-dashed rounded-md p-6 text-center cursor-pointer transition-colors",
-                                            isDragging 
-                                                ? "border-blue-500 bg-blue-50" 
-                                                : "border-gray-300 hover:border-blue-400"
-                                        )}
-                                    >
-                                        <div className="flex flex-col items-center justify-center gap-2">
-                                            <FileUp className={cn(
-                                                "h-8 w-8 transition-colors",
-                                                isDragging ? "text-blue-500" : "text-gray-400"
-                                            )} />
-                                            <div className="text-sm font-medium">
-                                                {isDragging 
-                                                    ? "Drop files here" 
-                                                    : "Drag & drop multiple files here"
-                                                }
-                                            </div>
-                                            <p className="text-xs text-gray-500">
-                                                Files will be automatically assigned to the correct document type
-                                            </p>
-                                        </div>
-                                    </div>
-
-                                    {/* Show processed files status */}
-                                    {draggedFiles.length > 0 && (
-                                        <div className="bg-gray-50 rounded-lg p-4 mt-4">
-                                            <h4 className="text-sm font-semibold mb-2">Processed Files</h4>
-                                            <div className="space-y-2 max-h-40 overflow-y-auto">
-                                                {draggedFiles.map((file, index) => (
-                                                    <div key={index} className="flex items-center justify-between text-sm">
-                                                        <span className="truncate max-w-[250px]">{file.name}</span>
-                                                        <span className={cn(
-                                                            "text-xs font-medium px-2 py-1 rounded-full",
-                                                            processingStatus.get(file.name) === 'success' 
-                                                                ? "bg-green-100 text-green-700"
-                                                                : processingStatus.get(file.name) === 'error'
-                                                                ? "bg-red-100 text-red-700"
-                                                                : "bg-yellow-100 text-yellow-700"
-                                                        )}>
-                                                            {processingStatus.get(file.name) === 'success' 
-                                                                ? "Assigned" 
-                                                                : processingStatus.get(file.name) === 'error'
-                                                                ? "Failed to detect type"
-                                                                : "Processing"}
-                                                        </span>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    )}
-
                                     <div className="bg-purple-50 rounded-lg p-4">
                                         <h4 className="text-sm font-semibold text-gray-900 flex items-center gap-1.5 mb-4">
                                             <Upload className="h-4 w-4 text-blue-500" />
@@ -704,11 +492,6 @@ export function DocumentUploadDialog({
                         <AlertDialogTitle>Confirm Upload</AlertDialogTitle>
                         <AlertDialogDescription>
                             Are you sure you want to {existingDocument ? 'replace the existing document with' : 'upload'} {selectedFile?.name} for {label}?
-                            {selectedDocType && selectedDocType !== documentType && (
-                                <div className="mt-2 text-sm font-medium text-blue-600">
-                                    This file was detected as a {selectedDocType.replace('_', ' ').toUpperCase()} document.
-                                </div>
-                            )}
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>

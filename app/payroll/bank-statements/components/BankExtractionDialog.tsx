@@ -3368,7 +3368,6 @@ const findStatementId = async () => {
                     </AlertDialogContent>
                 </AlertDialog>
 
-
                 {/* Range Delete Confirmation Dialog */}
                 <AlertDialog open={showRangeDeleteConfirmation} onOpenChange={setShowRangeDeleteConfirmation}>
                     <AlertDialogContent>
@@ -3462,5 +3461,5 @@ const findStatementId = async () => {
                 </DialogFooter>
             </DialogContent>
         </Dialog>
-    };
+    );
 }

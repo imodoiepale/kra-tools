@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { useState, useMemo, useCallback, useRef,useEffect } from "react"
+import { useState, useMemo, useCallback, useRef, useEffect } from "react"
 import { formatDate } from '../utils/payrollUtils';
 import {
     MoreHorizontal,
@@ -157,12 +157,12 @@ export function PayrollTable({
     const allDocumentsUploaded = (record: CompanyPayrollRecord | undefined): boolean => {
         if (!record) return false;
         if (record.status?.finalization_date === 'NIL') return true; // NIL filings don't need documents
-        
+
         // Define the document types we're counting
         const documentTypes = ['paye_csv', 'hslevy_csv', 'zip_file_kra', 'shif_exl', 'nssf_exl'];
-        
+
         // Check if all required documents are uploaded (not null and not empty string)
-        return documentTypes.every(docType => 
+        return documentTypes.every(docType =>
             record.documents[docType] && record.documents[docType].trim() !== ''
         );
     };
@@ -170,11 +170,118 @@ export function PayrollTable({
     // Memoize sorted records for performance
     // State for showing/hiding summary headers locally if not controlled externally
     const [_showSummaryHeaders, _setShowSummaryHeaders] = useState(showSummaryHeaders);
+    // Track document operations to prevent full table refresh
+    const [documentOperations, setDocumentOperations] = useState<Map<string, { isLoading: boolean; recordId: string; docType: DocumentType }>>(new Map());
+
+    // Handle document upload with optimistic updates
+    const handleOptimisticDocumentUpload = async (recordId: string, file: File, docType: DocumentType) => {
+        // Create a unique operation ID
+        const operationId = `${recordId}_${docType}_${Date.now()}`;
+
+        // Set loading state for this specific operation
+        setDocumentOperations(prev => {
+            const newOps = new Map(prev);
+            newOps.set(operationId, { isLoading: true, recordId, docType });
+            return newOps;
+        });
+
+        try {
+            // Call the actual upload function
+            const result = await onDocumentUpload(recordId, file, docType);
+
+            // Optimistically update the UI without waiting for a full data refresh
+            setPayrollRecords(prevRecords =>
+                prevRecords.map(record => {
+                    if (record.id === recordId) {
+                        // Create a new record object with updated documents
+                        return {
+                            ...record,
+                            documents: {
+                                ...record.documents,
+                                [docType]: typeof result === 'string' ? result : record.documents[docType]
+                            }
+                        };
+                    }
+                    return record;
+                })
+            );
+
+            // Mark operation as complete
+            setDocumentOperations(prev => {
+                const newOps = new Map(prev);
+                newOps.delete(operationId);
+                return newOps;
+            });
+
+            return result;
+        } catch (error) {
+            // Mark operation as complete even on error
+            setDocumentOperations(prev => {
+                const newOps = new Map(prev);
+                newOps.delete(operationId);
+                return newOps;
+            });
+
+            throw error;
+        }
+    };
+
+    // Handle document delete with optimistic updates
+    const handleOptimisticDocumentDelete = async (recordId: string, docType: DocumentType) => {
+        // Create a unique operation ID
+        const operationId = `${recordId}_${docType}_delete_${Date.now()}`;
+
+        // Set loading state for this specific operation
+        setDocumentOperations(prev => {
+            const newOps = new Map(prev);
+            newOps.set(operationId, { isLoading: true, recordId, docType });
+            return newOps;
+        });
+
+        try {
+            // Call the actual delete function
+            await onDocumentDelete(recordId, docType);
+
+            // Optimistically update the UI without waiting for a full data refresh
+            setPayrollRecords(prevRecords =>
+                prevRecords.map(record => {
+                    if (record.id === recordId) {
+                        // Create a new record object with updated documents
+                        return {
+                            ...record,
+                            documents: {
+                                ...record.documents,
+                                [docType]: null
+                            }
+                        };
+                    }
+                    return record;
+                })
+            );
+
+            // Mark operation as complete
+            setDocumentOperations(prev => {
+                const newOps = new Map(prev);
+                newOps.delete(operationId);
+                return newOps;
+            });
+        } catch (error) {
+            // Mark operation as complete even on error
+            setDocumentOperations(prev => {
+                const newOps = new Map(prev);
+                newOps.delete(operationId);
+                return newOps;
+            });
+
+            throw error;
+        }
+    };
 
     useEffect(() => {
         _setShowSummaryHeaders(showSummaryHeaders);
     }, [showSummaryHeaders]);
 
+    // Memoize sorted records for performance
     const sortedRecords = useMemo(() =>
         [...records].sort((a, b) => {
             const nameA = a?.company?.company_name?.toLowerCase() || '';
@@ -183,7 +290,7 @@ export function PayrollTable({
         }),
         [records]
     );
-    
+
     // Calculate document statistics based on filtered/visible records only
     const getDocumentCounts = useCallback(() => {
         // Use all filtered records
@@ -303,7 +410,7 @@ export function PayrollTable({
             allCsvPending
         };
     }, [sortedRecords, allDocumentsUploaded]);
-    
+
     // Memoize the counts
     const counts = useMemo(() => getDocumentCounts(), [getDocumentCounts]);
 
@@ -329,7 +436,7 @@ export function PayrollTable({
                         {columnVisibility.assignedTo && <TableHead className="text-white font-semibold" scope="col">Assigned To</TableHead>}
                         {columnVisibility.actions && <TableHead className="text-white font-semibold" scope="col">Actions</TableHead>}
                     </TableRow>
-                    
+
                     {/* Summary headers - conditionally rendered based on showSummaryHeaders */}
                     {_showSummaryHeaders && (
                         <>
@@ -427,12 +534,12 @@ export function PayrollTable({
                                 {columnVisibility.readyToFile && <TableHead className="text-center text-black text-sm font-semibold py-1 px-2">{counts.readyToFilePending}</TableHead>}
                                 {columnVisibility.assignedTo && <TableHead className="text-center text-black text-sm font-semibold py-1 px-2">{counts.pending}</TableHead>}
                                 {columnVisibility.actions && <TableHead className="text-center text-black text-sm font-semibold py-1 px-2">-</TableHead>}
-                            </TableRow> 
+                            </TableRow>
 
                             {/* NIL Records Row */}
                             <TableRow className="bg-indigo-200 border-b border-gray-300 hover:bg-indigo-300 h-8">
                                 {columnVisibility.index && (
-                                    <TableHead 
+                                    <TableHead
                                         className="text-left text-black text-sm font-semibold pl-3 pr-1 py-1"
                                         colSpan={columnVisibility.companyName ? 2 : 1}
                                     >
@@ -505,31 +612,32 @@ export function PayrollTable({
                             )}
 
                             {columnVisibility.obligationDate && (
-                                <TableCell
-                                    className={
-                                        record.pin_details?.paye_status?.toLowerCase() === 'cancelled' ||
-                                            record.pin_details?.paye_status?.toLowerCase() === 'dormant' ||
-                                            record.pin_details?.paye_to_date ||
-                                            record.pin_details?.paye_effective_from?.toLowerCase() === 'no obligation'
-                                            ? 'text-red-600 font-bold'
-                                            : record.pin_details?.paye_effective_from
-                                                ? 'text-green-600 font-bold'
-                                                : 'text-yellow-600 font-bold'
-                                    }
-                                >
+                                <TableCell className="w-32">
                                     {record.pin_details?.paye_status?.toLowerCase() === 'cancelled' ||
-                                        record.pin_details?.paye_status?.toLowerCase() === 'dormant'
-                                        ? record.pin_details?.paye_status.charAt(0).toUpperCase() + record.pin_details?.paye_status.slice(1)
-                                        : record.pin_details?.paye_to_date
-                                            ? record.pin_details.paye_to_date
-                                            : record.pin_details?.paye_effective_from?.toLowerCase() === 'no obligation'
-                                                ? 'No Obligation'
-                                                : record.pin_details?.paye_effective_from
-                                                    ? record.pin_details.paye_effective_from
-                                                    : 'Missing'}
+                                        record.pin_details?.paye_status?.toLowerCase() === 'dormant' ? (
+                                        <span className="px-2 py-1 rounded-full text-xs font-bold bg-red-100 text-red-600 inline-block">
+                                            {record.pin_details?.paye_status.charAt(0).toUpperCase() +
+                                                record.pin_details?.paye_status.slice(1)}
+                                        </span>
+                                    ) : record.pin_details?.paye_to_date ? (
+                                        <span className="px-2 py-1 rounded-full text-xs font-bold bg-red-100 text-red-600 inline-block">
+                                            {record.pin_details.paye_to_date}
+                                        </span>
+                                    ) : record.pin_details?.paye_effective_from?.toLowerCase() === 'no obligation' ? (
+                                        <span className="px-2 py-1 rounded-full text-xs font-bold bg-red-100 text-red-600 inline-block">
+                                            No Oblig.
+                                        </span>
+                                    ) : record.pin_details?.paye_effective_from ? (
+                                        <span className="px-2 py-1 rounded-full text-xs font-bold bg-green-100 text-green-700 inline-block">
+                                            {record.pin_details.paye_effective_from}
+                                        </span>
+                                    ) : (
+                                        <span className="px-2 py-1 rounded-full text-xs font-bold bg-yellow-100 text-yellow-600 inline-block">
+                                            Missing
+                                        </span>
+                                    )}
                                 </TableCell>
                             )}
-
                             {columnVisibility.numberOfEmployees && (
                                 <TableCell>
                                     {record.number_of_employees ? (
@@ -538,7 +646,7 @@ export function PayrollTable({
 
                                         </div>
                                     ) : (
-                                            <span className="flex text-red-600 font-bold text-xs justify-center italic">N/A</span>
+                                        <span className="flex text-red-600 font-bold text-xs justify-center italic">N/A</span>
                                     )}
                                 </TableCell>
                             )}
@@ -576,13 +684,16 @@ export function PayrollTable({
                                     <DocumentUploadDialog
                                         documentType="paye_csv"
                                         recordId={record.id}
-                                        onUpload={(file, docType) => onDocumentUpload(record.id, file, docType || "paye_csv")}
-                                        onDelete={(docType) => onDocumentDelete(record.id, docType || "paye_csv")}
+                                        onUpload={(file, docType) => handleOptimisticDocumentUpload(record.id, file, docType || "paye_csv")}
+                                        onDelete={(docType) => handleOptimisticDocumentDelete(record.id, docType || "paye_csv")}
                                         existingDocument={record.documents.paye_csv}
                                         label="PAYE (CSV)"
                                         isNilFiling={record.status.finalization_date === 'NIL'}
                                         allDocuments={getDocumentsForUpload(record)}
                                         companyName={record?.company?.company_name || 'Unknown Company'}
+                                        isLoading={Array.from(documentOperations.values()).some(op =>
+                                            op.recordId === record.id && op.docType === "paye_csv" && op.isLoading
+                                        )}
                                     />
                                 </TableCell>
                             )}
@@ -591,13 +702,16 @@ export function PayrollTable({
                                     <DocumentUploadDialog
                                         documentType="hslevy_csv"
                                         recordId={record.id}
-                                        onUpload={(file, docType) => onDocumentUpload(record.id, file, docType || "hslevy_csv")}
-                                        onDelete={(docType) => onDocumentDelete(record.id, docType || "hslevy_csv")}
+                                        onUpload={(file, docType) => handleOptimisticDocumentUpload(record.id, file, docType || "hslevy_csv")}
+                                        onDelete={(docType) => handleOptimisticDocumentDelete(record.id, docType || "hslevy_csv")}
                                         existingDocument={record.documents.hslevy_csv}
                                         label="HSLEVY (CSV)"
                                         isNilFiling={record.status.finalization_date === 'NIL'}
                                         allDocuments={getDocumentsForUpload(record)}
                                         companyName={record?.company?.company_name || 'Unknown Company'}
+                                        isLoading={Array.from(documentOperations.values()).some(op =>
+                                            op.recordId === record.id && op.docType === "hslevy_csv" && op.isLoading
+                                        )}
                                     />
                                 </TableCell>
                             )}
@@ -606,13 +720,16 @@ export function PayrollTable({
                                     <DocumentUploadDialog
                                         documentType="zip_file_kra"
                                         recordId={record.id}
-                                        onUpload={(file, docType) => onDocumentUpload(record.id, file, docType || "zip_file_kra")}
-                                        onDelete={(docType) => onDocumentDelete(record.id, docType || "zip_file_kra")}
+                                        onUpload={(file, docType) => handleOptimisticDocumentUpload(record.id, file, docType || "zip_file_kra")}
+                                        onDelete={(docType) => handleOptimisticDocumentDelete(record.id, docType || "zip_file_kra")}
                                         existingDocument={record.documents.zip_file_kra}
                                         label="ZIP FILE-KRA"
                                         isNilFiling={record.status.finalization_date === 'NIL'}
                                         allDocuments={getDocumentsForUpload(record)}
                                         companyName={record?.company?.company_name || 'Unknown Company'}
+                                        isLoading={Array.from(documentOperations.values()).some(op =>
+                                            op.recordId === record.id && op.docType === "zip_file_kra" && op.isLoading
+                                        )}
                                     />
                                 </TableCell>
                             )}
@@ -621,13 +738,16 @@ export function PayrollTable({
                                     <DocumentUploadDialog
                                         documentType="shif_exl"
                                         recordId={record.id}
-                                        onUpload={(file, docType) => onDocumentUpload(record.id, file, docType || "shif_exl")}
-                                        onDelete={(docType) => onDocumentDelete(record.id, docType || "shif_exl")}
+                                        onUpload={(file, docType) => handleOptimisticDocumentUpload(record.id, file, docType || "shif_exl")}
+                                        onDelete={(docType) => handleOptimisticDocumentDelete(record.id, docType || "shif_exl")}
                                         existingDocument={record.documents.shif_exl}
                                         label="SHIF (EXL)"
                                         isNilFiling={record.status.finalization_date === 'NIL'}
                                         allDocuments={getDocumentsForUpload(record)}
                                         companyName={record?.company?.company_name || 'Unknown Company'}
+                                        isLoading={Array.from(documentOperations.values()).some(op =>
+                                            op.recordId === record.id && op.docType === "shif_exl" && op.isLoading
+                                        )}
                                     />
                                 </TableCell>
                             )}
@@ -636,15 +756,18 @@ export function PayrollTable({
                                     <DocumentUploadDialog
                                         documentType="nssf_exl"
                                         recordId={record.id}
-                                        onUpload={(file, docType) => onDocumentUpload(record.id, file, docType || "nssf_exl")}
-                                        onDelete={(docType) => onDocumentDelete(record.id, docType || "nssf_exl")}
+                                        onUpload={(file, docType) => handleOptimisticDocumentUpload(record.id, file, docType || "nssf_exl")}
+                                        onDelete={(docType) => handleOptimisticDocumentDelete(record.id, docType || "nssf_exl")}
                                         existingDocument={record.documents.nssf_exl}
                                         label="NSSF (EXL)"
                                         isNilFiling={record.status.finalization_date === 'NIL'}
                                         allDocuments={getDocumentsForUpload(record)}
                                         companyName={record?.company?.company_name || 'Unknown Company'}
+                                        isLoading={Array.from(documentOperations.values()).some(op =>
+                                            op.recordId === record.id && op.docType === "nssf_exl" && op.isLoading
+                                        )}
                                     />
-                                </TableCell>    
+                                </TableCell>
                             )}
                             {columnVisibility.allCsv && (
                                 <TableCell>
@@ -659,14 +782,14 @@ export function PayrollTable({
                                         <Button
                                             size="sm"
                                             className={`h-6 text-xs px-2 ${record.status?.finalization_date === 'NIL' ? 'bg-purple-500 hover:bg-purple-600' : 'bg-green-500 hover:bg-green-600'}`}
-                                            onClick={() => updateState({ 
-                                                filingDialog: { 
-                                                    isOpen: true, 
-                                                    recordId: record.id, 
-                                                    isNil: record.status?.finalization_date === 'NIL', 
-                                                    confirmOpen: false, 
-                                                    record 
-                                                } 
+                                            onClick={() => updateState({
+                                                filingDialog: {
+                                                    isOpen: true,
+                                                    recordId: record.id,
+                                                    isNil: record.status?.finalization_date === 'NIL',
+                                                    confirmOpen: false,
+                                                    record
+                                                }
                                             })}
                                         >
                                             {formatDate(record?.status?.filing?.filingDate)}
@@ -679,14 +802,14 @@ export function PayrollTable({
                                                 : "bg-yellow-500 hover:bg-yellow-500"
                                                 }`}
                                             disabled={!allDocumentsUploaded(record) && record.status?.finalization_date !== 'NIL'}
-                                            onClick={() => updateState({ 
-                                                filingDialog: { 
-                                                    isOpen: true, 
-                                                    recordId: record.id, 
-                                                    isNil: record.status?.finalization_date === 'NIL', 
-                                                    confirmOpen: false, 
-                                                    record 
-                                                } 
+                                            onClick={() => updateState({
+                                                filingDialog: {
+                                                    isOpen: true,
+                                                    recordId: record.id,
+                                                    isNil: record.status?.finalization_date === 'NIL',
+                                                    confirmOpen: false,
+                                                    record
+                                                }
                                             })}
                                         >
                                             {(!allDocumentsUploaded(record) && record.status?.finalization_date !== 'NIL')
@@ -757,7 +880,7 @@ export function PayrollTable({
                         }
                     }));
                 }}
-                onConfirm={(recordId, isNil, assignedTo, finalizationDate) => 
+                onConfirm={(recordId, isNil, assignedTo, finalizationDate) =>
                     handleFinalize(recordId, isNil, assignedTo, finalizationDate)
                 }
                 onFilingConfirm={handleFilingConfirm}

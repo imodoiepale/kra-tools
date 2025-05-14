@@ -15,8 +15,8 @@ interface EditDatesDialogProps {
         company_name: string;
         acc_client_effective_from: string;
         acc_client_effective_to: string;
-        audit_tax_client_effective_from: string;
-        audit_tax_client_effective_to: string;
+        audit_client_effective_from: string;
+        audit_client_effective_to: string;
     };
     onSuccess: () => void;
 }
@@ -25,8 +25,8 @@ export function EditDatesDialog({ open, onOpenChange, company, onSuccess }: Edit
     const [dates, setDates] = useState({
         acc_from: formatDateForDisplay(company.acc_client_effective_from),
         acc_to: formatDateForDisplay(company.acc_client_effective_to),
-        audit_from: formatDateForDisplay(company.audit_tax_client_effective_from),
-        audit_to: formatDateForDisplay(company.audit_tax_client_effective_to)
+        audit_from: formatDateForDisplay(company.audit_client_effective_from),
+        audit_to: formatDateForDisplay(company.audit_client_effective_to)
     });
 
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -49,8 +49,8 @@ export function EditDatesDialog({ open, onOpenChange, company, onSuccess }: Edit
                 .update({
                     acc_client_effective_from: formatDateForSubmission(dates.acc_from),
                     acc_client_effective_to: formatDateForSubmission(dates.acc_to),
-                    audit_tax_client_effective_from: formatDateForSubmission(dates.audit_from),
-                    audit_tax_client_effective_to: formatDateForSubmission(dates.audit_to)
+                    audit_client_effective_from: formatDateForSubmission(dates.audit_from),
+                    audit_client_effective_to: formatDateForSubmission(dates.audit_to)
                 })
                 .eq('id', company.id);
 

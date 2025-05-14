@@ -45,6 +45,13 @@ const navItems = [
     available: true,
   },
   {
+    href: "/dashboard",
+    icon: LayoutDashboard,
+    label: "Automation Dashboard",
+    category: "Main",
+    available: true,
+  },
+  {
     href: "/password-manager",
     icon: Lock,
     label: "Password Manager",
