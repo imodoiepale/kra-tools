@@ -1,6 +1,7 @@
 // app/dashboard/components/AutomationTable.tsx
 
 import { useState } from "react";
+import { motion } from "framer-motion";
 import {
   Table,
   TableBody,
@@ -11,7 +12,23 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { PlayIcon, Loader2Icon, CheckIcon, XIcon, DownloadIcon, KeyIcon, FileTextIcon, CheckCircleIcon, MessageSquareIcon, SettingsIcon } from "lucide-react";
+import {
+  Play as PlayIcon,
+  Loader2 as Loader2Icon,
+  Check as CheckIcon,
+  X as XIcon,
+  Download as DownloadIcon,
+  Key as KeyIcon,
+  FileText as FileTextIcon,
+  CheckCircle as CheckCircleIcon,
+  MessageSquare as MessageSquareIcon,
+  Settings as SettingsIcon,
+  Info as InfoIcon,
+  Building2 as Building2Icon,
+  Activity as ActivityIcon,
+  ChevronRight as ChevronRightIcon,
+  ArrowRight as ArrowRightIcon
+} from "lucide-react";
 import { Automation } from "../types";
 import {
   formatDateRelative,
@@ -29,6 +46,126 @@ import { CompanyList } from "./details/CompanyList";
 import { LogsList } from "./details/LogsList";
 import { ExecutionStatus } from "./details/ExecutionStatus";
 import { useAutomations } from "../hooks/useAutomations";
+
+// Enhanced Sheet component with futuristic styling
+interface EnhancedSheetProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  children: React.ReactNode;
+}
+
+const EnhancedSheet: React.FC<EnhancedSheetProps> = ({ open, onOpenChange, children }) => {
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent className="sm:max-w-md md:max-w-lg lg:max-w-xl overflow-y-auto bg-gradient-to-br from-white to-gray-50 border-l border-blue-100 text-gray-800 p-0 shadow-lg">
+        <div className="absolute inset-0 bg-gradient-to-tr from-blue-100/20 to-indigo-100/30 pointer-events-none" />
+        <div className="h-full flex flex-col p-6 overflow-hidden relative z-10">
+          {children}
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
+};
+
+// Badge component with futuristic styling (light theme)
+const NeuralBadge = ({ children, variant, className = "" }) => {
+  const getBadgeStyles = (variant) => {
+    switch (variant) {
+      case 'active':
+        return 'bg-emerald-100 text-emerald-700 border-emerald-300';
+      case 'pending':
+        return 'bg-amber-100 text-amber-700 border-amber-300';
+      case 'failed':
+        return 'bg-rose-100 text-rose-700 border-rose-300';
+      case 'paused':
+        return 'bg-blue-100 text-blue-700 border-blue-300';
+      case 'data':
+        return 'bg-violet-100 text-violet-700 border-violet-300';
+      case 'integration':
+        return 'bg-cyan-100 text-cyan-700 border-cyan-300';
+      default:
+        return 'bg-gray-100 text-gray-700 border-gray-300';
+    }
+  };
+
+  return (
+    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getBadgeStyles(variant)} ${className}`}>
+      {children}
+    </span>
+  );
+};
+
+// Animated Section component (light theme)
+const AnimatedSection = ({ icon: Icon, title, children, expanded = true, onToggle }) => {
+  return (
+    <div className="mb-6 rounded-xl bg-white border border-blue-100 shadow-sm overflow-hidden">
+      <div 
+        className="flex items-center justify-between p-3 cursor-pointer hover:bg-blue-50/50 transition-colors" 
+        onClick={onToggle}
+      >
+        <div className="flex items-center space-x-2">
+          <div className="p-1.5 rounded-lg bg-blue-100">
+            <Icon className="h-4 w-4 text-blue-600" />
+          </div>
+          <h3 className="text-sm font-medium text-gray-700">{title}</h3>
+        </div>
+        <motion.div
+          animate={{ rotate: expanded ? 90 : 0 }}
+          transition={{ duration: 0.2 }}
+        >
+          <ChevronRightIcon className="h-4 w-4 text-blue-400" />
+        </motion.div>
+      </div>
+      
+      <motion.div
+        initial={false}
+        animate={{ 
+          height: expanded ? 'auto' : 0,
+          opacity: expanded ? 1 : 0
+        }}
+        transition={{ duration: 0.3 }}
+        className="overflow-hidden"
+      >
+        <div className="p-3 pt-0">
+          {children}
+        </div>
+      </motion.div>
+    </div>
+  );
+};
+
+// Progress indicator component (light theme)
+const ProgressRing = ({ value, size = 40, strokeWidth = 3 }) => {
+  const radius = (size - strokeWidth) / 2;
+  const circumference = radius * 2 * Math.PI;
+  const strokeDashoffset = circumference - (value / 100) * circumference;
+  
+  return (
+    <svg height={size} width={size} className="transform -rotate-90">
+      <circle
+        className="text-gray-200"
+        strokeWidth={strokeWidth}
+        stroke="currentColor"
+        fill="transparent"
+        r={radius}
+        cx={size / 2}
+        cy={size / 2}
+      />
+      <circle
+        className="text-blue-500"
+        strokeWidth={strokeWidth}
+        strokeDasharray={circumference}
+        strokeDashoffset={strokeDashoffset}
+        strokeLinecap="round"
+        stroke="currentColor"
+        fill="transparent"
+        r={radius}
+        cx={size / 2}
+        cy={size / 2}
+      />
+    </svg>
+  );
+};
 
 interface AutomationTableProps {
   automations: Automation[];
@@ -162,8 +299,8 @@ export function AutomationTable({ automations }: AutomationTableProps) {
                 >
                   <TableCell>
                     <div className="flex items-center">
-                      <div className={`flex-shrink-0 h-9 w-9 flex items-center justify-center rounded-full ${typeColors.bg} ${typeColors.text}`}>
-                        <TypeIcon className="h-4 w-4" />
+                      <div className={`flex-shrink-0 h-4 w-4 flex items-center justify-center rounded-full ${typeColors.bg} ${typeColors.text}`}>
+                        <TypeIcon className="h-2 w-2" />
                       </div>
                       <div className="ml-3">
                         <div className="font-medium">{automation.name}</div>
@@ -217,116 +354,150 @@ export function AutomationTable({ automations }: AutomationTableProps) {
       </div>
 
       {selectedAutomation && (
-        <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
-          <SheetContent className="sm:max-w-md md:max-w-lg lg:max-w-xl overflow-y-auto">
-            <SheetHeader className="mb-6">
-              <SheetTitle className="flex items-center gap-2">
-                <Badge className={`${getTypeColor(selectedAutomation.type).bg} ${getTypeColor(selectedAutomation.type).text} border-0`}>
-                  {selectedAutomation.type}
-                </Badge>
-                {selectedAutomation.name}
-              </SheetTitle>
-              <div className="flex items-center text-sm text-gray-500">
-                <Badge
-                  variant="outline"
-                  className={`${getStatusColor(selectedAutomation.status).bg} ${getStatusColor(selectedAutomation.status).text} border-0`}
-                >
-                  {formatStatus(selectedAutomation.status)}
-                </Badge>
+        <EnhancedSheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
+          {/* Header section */}
+          <div className="flex justify-between items-start mb-6">
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <NeuralBadge variant={selectedAutomation.type.toLowerCase()}>
+                  {formatType(selectedAutomation.type)}
+                </NeuralBadge>
+                <h2 className="text-xl font-semibold text-gray-800">{selectedAutomation.name}</h2>
               </div>
-            </SheetHeader>
-
-            <Tabs value={activeTab} onValueChange={setActiveTab}>
-              <TabsList className="grid grid-cols-4 mb-4">
-                <TabsTrigger value="details">Details</TabsTrigger>
-                <TabsTrigger value="companies">Companies</TabsTrigger>
-                <TabsTrigger value="execution">Execution</TabsTrigger>
-                <TabsTrigger value="logs">Logs</TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="details">
-                <AutomationMetadata automation={selectedAutomation} />
-              </TabsContent>
-
-              <TabsContent value="companies">
-                <div className="flex justify-between items-center mb-2">
-                  <h3 className="text-sm font-medium">Companies</h3>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={handleSelectAllCompanies}
-                    >
-                      <CheckIcon className="h-3 w-3 mr-1" />
-                      Select All
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={handleDeselectAllCompanies}
-                    >
-                      <XIcon className="h-3 w-3 mr-1" />
-                      Deselect All
-                    </Button>
-                  </div>
+              <div className="flex items-center gap-2">
+                <NeuralBadge variant={selectedAutomation.status.toLowerCase()}>
+                  {formatStatus(selectedAutomation.status)}
+                </NeuralBadge>
+                <span className="text-xs text-gray-500">Last run: {formatDateRelative(selectedAutomation.lastRun)}</span>
+              </div>
+            </div>
+            
+            <ProgressRing value={75} />
+          </div>
+          
+          {/* Main content - unified view with expandable sections */}
+          <div className="flex-1 overflow-y-auto pr-2 space-y-4">
+            {/* Details section */}
+            <AnimatedSection 
+              icon={InfoIcon} 
+              title="Automation Details" 
+              expanded={activeTab === "details"}
+              onToggle={() => setActiveTab(activeTab === "details" ? "" : "details")}
+            >
+              <AutomationMetadata automation={selectedAutomation} />
+            </AnimatedSection>
+            
+            {/* Companies section */}
+            <AnimatedSection 
+              icon={Building2Icon} 
+              title="Target Companies" 
+              expanded={activeTab === "companies"}
+              onToggle={() => setActiveTab(activeTab === "companies" ? "" : "companies")}
+            >
+              <div className="flex justify-between items-center mb-3">
+                <span className="text-xs text-gray-500">
+                  {selectedCompanies.size} of {selectedAutomation.companies.length} selected
+                </span>
+                <div className="flex items-center gap-2">
+                  <button 
+                    className="text-xs text-blue-600 flex items-center hover:text-blue-700 transition-colors"
+                    onClick={handleSelectAllCompanies}
+                  >
+                    <CheckIcon className="h-3 w-3 mr-1" />
+                    All
+                  </button>
+                  <button 
+                    className="text-xs text-gray-500 flex items-center hover:text-gray-700 transition-colors"
+                    onClick={handleDeselectAllCompanies}
+                  >
+                    <XIcon className="h-3 w-3 mr-1" />
+                    None
+                  </button>
                 </div>
-
+              </div>
+              
+              <div className="space-y-1 max-h-40 overflow-y-auto">
                 <CompanyList
                   companies={selectedAutomation.companies}
                   selectedCompanies={selectedCompanies}
                   onSelectionChange={handleCompanySelectionChange}
                 />
-
-                <div className="mt-4 flex gap-2">
-                  <Button
-                    onClick={handleRunSelected}
-                    disabled={selectedCompanies.size === 0}
-                  >
-                    <PlayIcon className="h-4 w-4 mr-2" />
-                    Run Selected ({selectedCompanies.size})
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={handleRunAll}
-                  >
-                    <PlayIcon className="h-4 w-4 mr-2" />
-                    Run All ({selectedAutomation.companies.length})
-                  </Button>
-                </div>
-              </TabsContent>
-
-              <TabsContent value="execution">
-                <div className="flex justify-between items-center mb-2">
-                  <h3 className="text-sm font-medium">Execution Status</h3>
-                  <span className="text-xs text-gray-500">
-                    {selectedCompanies.size} companies selected
-                  </span>
-                </div>
-
-                <ExecutionStatus
-                  automation={selectedAutomation}
-                  selectedCompanies={selectedCompanies}
-                />
-              </TabsContent>
-
-              <TabsContent value="logs">
-                <div className="flex justify-between items-center mb-2">
-                  <h3 className="text-sm font-medium">Recent Logs</h3>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleDownloadLogs}
-                  >
-                    <DownloadIcon className="h-3 w-3 mr-1" />
-                    Download
-                  </Button>
-                </div>
-
+              </div>
+              
+              <div className="mt-4 flex gap-2">
+                <button 
+                  className={`px-3 py-1.5 rounded-lg flex items-center text-sm font-medium ${
+                    selectedCompanies.size > 0 
+                      ? 'bg-blue-600 text-white hover:bg-blue-700' 
+                      : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                  }`}
+                  disabled={selectedCompanies.size === 0}
+                  onClick={handleRunSelected}
+                >
+                  <PlayIcon className="h-3 w-3 mr-2" />
+                  Run Selected ({selectedCompanies.size})
+                </button>
+                <button 
+                  className="px-3 py-1.5 rounded-lg bg-white text-blue-600 border border-blue-300 flex items-center text-sm font-medium hover:bg-blue-50 transition-colors"
+                  onClick={handleRunAll}
+                >
+                  <PlayIcon className="h-3 w-3 mr-2" />
+                  Run All ({selectedAutomation.companies.length})
+                </button>
+              </div>
+            </AnimatedSection>
+            
+            {/* Execution section */}
+            <AnimatedSection 
+              icon={ActivityIcon} 
+              title="Execution Status" 
+              expanded={activeTab === "execution"}
+              onToggle={() => setActiveTab(activeTab === "execution" ? "" : "execution")}
+            >
+              <ExecutionStatus
+                automation={selectedAutomation}
+                selectedCompanies={selectedCompanies}
+              />
+            </AnimatedSection>
+            
+            {/* Logs section */}
+            <AnimatedSection 
+              icon={FileTextIcon} 
+              title="System Logs" 
+              expanded={activeTab === "logs"}
+              onToggle={() => setActiveTab(activeTab === "logs" ? "" : "logs")}
+            >
+              <div className="flex justify-between items-center mb-3">
+                <span className="text-xs text-gray-500">Recent activity</span>
+                <button 
+                  className="text-xs text-blue-600 flex items-center hover:text-blue-700 transition-colors"
+                  onClick={handleDownloadLogs}
+                >
+                  <DownloadIcon className="h-3 w-3 mr-1" />
+                  Export
+                </button>
+              </div>
+              
+              <div className="space-y-1 max-h-40 overflow-y-auto">
                 <LogsList logs={selectedAutomation.logs} />
-              </TabsContent>
-            </Tabs>
-          </SheetContent>
-        </Sheet>
+              </div>
+            </AnimatedSection>
+          </div>
+          
+          {/* Footer with action buttons */}
+          <div className="pt-4 border-t border-gray-200 mt-auto flex justify-between">
+            <button 
+              className="text-sm text-gray-500 hover:text-gray-700 transition-colors"
+              onClick={() => setIsSheetOpen(false)}
+            >
+              Close
+            </button>
+            <button className="flex items-center text-sm text-blue-600 hover:text-blue-700 transition-colors">
+              View full details
+              <ArrowRightIcon className="h-3 w-3 ml-1" />
+            </button>
+          </div>
+        </EnhancedSheet>
       )}
     </>
   );

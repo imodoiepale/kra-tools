@@ -37,8 +37,8 @@ export default function DashboardPage() {
     <div className="flex flex-col h-screen">
       <DashboardHeader refreshData={refreshData} isRefreshing={isRefreshing} />
 
-      <div className="flex-1 container py-6 space-y-6 overflow-auto">
-        <DashboardStats stats={automationStats} />
+      <div className="flex-1 container py-4 space-y-6 overflow-auto">
+        {/* <DashboardStats stats={automationStats} /> */}
 
         <Card>
           <CardContent className="p-6">
@@ -54,10 +54,10 @@ export default function DashboardPage() {
                 </TabsList>
               </div>
 
-              <AutomationFilters
+              {/* <AutomationFilters
                 onFilterByStatus={filterByStatus}
                 onClearFilters={clearFilters}
-              />
+              /> */}
 
               <TabsContent value="all" className="mt-4">
                 <AutomationTable automations={filteredAutomations} />
