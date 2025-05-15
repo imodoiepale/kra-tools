@@ -29,12 +29,25 @@ interface Manufacturer {
   po_box: string
   town: string
   desc_addr: string
-  category: string
+  categories: string[]
   status: string
+  acc_client_status: string
+  imm_client_status: string
+  sheria_client_status: string
+  audit_client_status: string
+  acc_client_effective_from: string
+  acc_client_effective_to: string
+  imm_client_effective_from: string
+  imm_client_effective_to: string
+  sheria_client_effective_from: string
+  sheria_client_effective_to: string
+  audit_client_effective_from: string
+  audit_client_effective_to: string
 }
 
 export function ManufacturersDetailsReports() {
-  const [manufacturers, setManufacturers] = useState<Manufacturer[]>([])
+  const [manufacturers, setManufacturers] = useState<Manufacturer[]>([]);
+  const [filteredManufacturers, setFilteredManufacturers] = useState<Manufacturer[]>([]);
   const [searchTerm, setSearchTerm] = useState('')
   const [editingManufacturer, setEditingManufacturer] = useState<Manufacturer | null>(null)
   const [visibleColumns, setVisibleColumns] = useState({
@@ -54,11 +67,26 @@ export function ManufacturersDetailsReports() {
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'ascending' })
   const [isCategoryFilterOpen, setIsCategoryFilterOpen] = useState(false)
   const [categoryFilters, setCategoryFilters] = useState<{
-    [key: string]: {
-      [key: string]: boolean;
+    categories: { [key: string]: boolean };
+    categorySettings: {
+      [key: string]: {
+        clientStatus: { [key: string]: boolean };
+        sectionStatus: { [key: string]: boolean };
+      };
     };
-  }>({})
-  const [showStatsRows, setShowStatsRows] = useState(true)
+  }>({ categories: {}, categorySettings: {} });
+  const [showStatsRows, setShowStatsRows] = useState(true);
+
+  const calculateClientStatus = (fromDate: string, toDate: string) => {
+    if (!fromDate || !toDate) return 'inactive';
+    
+    const today = new Date();
+    const from = new Date(fromDate.split('/').reverse().join('-'));
+    const to = new Date(toDate.split('/').reverse().join('-'));
+    
+    if (today >= from && today <= to) return 'active';
+    return 'inactive';
+  }
 
   const fetchReports = async () => {
     try {
@@ -86,6 +114,42 @@ export function ManufacturersDetailsReports() {
       // Map companies with their manufacturer details
       const mappedData = companiesData.map(company => {
         const manufacturerDetails = manufacturersData.find(m => m.kra_pin === company.kra_pin) || {};
+        
+        // Helper function to determine if a company belongs to a category and its status
+        const getCategoryStatus = (category: string) => {
+          const categoryId = category.toLowerCase();
+          const fromDate = company[`${categoryId}_client_effective_from`];
+          const toDate = company[`${categoryId}_client_effective_to`];
+          
+          if (!fromDate || !toDate) return 'inactive';
+          
+          const today = new Date();
+          const from = new Date(fromDate.split('/').reverse().join('-'));
+          const to = new Date(toDate.split('/').reverse().join('-'));
+          
+          return today >= from && today <= to ? 'active' : 'inactive';
+        };
+
+        // Helper function to determine if a company belongs to a category
+        const belongsToCategory = (category: string) => {
+          const categoryId = category.toLowerCase();
+          const fromDate = company[`${categoryId}_client_effective_from`];
+          const toDate = company[`${categoryId}_client_effective_to`];
+          return fromDate && toDate; // Company belongs if it has dates set
+        };
+
+        // Get all categories this company belongs to
+        const companyCategories = ['Acc', 'Imm', 'Sheria', 'Audit'].filter(cat => {
+          const categoryId = cat.toLowerCase();
+          const fromDate = company[`${categoryId}_client_effective_from`];
+          const toDate = company[`${categoryId}_client_effective_to`];
+          const hasCategory = fromDate && toDate;
+          if (hasCategory) {
+            console.log(`Company ${company.company_name} has ${cat} category with dates:`, { fromDate, toDate });
+          }
+          return hasCategory;
+        });
+
         return {
           id: company.id,
           company_name: company.company_name,
@@ -100,7 +164,21 @@ export function ManufacturersDetailsReports() {
           po_box: manufacturerDetails.po_box || null,
           town: manufacturerDetails.town || null,
           desc_addr: manufacturerDetails.desc_addr || null,
-          category: manufacturerDetails.category || null,
+          // Map effective dates and statuses from company data
+          acc_client_effective_from: company.acc_client_effective_from || null,
+          acc_client_effective_to: company.acc_client_effective_to || null,
+          imm_client_effective_from: company.imm_client_effective_from || null,
+          imm_client_effective_to: company.imm_client_effective_to || null,
+          sheria_client_effective_from: company.sheria_client_effective_from || null,
+          sheria_client_effective_to: company.sheria_client_effective_to || null,
+          audit_client_effective_from: company.audit_client_effective_from || null,
+          audit_client_effective_to: company.audit_client_effective_to || null,
+          // Map client statuses
+          acc_client_status: company.acc_client_status || 'inactive',
+          imm_client_status: company.imm_client_status || 'inactive',
+          sheria_client_status: company.sheria_client_status || 'inactive',
+          audit_client_status: company.audit_client_status || 'inactive',
+          categories: companyCategories,
           status: manufacturerDetails.status || null
         };
       });
@@ -338,7 +416,142 @@ export function ManufacturersDetailsReports() {
     ))
   );
 
-  const sortedManufacturers = [...uniqueManufacturers].sort((a, b) => {
+  // Update filtered results whenever search term, categories, or filters change
+  useEffect(() => {
+    const sortedManufacturers = [...manufacturers].sort((a, b) => {
+      return a.company_name.localeCompare(b.company_name);
+    });
+
+    const filteredResults = sortedManufacturers.filter(manufacturer => {
+      console.log('Checking manufacturer:', manufacturer.company_name);
+
+      if (searchTerm) {
+        const query = searchTerm.toLowerCase();
+        const searchFields = [
+          manufacturer.company_name,
+          manufacturer.kra_pin,
+          manufacturer.manufacturer_name,
+          manufacturer.mobile_number,
+          manufacturer.main_email_address
+        ];
+        const matchesSearch = searchFields.some(field =>
+          field?.toString().toLowerCase().includes(query)
+        );
+        if (!matchesSearch) return false;
+      }
+
+      if (!categoryFilters.categories) {
+        console.log('No category filters, including manufacturer');
+        return true;
+      }
+
+      const selectedCategories = Object.entries(categoryFilters.categories)
+        .filter(([category, isSelected]) => category && category !== 'All Categories' && isSelected)
+        .map(([category]) => category);
+
+      console.log('Selected categories:', selectedCategories);
+
+      if (selectedCategories.length === 0) {
+        console.log('No specific categories selected, including manufacturer');
+        return true;
+      }
+
+      if (categoryFilters.categories['All Categories']) {
+        console.log('All Categories selected, including manufacturer');
+        return true;
+      }
+
+      const matchesCategory = selectedCategories.some(category => {
+        const categoryId = category.toLowerCase().slice(0, 3);
+        const fromDate = manufacturer[`${categoryId}_client_effective_from`];
+        const toDate = manufacturer[`${categoryId}_client_effective_to`];
+
+        console.log(`\nChecking ${category} for ${manufacturer.company_name}:`);
+        console.log('Effective dates:', { fromDate, toDate });
+
+        // If no dates are set, this company doesn't belong to this category
+        if (!fromDate || !toDate) {
+          console.log('❌ No dates set for this category');
+          return false;
+        }
+
+        // Calculate current status based on today's date
+        const today = new Date();
+        const effectiveFrom = new Date(fromDate.split('/').reverse().join('-'));
+        const effectiveTo = new Date(toDate.split('/').reverse().join('-'));
+        const currentStatus = today >= effectiveFrom && today <= effectiveTo ? 'active' : 'inactive';
+
+        console.log(`Status based on dates: ${currentStatus}`);
+        console.log(`- Today: ${today.toISOString().split('T')[0]}`);
+        console.log(`- From: ${effectiveFrom.toISOString().split('T')[0]}`);
+        console.log(`- To: ${effectiveTo.toISOString().split('T')[0]}`);
+
+        // Get selected statuses from filter
+        const categorySettings = categoryFilters.categorySettings?.[category];
+        if (!categorySettings) {
+          console.log('✓ No status filters set, including');
+          return true;
+        }
+
+        const selectedClientStatuses = Object.entries(categorySettings.clientStatus || {})
+          .filter(([_, isSelected]) => isSelected)
+          .map(([status]) => status.toLowerCase());
+
+        console.log('Selected status filters:', selectedClientStatuses);
+
+        // If 'All' is selected or no statuses are selected, include all
+        if (selectedClientStatuses.includes('all') || selectedClientStatuses.length === 0) {
+          console.log('✓ All statuses selected, including');
+          return true;
+        }
+
+        // Check if current status matches selected filters
+        if (!selectedClientStatuses.includes(currentStatus)) {
+          console.log(`❌ Current status '${currentStatus}' not in selected filters`);
+          return false;
+        }
+
+        console.log(`✓ Status '${currentStatus}' matches selected filters`);
+
+        // Check manufacturer details section status
+        const selectedSectionStatuses = Object.entries(categorySettings.sectionStatus || {})
+          .filter(([_, isSelected]) => isSelected)
+          .map(([status]) => status.toLowerCase());
+
+        console.log('Selected section filters:', selectedSectionStatuses);
+
+        if (selectedSectionStatuses.includes('all') || selectedSectionStatuses.length === 0) {
+          console.log('✓ All section statuses selected, including');
+          return true;
+        }
+
+        const hasManufacturerDetails = manufacturer.manufacturer_name && 
+                                    manufacturer.mobile_number && 
+                                    manufacturer.main_email_address;
+
+        console.log('Manufacturer details status:', hasManufacturerDetails ? 'complete' : 'missing');
+
+        if (!hasManufacturerDetails) {
+          const shouldInclude = selectedSectionStatuses.includes('missing') || 
+                             selectedSectionStatuses.includes('inactive');
+          console.log(`${shouldInclude ? '✓' : '❌'} Missing details, ${shouldInclude ? 'matches' : 'does not match'} section filters`);
+          return shouldInclude;
+        }
+
+        const shouldInclude = selectedSectionStatuses.includes('active');
+        console.log(`${shouldInclude ? '✓' : '❌'} Complete details, ${shouldInclude ? 'matches' : 'does not match'} section filters`);
+        return shouldInclude;
+      });
+
+      console.log(`Final decision for ${manufacturer.company_name}: ${matchesCategory ? 'included' : 'excluded'}`);
+      return matchesCategory;
+    });
+
+    setFilteredManufacturers(filteredResults);
+  }, [manufacturers, searchTerm, categoryFilters]);
+
+  // Sort the filtered manufacturers for display
+  const sortedManufacturers = [...filteredManufacturers].sort((a, b) => {
     if (sortConfig.key !== null) {
       if (a[sortConfig.key] < b[sortConfig.key]) {
         return sortConfig.direction === 'ascending' ? -1 : 1
@@ -347,83 +560,24 @@ export function ManufacturersDetailsReports() {
         return sortConfig.direction === 'ascending' ? 1 : -1
       }
     }
-    return 0
+    return 0;
   });
 
-  const getUniqueCategories = () => {
-    const categories = new Set<string>();
-    manufacturers.forEach(m => {
-      if (m.category) categories.add(m.category);
-    });
-    return Array.from(categories);
-  };
-
-  const getUniqueStatuses = () => {
-    const statuses = new Set<string>();
-    manufacturers.forEach(m => {
-      if (m.status) statuses.add(m.status);
-    });
-    return Array.from(statuses);
-  };
-
-  const filteredManufacturers = sortedManufacturers.filter(manufacturer => {
-    // Apply search filter
-    const matchesSearch = Object.entries(manufacturer).some(([key, value]) => {
-      if (value === null || value === undefined) {
-        return false;
-      }
-      return value.toString().toLowerCase().includes(searchTerm.toLowerCase());
-    });
-
-    if (!matchesSearch) return false;
-    
-    // Apply category filters
-    if (Object.keys(categoryFilters).length > 0) {
-      const manufacturerCategory = manufacturer.category || 'uncategorized';
-      const manufacturerStatus = manufacturer.status || 'inactive';
-
-      // Check if any filter is selected for this category
-      const categoryFilter = categoryFilters[manufacturerCategory] || categoryFilters['all'];
-      
-      if (categoryFilter) {
-        // If specific status is selected, check if it matches
-        if (categoryFilter[manufacturerStatus]) return true;
-        // If 'all' is selected for this category
-        if (categoryFilter['all']) return true;
-        // No matching status selected
-        return false;
-      }
-      
-      // If no filter for this category, check 'all' category
-      const allCategoryFilter = categoryFilters['all'];
-      if (allCategoryFilter) {
-        if (allCategoryFilter[manufacturerStatus]) return true;
-        if (allCategoryFilter['all']) return true;
-      }
-      
-      // No matching filters
-      return false;
-    }
-    
-    return true;
-  });
-
-  const handleApplyFilters = (filters: any) => {
-    setCategoryFilters(filters);
-    setIsCategoryFilterOpen(false);
+  const handleApplyFilters = (newFilters: any) => {
+    setCategoryFilters(newFilters);
   };
 
   const handleClearFilters = () => {
-    setCategoryFilters({});
+    setCategoryFilters({ categories: {}, categorySettings: {} });
   };
 
   const requestSort = (key: string) => {
-    let direction = 'ascending'
+    let direction = 'ascending';
     if (sortConfig.key === key && sortConfig.direction === 'ascending') {
-      direction = 'descending'
+      direction = 'descending';
     }
-    setSortConfig({ key, direction })
-  }
+    setSortConfig({ key, direction });
+  };
 
   return (
     <div className="space-y-4">
@@ -478,19 +632,18 @@ export function ManufacturersDetailsReports() {
         </Button>
       </div>
       
-      <ClientCategoryFilter 
-        isOpen={isCategoryFilterOpen}
-        onClose={() => setIsCategoryFilterOpen(false)}
-        onApplyFilters={handleApplyFilters}
-        onClearFilters={handleClearFilters}
-        selectedFilters={categoryFilters}
-        categories={getUniqueCategories()}
-        statuses={getUniqueStatuses()}
+      <ClientCategoryFilter
+        open={isCategoryFilterOpen}
+        onOpenChange={setIsCategoryFilterOpen}
+        onFilterChange={handleApplyFilters}
+        showSectionName=""
+        initialFilters={categoryFilters}
+        showSectionStatus={false}
       />
 
       <div className="rounded-md border flex-1 flex flex-col">
         <div className="overflow-x-auto">
-          <div className="max-h-[calc(100vh-340px)] overflow-y-auto" style={{overflowY: 'auto'}}>
+          <div className="h-[calc(100vh-340px)] overflow-y-auto" style={{overflowY: 'auto'}}>
             <Table className="text-[11px] pb-2 text-black">
               <TableHeader>
                 <TableRow>
@@ -517,8 +670,8 @@ export function ManufacturersDetailsReports() {
                       <TableCell className="text-center text-[10px] font-bold">Complete</TableCell>
                       {Object.entries(visibleColumns).map(([column, isVisible]) => {
                         if (!isVisible) return null;
-                        const completeCount = manufacturers.filter(m => m[column] && m[column].toString().trim() !== '').length;
-                        const percentage = Math.round((completeCount / manufacturers.length) * 100);
+                        const completeCount = filteredManufacturers.filter(m => m[column] && m[column].toString().trim() !== '').length;
+                        const percentage = Math.round((completeCount / filteredManufacturers.length) * 100);
                         return (
                           <TableCell key={`complete-${column}`} className="text-center text-[10px]">
                             <span className={percentage === 100 ? 'text-green-600 font-bold' : ''}>
@@ -533,8 +686,8 @@ export function ManufacturersDetailsReports() {
                       <TableCell className="text-center text-[10px] font-bold">Missing</TableCell>
                       {Object.entries(visibleColumns).map(([column, isVisible]) => {
                         if (!isVisible) return null;
-                        const missingCount = manufacturers.filter(m => !m[column] || m[column].toString().trim() === '').length;
-                        const percentage = Math.round((missingCount / manufacturers.length) * 100);
+                        const missingCount = filteredManufacturers.filter(m => !m[column] || m[column].toString().trim() === '').length;
+                        const percentage = Math.round((missingCount / filteredManufacturers.length) * 100);
                         return (
                           <TableCell key={`missing-${column}`} className="text-center text-[10px]">
                             <span className={percentage > 0 ? 'text-red-600 font-bold' : ''}>
