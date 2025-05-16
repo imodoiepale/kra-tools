@@ -435,14 +435,15 @@ export function ManufacturersDetailsReports() {
                   <TableHead className="sticky top-0 bg-white text-center text-[12px] text-black font-bold border border-gray-200 py-2 px-3">Index</TableHead>
                   {Object.entries(visibleColumns).map(([column, config]) => (
                     config.visible && (
-                      <TableHead key={column} className="sticky top-0 bg-white border border-gray-200 ">
-                        <Button 
-                          variant="ghost" 
+                      <TableHead key={column} className="sticky top-0 bg-white border border-gray-200 "
+                        onClick={() => requestSort(column)}>
+                        <Button
+                          variant="ghost"
                           onClick={() => requestSort(column)}
                           className="h-8 p-0 text-[12px] text-black font-bold capitalize py-2 px-3"
                         >
-                          {config.label}
-                          <ArrowUpDown className="ml-2 h-4 w-4" />
+                          <span>{column.replace(/_/g, ' ').charAt(0).toUpperCase() + column.replace(/_/g, ' ').slice(1)}</span>
+                          <ArrowUpDown className={`ml-2 h-4 w-4 ${sortConfig.key === column ? 'text-blue-600' : 'text-gray-400'} ${sortConfig.key === column && sortConfig.direction === 'descending' ? 'rotate-180' : ''}`} />
                         </Button>
                       </TableHead>
                     )
