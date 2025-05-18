@@ -92,7 +92,7 @@ export default function Start({
   const fetchCompanies = useCallback(async () => {
     try {
       const { data, error } = await supabase
-        .from('PasswordChecker')
+        .from('acc_portal_company_duplicate')
         .select('*')
         .order('id', { ascending: true });
 
@@ -392,8 +392,12 @@ export default function Start({
                         <TableCell className="min-w-[200px] whitespace-nowrap overflow-hidden text-ellipsis">
                           {company.company_name}
                         </TableCell>
-                        <TableCell className="w-[120px] font-mono">{company.kra_pin}</TableCell>
-                        <TableCell className="w-[120px] font-mono">{company.kra_password}</TableCell>
+                        <TableCell className="w-[120px]">
+                          {company.kra_pin || <span className="text-red-500">Missing</span>}
+                        </TableCell>
+                        <TableCell className="w-[120px]">
+                          {company.kra_password || <span className="text-red-500">Missing</span>}
+                        </TableCell>
                         <TableCell className="w-[100px] text-center">
                           <span className={`${company.status?.toLowerCase() === 'valid' ? 'bg-green-500' :
                               company.status?.toLowerCase() === 'invalid' ? 'bg-red-500' :
@@ -436,8 +440,12 @@ export default function Start({
                             <TableCell className="min-w-[200px] whitespace-nowrap overflow-hidden text-ellipsis">
                               {company.company_name}
                             </TableCell>
-                            <TableCell className="w-[120px] font-mono">{company.kra_pin}</TableCell>
-                            <TableCell className="w-[120px] font-mono">{company.kra_password}</TableCell>
+                            <TableCell className="w-[120px]">
+                              {company.kra_pin || <span className="text-red-500">Missing</span>}
+                            </TableCell>
+                            <TableCell className="w-[120px]">
+                              {company.kra_password || <span className="text-red-500">Missing</span>}
+                            </TableCell>
                             <TableCell className="w-[100px] text-center">
                               <span className={`${company.status?.toLowerCase() === 'valid' ? 'bg-green-500' :
                                   company.status?.toLowerCase() === 'invalid' ? 'bg-red-500' :

@@ -683,8 +683,37 @@ export default function PasswordCheckerReports() {
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-between items-center">
-        <h3 className="text-lg font-medium">Manufacturers Details Reports</h3>
+      <div className="flex justify-between items-center space-y-2">
+        <div className="flex space-x-2">
+          <Input
+            placeholder="Search Manufacturers..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="max-w-sm"
+          />
+          <Button variant="outline" onClick={() => setIsCategoryFilterOpen(true)} size="sm">
+            <Filter className="h-4 w-4 mr-2" />
+            Categories
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => setShowStatsRows(!showStatsRows)}
+            size="sm"
+          >
+            {showStatsRows ? <EyeOff className="h-4 w-4 mr-2" /> : <Eye className="h-4 w-4 mr-2" />}
+            {showStatsRows ? 'Hide Stats' : 'Show Stats'}
+          </Button>
+        </div>
+
+        <ClientCategoryFilter
+          open={isCategoryFilterOpen}
+          onOpenChange={setIsCategoryFilterOpen}
+          onFilterChange={handleApplyFilters}
+          showSectionName=""
+          initialFilters={categoryFilters}
+          showSectionStatus={false}
+        />
+
         <div className="space-x-2">
           <Button variant="outline" onClick={fetchReports} size="sm">
             <RefreshCw className="h-3 w-3 mr-2" />
@@ -713,39 +742,10 @@ export default function PasswordCheckerReports() {
           {/* <Button variant="destructive" onClick={handleDeleteAll} size="sm">Delete All</Button> */}
         </div>
       </div>
-      <div className="flex space-x-2">
-        <Input
-          placeholder="Search Manufacturers..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="max-w-sm"
-        />
-        <Button variant="outline" onClick={() => setIsCategoryFilterOpen(true)} size="sm">
-          <Filter className="h-4 w-4 mr-2" />
-          Categories
-        </Button>
-        <Button
-          variant="outline"
-          onClick={() => setShowStatsRows(!showStatsRows)}
-          size="sm"
-        >
-          {showStatsRows ? <EyeOff className="h-4 w-4 mr-2" /> : <Eye className="h-4 w-4 mr-2" />}
-          {showStatsRows ? 'Hide Stats' : 'Show Stats'}
-        </Button>
-      </div>
-
-      <ClientCategoryFilter
-        open={isCategoryFilterOpen}
-        onOpenChange={setIsCategoryFilterOpen}
-        onFilterChange={handleApplyFilters}
-        showSectionName=""
-        initialFilters={categoryFilters}
-        showSectionStatus={false}
-      />
 
       <div className="rounded-md border flex-1 flex flex-col relative">
         <div className="overflow-x-auto">
-          <div className="max-h-[calc(100vh-300px)] overflow-y-auto">
+          <div className="max-h-[calc(100vh-250px)] overflow-y-auto">
             <Table className="text-[11px] text-black border-collapse w-full relative">
               <style jsx>{`
                 .sticky-col {
@@ -778,33 +778,31 @@ export default function PasswordCheckerReports() {
                 </TableRow>
                 {/* Column Headers Row */}
                 <TableRow className="border-b border-gray-200">
-                  {Object.entries(columnGroups).map(([groupName, columns]) => (
-                    <React.Fragment key={groupName}>
-                      {columns.map(column => (
-                        <TableHead
-                          key={column.key}
-                          className={`sticky bg-white text-center text-[11px] text-black font-medium border border-gray-200 py-2 px-3 ${column.key === 'company_name' ? 'sticky-col company-col' : ''}`}
+                  {Object.entries(columnGroups).flatMap(([groupName, columns]) =>
+                    columns.map(column => (
+                      <TableHead
+                        key={`${groupName}-${column.key}`}
+                        className={`sticky bg-white text-center text-[11px] text-black font-medium border border-gray-200 py-2 px-3 ${column.key === 'company_name' ? 'sticky-col company-col' : ''}`}
+                        onClick={() => requestSort(column.key)}
+                        style={{ top: '40px' }}
+                      >
+                        <Button
+                          variant="ghost"
                           onClick={() => requestSort(column.key)}
-                          style={{ top: '40px' }}
+                          className="h-6 p-0 text-[11px] text-black font-medium capitalize py-1 px-2"
                         >
-                          <Button
-                            variant="ghost"
-                            onClick={() => requestSort(column.key)}
-                            className="h-6 p-0 text-[11px] text-black font-medium capitalize py-1 px-2"
-                          >
-                            <span>{column.label}</span>
-                            <ArrowUpDown className={`ml-1 h-3 w-3 ${sortConfig.key === column.key ? 'text-blue-600' : 'text-gray-400'} ${sortConfig.key === column.key && sortConfig.direction === 'descending' ? 'rotate-180' : ''}`} />
-                          </Button>
-                        </TableHead>
-                      ))}
-                    </React.Fragment>
-                  ))}
+                          <span>{column.label}</span>
+                          <ArrowUpDown className={`ml-1 h-3 w-3 ${sortConfig.key === column.key ? 'text-blue-600' : 'text-gray-400'} ${sortConfig.key === column.key && sortConfig.direction === 'descending' ? 'rotate-180' : ''}`} />
+                        </Button>
+                      </TableHead>
+                    )))}
+
                 </TableRow>
                 {showStatsRows && (
                   <>
                     <TableRow className="bg-gray-100">
                       <TableCell className="text-center text-[10px] font-bold">Complete</TableCell>
-                      {Object.values(columnGroups).flatMap(columns => 
+                      {Object.values(columnGroups).flatMap(columns =>
                         columns.map(column => {
                           const completeCount = filteredManufacturers.filter(m => m[column.key] && m[column.key].toString().trim() !== '').length;
                           const percentage = Math.round((completeCount / filteredManufacturers.length) * 100);
@@ -821,7 +819,7 @@ export default function PasswordCheckerReports() {
                     </TableRow>
                     <TableRow className="bg-gray-50">
                       <TableCell className="text-center text-[10px] font-bold">Missing</TableCell>
-                      {Object.values(columnGroups).flatMap(columns => 
+                      {Object.values(columnGroups).flatMap(columns =>
                         columns.map(column => {
                           const missingCount = filteredManufacturers.filter(m => !m[column.key] || m[column.key].toString().trim() === '').length;
                           const percentage = Math.round((missingCount / filteredManufacturers.length) * 100);
@@ -854,8 +852,8 @@ export default function PasswordCheckerReports() {
                       <TableCell className="text-center font-bold sticky-col index-col" style={{ minWidth: '50px' }}>{index + 1}</TableCell>
                       {Object.values(columnGroups).flatMap(columns =>
                         columns.map(column => (
-                          <TableCell 
-                            key={column.key} 
+                          <TableCell
+                            key={column.key}
                             className={`${column.key === 'company_name' ? 'text-left whitespace-nowrap font-bold sticky-col company-col' : 'text-center'}`}
                             style={column.key === 'company_name' ? { minWidth: '200px' } : undefined}
                           >
