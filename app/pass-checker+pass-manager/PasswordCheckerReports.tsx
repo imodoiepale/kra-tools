@@ -55,6 +55,43 @@ interface Manufacturer {
   audit_client_effective_from: string
   audit_client_effective_to: string
 }
+const columnGroups = {
+  companyDetails: [
+    { key: 'company_name', label: 'Company Name' },
+  ],
+  kraDetails: [
+    { key: 'kra_pin', label: 'KRA Pin No' },
+    { key: 'kra_password', label: 'KRA Password' },
+    { key: 'kra_status', label: 'KRA Status' },
+    { key: "last_checked", label: "Last Checked" },
+  ],
+  nhifDetails: [
+    { key: 'nhif_id', label: 'NHIF ID' },
+    { key: 'nhif_code', label: 'NHIF Code' },
+    { key: 'nhif_password', label: 'NHIF Password' },
+    { key: 'nhif_status', label: 'NHIF Status' },
+    { key: "last_checked", label: "Last Checked" },
+  ],
+  nssfDetails: [
+    { key: 'nssf_id', label: 'NSSF ID' },
+    { key: 'nssf_code', label: 'NSSF Code' },
+    { key: 'nssf_password', label: 'NSSF Password' },
+    { key: 'nssf_status', label: 'NSSF Status' },
+    { key: "last_checked", label: "Last Checked" },
+  ],
+  kebsDetails: [
+    { key: 'kebs_id', label: 'KEBS ID' },
+    { key: 'kebs_password', label: 'KEBS Password' },
+    { key: 'kebs_status', label: 'KEBS Status' },
+    { key: "last_checked", label: "Last Checked" },
+  ],
+  quickbooksDetails: [
+    { key: 'quickbooks_id', label: 'Quickbooks ID' },
+    { key: 'quickbooks_password', label: 'Quickbooks Password' },
+    { key: 'quickbooks_status', label: 'Quickbooks Status' },
+    { key: "last_checked", label: "Last Checked" },
+  ]
+};
 
 export default function PasswordCheckerReports() {
   const [isLoading, setIsLoading] = useState(false);
@@ -64,25 +101,19 @@ export default function PasswordCheckerReports() {
   const [editingManufacturer, setEditingManufacturer] = useState<Manufacturer | null>(null)
   const [visibleColumns, setVisibleColumns] = useState({
     company_name: true,
-    // KRA section
     kra_pin: true,
     kra_password: true,
-    // NHIF section
     nhif_id: true,
     nhif_code: true,
     nhif_password: true,
-    // NSSF section
     nssf_id: true,
     nssf_code: true,
     nssf_password: true,
-    // eCitizen section
     ecitizen_id: true,
     ecitizen_password: true,
     director: true,
-    // QuickBooks section
     quickbooks_id: true,
     quickbooks_password: true,
-    // KEBS section
     kebs_id: true,
     kebs_password: true
   })
@@ -197,16 +228,6 @@ export default function PasswordCheckerReports() {
           id: company.id,
           company_name: company.company_name,
           kra_pin: company.kra_pin,
-          manufacturer_name: manufacturerDetails.manufacturer_name || null,
-          itax_mobile_number: manufacturerDetails.itax_mobile_number || null,
-          itax_main_email_address: manufacturerDetails.itax_main_email_address || null,
-          itax_business_reg_cert_no: manufacturerDetails.itax_business_reg_cert_no || null,
-          itax_business_reg_date: manufacturerDetails.itax_business_reg_date || null,
-          itax_business_commencement_date: manufacturerDetails.itax_business_commencement_date || null,
-          itax_postal_code: manufacturerDetails.itax_postal_code || null,
-          itax_po_box: manufacturerDetails.itax_po_box || null,
-          itax_town: manufacturerDetails.itax_town || null,
-          desc_addr: manufacturerDetails.itax_desc_addr || null,
           // Map effective dates and statuses from company data
           acc_client_effective_from: company.acc_client_effective_from || null,
           acc_client_effective_to: company.acc_client_effective_to || null,
@@ -348,65 +369,6 @@ export default function PasswordCheckerReports() {
   const toggleColumnVisibility = (column: string) => {
     setVisibleColumns(prev => ({ ...prev, [column]: !prev[column] }))
   }
-
-  const columnGroups = {
-    companyDetails: [
-      { key: 'company_name', label: 'Company Name' },
-    ],
-    pinDetails: [
-      { key: 'kra_pin', label: 'KRA Pin No' },
-      { key: 'kra_password', label: 'KRA Password' },
-      { key: 'nhif_id', label: 'NHIF ID' },
-      { key: 'nhif_code', label: 'NHIF Code' },
-      { key: 'nhif_password', label: 'NHIF Password' },
-      { key: 'nssf_id', label: 'NSSF ID' },
-      { key: 'nssf_code', label: 'NSSF Code' },
-      { key: 'nssf_password', label: 'NSSF Password' },
-      { key: 'kebs_id', label: 'KEBS ID' },
-      { key: 'kebs_password', label: 'KEBS Password' },
-      { key: 'quickbooks_id', label: 'Quickbooks ID' },
-      { key: 'quickbooks_password', label: 'Quickbooks Password' }
-    ],
-    manufacturerDetails: [
-      { key: 'itax_telephone_no', label: 'iTax Telephone No' },
-      { key: 'itax_main_email_address', label: 'iTax Main Email Address' },
-      { key: 'itax_sec_email_address', label: 'iTax Secondary Email Address' },
-      { key: 'itax_website', label: 'iTax Website' },
-      { key: 'itax_town', label: 'iTax Town' },
-      { key: 'itax_postal_code', label: 'iTax Postal Code' },
-      { key: 'itax_po_box', label: 'iTax PO Box' },
-      { key: 'itax_county', label: 'iTax County' },
-      { key: 'itax_tax_area', label: 'iTax Tax Area' },
-      { key: 'itax_business_name', label: 'iTax Business Name' },
-      { key: 'itax_business_reg_cert_no', label: 'iTax Business Reg Cert No' },
-      { key: 'itax_business_reg_date', label: 'iTax Business Reg Date' },
-      { key: 'itax_business_commenced_date', label: 'iTax Business Commenced Date' }
-    ],
-    companyRelationships: [
-      { key: 'supplier_for', label: 'Supplier For' },
-      { key: 'customer_for', label: 'Customer For' }
-    ],
-    billDetails: [
-      { key: 'off_email', label: 'Office Email' },
-      { key: 'off_mobile', label: 'Office Mobile' },
-      { key: 'residence', label: 'Residence' },
-      { key: 'country_name', label: 'Country' }
-    ],
-    actualDetails: [
-      { key: 'office_phone_number', label: 'Office Phone Number' },
-      { key: 'broadcast_whatsapp_number', label: 'Broadcast WhatsApp Number' },
-      { key: 'current_communication_email', label: 'Current Communication Email' },
-      { key: 'alternative_email_address', label: 'Alternative Email Address' },
-      { key: 'website', label: 'Website' },
-      { key: 'postal_address', label: 'Postal Address' },
-      { key: 'industry', label: 'Industry' },
-      { key: 'accountant_name', label: 'Accountant Name' },
-      { key: 'accountant_phone_no', label: 'Accountant Phone Number' },
-      { key: 'accountant_email_address', label: 'Accountant Email Address' },
-      { key: 'source_of_income_employment', label: 'Source Of Income Employment' },
-      { key: 'nature_of_business', label: 'Nature Of Business' }
-    ]
-  };
 
   const renderTableHeaders = () => {
     return Object.entries(columnGroups).map(([groupName, columns]) => (
@@ -781,35 +743,62 @@ export default function PasswordCheckerReports() {
         showSectionStatus={false}
       />
 
-      <div className="rounded-md border flex-1 flex flex-col relative min-h-[200px]">
+      <div className="rounded-md border flex-1 flex flex-col relative">
         <div className="overflow-x-auto">
-          <div className="max-h-[calc(100vh-550px)] overflow-y-auto">
-            <Table className="text-[11px] text-black border-collapse w-full">
+          <div className="max-h-[calc(100vh-300px)] overflow-y-auto">
+            <Table className="text-[11px] text-black border-collapse w-full relative">
+              <style jsx>{`
+                .sticky-col {
+                  position: sticky;
+                  background: white;
+                  z-index: 10;
+                }
+                .index-col {
+                  left: 0;
+                }
+                .company-col {
+                  left: 50px;
+                }
+              `}</style>
               <TableHeader className="bg-gray-50">
+                {/* Group Headers Row */}
+                <TableRow className="uppercase border-b border-gray-200">
+                  <TableHead className="sticky top-0 bg-white text-center text-[12px] text-black font-bold border border-gray-200 py-2 px-3 sticky-col index-col" style={{ minWidth: '50px', top: 0 }} rowSpan={2}>Index</TableHead>
+                  {Object.entries(columnGroups).map(([groupName, columns], index) => (
+                    <TableHead
+                      key={groupName}
+                      className="sticky top-0 bg-white text-center text-[12px] text-black font-bold border border-gray-200 py-2 px-3"
+                      colSpan={columns.length}
+                      style={{ top: 0 }}
+                    >
+                      {groupName.replace(/([A-Z])/g, ' $1').trim()}
+                    </TableHead>
+                  ))}
+                  <TableHead className="sticky top-0 bg-white text-center text-[12px] text-black font-bold border border-gray-200 py-2 px-3" style={{ top: 0 }} rowSpan={2}>Actions</TableHead>
+                </TableRow>
+                {/* Column Headers Row */}
                 <TableRow className="border-b border-gray-200">
-                  <TableHead className="sticky top-0 bg-white text-center text-[12px] text-black font-bold border border-gray-200 py-2 px-3">Index</TableHead>
-                  <TableHead className="sticky top-0 bg-white text-center text-[12px] text-black font-bold border border-gray-200 py-2 px-3">Index</TableHead>
                   {Object.entries(columnGroups).map(([groupName, columns]) => (
                     <React.Fragment key={groupName}>
                       {columns.map(column => (
                         <TableHead
                           key={column.key}
-                          className="sticky top-0 bg-white text-center text-[12px] text-black font-bold border border-gray-200 py-2 px-3"
+                          className={`sticky bg-white text-center text-[11px] text-black font-medium border border-gray-200 py-2 px-3 ${column.key === 'company_name' ? 'sticky-col company-col' : ''}`}
                           onClick={() => requestSort(column.key)}
+                          style={{ top: '40px' }}
                         >
                           <Button
                             variant="ghost"
                             onClick={() => requestSort(column.key)}
-                            className="h-8 p-0 text-[12px] text-black font-bold capitalize py-2 px-3"
+                            className="h-6 p-0 text-[11px] text-black font-medium capitalize py-1 px-2"
                           >
                             <span>{column.label}</span>
-                            <ArrowUpDown className={`ml-2 h-4 w-4 ${sortConfig.key === column.key ? 'text-blue-600' : 'text-gray-400'} ${sortConfig.key === column.key && sortConfig.direction === 'descending' ? 'rotate-180' : ''}`} />
+                            <ArrowUpDown className={`ml-1 h-3 w-3 ${sortConfig.key === column.key ? 'text-blue-600' : 'text-gray-400'} ${sortConfig.key === column.key && sortConfig.direction === 'descending' ? 'rotate-180' : ''}`} />
                           </Button>
                         </TableHead>
                       ))}
                     </React.Fragment>
                   ))}
-                  <TableHead className="sticky top-0 bg-white text-center text-[12px] text-black font-bold border border-gray-200 py-2 px-3">Actions</TableHead>
                 </TableRow>
                 {showStatsRows && (
                   <>
@@ -862,12 +851,13 @@ export default function PasswordCheckerReports() {
                 ) : (
                   sortedManufacturers.map((manufacturer, index) => (
                     <TableRow key={manufacturer.id} className={`h-8 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}>
-                      <TableCell className="text-center font-bold">{index + 1}</TableCell>
+                      <TableCell className="text-center font-bold sticky-col index-col" style={{ minWidth: '50px' }}>{index + 1}</TableCell>
                       {Object.values(columnGroups).flatMap(columns =>
                         columns.map(column => (
                           <TableCell 
                             key={column.key} 
-                            className={`${column.key === 'company_name' ? 'text-left whitespace-nowrap font-bold' : 'text-center'}`}
+                            className={`${column.key === 'company_name' ? 'text-left whitespace-nowrap font-bold sticky-col company-col' : 'text-center'}`}
+                            style={column.key === 'company_name' ? { minWidth: '200px' } : undefined}
                           >
                             {manufacturer[column.key] || <span className="font-bold text-red-500">Missing</span>}
                           </TableCell>
@@ -879,28 +869,45 @@ export default function PasswordCheckerReports() {
                             <DialogTrigger asChild>
                               <Button variant="outline" size="sm" onClick={() => handleEdit(manufacturer)}>Edit</Button>
                             </DialogTrigger>
-                            <DialogContent className="sm:max-w-[350px]">
+                            <DialogContent className="sm:max-w-[600px]">
                               <DialogHeader>
-                                <DialogTitle>Edit Manufacturer Details</DialogTitle>
+                                <DialogTitle className="text-xl font-semibold">Edit Manufacturer Details</DialogTitle>
                               </DialogHeader>
-                              <div className="grid gap-2 py-2">
-                                {Object.entries(editingManufacturer || {}).map(([key, value]) => (
-                                  <div key={key} className="grid grid-cols-4 items-center gap-2">
-                                    <Label htmlFor={key} className="text-right text-xs">
-                                      {key.replace(/_/g, ' ').charAt(0).toUpperCase() + key.replace(/_/g, ' ').slice(1)}
-                                    </Label>
-                                    <Input
-                                      id={key}
-                                      value={value}
-                                      onChange={(e) => setEditingManufacturer({ ...editingManufacturer, [key]: e.target.value })}
-                                      className="col-span-3 text-xs"
-                                    />
+                              <div className="space-y-6 py-4 max-h-[70vh] overflow-y-auto px-1">
+                                {Object.entries(columnGroups).map(([groupName, columns]) => (
+                                  <div key={groupName} className="space-y-4 bg-gray-50 p-4 rounded-lg shadow-sm">
+                                    <h4 className="text-sm font-semibold text-gray-700 border-b border-gray-200 pb-2">
+                                      {groupName.replace(/([A-Z])/g, ' $1').trim()}
+                                    </h4>
+                                    <div className="grid gap-3">
+                                      {columns.map(column => (
+                                        <div key={column.key} className="grid grid-cols-5 items-center gap-4">
+                                          <Label htmlFor={column.key} className="text-right text-xs font-medium text-gray-600 col-span-2">
+                                            {column.label}
+                                          </Label>
+                                          <Input
+                                            id={column.key}
+                                            value={editingManufacturer?.[column.key] || ''}
+                                            onChange={(e) => setEditingManufacturer(prev => ({ ...prev, [column.key]: e.target.value }))}
+                                            className="col-span-3 text-sm border-gray-300 focus:ring-blue-500 focus:border-blue-500"
+                                            placeholder={`Enter ${column.label.toLowerCase()}`}
+                                          />
+                                        </div>
+                                      ))}
+                                    </div>
                                   </div>
                                 ))}
                               </div>
-                              <DialogClose asChild>
-                                <Button size="sm" onClick={() => handleSave(editingManufacturer)}>Save Changes</Button>
-                              </DialogClose>
+                              <div className="flex justify-end space-x-2 pt-4 border-t">
+                                <DialogClose asChild>
+                                  <Button variant="outline" size="sm">Cancel</Button>
+                                </DialogClose>
+                                <DialogClose asChild>
+                                  <Button size="sm" onClick={() => handleSave(editingManufacturer)} className="bg-blue-600 hover:bg-blue-700">
+                                    Save Changes
+                                  </Button>
+                                </DialogClose>
+                              </div>
                             </DialogContent>
                           </Dialog>
                         </div>
