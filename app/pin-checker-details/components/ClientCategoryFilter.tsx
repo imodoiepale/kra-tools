@@ -107,7 +107,7 @@ export function ClientCategoryFilter({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Client Category Filter</DialogTitle>
         </DialogHeader>
