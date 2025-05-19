@@ -497,7 +497,7 @@ export function PinCheckerDetailsReports() {
                         pattern: 'solid',
                         fgColor: { argb: 'FFFFCCCB' }
                     };
-                } else if (status === 'inactive' || status === 'non-compliant') {
+                } else if (status === 'inactive' || status === 'not compliant') {
                     cell.fill = {
                         type: 'pattern',
                         pattern: 'solid',
@@ -639,7 +639,7 @@ export function PinCheckerDetailsReports() {
                 bValue = new Date(b.last_checked_at).toLocaleTimeString();
             } else if (sortField.endsWith('_status')) {
                 // For status fields, use a custom sorting order
-                const statusOrder = ['Registered', 'Active', 'Compliant', 'Suspended', 'Cancelled', 'Inactive', 'Non-Compliant', 'No Obligation', 'Dormant'];
+                const statusOrder = ['Registered', 'Active', 'Compliant', 'Suspended', 'Cancelled', 'Inactive', 'Not Compliant', 'No Obligation', 'Dormant'];
                 aValue = statusOrder.indexOf(aValue || 'No Obligation');
                 bValue = statusOrder.indexOf(bValue || 'No Obligation');
             } else if (sortField.endsWith('_from') || sortField.endsWith('_to')) {
@@ -678,7 +678,7 @@ export function PinCheckerDetailsReports() {
                         value.toString().trim() !== '' &&
                         value.toString().toLowerCase() !== 'no obligation' &&
                         value.toString().toLowerCase() !== 'inactive' &&
-                        value.toString().toLowerCase() !== 'non-compliant') {
+                        value.toString().toLowerCase() !== 'not compliant') {
                         stats.complete[field]++;
                     } else {
                         stats.missing[field]++;
@@ -718,7 +718,10 @@ export function PinCheckerDetailsReports() {
 
     // Helper function to render status cell with proper styling
     const renderStatusCell = (detail: any, typeId: string) => {
-        const status = detail[`${typeId}_status`];
+        // For compliance types, use the field directly, for other types append _status
+        const status = ['etims_registration', 'tims_registration', 'vat_compliance'].includes(typeId) 
+            ? detail[typeId] 
+            : detail[`${typeId}_status`];
         const isComplianceType = ['etims_registration', 'tims_registration', 'vat_compliance'].includes(typeId);
 
         if (!status) {
@@ -751,7 +754,7 @@ export function PinCheckerDetailsReports() {
             );
         }
 
-        if (status.toLowerCase() === 'inactive' || status.toLowerCase() === 'non-compliant') {
+        if (status.toLowerCase() === 'inactive' || status.toLowerCase() === 'not compliant') {
             return (
                 <span className="bg-red-400 text-red-800 px-1 py-1 rounded-full text-xs font-semibold">
                     {status}
@@ -1144,7 +1147,7 @@ export function PinCheckerDetailsReports() {
             ${!detail[`${compType.id}_status`]
                                                         ? 'font-bold text-gray-600 bg-gray-100'
                                                         : (detail[`${compType.id}_status`]?.toLowerCase() === 'inactive' ||
-                                                            detail[`${compType.id}_status`]?.toLowerCase() === 'non-compliant'
+                                                            detail[`${compType.id}_status`]?.toLowerCase() === 'not compliant'
                                                             ? 'font-bold text-red-600 bg-red-100'
                                                             : '')}`}
                                             >
