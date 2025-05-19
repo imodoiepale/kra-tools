@@ -73,7 +73,7 @@ export function PinCheckerDetailsReports() {
     const [categoryFilters, setCategoryFilters] = useState({})
     const [showStatsRows, setShowStatsRows] = useState(true)
     const [initialized, setInitialized] = useState(false);
-    const [showDateColumns, setShowDateColumns] = useState(true);
+    const [showDateColumns, setShowDateColumns] = useState(false);
 
     useEffect(() => {
         fetchReports();
@@ -761,7 +761,44 @@ export function PinCheckerDetailsReports() {
     return (
         <div className="space-y-4">
             <div className="flex justify-between items-center">
-                <h3 className="text-lg font-medium">PIN Checker Details Reports</h3>
+                {/* <h3 className="text-lg font-medium">PIN Checker Details Reports</h3> */}
+                <div className="flex space-x-2">
+                    <Input
+                        placeholder="Search details..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="max-w-sm"
+                    />
+                    <Button variant="outline" onClick={() => setIsCategoryFilterOpen(true)} size="sm">
+                        <Filter className="h-4 w-4 mr-2" />
+                        Categories
+                    </Button>
+                    <Button
+                        variant="outline"
+                        onClick={() => setShowStatsRows(!showStatsRows)}
+                        size="sm"
+                    >
+                        {showStatsRows ? <EyeOff className="h-4 w-4 mr-2" /> : <Eye className="h-4 w-4 mr-2" />}
+                        {showStatsRows ? 'Hide Stats' : 'Show Stats'}
+                    </Button>
+                    <Button
+                        variant="outline"
+                        onClick={() => setShowDateColumns(!showDateColumns)}
+                        size="sm"
+                    >
+                        <Calendar className="h-4 w-4 mr-2" />
+                        {showDateColumns ? 'Hide Dates' : 'Show Dates'}
+                    </Button>
+                </div>
+
+                <ClientCategoryFilter
+                    isOpen={isCategoryFilterOpen}
+                    onClose={() => setIsCategoryFilterOpen(false)}
+                    onApplyFilters={(filters) => setCategoryFilters(filters)}
+                    onClearFilters={() => setCategoryFilters({})}
+                    selectedFilters={categoryFilters}
+                    counts={categoryCounts}
+                />
                 <div className="space-x-2">
                     <Button variant="outline" size="sm" onClick={fetchReports}>
                         <RefreshCw className="h-4 w-4 mr-2" />
@@ -774,43 +811,7 @@ export function PinCheckerDetailsReports() {
                     <Button variant="destructive" size="sm" onClick={handleDeleteAll}>Delete All</Button>
                 </div>
             </div>
-            <div className="flex space-x-2">
-                <Input
-                    placeholder="Search details..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="max-w-sm"
-                />
-                <Button variant="outline" onClick={() => setIsCategoryFilterOpen(true)} size="sm">
-                    <Filter className="h-4 w-4 mr-2" />
-                    Categories
-                </Button>
-                <Button
-                    variant="outline"
-                    onClick={() => setShowStatsRows(!showStatsRows)}
-                    size="sm"
-                >
-                    {showStatsRows ? <EyeOff className="h-4 w-4 mr-2" /> : <Eye className="h-4 w-4 mr-2" />}
-                    {showStatsRows ? 'Hide Stats' : 'Show Stats'}
-                </Button>
-                <Button
-                    variant="outline"
-                    onClick={() => setShowDateColumns(!showDateColumns)}
-                    size="sm"
-                >
-                    <Calendar className="h-4 w-4 mr-2" />
-                    {showDateColumns ? 'Hide Dates' : 'Show Dates'}
-                </Button>   
-            </div>
 
-            <ClientCategoryFilter
-                isOpen={isCategoryFilterOpen}
-                onClose={() => setIsCategoryFilterOpen(false)}
-                onApplyFilters={(filters) => setCategoryFilters(filters)}
-                onClearFilters={() => setCategoryFilters({})}
-                selectedFilters={categoryFilters}
-                counts={categoryCounts}
-            />
 
             <div className="rounded-md border">
                 <div className="overflow-x-auto">
@@ -866,8 +867,8 @@ export function PinCheckerDetailsReports() {
 
                                             {/* KRA PIN stats */}
                                             <TableCell className="text-center text-[10px] border-r border-black">
-                                                <span className={stats.complete.kra_pin === sortedDetails.length ? 'text-green-600 font-bold' : ''}>
-                                                    {stats.complete.kra_pin}
+                                                <span className={stats.complete.company_name === sortedDetails.length ? 'text-green-600 font-bold' : ''}>
+                                                    {stats.complete.company_name}
                                                 </span>
                                             </TableCell>
 
@@ -1156,47 +1157,122 @@ export function PinCheckerDetailsReports() {
                                             <div className="flex space-x-2">
                                                 <Dialog>
                                                     <DialogTrigger asChild>
-                                                        <Button variant="outline" size="sm" onClick={() => handleEdit(detail)}>Edit</Button>
+                                                        <Button variant="outline" size="sm" onClick={() => handleEdit(detail)}>
+                                                            View
+                                                        </Button>
                                                     </DialogTrigger>
-                                                    <DialogContent className="sm:max-w-[425px]">
-                                                        <DialogHeader>
-                                                            <DialogTitle>Edit PIN Checker Detail</DialogTitle>
+                                                    <DialogContent className="max-w-5xl p-6 bg-white rounded-lg shadow-lg">
+                                                        <DialogHeader className="pb-4 border-b">
+                                                            <DialogTitle className="text-xl font-semibold text-gray-800">
+                                                                Company Details: {editingDetail?.company_name}
+                                                            </DialogTitle>
                                                         </DialogHeader>
-                                                        <div className="grid gap-4 py-4">
-                                                            {editingDetail && Object.entries(editingDetail).map(([key, value]) => {
-                                                                // Skip id and other non-editable fields if needed
-                                                                if (key === 'id' || key === 'companyData' || key === 'pinStatus') return null;
 
-                                                                return (
-                                                                    <div key={key} className="grid grid-cols-4 items-center gap-4">
-                                                                        <Label htmlFor={key} className="text-right">
-                                                                            {key.replace(/_/g, ' ').charAt(0).toUpperCase() + key.replace(/_/g, ' ').slice(1)}
-                                                                        </Label>
-                                                                        <Input
-                                                                            id={key}
-                                                                            value={value as string}
-                                                                            onChange={(e) => setEditingDetail({
-                                                                                ...editingDetail,
-                                                                                [key]: e.target.value
-                                                                            })}
-                                                                            className="col-span-3"
-                                                                        />
+                                                        {editingDetail && (
+                                                            <div className="py-2 overflow-y-auto max-h-[calc(100vh-200px)]">
+                                                                {/* Company Information Section */}
+                                                                <div className="mb-6">
+                                                                    <div className="grid grid-cols-3 gap-4">
+                                                                        <div className="space-y-1">
+                                                                            <p className="text-sm font-medium text-gray-500">Company Name</p>
+                                                                            <p className="bg-gray-50 p-2 rounded-md">{editingDetail.company_name}</p>
+                                                                        </div>
+                                                                        <div className="space-y-1">
+                                                                            <p className="text-sm font-medium text-gray-500">KRA PIN</p>
+                                                                            <p className="bg-gray-50 p-2 rounded-md">{editingDetail.kra_pin || 'Not Available'}</p>
+                                                                        </div>
+                                                                        <div className="space-y-1">
+                                                                            <p className="text-sm font-medium text-gray-500">Last Checked</p>
+                                                                            <p className="bg-gray-50 p-2 rounded-md">{formatDate(editingDetail.last_checked_at)} {new Date(editingDetail.last_checked_at).toLocaleTimeString()}</p>
+                                                                        </div>
                                                                     </div>
-                                                                );
-                                                            })}
-                                                        </div>
-                                                        <DialogClose asChild>
-                                                            <Button onClick={() => handleSave(editingDetail!)}>Save</Button>
-                                                        </DialogClose>
+                                                                </div>
+
+                                                                {/* Tax Obligations Section */}
+                                                                <div className="mb-6">
+                                                                    <h3 className="text-md font-medium text-gray-700 mb-3 pb-2 border-b">Tax Obligations</h3>
+
+                                                                    {/* Group tax types and display them in a structured way */}
+                                                                    <div className="grid grid-cols-3 gap-4">
+                                                                        {TAX_TYPES.map(taxType => (
+                                                                            <div key={taxType.id} className={`p-3 rounded-md ${getCellColor(taxType.id)}`}>
+                                                                                <h4 className="font-medium mb-2 pb-1 border-b border-gray-200">{taxType.label}</h4>
+                                                                                <div className="space-y-2">
+                                                                                    <div className="space-y-1">
+                                                                                        <p className="text-sm font-medium text-gray-500">Status :{editingDetail[`${taxType.id}_status` as keyof PinCheckerDetail] ? (
+                                                                                            <span className={`px-2 py-1 rounded-full text-xs font-semibold ${editingDetail[`${taxType.id}_status` as keyof PinCheckerDetail]?.toString().toLowerCase() === 'registered' ||
+                                                                                                editingDetail[`${taxType.id}_status` as keyof PinCheckerDetail]?.toString().toLowerCase() === 'active'
+                                                                                                ? 'bg-green-100 text-green-800'
+                                                                                                : editingDetail[`${taxType.id}_status` as keyof PinCheckerDetail]?.toString().toLowerCase() === 'cancelled'
+                                                                                                    ? 'bg-amber-100 text-amber-800'
+                                                                                                    : 'bg-red-100 text-red-800'
+                                                                                                }`}>
+                                                                                                {editingDetail[`${taxType.id}_status` as keyof PinCheckerDetail]}
+                                                                                            </span>
+                                                                                        ) : (
+                                                                                            <span className="text-red-600 font-medium">No Obligation</span>
+                                                                                        )}
+                                                                                        </p>
+                                                                                    </div>
+                                                                                    <div className="grid grid-cols-2 gap-2">
+                                                                                        <div className="space-y-1">
+                                                                                            <p className="text-sm font-medium text-gray-500">From :   {editingDetail[`${taxType.id}_effective_from` as keyof PinCheckerDetail]
+                                                                                                ? formatDate(editingDetail[`${taxType.id}_effective_from` as keyof PinCheckerDetail] as string)
+                                                                                                : 'N/A'}</p>
+                                                                                        </div>
+                                                                                        <div className="space-y-1">
+                                                                                            <p className="text-sm font-medium text-gray-500">To : {editingDetail[`${taxType.id}_effective_to` as keyof PinCheckerDetail]
+                                                                                                ? formatDate(editingDetail[`${taxType.id}_effective_to` as keyof PinCheckerDetail] as string)
+                                                                                                : 'N/A'}</p>
+                                                                                        </div>
+                                                                                    </div>
+                                                                                </div>
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+                                                                </div>
+
+                                                                {/* Compliance Section */}
+                                                                <div className="mb-6">
+                                                                    <h3 className="text-md font-medium text-gray-700 mb-3 pb-2 border-b">Registration & Compliance Status</h3>
+                                                                    <div className="grid grid-cols-3 gap-4">
+                                                                        {COMPLIANCE_TYPES.map(compType => (
+                                                                            <div key={compType.id} className={`p-3 rounded-md ${getCellColor(compType.id)}`}>
+                                                                                <h4 className="font-medium mb-2 pb-1 border-b border-gray-200">{compType.label}</h4>
+                                                                                <div className="space-y-1">
+                                                                                    <p className="text-sm font-medium text-gray-500">Status : {editingDetail[`${compType.id}_status` as keyof PinCheckerDetail] ? (
+                                                                                        <span className={`px-2 py-1 rounded-full text-xs font-semibold ${editingDetail[`${compType.id}_status` as keyof PinCheckerDetail]?.toString().toLowerCase() === 'active' ||
+                                                                                            editingDetail[`${compType.id}_status` as keyof PinCheckerDetail]?.toString().toLowerCase() === 'compliant'
+                                                                                            ? 'bg-green-100 text-green-800'
+                                                                                            : 'bg-red-100 text-red-800'
+                                                                                            }`}>
+                                                                                            {editingDetail[`${compType.id}_status` as keyof PinCheckerDetail]}
+                                                                                        </span>
+                                                                                    ) : (
+                                                                                        <span className="text-gray-500">Not Available</span>
+                                                                                    )}</p>
+                                                                                </div>
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+                                                                </div>
+
+                                                                {/* Additional Information Section */}
+                                                                {editingDetail.error_message && (
+                                                                    <div>
+                                                                        <h3 className="text-md font-medium text-gray-700 mb-3 pb-2 border-b">Additional Information</h3>
+                                                                        <div className="mb-4">
+                                                                            <p className="text-sm font-medium text-gray-500 mb-1">Error Message</p>
+                                                                            <div className="bg-red-50 p-3 rounded-md text-red-800 border border-red-200">
+                                                                                {editingDetail.error_message}
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        )}
                                                     </DialogContent>
                                                 </Dialog>
-                                                <Button
-                                                    variant="destructive"
-                                                    size="sm"
-                                                    onClick={() => handleDelete(detail.id)}
-                                                >
-                                                    <Trash2Icon className="h-3 w-3" />
-                                                </Button>
                                             </div>
                                         </TableCell>
                                     </TableRow>
