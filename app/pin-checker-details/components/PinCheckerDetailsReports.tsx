@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Trash2, Download, RefreshCw, ArrowUpDown, Trash2Icon, Filter, Eye, EyeOff } from 'lucide-react'
 import ExcelJS from 'exceljs'
-import { ClientCategoryFilter } from "@/components/ClientCategoryFilter"
+import { ClientCategoryFilter } from "./ClientCategoryFilter"
 
 interface PinCheckerDetail {
     id: number;
@@ -41,6 +41,7 @@ type SortOrder = 'asc' | 'desc';
 
 export function PinCheckerDetailsReports() {
     const [details, setDetails] = useState<PinCheckerDetail[]>([])
+    const [companies, setCompanies] = useState<any[]>([]);
     const [editingDetail, setEditingDetail] = useState<PinCheckerDetail | null>(null)
     const [sortField, setSortField] = useState<SortField>('company_name')
     const [sortOrder, setSortOrder] = useState<SortOrder>('asc')
@@ -48,10 +49,20 @@ export function PinCheckerDetailsReports() {
     const [isCategoryFilterOpen, setIsCategoryFilterOpen] = useState(false)
     const [categoryFilters, setCategoryFilters] = useState({})
     const [showStatsRows, setShowStatsRows] = useState(true)
+    const [initialized, setInitialized] = useState(false);
 
     useEffect(() => {
-        fetchReports()
-    }, [])
+        fetchReports();
+        fetchCompanies();
+
+        // Set default filter for accounting if not already initialized
+        if (!initialized && Object.keys(categoryFilters).length === 0) {
+            setCategoryFilters({
+                'acc': { 'all': true }
+            });
+            setInitialized(true);
+        }
+    }, [initialized]);
 
     const fetchReports = async () => {
         const { data, error } = await supabase
@@ -65,6 +76,225 @@ export function PinCheckerDetailsReports() {
             setDetails(data || [])
         }
     }
+    const fetchCompanies = async () => {
+        const { data, error } = await supabase
+            .from('acc_portal_company_duplicate')
+            .select(`
+      id,
+      company_name,
+      kra_pin,
+      imm_client_effective_from,
+      imm_client_effective_to,
+      acc_client_effective_from,
+      acc_client_effective_to,
+      sheria_client_effective_from,
+      sheria_client_effective_to,
+      audit_client_effective_from,
+      audit_client_effective_to
+    `);
+
+        if (error) {
+            console.error('Error fetching companies:', error);
+        } else {
+            setCompanies(data || []);
+        }
+    };
+
+    // Helper function to determine if a client date range is active
+    const isClientTypeActive = (fromDate, toDate) => {
+        if (!fromDate || !toDate) return false;
+
+        const currentDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+
+        // Parse dates with format handling
+        const parseDate = (dateStr) => {
+            // Handle different date formats
+            if (dateStr.includes('/')) {
+                // Format: DD/MM/YYYY
+                const [day, month, year] = dateStr.split('/').map(Number);
+                return new Date(year, month - 1, day);
+            } else {
+                // Format: YYYY-MM-DD
+                return new Date(dateStr);
+            }
+        };
+
+        const from = parseDate(fromDate);
+        const to = parseDate(toDate);
+        const current = new Date(currentDate);
+
+        return from <= current && current <= to;
+    };
+
+    // Join details with company data
+    const joinedDetails = React.useMemo(() => {
+        return details.map(detail => {
+            // Find matching company by name
+            const matchingCompany = companies.find(
+                company => company.company_name === detail.company_name
+            );
+
+            return {
+                ...detail,
+                companyData: matchingCompany || null,
+                // Add missing PIN indicator
+                pinStatus: matchingCompany && matchingCompany.kra_pin ? 'PIN available' : 'Missing PIN'
+            };
+        });
+    }, [details, companies]);
+
+
+    // Helper function to determine if a detail has active tax obligations
+    const isDetailActiveByTaxStatus = (detail) => {
+        const activeStatuses = ['Registered', 'Active'];
+
+        return [
+            detail.income_tax_company_status,
+            detail.vat_status,
+            detail.paye_status,
+            detail.rent_income_mri_status,
+            detail.resident_individual_status,
+            detail.turnover_tax_status
+        ].some(status =>
+            status && activeStatuses.includes(status)
+        );
+    };
+
+    // Filter joined details based on search and category filters
+    const filteredDetails = React.useMemo(() => {
+        if (Object.keys(categoryFilters).length === 0) {
+            // If no category filters, apply search filter to joined details
+            return joinedDetails.filter(detail =>
+                searchTerm === '' ||
+                Object.entries(detail).some(([key, value]) => {
+                    if (value === null || value === undefined || key === 'companyData') {
+                        return false;
+                    }
+                    return value.toString().toLowerCase().includes(searchTerm.toLowerCase());
+                })
+            );
+        }
+
+        // Apply both category filters and search filter
+        return joinedDetails.filter(detail => {
+            // Apply search filter
+            const matchesSearch = searchTerm === '' ||
+                Object.entries(detail).some(([key, value]) => {
+                    if (value === null || value === undefined || key === 'companyData') {
+                        return false;
+                    }
+                    return value.toString().toLowerCase().includes(searchTerm.toLowerCase());
+                });
+
+            if (!matchesSearch) return false;
+
+            // Get company data
+            const company = detail.companyData;
+            if (!company) return false;
+
+            // Determine if detail has active tax obligations
+            const hasActiveTaxObligations = isDetailActiveByTaxStatus(detail);
+            const status = hasActiveTaxObligations ? 'active' : 'inactive';
+
+            // Check if the detail matches any selected category-status
+            for (const [category, statusFilters] of Object.entries(categoryFilters)) {
+                // Skip if no status is selected for this category
+                if (!Object.values(statusFilters).some(isSelected => isSelected)) continue;
+
+                // For 'all' category, check if any client type is active
+                if (category === 'all') {
+                    const anyClientTypeActive = ['acc', 'imm', 'sheria', 'audit'].some(cat =>
+                        isClientTypeActive(
+                            company[`${cat}_client_effective_from`],
+                            company[`${cat}_client_effective_to`]
+                        )
+                    );
+
+                    if (!anyClientTypeActive) continue;
+                } else {
+                    // For specific categories, check if that client type is active
+                    const isClientActive = isClientTypeActive(
+                        company[`${category}_client_effective_from`],
+                        company[`${category}_client_effective_to`]
+                    );
+
+                    if (!isClientActive) continue;
+                }
+
+                // Check if the status matches any selected status
+                if (statusFilters['all'] || statusFilters[status]) {
+                    return true;
+                }
+            }
+
+            return false;
+        });
+    }, [joinedDetails, categoryFilters, searchTerm]);
+
+    // Calculate counts for display in the filter UI
+    const calculateCategoryCounts = () => {
+        const counts = {
+            'all': { 'all': 0, 'active': 0, 'inactive': 0 },
+            'acc': { 'all': 0, 'active': 0, 'inactive': 0 },
+            'imm': { 'all': 0, 'active': 0, 'inactive': 0 },
+            'sheria': { 'all': 0, 'active': 0, 'inactive': 0 },
+            'audit': { 'all': 0, 'active': 0, 'inactive': 0 },
+        };
+
+        // Filter details based on search term only
+        const searchFilteredDetails = joinedDetails.filter(detail =>
+            searchTerm === '' ||
+            Object.entries(detail).some(([key, value]) => {
+                if (value === null || value === undefined || key === 'companyData') {
+                    return false;
+                }
+                return value.toString().toLowerCase().includes(searchTerm.toLowerCase());
+            })
+        );
+
+        // Count all search-filtered items
+        counts['all']['all'] = searchFilteredDetails.length;
+
+        searchFilteredDetails.forEach(detail => {
+            // Get the company details if available
+            const company = detail.companyData;
+
+            if (!company) {
+                // If company data is not available, count as 'all' and 'inactive'
+                counts['all']['inactive']++;
+                return;
+            }
+
+            // Check if the detail has any active tax obligations
+            const hasActiveTaxObligations = isDetailActiveByTaxStatus(detail);
+
+            // Count for each client type category
+            const categories = ['acc', 'imm', 'sheria', 'audit'];
+            let hasAnyActiveClientType = false;
+
+            categories.forEach(category => {
+                const isActive = isClientTypeActive(
+                    company[`${category}_client_effective_from`],
+                    company[`${category}_client_effective_to`]
+                );
+
+                if (isActive) {
+                    hasAnyActiveClientType = true;
+                    counts[category]['all']++;
+                    counts[category][hasActiveTaxObligations ? 'active' : 'inactive']++;
+                }
+            });
+
+            // Update 'all' category counts if any client type is active
+            if (hasAnyActiveClientType) {
+                counts['all'][hasActiveTaxObligations ? 'active' : 'inactive']++;
+            }
+        });
+
+        return counts;
+    };
+
+    const categoryCounts = calculateCategoryCounts();
 
     const handleEdit = (detail: PinCheckerDetail) => {
         setEditingDetail(detail)
@@ -118,6 +348,7 @@ export function PinCheckerDetailsReports() {
         worksheet.addRow([
             'Index',
             'Company Name',
+            'KRA PIN',
             'Income Tax Company Status', 'Income Tax Company From', 'Income Tax Company To',
             'VAT Status', 'VAT From', 'VAT To',
             'PAYE Status', 'PAYE From', 'PAYE To',
@@ -291,48 +522,7 @@ export function PinCheckerDetailsReports() {
         return `${day}.${month}.${year}`;
     }
 
-    // Filter details based on search term and category filters
-    const filteredDetails = React.useMemo(() => {
-        return details.filter(detail => {
-            // Apply search filter
-            const matchesSearch = searchTerm === '' || 
-                Object.entries(detail).some(([key, value]) => {
-                    if (value === null || value === undefined) {
-                        return false;
-                    }
-                    return value.toString().toLowerCase().includes(searchTerm.toLowerCase());
-                });
 
-            if (!matchesSearch) return false;
-            
-            // Apply category filters
-            if (Object.keys(categoryFilters).length > 0) {
-                // Check if any category filter is active
-                const hasActiveFilters = Object.values(categoryFilters).some(categoryStatus => 
-                    Object.values(categoryStatus as Record<string, boolean>).some(isSelected => isSelected)
-                );
-                
-                if (hasActiveFilters) {
-                    // Get the detail's category and status
-                    const category = detail.category || 'all';
-                    const status = detail.status === 'active' ? 'active' : 'inactive';
-                    
-                    // Check if this category has any filters
-                    const categoryFilter = categoryFilters[category] as Record<string, boolean> | undefined;
-                    if (!categoryFilter) {
-                        // Check if 'all' category has this status selected
-                        const allCategoryFilter = categoryFilters['all'] as Record<string, boolean> | undefined;
-                        return allCategoryFilter?.[status] || allCategoryFilter?.['all'];
-                    }
-                    
-                    // Check if this specific status is selected for this category
-                    return categoryFilter[status] || categoryFilter['all'];
-                }
-            }
-            
-            return true;
-        });
-    }, [details, searchTerm, categoryFilters]);
 
     const sortedDetails = React.useMemo(() => {
         return [...filteredDetails].sort((a, b) => {
@@ -490,22 +680,27 @@ export function PinCheckerDetailsReports() {
                 </Button>
             </div>
             
-            <ClientCategoryFilter 
-                isOpen={isCategoryFilterOpen} 
-                onClose={() => setIsCategoryFilterOpen(false)} 
+            <ClientCategoryFilter
+                isOpen={isCategoryFilterOpen}
+                onClose={() => setIsCategoryFilterOpen(false)}
                 onApplyFilters={(filters) => setCategoryFilters(filters)}
                 onClearFilters={() => setCategoryFilters({})}
                 selectedFilters={categoryFilters}
+                counts={categoryCounts}
             />
+
             <div className="rounded-md border">
                 <div className="overflow-x-auto">
-                    <div className="max-h-[calc(100vh-300px)] overflow-y-auto">
+                    <div className="max-h-[calc(100vh-400px)] overflow-y-auto">
                         <Table className="text-xs pb-2">
                             <TableHeader>
                                 <TableRow className="h-8">
                                     <TableHead className="sticky top-0 bg-white border-r border-black border-b font-bold text-black text-center">Index</TableHead>
                                     <TableHead className="sticky top-0 bg-white border-r border-black border-b font-bold text-black">
                                         <SortableHeader field="company_name">Company Name</SortableHeader>
+                                    </TableHead>
+                                    <TableHead className="sticky top-0 bg-white border-r border-black border-b font-bold text-black">
+                                        <SortableHeader field="company_name">KRA PIN</SortableHeader>
                                     </TableHead>
                                     {['Income Tax Company', 'VAT', 'PAYE', 'Rent Income (MRI)', 'Resident Individual', 'Turnover Tax'].map((header, index) => (
                                         <TableHead key={index} className={`sticky top-0 ${getCellColor(header.toLowerCase().replace(' ', '_'))} border-r border-black border-b text-center font-bold text-black`} colSpan={3}>{header}</TableHead>
@@ -746,6 +941,7 @@ export function PinCheckerDetailsReports() {
                                 <TableRow className="h-8">
                                     <TableHead className="sticky top-8 bg-white border-r border-black border-b"></TableHead>
                                     <TableHead className="sticky top-8 bg-white border-r border-black border-b"></TableHead>
+                                    <TableHead className="sticky top-8 bg-white border-r border-black border-b"></TableHead>
                                     {['Income Tax Company', 'VAT', 'PAYE', 'Rent Income (MRI)', 'Resident Individual', 'Turnover Tax'].flatMap((header) => (
                                         ['Status', 'From', 'To'].map((subHeader, index) => {
                                             const field = `${header.toLowerCase().replace(' ', '_')}_${subHeader.toLowerCase()}` as SortField;
@@ -771,7 +967,13 @@ export function PinCheckerDetailsReports() {
                                     <TableRow key={detail.id} className="h-6">
                                         <TableCell className="border-r border-black font-bold text-black text-center">{index + 1}</TableCell>
                                         <TableCell className="border-r border-black">{detail.company_name}</TableCell>
-
+                                        <TableCell className="border-r border-black">
+                                            {detail.pinStatus === 'Missing PIN' ? (
+                                                <span className="text-red-600 font-semibold">Missing PIN</span>
+                                            ) : (
+                                                <span>{detail.companyData?.kra_pin || detail.company_name}</span>
+                                            )}
+                                        </TableCell>
                                         {['income_tax_company', 'vat', 'paye', 'rent_income_mri', 'resident_individual', 'turnover_tax'].map((type) => (
                                             <React.Fragment key={type}>
                                                 <TableCell className={`${getCellColor(type)} border-l border-r border-black ${!detail[`${type}_status` as keyof PinCheckerDetail] || detail[`${type}_status` as keyof PinCheckerDetail]?.toLowerCase() === 'no obligation' ? 'font-bold text-red-600 bg-red-100' : ''} text-center`}>

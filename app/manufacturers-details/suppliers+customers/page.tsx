@@ -118,24 +118,17 @@ export default function ManufacturersDetailsSuppliers() {
     const handleStartCheck = async () => {
         setIsChecking(true)
         try {
-            let kraData;
+            let kraPins;
             if (runOption === 'selected' || runOption === 'missing') {
-                kraData = manufacturers
+                kraPins = manufacturers
                     .filter(m => selectedManufacturers.includes(m.id))
-                    .map(m => ({
-                        pin: m.pin_no,
-                        company_id: m.id
-                    }));
+                    .map(m => m.pin_no);
             } else {
-                kraData = manufacturers.map(m => ({
-                    pin: m.pin_no,
-                    company_id: m.id
-                }));
+                kraPins = manufacturers.map(m => m.pin_no);
             }
 
             const { results, summary } = await kraService.startManufacturerDetailsCheck({
-                kraPins: kraData.map(d => d.pin),
-                company_ids: kraData.map(d => d.company_id),
+                kraPins,
                 type: 'suppliers_and_customers'
             });
             setKraResults(results)

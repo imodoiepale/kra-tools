@@ -12,7 +12,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { motion } from "framer-motion"
 import { ManufacturersDetailsRunning } from '../suppliers+customers/components/ManufacturersDetailsRunning';
 import { ManufacturersDetailsReports } from './components/ManufacturersDetailsReports';
-import { kraService } from '../services/kra-service';
 
 interface Manufacturer {
     id: number;
@@ -27,24 +26,11 @@ export default function ManufacturersDetailsCompanies() {
     const [shouldStop, setShouldStop] = useState(false)
     const [manufacturers, setManufacturers] = useState<Manufacturer[]>([])
     const [selectedManufacturers, setSelectedManufacturers] = useState<number[]>([])
-    const [runOption, setRunOption] = useState<'all' | 'selected' | 'missing'>('all')
-    const [kraResults, setKraResults] = useState<any[]>([])
-    const [kraSummary, setKraSummary] = useState<any>(null)
+    const [runOption, setRunOption] = useState<'all' | 'selected'>('all')
 
     useEffect(() => {
         fetchManufacturers()
     }, [])
-
-    useEffect(() => {
-        if (runOption === 'missing') {
-            const missingCompanies = manufacturers
-                .filter(m => !m.company_name)
-                .map(m => m.id);
-            setSelectedManufacturers(missingCompanies);
-        } else if (runOption === 'all') {
-            setSelectedManufacturers([]);
-        }
-    }, [runOption, manufacturers]);
 
     const fetchManufacturers = async () => {
         console.log('Fetching manufacturers data...');
@@ -57,11 +43,7 @@ export default function ManufacturersDetailsCompanies() {
             console.error('Error fetching manufacturers:', error);
         } else {
             console.log('Manufacturers data fetched successfully:', data);
-            if (data) {
-                setManufacturers(data as unknown as Manufacturer[]);
-            } else {
-                setManufacturers([]);
-            }
+            setManufacturers(data as Manufacturer[] || []);
         }
 
         console.log('Manufacturers state updated:', manufacturers);
@@ -69,22 +51,24 @@ export default function ManufacturersDetailsCompanies() {
 
     const handleStartCheck = async () => {
         setIsChecking(true)
+        setShouldStop(false)
         try {
-            let kraPins;
-            if (runOption === 'selected' || runOption === 'missing') {
-                kraPins = manufacturers
-                    .filter(m => selectedManufacturers.includes(m.id))
-                    .map(m => m.kra_pin);
-            } else {
-                kraPins = manufacturers.map(m => m.kra_pin);
-            }
-
-            const { results, summary } = await kraService.startManufacturerDetailsCheck({
-                kraPins,
-                type: 'company'
+            const response = await fetch('/api/manufacturers-details', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    stop: shouldStop,
+                    runOption,
+                    selectedIds: runOption === 'selected' ? selectedManufacturers : []
+                })
             });
-            setKraResults(results)
-            setKraSummary(summary)
+
+            if (!response.ok) throw new Error('API request failed')
+
+            const data = await response.json()
+            console.log('Manufacturers details check completed:', data)
             setActiveTab("running")
         } catch (error) {
             console.error('Error starting manufacturers details check:', error)
@@ -135,7 +119,6 @@ export default function ManufacturersDetailsCompanies() {
                                             <SelectContent>
                                                 <SelectItem value="all">All Companies</SelectItem>
                                                 <SelectItem value="selected">Selected Companies</SelectItem>
-                                                <SelectItem value="missing">Missing Companies</SelectItem>
                                             </SelectContent>
                                         </Select>
                                     </div>
@@ -237,12 +220,7 @@ export default function ManufacturersDetailsCompanies() {
                             </Card>
                         </TabsContent>
                         <TabsContent value="running">
-                            <ManufacturersDetailsRunning 
-                                onComplete={() => setActiveTab("reports")} 
-                                shouldStop={shouldStop}
-                                initialResults={kraResults}
-                                initialSummary={kraSummary}
-                            />
+                            <ManufacturersDetailsRunning onComplete={() => setActiveTab("reports")} shouldStop={shouldStop} />
                         </TabsContent>
                         <TabsContent value="reports">
                             <ManufacturersDetailsReports />

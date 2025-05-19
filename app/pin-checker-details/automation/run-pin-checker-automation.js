@@ -1,50 +1,47 @@
-// @ts-nocheck
-import { chromium } from "playwright";
-import fs from "fs/promises";
-import { existsSync } from "fs";
-import path from "path";
-import os from "os";
-import ExcelJS from "exceljs";
-import { createWorker } from "tesseract.js";
-import { createClient } from "@supabase/supabase-js";
+// run-automation.js
+const { chromium } = require('playwright');
+const fs = require('fs').promises;
+const { existsSync } = require('fs');
+const path = require('path');
+const os = require('os');
+const ExcelJS = require('exceljs');
+const { createWorker } = require('tesseract.js');
+const { createClient } = require('@supabase/supabase-js');
+
+// Load environment variables
+require('dotenv').config();
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
+// Global variables
 let stopRequested = false;
 
-export default async function handler(req, res) {
-    if (req.method !== "POST") {
-        return res.status(405).json({ message: "Method not allowed" });
-    }
-
-    const { action, runOption, selectedIds } = req.body;
-
-    if (action === "getProgress") {
-        const progress = await getAutomationProgress();
-        return res.status(200).json(progress);
-    }
-
-    if (action === "stop") {
-        stopRequested = true;
-        await updateAutomationProgress(0, "Stopped", []);
-        return res.status(200).json({ message: "Automation stop requested." });
-    }
-
-    if (action === "start") {
+// Main function
+async function main() {
+    console.log(`[${new Date().toISOString()}] Starting PIN Checker automation`);
+    
+    try {
+        // Check if automation is already running
         const currentProgress = await getAutomationProgress();
         if (currentProgress && currentProgress.status === "Running") {
-            return res.status(400).json({ message: "Automation is already in progress." });
+            console.log("Automation is already in progress.");
+            return;
         }
-
+        
+        // Reset the automation status
         stopRequested = false;
         await updateAutomationProgress(0, "Running", []);
-        processCompanies(runOption, selectedIds).catch(console.error);
-        return res.status(200).json({ message: "Automation started." });
+        
+        // Start the automation process
+        await processCompanies('all', []);
+        
+        console.log(`[${new Date().toISOString()}] PIN Checker automation completed successfully`);
+    } catch (error) {
+        console.error(`[${new Date().toISOString()}] Error in PIN Checker automation:`, error);
+        await updateAutomationProgress(0, "Error", [{ error: error.message }]);
     }
-
-    return res.status(400).json({ message: "Invalid action." });
 }
 
 async function getAutomationProgress() {
@@ -84,67 +81,104 @@ async function updateAutomationProgress(progress, status, logs) {
 }
 
 async function processCompanies(runOption, selectedIds) {
-
-    const chrome64Path = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
-    const chrome32Path = 'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe';
-
-    // Launch Chromium using the chosen Chrome executable
+    console.log(`[${new Date().toISOString()}] Launching browser`);
+    
+    // Launch browser - in Docker, we need to specify proper options
     const browser = await chromium.launch({
-        headless: false,
-        // executablePath: chrome32Path || chrome64Path,
-        channel: "chrome"
+        headless: true, // Run headless in Docker
+        args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-accelerated-2d-canvas',
+            '--no-first-run',
+            '--no-zygote',
+            '--disable-gpu'
+        ]
     });
 
     const context = await browser.newContext();
     const page = await context.newPage();
 
     try {
+        // Get companies to process
         let companies = await readSupabaseData(runOption, selectedIds);
+        console.log(`[${new Date().toISOString()}] Processing ${companies.length} companies`);
+        
         const allCompanyData = [];
         const now = new Date();
-        const formattedDateTime = `${now.getDate()}.${now.getMonth() + 1}.${now.getFullYear()}`;
-        const downloadFolderPath = path.join(os.homedir(), "Downloads", `PIN CHECKER DETAILS EXTRACTOR_${formattedDateTime}`);
+        
+        // Setup download folder
+        const downloadFolderPath = path.join('/root/Downloads', `PIN_CHECKER_DETAILS_EXTRACTOR_${now.getDate()}.${now.getMonth() + 1}.${now.getFullYear()}`);
         await fs.mkdir(downloadFolderPath, { recursive: true });
 
+        // Navigate to KRA portal
         await page.goto("https://itax.kra.go.ke/KRA-Portal/");
 
+        // Process each company
         for (let i = 0; i < companies.length; i++) {
             if (stopRequested) {
-                console.log("Automation stopped by user request.");
+                console.log(`[${new Date().toISOString()}] Automation stopped by user request.`);
                 break;
             }
 
             const company = companies[i];
             try {
+                console.log(`[${new Date().toISOString()}] Processing company ${i+1}/${companies.length}: ${company.company_name}`);
+                
+                // Process company data
                 const organizedData = await processCompanyData(company, page);
                 allCompanyData.push(organizedData);
-                console.log(organizedData);
+                
+                // Save details to the database
                 await saveCompanyDetails(organizedData);
 
+                // Create Excel file with current data
                 const workbook = createExcelFile(allCompanyData);
                 const formattedDate = `${now.getDate().toString().padStart(2, '0')}.${(now.getMonth() + 1).toString().padStart(2, '0')}.${now.getFullYear()}`;
-                const excelFilePath = path.join(downloadFolderPath, `PIN CHECKER DETAILS - OBLIGATIONS - ${formattedDate}.xlsx`);
+                const excelFilePath = path.join(downloadFolderPath, `PIN_CHECKER_DETAILS_OBLIGATIONS_${formattedDate}.xlsx`);
                 await workbook.xlsx.writeFile(excelFilePath);
 
+                // Update progress
                 const progress = Math.round(((i + 1) / companies.length) * 100);
                 await updateAutomationProgress(progress, "Running", allCompanyData);
+                
+                // Add a delay to prevent rate limiting
+                await page.waitForTimeout(2000);
             } catch (error) {
-                console.error(`Error processing company ${company.company_name}:`, error);
-                await updateAutomationProgress(Math.round(((i + 1) / companies.length) * 100), "Running", { companyName: company.company_name, error: error.message });
+                console.error(`[${new Date().toISOString()}] Error processing company ${company.company_name}:`, error);
+                
+                // Add error to the company data
+                const errorData = {
+                    company_name: company.company_name,
+                    error: error.message || "Unknown error occurred"
+                };
+                
+                allCompanyData.push(errorData);
+                await saveCompanyDetails(errorData);
+                
+                // Update progress with error
+                const progress = Math.round(((i + 1) / companies.length) * 100);
+                await updateAutomationProgress(progress, "Running", allCompanyData);
             }
         }
 
+        // Mark automation as completed
         await updateAutomationProgress(100, "Completed", allCompanyData);
     } catch (error) {
-        console.error("Error in processCompanies:", error);
-        await updateAutomationProgress(0, "Error", []);
+        console.error(`[${new Date().toISOString()}] Error in processCompanies:`, error);
+        await updateAutomationProgress(0, "Error", [{ error: error.message }]);
     } finally {
+        // Close browser
+        console.log(`[${new Date().toISOString()}] Closing browser`);
         await browser.close();
     }
 }
 
 async function readSupabaseData(runOption, selectedIds) {
     try {
+        console.log(`[${new Date().toISOString()}] Reading company data from Supabase`);
+        
         let query = supabase.from("acc_portal_company_duplicate").select("*").order('id', { ascending: true });
 
         if (runOption === 'selected' && selectedIds.length > 0) {
@@ -154,28 +188,35 @@ async function readSupabaseData(runOption, selectedIds) {
         const { data, error } = await query;
 
         if (error) {
-            throw new Error(`Error reading data from 'PasswordChecker' table: ${error.message}`);
+            throw new Error(`Error reading data from 'acc_portal_company_duplicate' table: ${error.message}`);
         }
+        
+        console.log(`[${new Date().toISOString()}] Found ${data.length} companies to process`);
         return data;
     } catch (error) {
-        console.error(`Error reading Supabase data: ${error.message}`);
+        console.error(`[${new Date().toISOString()}] Error reading Supabase data:`, error);
         throw error;
     }
 }
 
 async function processCompanyData(company, page) {
-    console.log("Processing company:", company.company_name);
+    console.log(`[${new Date().toISOString()}] Processing company: ${company.company_name}`);
 
     if (!company.kra_pin) {
+        console.log(`[${new Date().toISOString()}] KRA PIN missing for ${company.company_name}`);
         return {
             company_name: company.company_name,
             error: "KRA PIN Missing"
         };
     }
 
+    // Login to KRA portal
     await loginToKRA(page, company);
+    
+    // Click obligation details
     await clickObligationDetails(page);
 
+    // Extract table content
     const tableContent = await page.evaluate(() => {
         const table = document.querySelector(
             "#pinCheckerForm > div:nth-child(9) > center > div > table > tbody > tr:nth-child(5) > td > fieldset > div > table"
@@ -183,10 +224,13 @@ async function processCompanyData(company, page) {
         return table ? table.innerText : "Table not found";
     });
 
+    // Organize the extracted data
     return organizeData(company.company_name, tableContent);
 }
 
 async function loginToKRA(page, company) {
+    console.log(`[${new Date().toISOString()}] Logging in to KRA for ${company.company_name}`);
+    
     await page.goto("https://itax.kra.go.ke/KRA-Portal/");
     await page.locator("#logid").click();
     await page.evaluate(() => pinchecker());
@@ -196,52 +240,88 @@ async function loginToKRA(page, company) {
     let attempts = 0;
 
     while (attempts < maxAttempts) {
-        const image = await page.waitForSelector("#captcha_img");
-        const imagePath = path.join(os.tmpdir(), "ocr.png");
-        await image.screenshot({ path: imagePath });
+        try {
+            const image = await page.waitForSelector("#captcha_img");
+            const imagePath = path.join('/tmp', `ocr_${Date.now()}.png`);
+            await image.screenshot({ path: imagePath });
 
-        const worker = await createWorker('eng', 1);
+            const worker = await createWorker('eng', 1);
+            const ret = await worker.recognize(imagePath);
+            
+            // Clean up the OCR text
+            const text1 = ret.data.text.slice(0, -1);
+            const text = text1.slice(0, -1);
+            const numbers = text.match(/\d+/g);
 
+            if (!numbers || numbers.length < 2) {
+                console.log(`[${new Date().toISOString()}] Unable to extract valid numbers from the CAPTCHA. Attempt ${attempts+1}/${maxAttempts}`);
+                attempts++;
+                await worker.terminate();
+                await page.reload();
+                await page.locator("#logid").click();
+                await page.evaluate(() => pinchecker());
+                await page.waitForTimeout(1000);
+                continue;
+            }
 
-        const ret = await worker.recognize(imagePath);
-        const text1 = ret.data.text.slice(0, -1); // Omit the last character
-        const text = text1.slice(0, -1);
-        const numbers = text.match(/\d+/g);
+            // Calculate result based on operator
+            let result;
+            if (text.includes("+")) {
+                result = Number(numbers[0]) + Number(numbers[1]);
+            } else if (text.includes("-")) {
+                result = Number(numbers[0]) - Number(numbers[1]);
+            } else {
+                console.log(`[${new Date().toISOString()}] Unsupported operator in CAPTCHA. Attempt ${attempts+1}/${maxAttempts}`);
+                attempts++;
+                await worker.terminate();
+                await page.reload();
+                await page.locator("#logid").click();
+                await page.evaluate(() => pinchecker());
+                await page.waitForTimeout(1000);
+                continue;
+            }
 
-        if (!numbers || numbers.length < 2) {
-            console.log("Unable to extract valid numbers from the CAPTCHA. Retrying...");
+            await worker.terminate();
+
+            // Enter CAPTCHA result and KRA PIN
+            await page.type("#captcahText", result.toString());
+            await page.locator('input[name="vo\\.pinNo"]').fill(company.kra_pin);
+            await page.getByRole("button", { name: "Consult" }).click();
+
+            // Wait for navigation and check for errors
+            try {
+                const isInvalidLogin = await page.waitForSelector('b:has-text("Wrong result of the arithmetic operation.")', { state: 'visible', timeout: 2000 })
+                    .then(() => true)
+                    .catch(() => false);
+
+                if (!isInvalidLogin) {
+                    console.log(`[${new Date().toISOString()}] Login successful for ${company.company_name}`);
+                    return; // Exit function on successful login
+                }
+                
+                console.log(`[${new Date().toISOString()}] Wrong result for CAPTCHA. Attempt ${attempts+1}/${maxAttempts}`);
+                attempts++;
+                
+                // Clean up for next attempt
+                await page.reload();
+                await page.locator("#logid").click();
+                await page.evaluate(() => pinchecker());
+                await page.waitForTimeout(1000);
+            } catch (error) {
+                // If we get here with no error detected, assume login was successful
+                console.log(`[${new Date().toISOString()}] Login successful for ${company.company_name}`);
+                return;
+            }
+        } catch (error) {
+            console.error(`[${new Date().toISOString()}] Error during login attempt ${attempts+1}:`, error);
             attempts++;
-            continue;
+            
+            // Reload page for next attempt
+            await page.reload();
+            await page.locator("#logid").click();
+            await page.evaluate(() => pinchecker());
+            await page.waitForTimeout(1000);
         }
-
-        let result;
-        if (text.includes("+")) {
-            result = Number(numbers[0]) + Number(numbers[1]);
-        } else if (text.includes("-")) {
-            result = Number(numbers[0]) - Number(numbers[1]);
-        } else {
-            console.log("Unsupported operator in CAPTCHA. Retrying...");
-            attempts++;
-            continue;
-        }
-
-        await worker.terminate();
-
-        await page.type("#captcahText", result.toString());
-        await page.locator('input[name="vo\\.pinNo"]').fill(company.kra_pin);
-        await page.getByRole("button", { name: "Consult" }).click();
-
-        // Check if login was successful
-        const isInvalidLogin = await page.waitForSelector('b:has-text("Wrong result of the arithmetic operation.")', { state: 'visible', timeout: 1000 })
-            .catch(() => false);
-
-        if (!isInvalidLogin) {
-            console.log("Login successful");
-            return; // Exit the function if login is successful
-        }
-
-        console.log("Wrong result of the arithmetic operation, retrying...");
-        attempts++;
     }
 
     throw new Error("Max login attempts reached. Unable to log in.");
@@ -249,16 +329,18 @@ async function loginToKRA(page, company) {
 
 async function clickObligationDetails(page) {
     try {
+        console.log(`[${new Date().toISOString()}] Clicking Obligation Details tab`);
         await page.getByRole("group", { name: "Obligation Details" }).click();
         return true;
     } catch (error) {
-        console.error("Error clicking Obligation Details:", error);
+        console.error(`[${new Date().toISOString()}] Error clicking Obligation Details:`, error);
         return false;
     }
 }
 
-
 function organizeData(companyName, tableContent) {
+    console.log(`[${new Date().toISOString()}] Organizing data for ${companyName}`);
+    
     const lines = tableContent.split("\n").map(line => line.trim()).filter(line => line);
     const data = {
         company_name: companyName,
@@ -323,11 +405,19 @@ function organizeData(companyName, tableContent) {
 }
 
 async function saveCompanyDetails(details) {
-    const { error } = await supabase.from('PinCheckerDetails').upsert(details, { onConflict: "company_name" });
-    if (error) throw error;
+    try {
+        console.log(`[${new Date().toISOString()}] Saving details for ${details.company_name} to Supabase`);
+        const { error } = await supabase.from('PinCheckerDetails').upsert(details, { onConflict: "company_name" });
+        if (error) throw error;
+    } catch (error) {
+        console.error(`[${new Date().toISOString()}] Error saving company details:`, error);
+        throw error;
+    }
 }
 
 function createExcelFile(companyData) {
+    console.log(`[${new Date().toISOString()}] Creating Excel file with ${companyData.length} company records`);
+    
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet("Company Obligations");
 
@@ -377,7 +467,8 @@ function createExcelFile(companyData) {
         vat: 'FFF0D9B3',
         paye: 'FFD9F0B3',
         rentIncome: 'FFE0B3F0',
-        residentIndividual: 'FFB3F0D9'
+        residentIndividual: 'FFB3F0D9',
+        turnoverTax: 'FFD9B3F0'
     };
 
     // Add company data
@@ -435,7 +526,7 @@ function createExcelFile(companyData) {
         row.getCell(19).fill = row.getCell(20).fill = row.getCell(21).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: colors.turnoverTax } };
 
         // Set light red color for empty cells
-        for (let i = 4; i <= 19; i++) {
+        for (let i = 4; i <= 21; i++) {
             const cell = row.getCell(i);
             if (!cell.value || cell.value === "No obligation") {
                 cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFC0CB' } }; // Light red
@@ -444,7 +535,7 @@ function createExcelFile(companyData) {
 
         // Set red color for error cell if there's an error
         if (company.error) {
-            row.getCell(19).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFF0000' } }; // Red
+            row.getCell(22).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFF0000' } }; // Red
         }
     });
 
@@ -462,3 +553,9 @@ function createExcelFile(companyData) {
 
     return workbook;
 }
+
+// Run the main function
+main().catch(error => {
+    console.error(`[${new Date().toISOString()}] Unhandled error in main function:`, error);
+    process.exit(1);
+});

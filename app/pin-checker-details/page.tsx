@@ -44,7 +44,7 @@ export default function PinCheckerDetails() {
         
         let query = supabase
             .from('acc_portal_company_duplicate')
-            .select('id, company_name, kra_pin, acc_client_effective_from, acc_client_effective_to, audit_tax_client_effective_from, audit_tax_client_effective_to');
+            .select('id, company_name, kra_pin, acc_client_effective_from, acc_client_effective_to, audit_client_effective_from, audit_client_effective_to');
 
         const { data, error } = await query;
 
@@ -58,11 +58,11 @@ export default function PinCheckerDetails() {
             if (clientType === 'acc') {
                 return company.acc_client_effective_from <= currentDate && company.acc_client_effective_to >= currentDate;
             } else if (clientType === 'audit') {
-                return company.audit_tax_client_effective_from <= currentDate && company.audit_tax_client_effective_to >= currentDate;
+                return company.audit_client_effective_from <= currentDate && company.audit_client_effective_to >= currentDate;
             } else {
                 // All clients - either ACC or Audit
                 const isAccClient = company.acc_client_effective_from <= currentDate && company.acc_client_effective_to >= currentDate;
-                const isAuditClient = company.audit_tax_client_effective_from <= currentDate && company.audit_tax_client_effective_to >= currentDate;
+                const isAuditClient = company.audit_client_effective_from <= currentDate && company.audit_client_effective_to >= currentDate;
                 return isAccClient || isAuditClient;
             }
         });
@@ -252,8 +252,8 @@ export default function PinCheckerDetails() {
                                                                     <TableCell>{company.kra_pin}</TableCell>
                                                                     <TableCell>{formatDateForDisplay(company.acc_client_effective_from)}</TableCell>
                                                                     <TableCell>{formatDateForDisplay(company.acc_client_effective_to)}</TableCell>
-                                                                    <TableCell>{formatDateForDisplay(company.audit_tax_client_effective_from)}</TableCell>
-                                                                    <TableCell>{formatDateForDisplay(company.audit_tax_client_effective_to)}</TableCell>
+                                                                    <TableCell>{formatDateForDisplay(company.audit_client_effective_from)}</TableCell>
+                                                                    <TableCell>{formatDateForDisplay(company.audit_client_effective_to)}</TableCell>
                                                                     <TableCell>
                                                                         <Button
                                                                             variant="outline"
@@ -301,8 +301,8 @@ export default function PinCheckerDetails() {
                                                                         <TableCell>{company.kra_pin}</TableCell>
                                                                         <TableCell>{formatDateForDisplay(company.acc_client_effective_from)}</TableCell>
                                                                         <TableCell>{formatDateForDisplay(company.acc_client_effective_to)}</TableCell>
-                                                                        <TableCell>{formatDateForDisplay(company.audit_tax_client_effective_from)}</TableCell>
-                                                                        <TableCell>{formatDateForDisplay(company.audit_tax_client_effective_to)}</TableCell>
+                                                                        <TableCell>{formatDateForDisplay(company.audit_client_effective_from)}</TableCell>
+                                                                        <TableCell>{formatDateForDisplay(company.audit_client_effective_to)}</TableCell>
                                                                     </TableRow>
                                                                 ))}
                                                             </TableBody>

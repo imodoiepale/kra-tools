@@ -1,0 +1,22 @@
+version: '3.8'
+services:
+  pin-checker:
+    build:
+      context: ../../../
+      dockerfile: app/pin-checker-details/automation/Dockerfile
+    container_name: kra-pin-checker
+    restart: unless-stopped
+    env_file:
+      - ../../../.env
+    environment:
+      - NODE_ENV=production
+      - TZ=Africa/Nairobi
+    volumes:
+      - ../../../.env:/app/.env
+      - pin-checker-data:/root/Downloads
+      - ../../../public:/app/public
+    ports:
+      - "${PIN_CHECKER_PORT:-3333}:3000"
+
+volumes:
+  pin-checker-data:
