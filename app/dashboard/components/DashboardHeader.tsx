@@ -15,17 +15,12 @@ export function DashboardHeader({ refreshData, isRefreshing }: DashboardHeaderPr
 
     return (
         <header className="bg-white border-b sticky top-0 z-10">
-            <div className="container py-4 flex items-center justify-between">
+            <div className="container p-4 flex items-center justify-between">
                 <div className="flex items-center gap-4">
-                    <img
-                        src="https://www.kra.go.ke/images/logo.png"
-                        alt="KRA Logo"
-                        className="h-8 w-auto"
-                    />
                     <h1 className="text-xl font-bold">Automation Dashboard</h1>
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">
+                    {/* <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">
                         Admin
-                    </span>
+                    </span> */}
                 </div>
 
                 <div className="flex items-center gap-3">
@@ -38,20 +33,20 @@ export function DashboardHeader({ refreshData, isRefreshing }: DashboardHeaderPr
                         <RefreshCcwIcon className={`h-4 w-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
                         {isRefreshing ? 'Refreshing...' : 'Refresh'}
                     </Button>
-                    <Button
+                    {/* <Button
                         size="sm"
                         onClick={() => setShowNewAutomationDialog(true)}
                     >
                         <PlusIcon className="h-4 w-4 mr-2" />
                         New Automation
-                    </Button>
+                    </Button> */}
                 </div>
             </div>
 
-            <AutomationDialog
+            {/* <AutomationDialog
                 open={showNewAutomationDialog}
                 onOpenChange={setShowNewAutomationDialog}
-            />
+            /> */}
         </header>
     );
 }

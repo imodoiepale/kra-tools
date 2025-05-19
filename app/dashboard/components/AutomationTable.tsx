@@ -304,19 +304,19 @@ export function AutomationTable({ automations }: AutomationTableProps) {
                       </div>
                       <div className="ml-3">
                         <div className="font-medium">{automation.name}</div>
-                        <div className="text-xs text-gray-500">{formatType(automation.type)}</div>
+                        {/* <div className="text-xs text-gray-500">{formatType(automation.type)}</div> */}
                       </div>
                     </div>
                   </TableCell>
                   <TableCell>
                     <div className="text-sm">{formatDateRelative(automation.last_run_at)}</div>
-                    <div className="text-xs text-gray-500">by System</div>
+                    {/* <div className="text-xs text-gray-500">by System</div> */}
                   </TableCell>
                   <TableCell>
                     <div className="text-sm">{automation.cron_schedule}</div>
-                    <div className="text-xs text-gray-500">
+                    {/* <div className="text-xs text-gray-500">
                       Next: {formatDateNext(automation.next_run_at)}
-                    </div>
+                    </div> */}
                   </TableCell>
                   <TableCell>
                     <Badge
@@ -372,7 +372,7 @@ export function AutomationTable({ automations }: AutomationTableProps) {
               </div>
             </div>
             
-            <ProgressRing value={75} />
+            {/* <ProgressRing value={75} /> */}
           </div>
           
           {/* Main content - unified view with expandable sections */}
