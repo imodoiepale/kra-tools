@@ -1,7 +1,7 @@
-// run-automation.js
+// run-pin-checker-automation.js
 const { chromium } = require('playwright');
 const fs = require('fs').promises;
-const { existsSync } = require('fs');
+const { existsSync, createReadStream } = require('fs');
 const path = require('path');
 const os = require('os');
 const ExcelJS = require('exceljs');
@@ -14,6 +14,10 @@ require('dotenv').config();
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+// Storage bucket for Excel files
+const STORAGE_BUCKET = 'automations'; // Using existing automations bucket
+const STORAGE_PATH = 'pin-checker-details'; // Specific path within the bucket
 
 // Global variables
 let stopRequested = false;
@@ -136,8 +140,16 @@ async function processCompanies(runOption, selectedIds) {
                 // Create Excel file with current data
                 const workbook = createExcelFile(allCompanyData);
                 const formattedDate = `${now.getDate().toString().padStart(2, '0')}.${(now.getMonth() + 1).toString().padStart(2, '0')}.${now.getFullYear()}`;
-                const excelFilePath = path.join(downloadFolderPath, `PIN_CHECKER_DETAILS_OBLIGATIONS_${formattedDate}.xlsx`);
+                const excelFileName = `PIN_CHECKER_DETAILS_OBLIGATIONS_${formattedDate}.xlsx`;
+                const excelFilePath = path.join(downloadFolderPath, excelFileName);
                 await workbook.xlsx.writeFile(excelFilePath);
+                
+                // Upload Excel file to Supabase storage
+                const storageUrl = await uploadExcelToSupabase(excelFilePath, excelFileName);
+                console.log(`[${new Date().toISOString()}] Excel file uploaded to: ${storageUrl}`);
+                
+                // Update the latest company record with the Excel file path
+                await saveCompanyDetails({ ...organizedData, excel_file_path: storageUrl });
 
                 // Update progress
                 const progress = Math.round(((i + 1) / companies.length) * 100);
@@ -163,8 +175,19 @@ async function processCompanies(runOption, selectedIds) {
             }
         }
 
-        // Mark automation as completed
-        await updateAutomationProgress(100, "Completed", allCompanyData);
+        // Generate a final consolidated Excel file and upload to Supabase
+        const finalWorkbook = createExcelFile(allCompanyData);
+        const finalFormattedDate = `${now.getDate().toString().padStart(2, '0')}.${(now.getMonth() + 1).toString().padStart(2, '0')}.${now.getFullYear()}`;
+        const finalExcelFileName = `PIN_CHECKER_DETAILS_OBLIGATIONS_FINAL_${finalFormattedDate}.xlsx`;
+        const finalExcelFilePath = path.join(downloadFolderPath, finalExcelFileName);
+        await finalWorkbook.xlsx.writeFile(finalExcelFilePath);
+        
+        // Upload the final Excel file
+        const finalStorageUrl = await uploadExcelToSupabase(finalExcelFilePath, finalExcelFileName);
+        console.log(`[${new Date().toISOString()}] Final Excel file uploaded to: ${finalStorageUrl}`);
+        
+        // Store the file URL in the automation progress
+        await updateAutomationProgress(100, "Completed", { ...allCompanyData, finalReportUrl: finalStorageUrl });
     } catch (error) {
         console.error(`[${new Date().toISOString()}] Error in processCompanies:`, error);
         await updateAutomationProgress(0, "Error", [{ error: error.message }]);
@@ -404,13 +427,65 @@ function organizeData(companyName, tableContent) {
     return data;
 }
 
-async function saveCompanyDetails(details) {
+async function saveCompanyDetails(details, excelFilePath = null) {
     try {
         console.log(`[${new Date().toISOString()}] Saving details for ${details.company_name} to Supabase`);
+        
+        // If an Excel file path is provided, include it in the record
+        if (excelFilePath) {
+            details.excel_file_path = excelFilePath;
+        }
+        
         const { error } = await supabase.from('PinCheckerDetails').upsert(details, { onConflict: "company_name" });
         if (error) throw error;
     } catch (error) {
         console.error(`[${new Date().toISOString()}] Error saving company details:`, error);
+        throw error;
+    }
+}
+
+async function uploadExcelToSupabase(filePath, fileName) {
+    try {
+        console.log(`[${new Date().toISOString()}] Uploading Excel file to Supabase storage: ${fileName}`);
+        
+        // Create storage bucket if it doesn't exist
+        const { data: bucketData, error: bucketError } = await supabase.storage.getBucket(STORAGE_BUCKET);
+        
+        if (bucketError && bucketError.code === 'PGRST116') {
+            // Bucket doesn't exist, create it
+            const { error: createBucketError } = await supabase.storage.createBucket(STORAGE_BUCKET, {
+                public: false,
+                fileSizeLimit: 10485760 // 10MB
+            });
+            
+            if (createBucketError) {
+                throw createBucketError;
+            }
+        } else if (bucketError) {
+            throw bucketError;
+        }
+        
+        // Read file content
+        const fileContent = await fs.readFile(filePath);
+        
+        // Upload file to Supabase storage
+        const { data, error } = await supabase.storage
+            .from(STORAGE_BUCKET)
+            .upload(`${STORAGE_PATH}/${fileName}`, fileContent, {
+                contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                upsert: true
+            });
+            
+        if (error) throw error;
+        
+        // Get public URL for the file
+        const { data: urlData } = supabase.storage
+            .from(STORAGE_BUCKET)
+            .getPublicUrl(`${STORAGE_PATH}/${fileName}`);
+            
+        return urlData.publicUrl;
+    } catch (error) {
+        console.error(`[${new Date().toISOString()}] Error uploading Excel file:`, error);
         throw error;
     }
 }

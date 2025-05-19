@@ -14,6 +14,7 @@ import { ClientCategoryFilter } from "./ClientCategoryFilter"
 interface PinCheckerDetail {
     id: number;
     company_name: string;
+    kra_pin: string;
     income_tax_company_status: string;
     income_tax_company_effective_from: string;
     income_tax_company_effective_to: string;
@@ -371,6 +372,7 @@ export function PinCheckerDetailsReports() {
             const row = worksheet.addRow([
                 index + 1,
                 detail.company_name,
+                detail.kra_pin,
                 detail.income_tax_company_status, detail.income_tax_company_effective_from, detail.income_tax_company_effective_to,
                 detail.vat_status, detail.vat_effective_from, detail.vat_effective_to,
                 detail.paye_status, detail.paye_effective_from, detail.paye_effective_to,
@@ -565,6 +567,7 @@ export function PinCheckerDetailsReports() {
         // Define all fields to check for completeness, including sub-columns
         const fieldsToCheck = [
             'company_name',
+            'kra_pin',
             // Income Tax Company fields
             'income_tax_company_status',
             'income_tax_company_effective_from',
@@ -700,7 +703,7 @@ export function PinCheckerDetailsReports() {
                                         <SortableHeader field="company_name">Company Name</SortableHeader>
                                     </TableHead>
                                     <TableHead className="sticky top-0 bg-white border-r border-black border-b font-bold text-black">
-                                        <SortableHeader field="company_name">KRA PIN</SortableHeader>
+                                        <SortableHeader field="kra_pin">KRA PIN</SortableHeader>
                                     </TableHead>
                                     {['Income Tax Company', 'VAT', 'PAYE', 'Rent Income (MRI)', 'Resident Individual', 'Turnover Tax'].map((header, index) => (
                                         <TableHead key={index} className={`sticky top-0 ${getCellColor(header.toLowerCase().replace(' ', '_'))} border-r border-black border-b text-center font-bold text-black`} colSpan={3}>{header}</TableHead>
@@ -828,6 +831,11 @@ export function PinCheckerDetailsReports() {
                                             <TableCell className="text-center text-[10px] border-r border-black">
                                                 <span className={stats.missing.company_name > 0 ? 'text-red-600 font-bold' : ''}>
                                                     {stats.missing.company_name}
+                                                </span>
+                                            </TableCell>
+                                            <TableCell className="text-center text-[10px] border-r border-black">
+                                                <span className={stats.missing.kra_pin > 0 ? 'text-red-600 font-bold' : ''}>
+                                                    {stats.missing.kra_pin}
                                                 </span>
                                             </TableCell>
                                             
