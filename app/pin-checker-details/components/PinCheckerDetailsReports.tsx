@@ -418,7 +418,8 @@ export function PinCheckerDetailsReports() {
 
             // Add compliance data
             COMPLIANCE_TYPES.forEach(compType => {
-                rowData.push(detail[`${compType.id}_status`]);
+                const status = detail[`${compType.id}_status`];
+                rowData.push(status || 'Not Available');
             });
 
             // Add last checked data
@@ -718,9 +719,12 @@ export function PinCheckerDetailsReports() {
     // Helper function to render status cell with proper styling
     const renderStatusCell = (detail: any, typeId: string) => {
         const status = detail[`${typeId}_status`];
+        const isComplianceType = ['etims_registration', 'tims_registration', 'vat_compliance'].includes(typeId);
 
         if (!status) {
-            return <span className="font-bold text-red-600">No Obligation</span>;
+            return isComplianceType
+                ? <span className="font-bold text-gray-600">Not Available</span>
+                : <span className="font-bold text-red-600">No Obligation</span>;
         }
 
         if (status.toLowerCase() === 'cancelled') {
@@ -815,7 +819,7 @@ export function PinCheckerDetailsReports() {
 
             <div className="rounded-md border">
                 <div className="overflow-x-auto">
-                    <div className="max-h-[calc(100vh-400px)] overflow-y-auto">
+                    <div className="max-h-[calc(100vh-300px)] overflow-y-auto">
                         <Table className="text-xs pb-2">
                             <TableHeader>
                                 <TableRow className="h-8">
@@ -1137,10 +1141,12 @@ export function PinCheckerDetailsReports() {
                                             <TableCell
                                                 key={compType.id}
                                                 className={`${getCellColor(compType.id)} border-r border-black text-center 
-                                                    ${!detail[`${compType.id}_status`] ||
-                                                        detail[`${compType.id}_status`]?.toLowerCase() === 'inactive' ||
-                                                        detail[`${compType.id}_status`]?.toLowerCase() === 'non-compliant'
-                                                        ? 'font-bold text-red-600 bg-red-100' : ''}`}
+            ${!detail[`${compType.id}_status`]
+                                                        ? 'font-bold text-gray-600 bg-gray-100'
+                                                        : (detail[`${compType.id}_status`]?.toLowerCase() === 'inactive' ||
+                                                            detail[`${compType.id}_status`]?.toLowerCase() === 'non-compliant'
+                                                            ? 'font-bold text-red-600 bg-red-100'
+                                                            : '')}`}
                                             >
                                                 {renderStatusCell(detail, compType.id)}
                                             </TableCell>
