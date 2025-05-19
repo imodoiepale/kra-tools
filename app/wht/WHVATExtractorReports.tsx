@@ -46,24 +46,34 @@ export function WHVATExtractorReports() {
     useEffect(() => {
         if (selectedCompany) {
             const data = allCompanyData.find(c => c.company_name === selectedCompany);
-            setCompanyData(data?.extraction_data || null);
-            filterData(data?.extraction_data);
+            if (data && data.extraction_data) {
+                setCompanyData(data.extraction_data);
+                filterData(data.extraction_data);
+            } else {
+                setCompanyData(null);
+                setFilteredData(null);
+            }
         }
     }, [selectedCompany, allCompanyData, activeTab, startMonth, startYear, endMonth, endYear, searchTerm, selectedMonth, selectedYear, showAllData]);
 
     useEffect(() => {
         if (selectedCompany) {
             const data = allCompanyData.find(c => c.company_name === selectedCompany);
-            setCompanyData(data?.extraction_data || null);
-            setActiveTab('allData');
+            if (data && data.extraction_data) {
+                setCompanyData(data.extraction_data);
+                setActiveTab('allData');
+            } else {
+                setCompanyData(null);
+                setActiveTab('allData');
+            }
         }
     }, [selectedCompany, allCompanyData]);
 
     const fetchCompanies = async () => {
         try {
             const { data, error } = await supabase
-                .from('whvat_extractions')
-                .select('company_name')
+                .from('acc_portal_company_duplicate')
+                .select('id, company_name')
                 .order('company_name');
 
             if (error) throw error;
@@ -75,12 +85,59 @@ export function WHVATExtractorReports() {
 
     const fetchAllCompanyData = async () => {
         try {
-            const { data, error } = await supabase
+            // First get all companies from acc_portal_company_duplicate
+            const { data: companiesData, error: companiesError } = await supabase
+                .from('acc_portal_company_duplicate')
+                .select('id, company_name');
+
+            if (companiesError) throw companiesError;
+
+            // Then get all WHVAT extractions
+            const { data: extractionsData, error: extractionsError } = await supabase
                 .from('whvat_extractions')
                 .select('*');
 
-            if (error) throw error;
-            setAllCompanyData(data);
+            if (extractionsError) throw extractionsError;
+
+            // Map extractions by company_id for quick lookup
+            const extractionsMap = new Map();
+            extractionsData.forEach(extraction => {
+                if (!extractionsMap.has(extraction.company_id)) {
+                    extractionsMap.set(extraction.company_id, []);
+                }
+                extractionsMap.get(extraction.company_id).push(extraction);
+            });
+
+            // Map all companies, including those without extractions
+            const mappedData = companiesData.map(company => {
+                const companyExtractions = extractionsMap.get(company.id) || [];
+                const extractionData = {};
+
+                // Process all extractions for this company
+                companyExtractions.forEach(extraction => {
+                    if (extraction.extraction_data) {
+                        Object.entries(extraction.extraction_data).forEach(([dateKey, data]) => {
+                            if (!extractionData[dateKey]) {
+                                extractionData[dateKey] = {
+                                    extractionDate: data.extractionDate,
+                                    tableData: []
+                                };
+                            }
+                            if (data.tableData) {
+                                extractionData[dateKey].tableData.push(...data.tableData);
+                            }
+                        });
+                    }
+                });
+
+                return {
+                    id: company.id,
+                    company_name: company.company_name,
+                    extraction_data: extractionData
+                };
+            });
+
+            setAllCompanyData(mappedData);
         } catch (error) {
             console.error('Error fetching all company data:', error);
         }
