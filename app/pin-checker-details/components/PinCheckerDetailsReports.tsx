@@ -33,9 +33,9 @@ interface PinCheckerDetail {
     turnover_tax_status: string;
     turnover_tax_effective_from: string;
     turnover_tax_effective_to: string;
-    etims_registration_status: string;  // New field for eTIMS Registration status
-    tims_registration_status: string;   // New field for TIMS Registration status
-    vat_compliance_status: string;      // New field for VAT Compliance status
+    etims_registration: string;  // Field for eTIMS Registration status
+    tims_registration: string;   // Field for TIMS Registration status
+    vat_compliance: string;      // Field for VAT Compliance status
     error_message?: string;
     last_checked_at: string;
 }

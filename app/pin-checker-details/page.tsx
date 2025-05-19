@@ -41,7 +41,7 @@ export default function PinCheckerDetails() {
 
     const fetchCompanies = async () => {
         const currentDate = new Date().toISOString().split('T')[0]; // Get current date in YYYY-MM-DD format
-        
+
         let query = supabase
             .from('acc_portal_company_duplicate')
             .select('id, company_name, kra_pin, acc_client_effective_from, acc_client_effective_to, audit_client_effective_from, audit_client_effective_to');
@@ -55,7 +55,13 @@ export default function PinCheckerDetails() {
 
         // Filter the data in JavaScript
         const filteredData = data?.filter(company => {
-            if (clientType === 'acc') {
+            if (clientType === 'all') {
+                // For 'all', show any company that is active in either acc or audit
+                return (
+                    (company.acc_client_effective_from <= currentDate && company.acc_client_effective_to >= currentDate) ||
+                    (company.audit_client_effective_from <= currentDate && company.audit_client_effective_to >= currentDate)
+                );
+            } else if (clientType === 'acc') {
                 return company.acc_client_effective_from <= currentDate && company.acc_client_effective_to >= currentDate;
             } else if (clientType === 'audit') {
                 return company.audit_client_effective_from <= currentDate && company.audit_client_effective_to >= currentDate;
@@ -93,6 +99,30 @@ export default function PinCheckerDetails() {
         }
     };
 
+    // Reset any existing automation status before starting a new one
+    const resetAutomationStatus = async () => {
+        try {
+            const response = await fetch('/api/pin-checker-details', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: "stop"
+                })
+            });
+            
+            if (!response.ok) {
+                console.warn('Failed to reset automation status, but continuing anyway');
+            } else {
+                console.log('Successfully reset automation status');
+                // Wait a short time to ensure status is updated in database
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+        } catch (error) {
+            console.warn('Error resetting automation status:', error);
+            // Continue anyway
+        }
+    };
+
     const handleStartCheck = async () => {
         if (isChecking) {
             alert('An automation is already running. Please wait for it to complete or stop it before starting a new one.');
@@ -100,13 +130,30 @@ export default function PinCheckerDetails() {
         }
 
         try {
+            // Check if we have companies selected when needed
+            if (runOption === 'selected' && selectedCompanies.length === 0) {
+                throw new Error('Please select at least one company when using the Selected Companies option');
+            }
+
+            // First, reset any existing automation status
+            await resetAutomationStatus();
+
+            // Determine which IDs to send based on the run option
+            const idsToSend = runOption === 'selected' ? selectedCompanies : companies.map(company => company.id);
+            
+            console.log('Sending request with:', {
+                action: "start",
+                runOption,
+                selectedIds: idsToSend
+            });
+
             const response = await fetch('/api/pin-checker-details', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
+                body: JSON.stringify({
                     action: "start",
                     runOption,
-                    selectedIds: runOption === 'selected' ? selectedCompanies : []
+                    selectedIds: idsToSend
                 })
             })
 
@@ -176,34 +223,38 @@ export default function PinCheckerDetails() {
                                     <CardDescription>Begin the obligation details extraction process for companies.</CardDescription>
                                 </CardHeader>
                                 <CardContent>
-                                    <div className="mb-4">
-                                        <label className="block mb-2">Client Type:</label>
-                                        <Select value={clientType} onValueChange={(value) => {
-                                            setClientType(value)
-                                            setSelectedCompanies([])
-                                        }}>
-                                            <SelectTrigger className="w-[180px]">
-                                                <SelectValue placeholder="Select client type" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem value="all">All Clients</SelectItem>
-                                                <SelectItem value="acc">ACC Clients</SelectItem>
-                                                <SelectItem value="audit">Audit Clients</SelectItem>
-                                            </SelectContent>
-                                        </Select>
+                                    <div className="mb-4 flex space-x-4">
+                                        <div className="mb-4">
+                                            <label className="block mb-2">Client Type:</label>
+                                            <Select value={clientType} onValueChange={(value) => {
+                                                setClientType(value)
+                                                setSelectedCompanies([])
+                                            }}>
+                                                <SelectTrigger className="w-[180px]">
+                                                    <SelectValue placeholder="Select client type" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="all">All Clients</SelectItem>
+                                                    <SelectItem value="acc">ACC Clients</SelectItem>
+                                                    <SelectItem value="audit">Audit Clients</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+
+                                        <div className="mb-4">
+                                            <label className="block mb-2">Run option:</label>
+                                            <Select value={runOption} onValueChange={(value) => setRunOption(value)}>
+                                                <SelectTrigger className="w-[180px]">
+                                                    <SelectValue placeholder="Select run option" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="all">All Companies</SelectItem>
+                                                    <SelectItem value="selected">Selected Companies</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
                                     </div>
-                                    <div className="mb-4">
-                                        <label className="block mb-2">Run option:</label>
-                                        <Select value={runOption} onValueChange={(value) => setRunOption(value)}>
-                                            <SelectTrigger className="w-[180px]">
-                                                <SelectValue placeholder="Select run option" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem value="all">All Companies</SelectItem>
-                                                <SelectItem value="selected">Selected Companies</SelectItem>
-                                            </SelectContent>
-                                        </Select>
-                                    </div>
+
                                     {runOption === 'selected' && (
                                         <div className="flex">
                                             <motion.div
@@ -217,7 +268,7 @@ export default function PinCheckerDetails() {
                                                         <TableHeader>
                                                             <TableRow>
                                                                 <TableHead className="w-[50px] sticky top-0 bg-white">
-                                                                    <Checkbox 
+                                                                    <Checkbox
                                                                         checked={selectedCompanies.length === companies.length}
                                                                         onCheckedChange={(checked) => {
                                                                             if (checked) {
@@ -231,43 +282,24 @@ export default function PinCheckerDetails() {
                                                                 <TableHead className="sticky top-0 bg-white">#</TableHead>
                                                                 <TableHead className="sticky top-0 bg-white">Company Name</TableHead>
                                                                 <TableHead className="sticky top-0 bg-white">KRA PIN</TableHead>
-                                                                <TableHead className="sticky top-0 bg-white">ACC From</TableHead>
-                                                                <TableHead className="sticky top-0 bg-white">ACC To</TableHead>
-                                                                <TableHead className="sticky top-0 bg-white">Audit From</TableHead>
-                                                                <TableHead className="sticky top-0 bg-white">Audit To</TableHead>
-                                                                <TableHead className="sticky top-0 bg-white">Actions</TableHead>
                                                             </TableRow>
                                                         </TableHeader>
                                                         <TableBody>
-                                                            {companies.map((company, index) => (
-                                                                <TableRow key={company.id}>
-                                                                    <TableCell>
-                                                                        <Checkbox
-                                                                            checked={selectedCompanies.includes(company.id)}
-                                                                            onCheckedChange={() => handleCheckboxChange(company.id)}
-                                                                        />
-                                                                    </TableCell>
-                                                                    <TableCell className="text-center">{index + 1}</TableCell>
-                                                                    <TableCell>{company.company_name}</TableCell>
-                                                                    <TableCell>{company.kra_pin}</TableCell>
-                                                                    <TableCell>{formatDateForDisplay(company.acc_client_effective_from)}</TableCell>
-                                                                    <TableCell>{formatDateForDisplay(company.acc_client_effective_to)}</TableCell>
-                                                                    <TableCell>{formatDateForDisplay(company.audit_client_effective_from)}</TableCell>
-                                                                    <TableCell>{formatDateForDisplay(company.audit_client_effective_to)}</TableCell>
-                                                                    <TableCell>
-                                                                        <Button
-                                                                            variant="outline"
-                                                                            size="sm"
-                                                                            onClick={() => {
-                                                                                setSelectedCompany(company);
-                                                                                setEditDialogOpen(true);
-                                                                            }}
-                                                                        >
-                                                                            Edit Dates
-                                                                        </Button>
-                                                                    </TableCell>
-                                                                </TableRow>
-                                                            ))}
+                                                            {[...companies]
+                                                                .sort((a, b) => a.company_name.localeCompare(b.company_name, undefined, { sensitivity: 'base' }))
+                                                                .map((company, index) => (
+                                                                    <TableRow key={company.id}>
+                                                                        <TableCell>
+                                                                            <Checkbox
+                                                                                checked={selectedCompanies.includes(company.id)}
+                                                                                onCheckedChange={() => handleCheckboxChange(company.id)}
+                                                                            />
+                                                                        </TableCell>
+                                                                        <TableCell className="text-center">{index + 1}</TableCell>
+                                                                        <TableCell>{company.company_name}</TableCell>
+                                                                        <TableCell>{company.kra_pin}</TableCell>
+                                                                    </TableRow>
+                                                                ))}
                                                         </TableBody>
                                                     </Table>
                                                 </div>
@@ -287,24 +319,19 @@ export default function PinCheckerDetails() {
                                                                     <TableHead>#</TableHead>
                                                                     <TableHead>Company Name</TableHead>
                                                                     <TableHead>KRA PIN</TableHead>
-                                                                    <TableHead>ACC From</TableHead>
-                                                                    <TableHead>ACC To</TableHead>
-                                                                    <TableHead>Audit From</TableHead>
-                                                                    <TableHead>Audit To</TableHead>
                                                                 </TableRow>
                                                             </TableHeader>
                                                             <TableBody>
-                                                                {companies.filter(c => selectedCompanies.includes(c.id)).map((company, index) => (
-                                                                    <TableRow key={company.id} className="bg-blue-100">
-                                                                        <TableCell>{index + 1}</TableCell>
-                                                                        <TableCell>{company.company_name}</TableCell>
-                                                                        <TableCell>{company.kra_pin}</TableCell>
-                                                                        <TableCell>{formatDateForDisplay(company.acc_client_effective_from)}</TableCell>
-                                                                        <TableCell>{formatDateForDisplay(company.acc_client_effective_to)}</TableCell>
-                                                                        <TableCell>{formatDateForDisplay(company.audit_client_effective_from)}</TableCell>
-                                                                        <TableCell>{formatDateForDisplay(company.audit_client_effective_to)}</TableCell>
-                                                                    </TableRow>
-                                                                ))}
+                                                                {[...companies]
+                                                                    .filter(c => selectedCompanies.includes(c.id))
+                                                                    .sort((a, b) => a.company_name.localeCompare(b.company_name, undefined, { sensitivity: 'base' }))
+                                                                    .map((company, index) => (
+                                                                        <TableRow key={company.id} className="bg-blue-100">
+                                                                            <TableCell>{index + 1}</TableCell>
+                                                                            <TableCell>{company.company_name}</TableCell>
+                                                                            <TableCell>{company.kra_pin}</TableCell>
+                                                                        </TableRow>
+                                                                    ))}
                                                             </TableBody>
                                                         </Table>
                                                     </div>
@@ -334,12 +361,12 @@ export default function PinCheckerDetails() {
                             </Card>
                         </TabsContent>
                         <TabsContent value="running">
-                            <PinCheckerDetailsRunning 
+                            <PinCheckerDetailsRunning
                                 onComplete={() => {
                                     setActiveTab("reports");
                                     setIsChecking(false);
                                     setStatus("Completed");
-                                }} 
+                                }}
                                 progress={progress}
                                 status={status}
                             />
@@ -353,14 +380,6 @@ export default function PinCheckerDetails() {
                     </Tabs>
                 </CardContent>
             </Card>
-            {selectedCompany && (
-                <EditDatesDialog
-                    open={editDialogOpen}
-                    onOpenChange={setEditDialogOpen}
-                    company={selectedCompany}
-                    onSuccess={fetchCompanies}
-                />
-            )}
         </div>
     )
 }
