@@ -415,16 +415,16 @@ export function PinCheckerDetailsReports() {
                     detail[`${taxType.id}_effective_to`]
                 );
             });
-
-            // Add compliance data
+            
+            // Add compliance data - directly use the field without _status suffix
             COMPLIANCE_TYPES.forEach(compType => {
-                const status = detail[`${compType.id}_status`];
+                const status = detail[compType.id]; // Direct field access
                 rowData.push(status || 'Not Available');
             });
-
+            
             // Add last checked data
             rowData.push(detail.error_message, detail.last_checked_at);
-
+            
             const row = worksheet.addRow(rowData);
 
             // Make indexing bold and centered
@@ -497,7 +497,7 @@ export function PinCheckerDetailsReports() {
                         pattern: 'solid',
                         fgColor: { argb: 'FFFFCCCB' }
                     };
-                } else if (status === 'inactive' || status === 'not compliant') {
+                } else if (status === 'inactive' || status === 'not compliiant') {
                     cell.fill = {
                         type: 'pattern',
                         pattern: 'solid',
@@ -621,8 +621,8 @@ export function PinCheckerDetailsReports() {
                 `${taxType.id}_${col.toLowerCase()}`
             )
         ),
-        // Generate compliance field names
-        ...COMPLIANCE_TYPES.map(compType => `${compType.id}_status`)
+        // Generate compliance field names (without _status suffix)
+        ...COMPLIANCE_TYPES.map(compType => compType.id)
     ];
 
     const sortedDetails = React.useMemo(() => {
