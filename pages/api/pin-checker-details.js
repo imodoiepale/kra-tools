@@ -183,7 +183,43 @@ async function processCompanyData(company, page) {
         return table ? table.innerText : "Table not found";
     });
 
-    return organizeData(company.company_name, tableContent);
+    // Extract Electronic Tax Invoicing and VAT Compliance details
+    const etimsRegistration = await page.evaluate(() => {
+        const elements = Array.from(document.querySelectorAll('td.textAlignLeft'));
+        const etimsElement = elements.find(el => el.textContent.includes('eTIMS Registration'));
+        if (etimsElement && etimsElement.nextElementSibling) {
+            return etimsElement.nextElementSibling.textContent.trim();
+        }
+        return 'Unknown';
+    });
+
+    const timsRegistration = await page.evaluate(() => {
+        const elements = Array.from(document.querySelectorAll('td.textAlignLeft'));
+        const timsElement = elements.find(el => el.textContent.includes('TIMS Registration'));
+        if (timsElement && timsElement.nextElementSibling) {
+            return timsElement.nextElementSibling.textContent.trim();
+        }
+        return 'Unknown';
+    });
+
+    const vatCompliance = await page.evaluate(() => {
+        const elements = Array.from(document.querySelectorAll('td.textAlignLeft'));
+        // Find the element inside the VAT Compliance fieldset
+        for (let i = 0; i < elements.length; i++) {
+            if (elements[i].textContent.trim() === 'Compliant' || 
+                elements[i].textContent.trim() === 'Non-Compliant') {
+                return elements[i].textContent.trim();
+            }
+        }
+        return 'Unknown';
+    });
+
+    const data = organizeData(company.company_name, tableContent);
+    data.etims_registration = etimsRegistration;
+    data.tims_registration = timsRegistration;
+    data.vat_compliance = vatCompliance;
+
+    return data;
 }
 
 async function loginToKRA(page, company) {
@@ -279,7 +315,10 @@ function organizeData(companyName, tableContent) {
         resident_individual_effective_to: 'No obligation',
         turnover_tax_status: 'No obligation',
         turnover_tax_effective_from: 'No obligation',
-        turnover_tax_effective_to: 'No obligation'
+        turnover_tax_effective_to: 'No obligation',
+        etims_registration: 'Unknown',
+        tims_registration: 'Unknown',
+        vat_compliance: 'Unknown'
     };
 
     for (const line of lines) {
@@ -353,6 +392,9 @@ function createExcelFile(companyData) {
         "Income Tax - Turnover Tax Current Status",
         "Income Tax - Turnover Tax Effective From Date",
         "Income Tax - Turnover Tax Effective To Date",
+        "eTIMS Registration",
+        "TIMS Registration",
+        "VAT Compliance",
         "Error"
     ];
 
@@ -406,6 +448,9 @@ function createExcelFile(companyData) {
             company.turnover_tax_status,
             company.turnover_tax_effective_from,
             company.turnover_tax_effective_to,
+            company.etims_registration,
+            company.tims_registration,
+            company.vat_compliance,
             company.error || ""
         ];
 
@@ -434,17 +479,26 @@ function createExcelFile(companyData) {
         row.getCell(16).fill = row.getCell(17).fill = row.getCell(18).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: colors.residentIndividual } };
         row.getCell(19).fill = row.getCell(20).fill = row.getCell(21).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: colors.turnoverTax } };
 
+        // Set colors for the new fields
+        const etimsColor = 'FFD4F1F4';
+        const timsColor = 'FFFDE9D9';
+        const vatComplianceColor = 'FFDFECDE';
+
+        row.getCell(22).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: etimsColor } };
+        row.getCell(23).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: timsColor } };
+        row.getCell(24).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: vatComplianceColor } };
+
         // Set light red color for empty cells
-        for (let i = 4; i <= 19; i++) {
+        for (let i = 4; i <= 22; i++) {
             const cell = row.getCell(i);
-            if (!cell.value || cell.value === "No obligation") {
+            if (!cell.value || cell.value === "No obligation" || cell.value === "Unknown") {
                 cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFC0CB' } }; // Light red
             }
         }
 
         // Set red color for error cell if there's an error
         if (company.error) {
-            row.getCell(19).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFF0000' } }; // Red
+            row.getCell(24).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFF0000' } }; // Red
         }
     });
 
