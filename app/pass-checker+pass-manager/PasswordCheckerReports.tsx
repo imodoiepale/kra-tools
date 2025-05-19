@@ -363,13 +363,13 @@ export default function PasswordCheckerReports() {
         {columns.map(column => (
           <TableHead
             key={column.key}
-            className="sticky top-0 bg-white text-center text-[12px] text-black font-bold border border-gray-300 py-2 px-3"
+            className="sticky top-0 bg-white text-center text-sm text-black font-bold border border-gray-300 py-2 px-3"
             onClick={() => requestSort(column.key)}
           >
             <Button
               variant="ghost"
               onClick={() => requestSort(column.key)}
-              className="h-8 p-0 text-[12px] text-black font-bold capitalize py-2 px-3"
+              className="h-8 p-0 text-sm text-black font-bold capitalize py-2 px-3"
             >
               <span>{column.label}</span>
               <ArrowUpDown className={`ml-2 h-4 w-4 ${sortConfig.key === column.key ? 'text-blue-600' : 'text-gray-400'} ${sortConfig.key === column.key && sortConfig.direction === 'descending' ? 'rotate-180' : ''}`} />
@@ -736,18 +736,18 @@ export default function PasswordCheckerReports() {
       <div className="rounded-md border flex-1 flex flex-col relative">
         <div className="overflow-x-auto">
           <div className="max-h-[calc(100vh-250px)] overflow-y-auto">
-            <Table className="text-[11px] text-black border-collapse w-full relative">
+            <Table className="text-sm text-black border-collapse w-full relative">
               <TableHeader className="bg-gray-50">
                 {/* Group Headers Row */}
                 <TableRow className="uppercase border border-r">
-                  <TableHead className="sticky top-0 text-center text-[12px] text-black font-bold border border-r py-2 px-3 sticky-col index-col" style={{ minWidth: '50px', top: 0 }} rowSpan={2}>Index</TableHead>
+                  <TableHead className="sticky top-0 text-center text-sm text-black font-bold border border-r py-2 px-3 sticky-col index-col" style={{ minWidth: '50px', top: 0 }} rowSpan={2}>Index</TableHead>
                   {Object.entries(columnGroups).map(([groupName, columns]) => {
                     const visibleColumnsInGroup = columns.filter(col => visibleColumns[col.key]);
                     if (visibleColumnsInGroup.length === 0) return null;
                     return (
                       <TableHead
                         key={groupName}
-                        className="sticky top-0 text-center text-[12px] text-black font-bold border border-r py-2 px-3"
+                        className="sticky top-0 text-center text-sm text-black font-bold border border-r py-2 px-3"
                         colSpan={visibleColumnsInGroup.length}
                         style={{ top: 0 }}
                       >
@@ -755,7 +755,7 @@ export default function PasswordCheckerReports() {
                       </TableHead>
                     );
                   })}
-                  <TableHead className="sticky top-0 text-center text-[12px] text-black font-bold border border-r py-2 px-3" style={{ top: 0 }} rowSpan={2}>Actions</TableHead>
+                  <TableHead className="sticky top-0 text-center text-sm text-black font-bold border border-r py-2 px-3" style={{ top: 0 }} rowSpan={2}>Actions</TableHead>
                 </TableRow>
                 {/* Column Headers Row */}
                 <TableRow className="border border-r">
@@ -765,14 +765,14 @@ export default function PasswordCheckerReports() {
                       .map(column => (
                         <TableHead
                           key={`${groupName}-${column.key}`}
-                          className={`sticky bg-white text-center text-[11px] text-black font-medium border border-r py-2 px-3 ${column.key === 'company_name' ? 'sticky-col company-col' : ''}`}
+                          className={`sticky bg-white text-center text-sm text-black font-medium border border-r py-2 px-3 ${column.key === 'company_name' ? 'sticky-col company-col' : ''}`}
                           onClick={() => requestSort(column.key)}
                           style={{ top: '40px' }}
                         >
                           <Button
                             variant="ghost"
                             onClick={() => requestSort(column.key)}
-                            className="h-6 p-0 text-[11px] text-black font-medium capitalize py-1 px-2"
+                            className="h-6 p-0 text-sm text-black font-medium capitalize py-1 px-2"
                           >
                             <span>{column.label}</span>
                             <ArrowUpDown className={`ml-1 h-3 w-3 ${sortConfig.key === column.key ? 'text-blue-600' : 'text-gray-400'} ${sortConfig.key === column.key && sortConfig.direction === 'descending' ? 'rotate-180' : ''}`} />
@@ -838,14 +838,14 @@ export default function PasswordCheckerReports() {
                 ) : (
                   sortedManufacturers.map((manufacturer, index) => (
                     <TableRow key={manufacturer.id} className={`h-8 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}>
-                      <TableCell className="text-center font-bold sticky-col index-col border border-r" style={{ minWidth: '50px' }}>{index + 1}</TableCell>
+                      <TableCell className="text-center font-bold sticky-col index-col border border-r text-sm" style={{ minWidth: '50px' }}>{index + 1}</TableCell>
                       {Object.values(columnGroups).flatMap(columns =>
                         columns
                           .filter(column => visibleColumns[column.key])
                           .map(column => (
                             <TableCell
                               key={`${manufacturer.id}-${column.key}`}
-                              className={`${column.key === 'company_name' ? 'text-left whitespace-nowrap font-bold sticky-col company-col border border-r' : 'text-center border border-r'}`}
+                              className={`${column.key === 'company_name' ? 'text-left whitespace-nowrap font-bold sticky-col company-col border border-r text-sm' : 'text-sm text-center border border-r'}`}
                               style={column.key === 'company_name' ? { minWidth: '200px' } : undefined}
                             >
                               {column.key.endsWith('_last_checked') && manufacturer[column.key] ? (
