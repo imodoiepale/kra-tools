@@ -871,8 +871,8 @@ export function PinCheckerDetailsReports() {
 
                                             {/* KRA PIN stats */}
                                             <TableCell className="text-center text-[10px] border-r border-black">
-                                                <span className={stats.complete.company_name === sortedDetails.length ? 'text-green-600 font-bold' : ''}>
-                                                    {stats.complete.company_name}
+                                                <span className={stats.complete.kra_pin === sortedDetails.length ? 'text-green-600 font-bold' : ''}>
+                                                    {stats.complete.kra_pin}
                                                 </span>
                                             </TableCell>
 
