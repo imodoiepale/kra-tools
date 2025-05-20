@@ -22,6 +22,7 @@ export function PINProfileReports() {
     const [visibleColumns, setVisibleColumns] = useState({
         company_name: true,
         company_pin: true,
+        pin_profile_status: true,
         expiry_date: true,
         extraction_date: true,
         profile: true,
@@ -39,21 +40,44 @@ export function PINProfileReports() {
 
     const fetchReports = async () => {
         try {
-            const { data, error } = await supabase
-                .from('PINProfilesAndCertificates')
-                .select('*')
+            // Fetch all companies from acc_portal_company_duplicate
+            const { data: companiesData, error: companiesError } = await supabase
+                .from('acc_portal_company_duplicate')
+                .select('id, company_name, kra_pin, acc_client_effective_from, acc_client_effective_to')
                 .order('id', { ascending: true });
 
-            if (error) throw error;
+            if (companiesError) throw companiesError;
 
-            const formattedReports = data.map(company => {
-                const extractions = company.extractions;
+            // Fetch all PIN profiles
+            const { data: profilesData, error: profilesError } = await supabase
+                .from('PINProfilesAndCertificates')
+                .select('*');
+
+            if (profilesError) throw profilesError;
+
+            // Create a map of PIN profiles by company_id for quick lookup
+            const profilesMap = new Map(profilesData.map(profile => [profile.company_id, profile]));
+
+            const formattedReports = companiesData.map(company => {
+                const profile = profilesMap.get(company.id);
+                const extractions = profile?.extractions || {};
                 const extractionDates = Object.keys(extractions).sort((a, b) => new Date(b) - new Date(a));
                 const latestDate = extractionDates[0];
                 const latestExtraction = extractions[latestDate] || {};
-                
-                // Extract client category if available
-                const client_category = company.client_category || '';
+
+                // Calculate client status
+                const calculateClientStatus = (fromDate, toDate) => {
+                    if (!fromDate || !toDate) return 'inactive';
+                    const today = new Date();
+                    const from = new Date(fromDate.split('/').reverse().join('-'));
+                    const to = new Date(toDate.split('/').reverse().join('-'));
+                    return today >= from && today <= to ? 'active' : 'inactive';
+                };
+
+                const client_status = calculateClientStatus(
+                    company.acc_client_effective_from,
+                    company.acc_client_effective_to
+                );
 
                 const formatDate = (dateString) => {
                     const date = new Date(dateString);
@@ -70,14 +94,22 @@ export function PINProfileReports() {
 
                 return {
                     id: company.id,
+                    company_id: company.id,
                     company_name: company.company_name,
-                    company_pin: company.company_pin === "MISSING PIN/PASSWORD" ? "Missing" : company.company_pin,
+                    company_pin: company.kra_pin || <span className="text-red-500">Missing</span>,
+                    pin_profile_status: profile ? 
+                        (profile.company_pin === "MISSING PIN/PASSWORD" ? "Missing" : "Available") : 
+                        "Not Extracted",
                     expiry_date: latestExtraction?.expiry_date || 'N/A',
-                    extraction_date: formatDate(company.updated_at || latestDate || new Date()),
-                    pdf_link: latestExtraction.pdf_link && latestExtraction.pdf_link !== "no doc"
-                        ? `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/kra-documents/${latestExtraction.pdf_link}`
-                        : null,
-                    client_category: client_category
+                    extraction_date: profile ? 
+                        formatDate(profile.updated_at || latestDate || new Date()) : 
+                        'Not Extracted',
+                    pdf_link: latestExtraction.pdf_link && latestExtraction.pdf_link !== "no doc" ?
+                        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/kra-documents/${latestExtraction.pdf_link}` : 
+                        null,
+                    client_status,
+                    acc_client_effective_from: company.acc_client_effective_from,
+                    acc_client_effective_to: company.acc_client_effective_to
                 };
             });
 
@@ -263,9 +295,10 @@ export function PINProfileReports() {
                         <TableHeader className="sticky top-0 bg-white z-10 text-xs">
                             <TableRow>
                                 {[
-                                    { key: 'index', label: 'Index', alwaysVisible: true },
+                                    { key: 'index', label: 'IDX | ID', alwaysVisible: true },
                                     { key: 'company_name', label: 'Company Name' },
                                     { key: 'company_pin', label: 'KRA PIN' },
+                                    { key: 'pin_profile_status', label: 'Profile Status' },
                                     { key: 'extraction_date', label: 'Last Extracted' },
                                     { key: 'profile', label: 'PIN Profile', alwaysVisible: true },
                                 ].map(({ key, label, alwaysVisible }) => (
@@ -296,6 +329,11 @@ export function PINProfileReports() {
                                             </span>
                                         </TableCell>
                                         <TableCell className="text-center text-[10px] border-r border-gray-300 py-0.5">
+                                            <span className={stats.complete.pin_profile_status === filteredReports.length ? 'text-green-600 font-bold' : ''}>
+                                                {stats.complete.pin_profile_status}
+                                            </span>
+                                        </TableCell>
+                                        <TableCell className="text-center text-[10px] border-r border-gray-300 py-0.5">
                                             <span className={stats.complete.extraction_date === filteredReports.length ? 'text-green-600 font-bold' : ''}>
                                                 {stats.complete.extraction_date}
                                             </span>
@@ -319,6 +357,11 @@ export function PINProfileReports() {
                                             </span>
                                         </TableCell>
                                         <TableCell className="text-center text-[10px] border-r border-gray-300 py-0.5">
+                                            <span className={stats.missing.pin_profile_status > 0 ? 'text-red-600 font-bold' : ''}>
+                                                {stats.missing.pin_profile_status}
+                                            </span>
+                                        </TableCell>
+                                        <TableCell className="text-center text-[10px] border-r border-gray-300 py-0.5">
                                             <span className={stats.missing.extraction_date > 0 ? 'text-red-600 font-bold' : ''}>
                                                 {stats.missing.extraction_date}
                                             </span>
@@ -336,9 +379,16 @@ export function PINProfileReports() {
                             {sortedReports.map((report, index) => (
                                 <TableRow key={report.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} style={{height: '24px'}}>
                                     {[
-                                        { key: 'index', content: index + 1, alwaysVisible: true },
+                                        { key: 'index', content: (
+                                            <div className="grid grid-cols-3 gap-1">
+                                                <span>{index + 1}</span>
+                                                <span>|</span>
+                                                <span>{report.id}</span>
+                                            </div>
+                                        ), alwaysVisible: true },
                                         { key: 'company_name', content: report.company_name },
-                                        { key: 'company_pin', content: report.company_pin === "MISSING PIN/PASSWORD" ? <span className="text-red-500 text-xs">Missing</span> : report.company_pin },
+                                        { key: 'company_pin', content: report.company_pin },
+                                        { key: 'pin_profile_status', content: <span className={`text-xs ${report.pin_profile_status === 'Available' ? 'text-green-500' : report.pin_profile_status === 'Missing' ? 'text-red-500' : 'text-gray-500'}`}>{report.pin_profile_status}</span> },
                                         { key: 'extraction_date', content: <span className="text-center text-xs">{report.extraction_date}</span> },
                                         {
                                             key: 'profile',

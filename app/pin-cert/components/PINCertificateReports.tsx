@@ -5,7 +5,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button";
 import { createClient } from '@supabase/supabase-js';
 import { Input } from "@/components/ui/input";
-import { Download, MoreHorizontal, ArrowUpDown, Eye, RefreshCw, Search, Image, Play, Filter } from "lucide-react";
+import { Download, MoreHorizontal, ArrowUpDown, Eye, EyeOff, RefreshCw, Search, Image, Play, Filter } from "lucide-react";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuCheckboxItem, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -21,6 +21,7 @@ export function PINCertificateReports() {
     const [searchTerm, setSearchTerm] = useState('');
     const [sortColumn, setSortColumn] = useState(null);
     const [sortOrder, setSortOrder] = useState('asc');
+    const [showStatsRows, setShowStatsRows] = useState(true);
     const [visibleColumns, setVisibleColumns] = useState({
         company_name: true,
         company_pin: true,
@@ -259,6 +260,58 @@ export function PINCertificateReports() {
         setCategoryFilters(newFilters);
     };
 
+
+
+    // Calculate statistics for complete and missing entries
+    const calculateStats = () => {
+        const stats = {
+            complete: {},
+            missing: {}
+        };
+
+        // Define fields to check for completeness
+        const fieldsToCheck = [
+            'company_name',
+            'company_pin',
+            'pin_certificate_status',
+            'extraction_date',
+            'certificate'
+        ];
+
+        // Initialize stats for each field
+        fieldsToCheck.forEach(field => {
+            stats.complete[field] = 0;
+            stats.missing[field] = 0;
+        });
+
+        // Calculate stats for each field individually
+        reports.forEach(report => {
+            fieldsToCheck.forEach(field => {
+                if (field === 'pin_certificate_status') {
+                    if (report[field] === 'Available') {
+                        stats.complete[field]++;
+                    } else {
+                        stats.missing[field]++;
+                    }
+                } else if (field === 'certificate') {
+                    if (report.pdf_link) {
+                        stats.complete[field]++;
+                    } else {
+                        stats.missing[field]++;
+                    }
+                } else if (report[field] && report[field].toString().trim() !== '') {
+                    stats.complete[field]++;
+                } else {
+                    stats.missing[field]++;
+                }
+            });
+        });
+
+        return stats;
+    };
+
+    const stats = calculateStats();
+
     const handleSort = (column) => {
         if (sortColumn === column) {
             setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
@@ -403,6 +456,20 @@ export function PINCertificateReports() {
                         <Filter className="h-4 w-4 mr-1" />
                         Categories {reports.length}
                     </Button>
+                    <Button 
+                        variant="outline" 
+                        onClick={() => setShowStatsRows(!showStatsRows)}
+                    >
+                        {showStatsRows ? <EyeOff className="h-4 w-4 mr-2" /> : <Eye className="h-4 w-4 mr-2" />}
+                        {showStatsRows ? 'Hide Stats' : 'Show Stats'}
+                    </Button>
+                    <Button 
+                        variant="outline" 
+                        onClick={() => setShowStatsRows(!showStatsRows)}
+                    >
+                        {showStatsRows ? <EyeOff className="h-4 w-4 mr-2" /> : <Eye className="h-4 w-4 mr-2" />}
+                        {showStatsRows ? 'Hide Stats' : 'Show Stats'}
+                    </Button>
                     <ClientCategoryFilter
                         open={isCategoryFilterOpen}
                         onOpenChange={setIsCategoryFilterOpen}
@@ -476,7 +543,7 @@ export function PINCertificateReports() {
                                         <TableHead key={key} className={`font-bold border-r border-gray-300 text-xs py-1 px-2 ${key === 'index' ? 'text-center sticky left-0 bg-white' : key === 'company_name' ? '' : 'text-center'}`}>
                                             <div className={`flex items-center ${key === 'company_name' ? '' : 'justify-center'}`}>
                                                 {label}
-                                                {key !== 'index' && !['actions'].includes(key) && (
+                                                {key !== 'index' && !['actions', 'certificate'].includes(key) && (
                                                     <ArrowUpDown className="h-4 w-4 cursor-pointer ml-2" onClick={() => handleSort(key)} />
                                                 )}
                                             </div>
@@ -484,90 +551,73 @@ export function PINCertificateReports() {
                                     )
                                 ))}
                             </TableRow>
-                            {/* Complete Data Stats Row */}
-                            <TableRow>
-                                <TableHead className="border-r border-gray-300 text-xs py-1 px-2 bg-gray-50">
-                                    <div className="text-[10px] text-green-600 font-semibold">Complete</div>
-                                </TableHead>
-                                {[
-                                    { 
-                                        key: 'index', 
-                                        count: sortedReports.length,
-                                        alwaysVisible: true 
-                                    },
-                                    { 
-                                        key: 'company_name', 
-                                        count: sortedReports.filter(r => r.company_name).length 
-                                    },
-                                    { 
-                                        key: 'kra_pin', 
-                                        count: sortedReports.filter(r => r.kra_pin).length 
-                                    },
-                                    { 
-                                        key: 'pin_certificate_status', 
-                                        count: sortedReports.filter(r => r.pin_certificate_status === 'Available').length 
-                                    },
-                                    { 
-                                        key: 'extraction_date', 
-                                        count: sortedReports.filter(r => r.extraction_date !== 'Not Extracted').length 
-                                    },
-                                    { 
-                                        key: 'certificate', 
-                                        count: sortedReports.filter(r => r.certificate !== 'Missing').length 
-                                    }
-                                ].map(({ key, count, alwaysVisible }) => (
-                                    (alwaysVisible || visibleColumns[key]) && (
-                                        <TableHead key={key} className={`border-r border-gray-300 text-xs py-1 px-2 bg-gray-50 ${key === 'index' ? 'sticky left-0' : ''}`}>
-                                            <div className="text-[10px] text-green-600 font-semibold text-center">{count}</div>
-                                        </TableHead>
-                                    )
-                                ))}
-                                 <TableHead className="border-r border-gray-300 text-xs py-1 px-2 bg-gray-50 text-center">
-                                    <div className="text-[10px] text-green-600 font-semibold">-</div>
-                                </TableHead>
-                            </TableRow>
-                            {/* Missing Data Stats Row */}
-                            <TableRow>
-                                <TableHead className="border-r border-gray-300 text-xs py-1 px-2 bg-gray-50">
-                                    <div className="text-[10px] text-red-600 font-semibold">Missing</div>
-                                </TableHead>
-                                {[
-                                    { 
-                                        key: 'index', 
-                                        count: 0,
-                                        alwaysVisible: true 
-                                    },
-                                    { 
-                                        key: 'company_name', 
-                                        count: sortedReports.filter(r => !r.company_name).length 
-                                    },
-                                    { 
-                                        key: 'kra_pin', 
-                                        count: sortedReports.filter(r => r.kra_pin === 'Missing').length 
-                                    },
-                                    { 
-                                        key: 'pin_certificate_status', 
-                                        count: sortedReports.filter(r => r.pin_certificate_status === 'Not Extracted').length 
-                                    },
-                                    { 
-                                        key: 'extraction_date', 
-                                        count: sortedReports.filter(r => r.extraction_date === 'Not Extracted').length 
-                                    },
-                                    { 
-                                        key: 'certificate', 
-                                        count: sortedReports.filter(r => r.certificate == 'Missing').length 
-                                    }
-                                ].map(({ key, count, alwaysVisible }) => (
-                                    (alwaysVisible || visibleColumns[key]) && (
-                                        <TableHead key={key} className={`border-r border-gray-300 text-xs py-1 px-2 bg-gray-50 ${key === 'index' ? 'sticky left-0' : ''}`}>
-                                            <div className="text-[10px] text-red-600 font-semibold text-center">{count}</div>
-                                        </TableHead>
-                                    )
-                                ))}
-                                 <TableHead className="border-r border-gray-300 text-xs py-1 px-2 bg-gray-50 text-center">
-                                    <div className="text-[10px] text-red-600 font-semibold">-</div>
-                                </TableHead>
-                            </TableRow>
+                            {showStatsRows && (
+                                <>
+                                    <TableRow className="bg-gray-100">
+                                        <TableCell className="text-center text-[10px] font-bold border-r border-gray-300 sticky left-0 bg-gray-100 py-0.5">Complete</TableCell>
+                                        <TableCell className="text-center text-[10px] border-r border-gray-300 py-0.5">
+                                            <span className={stats.complete.company_name === reports.length ? 'text-green-600 font-bold' : ''}>
+                                                {stats.complete.company_name}
+                                            </span>
+                                        </TableCell>
+                                        <TableCell className="text-center text-[10px] border-r border-gray-300 py-0.5">
+                                            <span className={stats.complete.company_pin === reports.length ? 'text-green-600 font-bold' : ''}>
+                                                {stats.complete.company_pin}
+                                            </span>
+                                        </TableCell>
+                                        <TableCell className="text-center text-[10px] border-r border-gray-300 py-0.5">
+                                            <span className={stats.complete.pin_certificate_status === reports.length ? 'text-green-600 font-bold' : ''}>
+                                                {stats.complete.pin_certificate_status}
+                                            </span>
+                                        </TableCell>
+                                        <TableCell className="text-center text-[10px] border-r border-gray-300 py-0.5">
+                                            <span className={stats.complete.extraction_date === reports.length ? 'text-green-600 font-bold' : ''}>
+                                                {stats.complete.extraction_date}
+                                            </span>
+                                        </TableCell>
+                                        <TableCell className="text-center text-[10px] border-r border-gray-300 py-0.5">
+                                            <span className={stats.complete.certificate === reports.length ? 'text-green-600 font-bold' : ''}>
+                                                {stats.complete.certificate}
+                                            </span>
+                                        </TableCell>
+                                        <TableCell className="text-center text-[10px] border-r border-gray-300 py-0.5">
+                                            <span>-</span>
+                                        </TableCell>
+                                    </TableRow>
+                                    <TableRow className="bg-gray-50">
+                                        <TableCell className="text-center text-[10px] font-bold border-r border-gray-300 sticky left-0 bg-gray-50 py-0.5">Missing</TableCell>
+                                        <TableCell className="text-center text-[10px] border-r border-gray-300 py-0.5">
+                                            <span className={stats.missing.company_name > 0 ? 'text-red-600 font-bold' : ''}>
+                                                {stats.missing.company_name}
+                                            </span>
+                                        </TableCell>
+                                        <TableCell className="text-center text-[10px] border-r border-gray-300 py-0.5">
+                                            <span className={stats.missing.company_pin > 0 ? 'text-red-600 font-bold' : ''}>
+                                                {stats.missing.company_pin}
+                                            </span>
+                                        </TableCell>
+                                        <TableCell className="text-center text-[10px] border-r border-gray-300 py-0.5">
+                                            <span className={stats.missing.pin_certificate_status > 0 ? 'text-red-600 font-bold' : ''}>
+                                                {stats.missing.pin_certificate_status}
+                                            </span>
+                                        </TableCell>
+                                        <TableCell className="text-center text-[10px] border-r border-gray-300 py-0.5">
+                                            <span className={stats.missing.extraction_date > 0 ? 'text-red-600 font-bold' : ''}>
+                                                {stats.missing.extraction_date}
+                                            </span>
+                                        </TableCell>
+                                        <TableCell className="text-center text-[10px] border-r border-gray-300 py-0.5">
+                                            <span className={stats.missing.certificate > 0 ? 'text-red-600 font-bold' : ''}>
+                                                {stats.missing.certificate}
+                                            </span>
+                                        </TableCell>
+                                        <TableCell className="text-center text-[10px] border-r border-gray-300 py-0.5">
+                                            <span>-</span>
+                                        </TableCell>
+                                    </TableRow>
+                                </>
+                            )}
+
                         </TableHeader>
                         <TableBody className="text-xs">
                             {sortedReports.length > 0 ? (
