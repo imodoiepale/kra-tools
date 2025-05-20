@@ -59,7 +59,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
-import { toast } from "@/components/ui/use-toast";
 import ClientCategoryFilter from '@/components/ClientCategoryFilter-updated-ui';
 
 // Icons
@@ -102,6 +101,7 @@ import {
 // Utilities
 import { cn } from "@/lib/utils";
 import { format, parse, isValid, parseISO, getYear } from "date-fns";
+import toast from 'react-hot-toast';
 
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 
@@ -1806,61 +1806,6 @@ export function WHVATExtractorReports() {
         toast({
             title: "Export Complete",
             description: `File "${fileName}" has been downloaded successfully.`,
-        });
-    };
-
-    // Export summary to Excel
-    const exportSummaryToExcel = async () => {
-        const workbook = new ExcelJS.Workbook();
-        const worksheet = workbook.addWorksheet('WHVAT Summary');
-        const headers = ['#', 'Company', 'Categories', 'Latest Extraction', 'Extractions', 'Total Amount'];
-
-        worksheet.addRow(headers);
-        worksheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
-        worksheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E40AF' } };
-
-        // Get summary data
-        getFilteredSortedSummary().forEach((company, idx) => {
-            worksheet.addRow([
-                idx + 1,
-                company.company_name,
-                company.categories.join(', '),
-                company.latestExtractionDate,
-                company.numberOfExtractions,
-                company.totalAmountRaw
-            ]);
-        });
-
-        // Add totals
-        const summaryData = getFilteredSortedSummary();
-        const totalAmount = summaryData.reduce((sum, company) => sum + company.totalAmountRaw, 0);
-        const totalExtractions = summaryData.reduce((sum, company) => sum + company.numberOfExtractions, 0);
-
-        const totalRow = worksheet.addRow([
-            '', 'TOTAL', '', '', totalExtractions, formatAmount(totalAmount).replace('KSH ', '')
-        ]);
-        totalRow.font = { bold: true };
-        totalRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFD9D9' } };
-
-        // Style and format
-        worksheet.columns.forEach((column, idx) => {
-            if (idx === 1) {
-                column.width = 40; // Company name
-            } else if (idx === 2) {
-                column.width = 20; // Categories
-            } else {
-                column.width = 15;
-            }
-        });
-
-        worksheet.getColumn(6).numFmt = '#,##0.00 "KSH"';
-
-        const buffer = await workbook.xlsx.writeBuffer();
-        saveAs(new Blob([buffer]), `WHVAT_Summary_${new Date().toISOString().split('T')[0]}.xlsx`);
-
-        toast({
-            title: "Export Complete",
-            description: "Summary report has been downloaded successfully.",
         });
     };
 
