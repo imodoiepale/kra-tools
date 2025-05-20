@@ -713,6 +713,7 @@ export function WHVATExtractorReports() {
                             !sidebarSearchTerm ||
                             company.company_name.toLowerCase().includes(sidebarSearchTerm.toLowerCase())
                         )
+                        .sort((a, b) => a.company_name.localeCompare(b.company_name))
                         .map((company) => (
                             <div
                                 key={company.company_name}

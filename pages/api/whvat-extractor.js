@@ -104,7 +104,7 @@ async function executeWHVATExtraction(startMonth, startYear, endMonth, endYear, 
             }
 
             const browser = await chromium.launch({
-                headless: true,
+                headless: false,
                 executablePath: chromePath
             });
             const context = await browser.newContext();
@@ -243,6 +243,7 @@ async function loginToKRA(page, company) {
         console.log("Wrong result of the arithmetic operation, retrying...");
         await loginToKRA(page, company);
     }
+    await page.goto("https://itax.kra.go.ke/KRA-Portal/");
 }
 
 
