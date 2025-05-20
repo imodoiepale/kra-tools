@@ -34,6 +34,14 @@ export default async function handler(req, res) {
             if (isRunning) {
                 return res.status(400).json({ message: "Extraction is already running" });
             }
+            
+            // Validate companyIds is properly formatted
+            if (!companyIds || !Array.isArray(companyIds) || companyIds.length === 0) {
+                return res.status(400).json({ message: "No companies selected for extraction" });
+            }
+            
+            console.log(`Starting WHVAT extraction for ${companyIds.length} companies:`, companyIds);
+            
             isRunning = true;
             progress = 0;
             totalCompanies = 0;
@@ -84,13 +92,13 @@ async function readSupabaseData(companyIds) {
 }
 
 
-async function executeWHVATExtraction(startMonth, startYear, endMonth, endYear, downloadDocuments, companyNames) {
+async function executeWHVATExtraction(startMonth, startYear, endMonth, endYear, downloadDocuments, companyIds) {
     try {
         if (downloadDocuments) {
             await fsPromises.mkdir(downloadFolderPath, { recursive: true });
         }
 
-        const data = await readSupabaseData(companyNames);
+        const data = await readSupabaseData(companyIds);
         totalCompanies = data.length;
 
         for (let i = 0; i < data.length && isRunning; i++) {

@@ -93,6 +93,9 @@ export function WHVATExtractorStart({ onStart, onStop }) {
                 description: "Connecting to the KRA portal and initializing the process. This may take a moment."
             });
             
+            // Log the selected companies to help with debugging
+            console.log(`Starting WHVAT extraction for ${selectedCompanies.length} selected companies:`, selectedCompanies);
+            
             const response = await fetch('/api/whvat-extractor', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -103,7 +106,7 @@ export function WHVATExtractorStart({ onStart, onStop }) {
                     endMonth: parseInt(endMonth),
                     endYear: parseInt(endYear),
                     downloadDocuments,
-                    companies: selectedCompanies
+                    companyIds: selectedCompanies // Changed parameter name to match API expectation
                 })
             });
             
