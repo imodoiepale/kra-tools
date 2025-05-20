@@ -143,7 +143,7 @@ export function PINCertificateReports() {
                     expiry_date: latestExtraction?.expiry_date || 'N/A',
                     extraction_date: certificate ?
                         formatDate(certificate.updated_at || latestDate || new Date()) :
-                        'Not Extracted',
+                        "Not Extracted",
                     pdf_link: latestExtraction.pdf_link && latestExtraction.pdf_link !== "no doc" ?
                         `${latestExtraction.pdf_link}` : null,
                     // Add category information
@@ -294,6 +294,12 @@ export function PINCertificateReports() {
                         stats.missing[field]++;
                     }
                 } else if (field === 'certificate') {
+                    if (report.pdf_link) {
+                        stats.complete[field]++;
+                    } else {
+                        stats.missing[field]++;
+                    }
+                } else if (field === 'extraction_date') {
                     if (report.pdf_link) {
                         stats.complete[field]++;
                     } else {
