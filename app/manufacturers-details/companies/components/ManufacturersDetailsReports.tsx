@@ -685,7 +685,7 @@ export function ManufacturersDetailsReports() {
             <Table className="text-[11px] text-black border-collapse w-full">
               <TableHeader className="bg-gray-50">
                 <TableRow className="border-b border-gray-200">
-                  <TableHead className="sticky top-0 bg-white text-center text-[12px] text-black font-bold border border-gray-200 py-2 px-3">Index</TableHead>
+                  <TableHead className="sticky top-0 bg-white text-center text-[12px] text-black font-bold border border-gray-200 py-2 px-3">IDX | ID</TableHead>
                   {Object.entries(visibleColumns).map(([column, isVisible]) => (
                     isVisible && (
                       <TableHead
@@ -755,7 +755,13 @@ export function ManufacturersDetailsReports() {
                 ) : (
                   sortedManufacturers.map((manufacturer, index) => (
                     <TableRow key={manufacturer.id} className={`h-8 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}>
-                      <TableCell className="text-center font-bold border border-r">{index + 1}</TableCell>
+                      <TableCell className="text-center font-bold border border-r">
+                        <div className="grid grid-cols-3 gap-1">
+                          <span>{index + 1}</span>
+                          <span>|</span>
+                          <span>{manufacturer.id}</span>
+                        </div>
+                      </TableCell>
                       {Object.entries(visibleColumns).map(([column, isVisible]) => (
                         isVisible && (
                           <TableCell key={column} className={`${column === 'company_name' ? 'text-left whitespace-nowrap font-bold border border-r' : 'text-center border border-r'}`}>

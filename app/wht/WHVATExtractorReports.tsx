@@ -20,6 +20,37 @@ import { Badge } from '@/components/ui/badge';
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 
 export function WHVATExtractorReports() {
+    const exportSummaryToExcel = async () => {
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet('Summary');
+        
+        // Add headers with separate IDX and ID columns
+        worksheet.addRow(['IDX', 'ID', 'Company', 'Latest Extraction Date', 'Number of Extractions', 'Total Amount']);
+        
+        getFilteredSortedSummary().forEach((company, idx) => {
+            worksheet.addRow([
+                idx + 1,                // IDX
+                company.id,             // ID
+                company.company_name,    // Company Name
+                company.latestExtractionDate,
+                company.numberOfExtractions,
+                company.totalAmountRaw
+            ]);
+        });
+
+        // Style the header row
+        worksheet.getRow(1).font = { bold: true };
+        
+        // Auto-fit columns
+        worksheet.columns.forEach(column => {
+            column.width = 15;  // Set a minimum width
+        });
+
+        const buffer = await workbook.xlsx.writeBuffer();
+        const timestamp = new Date().toISOString().split('T')[0];
+        saveAs(new Blob([buffer]), `WHVAT_Summary_${timestamp}.xlsx`);
+    };
+
     const [view, setView] = useState('summary');
     const [companies, setCompanies] = useState([]);
     const [allCompanyData, setAllCompanyData] = useState([]);
@@ -557,23 +588,6 @@ export function WHVATExtractorReports() {
         saveAs(new Blob([buffer]), `${selectedCompany}_WHVAT_Extractions_${range}.xlsx`);
     };
 
-    const exportSummaryToExcel = async () => {
-        const workbook = new ExcelJS.Workbook();
-        const worksheet = workbook.addWorksheet('Summary');
-        worksheet.addRow(['#', 'Company', 'Latest Extraction Date', 'Number of Extractions', 'Total Amount']);
-        getFilteredSortedSummary().forEach((company, idx) => {
-            worksheet.addRow([
-                idx + 1,
-                company.company_name,
-                company.latestExtractionDate,
-                company.numberOfExtractions,
-                company.totalAmountRaw
-            ]);
-        });
-        const buffer = await workbook.xlsx.writeBuffer();
-        saveAs(new Blob([buffer]), `WHVAT_Summary.xlsx`);
-    };
-
     // Update getFilteredSortedSummary function for generic search
     const getFilteredSortedSummary = () => {
         // First apply category filters
@@ -581,7 +595,7 @@ export function WHVATExtractorReports() {
             const extractionDates = company.extraction_data ? Object.keys(company.extraction_data) : [];
             const latestExtractionDate = extractionDates.length > 0 ?
                 new Date(Math.max(...extractionDates.map(date => new Date(company.extraction_data[date].extractionDate)))).toLocaleDateString() :
-                'N/A';
+                'Missing';
             const totalAmount = calculateOverallTotal(company.extraction_data);
             return {
                 ...company,
@@ -928,27 +942,85 @@ export function WHVATExtractorReports() {
 
             <ScrollArea className="h-[650px] overflow-auto" style={{ overflowY: 'auto' }}>
                 <Table className='border rounded-lg'>
-                    <TableHeader className="text-xs border bg-gray-50">
+                    <TableHeader className="text-xs border bg-white">
                         <TableRow>
-                            <TableHead className="font-bold text-center border-r border-gray-300 text-xs p-4">#</TableHead>
-                            <TableHead onClick={() => handleSummarySort('company')} className="font-bold cursor-pointer select-none border-r border-gray-300 text-xs p-4">
+                            <TableHead className="font-bold text-center border-r border-gray-300 text-xs p-4">IDX | ID</TableHead>
+                            <TableHead onClick={() => handleSummarySort('company')} className="font-bold cursor-pointer select-none border-r border text-xs p-4">
                                 Company <ArrowUpDown className="ml-2 h-4 w-4" />
                             </TableHead>
-                            <TableHead onClick={() => handleSummarySort('latestExtractionDate')} className="font-bold cursor-pointer select-none border-r border-gray-300 text-xs p-4">
+                            <TableHead onClick={() => handleSummarySort('latestExtractionDate')} className="font-bold cursor-pointer select-none border-r border text-xs p-4">
                                 Latest Extraction Date <ArrowUpDown className="ml-2 h-4 w-4" />
                             </TableHead>
-                            <TableHead onClick={() => handleSummarySort('numberOfExtractions')} className="font-bold cursor-pointer select-none border-r border-gray-300 text-xs p-4">
+                            <TableHead onClick={() => handleSummarySort('numberOfExtractions')} className="font-bold cursor-pointer select-none border-r border text-xs p-4">
                                 Number of Extractions <ArrowUpDown className="ml-2 h-4 w-4" />
                             </TableHead>
-                            <TableHead onClick={() => handleSummarySort('totalAmount')} className="font-bold cursor-pointer select-none border-r border-gray-300 text-xs p-4">
+                            <TableHead onClick={() => handleSummarySort('totalAmount')} className="font-bold cursor-pointer select-none border-r border text-xs p-4">
                                 Total Amount <ArrowUpDown className="ml-2 h-4 w-4" />
+                            </TableHead>
+                        </TableRow>
+                        {/* Complete Data Stats Row */}
+                        <TableRow>
+                            <TableHead className="border-r border text-xs py-1 px-2 bg-gray-50">
+                                <div className="text-[10px] text-green-600 font-semibold text-center">Complete</div>
+                            </TableHead>
+                            <TableHead className="border-r border text-xs py-1 px-2 bg-gray-50">
+                                <div className="text-[10px] text-green-600 font-semibold text-center">
+                                    {getFilteredSortedSummary().filter(r => r.company_name).length}
+                                </div>
+                            </TableHead>
+                            <TableHead className="border-r border text-xs py-1 px-2 bg-gray-50">
+                                <div className="text-[10px] text-green-600 font-semibold text-center">
+                                    {getFilteredSortedSummary().filter(r => r.latestExtractionDate !== 'Missing').length}
+                                </div>
+                            </TableHead>
+                            <TableHead className="border-r border text-xs py-1 px-2 bg-gray-50">
+                                <div className="text-[10px] text-green-600 font-semibold text-center">
+                                    {getFilteredSortedSummary().filter(r => r.numberOfExtractions > 0).length}
+                                </div>
+                            </TableHead>
+                            <TableHead className="border-r border text-xs py-1 px-2 bg-gray-50">
+                                <div className="text-[10px] text-green-600 font-semibold text-center">
+                                    {getFilteredSortedSummary().filter(r => r.totalAmountRaw > 0).length}
+                                </div>
+                            </TableHead>
+                        </TableRow>
+                        {/* Missing Data Stats Row */}
+                        <TableRow>
+                            <TableHead className="border-r border text-xs py-1 px-2 bg-gray-50">
+                                <div className="text-[10px] text-red-600 font-semibold text-center">Missing</div>
+                            </TableHead>
+                            <TableHead className="border-r border text-xs py-1 px-2 bg-gray-50">
+                                <div className="text-[10px] text-red-600 font-semibold text-center">
+                                    {getFilteredSortedSummary().filter(r => !r.company_name).length}
+                                </div>
+                            </TableHead>
+                            <TableHead className="border-r border text-xs py-1 px-2 bg-gray-50">
+                                <div className="text-[10px] text-red-600 font-semibold text-center">
+                                    {getFilteredSortedSummary().filter(r => r.latestExtractionDate === 'Missing').length}
+                                </div>
+                            </TableHead>
+                            <TableHead className="border-r border text-xs py-1 px-2 bg-gray-50">
+                                <div className="text-[10px] text-red-600 font-semibold text-center">
+                                    {getFilteredSortedSummary().filter(r => r.numberOfExtractions === 0).length}
+                                </div>
+                            </TableHead>
+                            <TableHead className="border-r border text-xs py-1 px-2 bg-gray-50">
+                                <div className="text-[10px] text-red-600 font-semibold text-center">
+                                    {getFilteredSortedSummary().filter(r => r.totalAmountRaw === 0).length}
+                                </div>
                             </TableHead>
                         </TableRow>
                     </TableHeader>
                     <TableBody className="text-xs">
                         {getFilteredSortedSummary().map((company, index) => (
                             <TableRow key={company.company_name} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                                <TableCell className="font-bold text-center border-r border-gray-300 p-4 text-xs">{company.id}</TableCell>
+                                <TableCell className="font-bold text-center border-r border-gray-300 p-4 text-xs">
+                                    <div className="grid grid-cols-3 gap-1">
+                                        <span>{index + 1}</span>
+                                        <span>|</span>
+                                        <span>{company.id}</span>
+                                    </div>
+                                </TableCell>
                                 <TableCell className="font-bold border-r border-gray-300 p-4 text-xs whitespace-nowrap">{company.company_name}</TableCell>
                                 <TableCell className="border-r border-gray-300 p-4 text-xs whitespace-nowrap">{company.latestExtractionDate}</TableCell>
                                 <TableCell className="border-r border-gray-300 p-4 text-xs whitespace-nowrap">{company.numberOfExtractions}</TableCell>
