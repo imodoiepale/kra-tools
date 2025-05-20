@@ -647,7 +647,7 @@ export default function PasswordCheckerReports() {
           />
           <Button variant="outline" onClick={() => setIsCategoryFilterOpen(true)}>
             <Filter className="h-4 w-4 mr-2" />
-            Categories
+            Categories  {sortedManufacturers.length}
           </Button>
           <Button
             variant="outline"
@@ -710,7 +710,7 @@ export default function PasswordCheckerReports() {
               <TableHeader className="bg-gray-50">
                 {/* Group Headers Row */}
                 <TableRow className="uppercase border border-r">
-                  <TableHead className="sticky top-0 text-center text-sm text-black font-bold border border-r py-2 px-3 sticky-col index-col" style={{ minWidth: '50px', top: 0 }} rowSpan={2}>Index</TableHead>
+                  <TableHead className="sticky top-0 text-center text-sm text-black font-bold border border-r py-2 px-3 sticky-col index-col" style={{ minWidth: '100px', top: 0 }} rowSpan={2}>IDX | ID</TableHead>
                   {Object.entries(columnGroups).map(([groupName, columns]) => {
                     const visibleColumnsInGroup = columns.filter(col => visibleColumns[col.key]);
                     if (visibleColumnsInGroup.length === 0) return null;
@@ -808,7 +808,13 @@ export default function PasswordCheckerReports() {
                 ) : (
                   sortedManufacturers.map((manufacturer, index) => (
                     <TableRow key={manufacturer.id} className={`h-8 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}>
-                      <TableCell className="text-center font-bold sticky-col index-col border border-r text-xs" style={{ minWidth: '50px' }}>{index + 1}</TableCell>
+                      <TableCell className="text-center font-bold sticky-col index-col border border-r text-xs" style={{ minWidth: '100px' }}>
+                        <div className="grid grid-cols-3 gap-1">
+                          <span>{index + 1}</span>
+                          <span>|</span>
+                          <span>{manufacturer.id}</span>
+                        </div>
+                      </TableCell>
                       {Object.values(columnGroups).flatMap(columns =>
                         columns
                           .filter(column => visibleColumns[column.key])
