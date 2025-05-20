@@ -15,6 +15,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ArrowUpDown, Search, Download, X, Filter } from "lucide-react";
 import ClientCategoryFilter from '@/components/ClientCategoryFilter-updated-ui';
+import { Badge } from '@/components/ui/badge';
 
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 
@@ -63,6 +64,7 @@ export function WHVATExtractorReports() {
             }
         }
     });
+    const [sidebarSearchTerm, setSidebarSearchTerm] = useState('');
 
     // Add a function to handle filter changes
     const handleApplyFilters = (newFilters) => {
@@ -283,58 +285,58 @@ export function WHVATExtractorReports() {
         return Object.values(data).reduce((sum, monthData) => sum + calculateTotal(monthData), 0);
     };
 
-  // Update filterData function to use generic search
-const filterData = (data) => {
-    if (!data) return;
-    let filtered = { ...data };
+    // Update filterData function to use generic search
+    const filterData = (data) => {
+        if (!data) return;
+        let filtered = { ...data };
 
-    if (!showAllData) {
-        // Filter by date range
-        if (startMonth && startYear && endMonth && endYear) {
-            filtered = Object.fromEntries(
-                Object.entries(filtered).filter(([key]) => {
-                    const [year, month] = key.split('-');
-                    const startDate = new Date(startYear, startMonth - 1);
-                    const endDate = new Date(endYear, endMonth - 1);
-                    const currentDate = new Date(year, parseInt(month) - 1);
-                    return currentDate >= startDate && currentDate <= endDate;
-                })
-            );
+        if (!showAllData) {
+            // Filter by date range
+            if (startMonth && startYear && endMonth && endYear) {
+                filtered = Object.fromEntries(
+                    Object.entries(filtered).filter(([key]) => {
+                        const [year, month] = key.split('-');
+                        const startDate = new Date(startYear, startMonth - 1);
+                        const endDate = new Date(endYear, endMonth - 1);
+                        const currentDate = new Date(year, parseInt(month) - 1);
+                        return currentDate >= startDate && currentDate <= endDate;
+                    })
+                );
+            }
+
+            // Filter by selected month and year
+            if (activeTab === 'monthWise' && selectedMonth && selectedYear) {
+                const selectedKey = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}`;
+                filtered = { [selectedKey]: filtered[selectedKey] };
+            }
         }
 
-        // Filter by selected month and year
-        if (activeTab === 'monthWise' && selectedMonth && selectedYear) {
-            const selectedKey = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}`;
-            filtered = { [selectedKey]: filtered[selectedKey] };
-        }
-    }
+        // Apply search term - using generic search across all cells
+        if (searchTerm) {
+            Object.keys(filtered).forEach(key => {
+                filtered[key].tableData = filtered[key].tableData.filter(row => {
+                    // Convert all cell values to lowercase strings for comparison
+                    const rowValues = row.map(cell =>
+                        cell !== null && cell !== undefined
+                            ? cell.toString().toLowerCase()
+                            : ''
+                    );
 
-    // Apply search term - using generic search across all cells
-    if (searchTerm) {
-        Object.keys(filtered).forEach(key => {
-            filtered[key].tableData = filtered[key].tableData.filter(row => {
-                // Convert all cell values to lowercase strings for comparison
-                const rowValues = row.map(cell => 
-                    cell !== null && cell !== undefined 
-                        ? cell.toString().toLowerCase() 
-                        : ''
-                );
-                
-                // Check if any cell in the row contains the search term
-                return rowValues.some(value => 
-                    value.includes(searchTerm.toLowerCase())
-                );
+                    // Check if any cell in the row contains the search term
+                    return rowValues.some(value =>
+                        value.includes(searchTerm.toLowerCase())
+                    );
+                });
             });
-        });
-    }
+        }
 
-    // Sort the filtered data by date (latest first)
-    const sortedFiltered = Object.fromEntries(
-        Object.entries(filtered).sort((a, b) => new Date(b[0]) - new Date(a[0]))
-    );
+        // Sort the filtered data by date (latest first)
+        const sortedFiltered = Object.fromEntries(
+            Object.entries(filtered).sort((a, b) => new Date(b[0]) - new Date(a[0]))
+        );
 
-    setFilteredData(sortedFiltered);
-};
+        setFilteredData(sortedFiltered);
+    };
 
     const clearFilters = () => {
         setStartMonth('');
@@ -572,102 +574,167 @@ const filterData = (data) => {
         saveAs(new Blob([buffer]), `WHVAT_Summary.xlsx`);
     };
 
-// Update getFilteredSortedSummary function for generic search
-const getFilteredSortedSummary = () => {
-    // First apply category filters
-    let data = applyFiltersToData(allCompanyData).map((company) => {
-        const extractionDates = company.extraction_data ? Object.keys(company.extraction_data) : [];
-        const latestExtractionDate = extractionDates.length > 0 ?
-            new Date(Math.max(...extractionDates.map(date => new Date(company.extraction_data[date].extractionDate)))).toLocaleDateString() :
-            'N/A';
-        const totalAmount = calculateOverallTotal(company.extraction_data);
-        return {
-            ...company,
-            latestExtractionDate,
-            numberOfExtractions: extractionDates.length,
-            totalAmount: formatAmount(totalAmount),
-            totalAmountRaw: totalAmount,
-        };
-    });
-
-    // Apply generic search filter
-    if (summarySearch) {
-        data = data.filter((company) => {
-            const searchTerm = summarySearch.toLowerCase();
-            
-            // Search across these common fields
-            const searchFields = [
-                company.company_name,
-                company.latestExtractionDate,
-                company.numberOfExtractions.toString(),
-                company.totalAmount,
-            ];
-            
-            // Check if any field contains the search term
-            return searchFields.some(field => 
-                field && field.toString().toLowerCase().includes(searchTerm)
-            );
+    // Update getFilteredSortedSummary function for generic search
+    const getFilteredSortedSummary = () => {
+        // First apply category filters
+        let data = applyFiltersToData(allCompanyData).map((company) => {
+            const extractionDates = company.extraction_data ? Object.keys(company.extraction_data) : [];
+            const latestExtractionDate = extractionDates.length > 0 ?
+                new Date(Math.max(...extractionDates.map(date => new Date(company.extraction_data[date].extractionDate)))).toLocaleDateString() :
+                'N/A';
+            const totalAmount = calculateOverallTotal(company.extraction_data);
+            return {
+                ...company,
+                latestExtractionDate,
+                numberOfExtractions: extractionDates.length,
+                totalAmount: formatAmount(totalAmount),
+                totalAmountRaw: totalAmount,
+            };
         });
-    }
 
-    // Apply sorting
-    data.sort((a, b) => {
-        const { column, direction } = summarySort;
-        let aVal, bVal;
-        switch (column) {
-            case 'company':
-                aVal = a.company_name.toLowerCase();
-                bVal = b.company_name.toLowerCase();
-                break;
-            case 'latestExtractionDate':
-                aVal = new Date(a.latestExtractionDate);
-                bVal = new Date(b.latestExtractionDate);
-                break;
-            case 'numberOfExtractions':
-                aVal = a.numberOfExtractions;
-                bVal = b.numberOfExtractions;
-                break;
-            case 'totalAmount':
-                aVal = a.totalAmountRaw;
-                bVal = b.totalAmountRaw;
-                break;
-            default:
-                aVal = a.company_name.toLowerCase();
-                bVal = b.company_name.toLowerCase();
+        // Apply generic search filter
+        if (summarySearch) {
+            data = data.filter((company) => {
+                const searchTerm = summarySearch.toLowerCase();
+
+                // Search across these common fields
+                const searchFields = [
+                    company.company_name,
+                    company.latestExtractionDate,
+                    company.numberOfExtractions.toString(),
+                    company.totalAmount,
+                ];
+
+                // Check if any field contains the search term
+                return searchFields.some(field =>
+                    field && field.toString().toLowerCase().includes(searchTerm)
+                );
+            });
         }
-        if (aVal < bVal) return direction === 'asc' ? -1 : 1;
-        if (aVal > bVal) return direction === 'asc' ? 1 : -1;
-        return 0;
-    });
 
-    return data;
-};
+        // Apply sorting
+        data.sort((a, b) => {
+            const { column, direction } = summarySort;
+            let aVal, bVal;
+            switch (column) {
+                case 'company':
+                    aVal = a.company_name.toLowerCase();
+                    bVal = b.company_name.toLowerCase();
+                    break;
+                case 'latestExtractionDate':
+                    aVal = new Date(a.latestExtractionDate);
+                    bVal = new Date(b.latestExtractionDate);
+                    break;
+                case 'numberOfExtractions':
+                    aVal = a.numberOfExtractions;
+                    bVal = b.numberOfExtractions;
+                    break;
+                case 'totalAmount':
+                    aVal = a.totalAmountRaw;
+                    bVal = b.totalAmountRaw;
+                    break;
+                default:
+                    aVal = a.company_name.toLowerCase();
+                    bVal = b.company_name.toLowerCase();
+            }
+            if (aVal < bVal) return direction === 'asc' ? -1 : 1;
+            if (aVal > bVal) return direction === 'asc' ? 1 : -1;
+            return 0;
+        });
+
+        return data;
+    };
+
+    // First, let's update the useEffect to filter and search companies in the sidebar
+    useEffect(() => {
+        if (!allCompanyData.length) return;
+
+        // First apply category filters
+        const filteredByCategory = applyFiltersToData(allCompanyData);
+
+        // Then apply search filter to the company sidebar
+        const searchFilteredCompanies = searchTerm
+            ? filteredByCategory.filter(company =>
+                company.company_name.toLowerCase().includes(searchTerm.toLowerCase())
+            )
+            : filteredByCategory;
+
+        // Update the companies state with filtered results
+        setCompanies(searchFilteredCompanies.map(company => ({
+            id: company.id,
+            company_name: company.company_name
+        })));
+
+        // If a company is selected but now filtered out, clear the selection
+        if (selectedCompany && !searchFilteredCompanies.some(c => c.company_name === selectedCompany)) {
+            setSelectedCompany(null);
+            setCompanyData(null);
+            setFilteredData(null);
+        }
+    }, [allCompanyData, categoryFilters, searchTerm]);
 
     const renderDetailedView = () => (
-        <div className="grid grid-cols-4 gap-4 h-[600px]" >
-            <div className="col-span-1">
-                <ScrollArea className="h-[600px]">
-                    {companies.map((company) => (
-                        <div
-                            key={company.company_name}
-                            onClick={() => setSelectedCompany(company.company_name)}
-                            className={`p-2 cursor-pointer transition-colors duration-200 text-xs ${selectedCompany === company.company_name
-                                ? 'bg-blue-500 text-white font-bold'
-                                : 'hover:bg-blue-100'
-                                }`}
+        <div className="grid grid-cols-4 gap-4 h-[680px]" >
+            <div className="col-span-1 border-x p-2">
+                <div className="space-y-2 flex items-center">
+                    <Input
+                        placeholder="Search companies..."
+                        value={sidebarSearchTerm}
+                        onChange={(e) => setSidebarSearchTerm(e.target.value)}
+                        className="w-full"
+                    />
+                    <div className="flex space-y-2 justify-between">
+                        <Button
+                            onClick={() => setIsCategoryFilterOpen(true)}
+                            variant="outline"
+                            size="sm"
+                            className="flex items-center whitespace-nowrap ml-2"
                         >
-                            {company.company_name}
-                        </div>
-                    ))}
+                            <Filter className="h-4 w-4 mr-1" />
+                            Filters
+                            <div className="px-2">
+                                {companies.length}
+                            </div>
+                        </Button>
+                        <ClientCategoryFilter
+                            open={isCategoryFilterOpen}
+                            onOpenChange={setIsCategoryFilterOpen}
+                            onFilterChange={handleApplyFilters}
+                            showSectionName=""
+                            initialFilters={categoryFilters}
+                            showSectionStatus={false}
+                        />
+
+                    </div>
+                </div>
+                <ScrollArea className="h-[680px] space-y-2">
+                    {companies
+                        .filter(company =>
+                            !sidebarSearchTerm ||
+                            company.company_name.toLowerCase().includes(sidebarSearchTerm.toLowerCase())
+                        )
+                        .map((company) => (
+                            <div
+                                key={company.company_name}
+                                onClick={() => setSelectedCompany(company.company_name)}
+                                className={`p-2 cursor-pointer transition-colors duration-200 text-xs ${selectedCompany === company.company_name
+                                    ? 'bg-blue-500 text-white font-bold'
+                                    : 'hover:bg-blue-100'
+                                    }`}
+                            >
+                                {company.company_name}
+                            </div>
+                        ))}
                 </ScrollArea>
             </div>
+
             <div className="col-span-3">
                 {companyData && (
                     <>
                         <div className="mb-4 flex justify-between items-center">
                             <strong className="text-green-600">Overall Total: {formatAmount(calculateOverallTotal(companyData))}</strong>
                             <Input
-                                placeholder="Search..."
+                                placeholder="Search within data..."
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
                                 className="w-1/3"
@@ -688,22 +755,6 @@ const getFilteredSortedSummary = () => {
                                 </DialogContent>
                             </Dialog>
                         </div>
-                        <Button
-                            onClick={() => setIsCategoryFilterOpen(true)}
-                            variant="outline"
-                            size="sm"
-                            className="whitespace-nowrap"
-                        >
-                            Filter by Category
-                        </Button>
-                        <ClientCategoryFilter
-                            open={isCategoryFilterOpen}
-                            onOpenChange={setIsCategoryFilterOpen}
-                            onFilterChange={handleApplyFilters}
-                            showSectionName="WHVAT"
-                            initialFilters={categoryFilters}
-                            showSectionStatus={true}
-                        />
                         <Tabs value={activeTab} onValueChange={setActiveTab}>
                             <TabsList>
                                 <TabsTrigger value="allData">All Data</TabsTrigger>
@@ -839,36 +890,39 @@ const getFilteredSortedSummary = () => {
 
     const renderSummaryView = () => (
         <>
-            <div className="flex flex-wrap gap-2 items-center mb-2">
+            <div className="flex flex-wrap gap-2 items-center mb-2 justify-between">
                 <Input
                     placeholder="Search ..."
                     value={summarySearch}
                     onChange={e => setSummarySearch(e.target.value)}
-                    className="w-64"
+                    className="w-1/2"
                 />
-                <Button onClick={exportSummaryToExcel} variant="outline" size="sm">
-                    <Download className="mr-2 h-4 w-4" /> Export to Excel
-                </Button>
-                <Button
-                    onClick={() => setIsCategoryFilterOpen(true)}
-                    variant="outline"
-                    size="sm"
-                    className="whitespace-nowrap"
-                >
-                    <Filter className="h-4 w-4 mr-2" />
-                    Client Category Filter
-                </Button>
-                <ClientCategoryFilter
-                    open={isCategoryFilterOpen}
-                    onOpenChange={setIsCategoryFilterOpen}
-                    onFilterChange={handleApplyFilters}
-                    showSectionName=""
-                    initialFilters={categoryFilters}
-                    showSectionStatus={false}
-                />
-                <div className="ml-auto font-bold text-blue-700">
-                    Total Companies: {getFilteredSortedSummary().length}
+                <div className="flex justify-between">
+                    <Button onClick={exportSummaryToExcel} variant="outline" size="sm">
+                        <Download className="mr-2 h-4 w-4" /> Export to Excel
+                    </Button>
+                    <Button
+                        onClick={() => setIsCategoryFilterOpen(true)}
+                        variant="outline"
+                        size="sm"
+                        className="flex items-center whitespace-nowrap ml-2"
+                    >
+                        <Filter className="h-4 w-4 mr-1" />
+                        Client Category Filter
+                        <div className="px-2">
+                            {companies.length}
+                        </div>
+                    </Button>
+                    <ClientCategoryFilter
+                        open={isCategoryFilterOpen}
+                        onOpenChange={setIsCategoryFilterOpen}
+                        onFilterChange={handleApplyFilters}
+                        showSectionName=""
+                        initialFilters={categoryFilters}
+                        showSectionStatus={false}
+                    />
                 </div>
+
             </div>
 
             <ScrollArea className="h-[650px] overflow-auto" style={{ overflowY: 'auto' }}>
@@ -876,16 +930,16 @@ const getFilteredSortedSummary = () => {
                     <TableHeader className="text-xs border bg-gray-50">
                         <TableRow>
                             <TableHead className="font-bold text-center border-r border-gray-300 text-xs p-4">#</TableHead>
-                            <TableHead onClick={() => handleSummarySort('company')} className="cursor-pointer select-none border-r border-gray-300 text-xs p-4">
+                            <TableHead onClick={() => handleSummarySort('company')} className="font-bold cursor-pointer select-none border-r border-gray-300 text-xs p-4">
                                 Company <ArrowUpDown className="ml-2 h-4 w-4" />
                             </TableHead>
-                            <TableHead onClick={() => handleSummarySort('latestExtractionDate')} className="cursor-pointer select-none border-r border-gray-300 text-xs p-4">
+                            <TableHead onClick={() => handleSummarySort('latestExtractionDate')} className="font-bold cursor-pointer select-none border-r border-gray-300 text-xs p-4">
                                 Latest Extraction Date <ArrowUpDown className="ml-2 h-4 w-4" />
                             </TableHead>
-                            <TableHead onClick={() => handleSummarySort('numberOfExtractions')} className="cursor-pointer select-none border-r border-gray-300 text-xs p-4">
+                            <TableHead onClick={() => handleSummarySort('numberOfExtractions')} className="font-bold cursor-pointer select-none border-r border-gray-300 text-xs p-4">
                                 Number of Extractions <ArrowUpDown className="ml-2 h-4 w-4" />
                             </TableHead>
-                            <TableHead onClick={() => handleSummarySort('totalAmount')} className="cursor-pointer select-none border-r border-gray-300 text-xs p-4">
+                            <TableHead onClick={() => handleSummarySort('totalAmount')} className="font-bold cursor-pointer select-none border-r border-gray-300 text-xs p-4">
                                 Total Amount <ArrowUpDown className="ml-2 h-4 w-4" />
                             </TableHead>
                         </TableRow>
@@ -894,7 +948,7 @@ const getFilteredSortedSummary = () => {
                         {getFilteredSortedSummary().map((company, index) => (
                             <TableRow key={company.company_name} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                                 <TableCell className="font-bold text-center border-r border-gray-300 p-4 text-xs">{company.id}</TableCell>
-                                <TableCell className="border-r border-gray-300 p-4 text-xs whitespace-nowrap">{company.company_name}</TableCell>
+                                <TableCell className="font-bold border-r border-gray-300 p-4 text-xs whitespace-nowrap">{company.company_name}</TableCell>
                                 <TableCell className="border-r border-gray-300 p-4 text-xs whitespace-nowrap">{company.latestExtractionDate}</TableCell>
                                 <TableCell className="border-r border-gray-300 p-4 text-xs whitespace-nowrap">{company.numberOfExtractions}</TableCell>
                                 <TableCell className="font-bold text-green-600 border-r border-gray-300 p-4 text-xs">{company.totalAmount}</TableCell>
@@ -907,7 +961,7 @@ const getFilteredSortedSummary = () => {
     );
 
     return (
-        <Card className="w-full ">
+        <Card className="w-full h-[940px] ">
             <CardHeader>
                 <CardTitle className="text-blue-700">WH VAT Extractor Reports</CardTitle>
             </CardHeader>
