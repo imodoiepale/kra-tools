@@ -1,0 +1,23 @@
+# automations/docker-compose.yml
+version: '3.8'
+
+services:
+  kra-automations:
+    build: .
+    container_name: kra-automations
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
+      - NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+      - MAX_CONCURRENT_WORKERS=${MAX_CONCURRENT_WORKERS:-3}
+      - NODE_ENV=production
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
