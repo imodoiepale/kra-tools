@@ -326,8 +326,15 @@ export function PINCertificateReports() {
             const orderMultiplier = sortOrder === 'asc' ? 1 : -1;
 
             // Handle different types of values
-            const aValue = a[sortColumn];
-            const bValue = b[sortColumn];
+            let aValue = a[sortColumn];
+            let bValue = b[sortColumn];
+
+            // Special handling for certificate column
+            if (sortColumn === 'certificate') {
+                // Sort based on whether pdf_link exists
+                aValue = a.pdf_link ? 'Available' : 'Missing';
+                bValue = b.pdf_link ? 'Available' : 'Missing';
+            }
 
             // Handle dates
             if (sortColumn === 'extraction_date' || sortColumn === 'expiry_date') {
@@ -370,12 +377,12 @@ export function PINCertificateReports() {
                 return visibleFields.map(field => {
                     if (field.key === 'index') return idx + 1;
                     if (field.key === 'id') return report.id;
-                    
+
                     let value = report[field.key];
                     // Handle React elements and complex objects
                     if (React.isValidElement(value)) {
                         // Extract text content from status spans
-                        value = field.key === 'pin_certificate_status' ? 
+                        value = field.key === 'pin_certificate_status' ?
                             report.pin_certificate_status :
                             String(value.props.children);
                     }
@@ -456,15 +463,8 @@ export function PINCertificateReports() {
                         <Filter className="h-4 w-4 mr-1" />
                         Categories {reports.length}
                     </Button>
-                    <Button 
-                        variant="outline" 
-                        onClick={() => setShowStatsRows(!showStatsRows)}
-                    >
-                        {showStatsRows ? <EyeOff className="h-4 w-4 mr-2" /> : <Eye className="h-4 w-4 mr-2" />}
-                        {showStatsRows ? 'Hide Stats' : 'Show Stats'}
-                    </Button>
-                    <Button 
-                        variant="outline" 
+                    <Button
+                        variant="outline"
                         onClick={() => setShowStatsRows(!showStatsRows)}
                     >
                         {showStatsRows ? <EyeOff className="h-4 w-4 mr-2" /> : <Eye className="h-4 w-4 mr-2" />}
@@ -543,7 +543,7 @@ export function PINCertificateReports() {
                                         <TableHead key={key} className={`font-bold border-r border-gray-300 text-xs py-1 px-2 ${key === 'index' ? 'text-center sticky left-0 bg-white' : key === 'company_name' ? '' : 'text-center'}`}>
                                             <div className={`flex items-center ${key === 'company_name' ? '' : 'justify-center'}`}>
                                                 {label}
-                                                {key !== 'index' && !['actions', 'certificate'].includes(key) && (
+                                                {key !== 'index' && !['actions'].includes(key) && (
                                                     <ArrowUpDown className="h-4 w-4 cursor-pointer ml-2" onClick={() => handleSort(key)} />
                                                 )}
                                             </div>
@@ -554,6 +554,7 @@ export function PINCertificateReports() {
                             {showStatsRows && (
                                 <>
                                     <TableRow className="bg-gray-100">
+                                        <TableCell className="text-center text-[10px] font-bold border-r border-gray-300 sticky left-0 bg-gray-100 py-0.5"></TableCell>
                                         <TableCell className="text-center text-[10px] font-bold border-r border-gray-300 sticky left-0 bg-gray-100 py-0.5">Complete</TableCell>
                                         <TableCell className="text-center text-[10px] border-r border-gray-300 py-0.5">
                                             <span className={stats.complete.company_name === reports.length ? 'text-green-600 font-bold' : ''}>
@@ -585,6 +586,7 @@ export function PINCertificateReports() {
                                         </TableCell>
                                     </TableRow>
                                     <TableRow className="bg-gray-50">
+                                        <TableCell className="text-center text-[10px] font-bold border-r border-gray-300 sticky left-0 bg-gray-50 py-0.5"></TableCell>
                                         <TableCell className="text-center text-[10px] font-bold border-r border-gray-300 sticky left-0 bg-gray-50 py-0.5">Missing</TableCell>
                                         <TableCell className="text-center text-[10px] border-r border-gray-300 py-0.5">
                                             <span className={stats.missing.company_name > 0 ? 'text-red-600 font-bold' : ''}>
@@ -630,11 +632,13 @@ export function PINCertificateReports() {
                                             />
                                         </TableCell>
                                         {[
-                                            { key: 'index', content: <div className="grid grid-cols-3 gap-1">
-                                                <span>{index + 1}</span>
-                                                <span>|</span>
-                                                <span>{report.id}</span>
-                                            </div>, alwaysVisible: true },
+                                            {
+                                                key: 'index', content: <div className="grid grid-cols-3 gap-1">
+                                                    <span>{index + 1}</span>
+                                                    <span>|</span>
+                                                    <span>{report.id}</span>
+                                                </div>, alwaysVisible: true
+                                            },
                                             { key: 'company_name', content: report.company_name },
                                             { key: 'company_pin', content: report.company_pin },
                                             { key: 'pin_certificate_status', content: <span className={`text-xs ${report.pin_certificate_status === 'Available' ? 'text-green-500' : report.pin_certificate_status === 'Missing' ? 'text-red-500' : 'text-gray-500'}`}>{report.pin_certificate_status}</span> },
