@@ -77,7 +77,7 @@ export default function PinCheckerDetails() {
         setCompanies(filteredData || []);
     };
  
-    const API_BASE_URL = process.env.NEXT_PUBLIC_KRA_AUTOMATIONS_API || 'https://your-render-deployment-url.onrender.com';
+    const API_BASE_URL = process.env.NEXT_PUBLIC_KRA_AUTOMATIONS_API || 'https://kra-automations.onrender.com';
 
     // Update the checkProgress function
     const checkProgress = async () => {
