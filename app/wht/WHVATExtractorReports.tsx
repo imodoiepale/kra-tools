@@ -2859,9 +2859,7 @@ export function WHVATExtractorReports() {
                 )}
             </div>
         </div>
-    );
-
-    // Responsive view wrapper
+    );// Responsive view wrapper
     const renderResponsiveView = () => (
         <div className="hidden md:block">
             {view === 'summary' ? renderSummaryView() : renderDetailedView()}
@@ -2932,4 +2930,5 @@ export function WHVATExtractorReports() {
             </CardContent>
         </Card>
     );
+}
 }
