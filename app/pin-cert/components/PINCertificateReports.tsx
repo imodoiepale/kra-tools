@@ -5,7 +5,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button";
 import { createClient } from '@supabase/supabase-js';
 import { Input } from "@/components/ui/input";
-import { Download, MoreHorizontal, ArrowUpDown, Eye, EyeOff, RefreshCw, Search, Image, Play, Filter } from "lucide-react";
+import { Download, MoreHorizontal, ArrowUpDown, Eye, EyeOff, RefreshCw, Search, Image, Play, Filter, Trash2Icon } from "lucide-react";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuCheckboxItem, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -259,8 +259,6 @@ export function PINCertificateReports() {
     const handleApplyFilters = (newFilters) => {
         setCategoryFilters(newFilters);
     };
-
-
 
     // Calculate statistics for complete and missing entries
     const calculateStats = () => {
@@ -664,6 +662,14 @@ export function PINCertificateReports() {
                                                                 <DialogContent className="w-full max-w-5xl max-h-[90vh]">
                                                                     <DialogHeader>
                                                                         <DialogTitle>PIN Certificate Document</DialogTitle>
+                                                                        <div className="flex items-center justify-end gap-2">
+                                                                            <RefreshCw className="cursor-pointer" onClick={() => window.location.reload()} />
+                                                                            <Trash2Icon className="cursor-pointer" onClick={() => {
+                                                                                if (confirm(`Are you sure you want to delete this PIN Certificate?`)) {
+                                                                                    deleteReport(report.id);
+                                                                                }
+                                                                            }} />
+                                                                        </div>
                                                                     </DialogHeader>
                                                                     <iframe
                                                                         src={`${report.pdf_link}#toolbar=0&navpanes=0&view=FitH&zoom=40&embedded=true`}
