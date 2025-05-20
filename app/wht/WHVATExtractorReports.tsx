@@ -1926,8 +1926,8 @@ export function WHVATExtractorReports() {
     const summaryColumns = useMemo(() => [
         {
             accessorKey: "index",
-            header: "#",
-            cell: ({ row }) => <div className="font-medium">{row.index + 1}</div>,
+            header: "IDX | ID",
+            cell: ({ row }) => <div className="font-medium">{row.index + 1} | {row.original.id}</div>,
             enableSorting: false,
             size: 50,
         },
