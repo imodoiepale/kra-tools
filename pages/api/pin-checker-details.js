@@ -329,8 +329,9 @@ async function processCompanyData(company, page) {
         turnover_tax_effective_to: 'No obligation',
         etims_registration: extractedData.electronicTaxInvoicing['eTIMS Registration'] || 'Unknown',
         tims_registration: extractedData.electronicTaxInvoicing['TIMS Registration'] || 'Unknown',
-        vat_compliance: extractedData.vatCompliance.status || 'Unknown'
-        // Removing taxpayer_details and raw_extraction as they don't exist in the database
+        vat_compliance: extractedData.vatCompliance.status || 'Unknown',
+        pin_status: extractedData.taxpayerDetails['PIN Status'] || 'Unknown',
+        itax_status: extractedData.taxpayerDetails['iTax Status'] || 'Unknown'
     };
 
     // Map the obligation details to the correct fields
@@ -370,6 +371,9 @@ async function processCompanyData(company, page) {
             }
         }
     }
+    
+    // Add timestamp for when this company was checked
+    data.last_checked_at = new Date().toISOString();
     
     // Log the complete extracted data for reference/debugging
     console.log('Complete extracted data for', company.company_name, ':', JSON.stringify(extractedData));
@@ -529,6 +533,8 @@ function createExcelFile(companyData) {
     const headers = [
         "Index",
         "Company Name",
+        "PIN Status",
+        "iTax Status",
         "Income Tax - Company Current Status",
         "Income Tax - Company Effective From Date",
         "Income Tax - Company Effective To Date",
@@ -585,6 +591,8 @@ function createExcelFile(companyData) {
         let values = [
             index + 1,
             company.company_name,
+            company.pin_status || 'Unknown',
+            company.itax_status || 'Unknown',
             company.income_tax_company_status,
             company.income_tax_company_effective_from,
             company.income_tax_company_effective_to,
@@ -626,8 +634,15 @@ function createExcelFile(companyData) {
         row.getCell(2).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFFFF' } }; // White for index
         row.getCell(3).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFFFF' } }; // White for company name
         row.getCell(3).alignment = { vertical: 'middle', horizontal: 'left' }; // Left align company name
+        
+        // Define colors for PIN Status and iTax Status
+        const pinStatusColor = 'FFD8E4BC'; // Light olive green
+        const itaxStatusColor = 'FFB8CCE4'; // Light blue
+        
+        row.getCell(4).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: pinStatusColor } }; // PIN Status
+        row.getCell(5).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: itaxStatusColor } }; // iTax Status
 
-        row.getCell(4).fill = row.getCell(5).fill = row.getCell(6).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: colors.companyTax } };
+        row.getCell(6).fill = row.getCell(7).fill = row.getCell(8).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: colors.companyTax } };
         row.getCell(7).fill = row.getCell(8).fill = row.getCell(9).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: colors.vat } };
         row.getCell(10).fill = row.getCell(11).fill = row.getCell(12).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: colors.paye } };
         row.getCell(13).fill = row.getCell(14).fill = row.getCell(15).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: colors.rentIncome } };

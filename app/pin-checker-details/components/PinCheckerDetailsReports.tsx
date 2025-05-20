@@ -15,6 +15,8 @@ interface PinCheckerDetail {
     id: number;
     company_name: string;
     kra_pin: string;
+    pin_status: string;
+    itax_status: string;
     income_tax_company_status: string;
     income_tax_company_effective_from: string;
     income_tax_company_effective_to: string;
@@ -352,19 +354,6 @@ export function PinCheckerDetailsReports() {
         }
     }
 
-    const handleDeleteAll = async () => {
-        const { error } = await supabase
-            .from('PinCheckerDetails')
-            .delete()
-            .neq('id', 0)  // This will delete all rows
-
-        if (error) {
-            console.error('Error deleting all details:', error)
-        } else {
-            setDetails([])
-        }
-    }
-
     const handleDownloadExcel = async () => {
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet('PIN Checker Details');
@@ -415,16 +404,16 @@ export function PinCheckerDetailsReports() {
                     detail[`${taxType.id}_effective_to`]
                 );
             });
-            
+
             // Add compliance data - directly use the field without _status suffix
             COMPLIANCE_TYPES.forEach(compType => {
                 const status = detail[compType.id]; // Direct field access
                 rowData.push(status || 'Not Available');
             });
-            
+
             // Add last checked data
             rowData.push(detail.error_message, detail.last_checked_at);
-            
+
             const row = worksheet.addRow(rowData);
 
             // Make indexing bold and centered
@@ -671,9 +660,17 @@ export function PinCheckerDetailsReports() {
         // Calculate stats for each field individually
         sortedDetails.forEach(detail => {
             fieldsToCheck.forEach(field => {
-                const value = detail[field as keyof PinCheckerDetail];
+                // Special handling for KRA PIN to account for the pinStatus field
+                if (field === 'kra_pin') {
+                    if (detail.pinStatus === 'PIN available') {
+                        stats.complete[field]++;
+                    } else {
+                        stats.missing[field]++;
+                    }
+                }
                 // For status fields, 'No Obligation' or 'Inactive' is considered missing
-                if (field.endsWith('_status')) {
+                else if (field.endsWith('_status')) {
+                    const value = detail[field as keyof PinCheckerDetail];
                     if (value &&
                         value.toString().trim() !== '' &&
                         value.toString().toLowerCase() !== 'no obligation' &&
@@ -686,14 +683,16 @@ export function PinCheckerDetailsReports() {
                 }
                 // For date fields
                 else if (field.endsWith('_from') || field.endsWith('_to')) {
+                    const value = detail[field as keyof PinCheckerDetail];
                     if (value && value.toString().trim() !== '') {
                         stats.complete[field]++;
                     } else {
                         stats.missing[field]++;
                     }
                 }
-                // For other fields
-                else {
+                // For other fields (excluding kra_pin which is handled separately)
+                else if (field !== 'kra_pin') {
+                    const value = detail[field as keyof PinCheckerDetail];
                     if (value && value.toString().trim() !== '') {
                         stats.complete[field]++;
                     } else {
@@ -719,8 +718,8 @@ export function PinCheckerDetailsReports() {
     // Helper function to render status cell with proper styling
     const renderStatusCell = (detail: any, typeId: string) => {
         // For compliance types, use the field directly, for other types append _status
-        const status = ['etims_registration', 'tims_registration', 'vat_compliance'].includes(typeId) 
-            ? detail[typeId] 
+        const status = ['etims_registration', 'tims_registration', 'vat_compliance'].includes(typeId)
+            ? detail[typeId]
             : detail[`${typeId}_status`];
         const isComplianceType = ['etims_registration', 'tims_registration', 'vat_compliance'].includes(typeId);
 
@@ -815,23 +814,37 @@ export function PinCheckerDetailsReports() {
                         <Download className="h-4 w-4 mr-2" />
                         Download Excel
                     </Button>
-                    <Button variant="destructive" size="sm" onClick={handleDeleteAll}>Delete All</Button>
+
                 </div>
             </div>
 
 
             <div className="rounded-md border">
-                <div className="overflow-x-auto">
+                {/* Scale hack: Apply 90% scaling to make everything fit better */}
+                <div className="overflow-x-auto" style={{
+                    transform: 'scale(0.9)',
+                    transformOrigin: 'top left',
+                    width: '111%', // Compensate for scaling (100% ÷ 0.9 = ~111%)
+                    height: '111%' // Compensate for scaling
+                }}>
                     <div className="max-h-[calc(100vh-300px)] overflow-y-auto">
                         <Table className="text-xs pb-2">
                             <TableHeader>
                                 <TableRow className="h-8">
-                                    <TableHead className="sticky top-0 bg-white border-r border-black border-b font-bold text-black text-center">Index</TableHead>
+                                    <TableHead className="sticky top-0 bg-white border-r border-black border-b font-bold text-black text-center w-16" style={{ minWidth: '90px' }}>IDX | ID</TableHead>
                                     <TableHead className="sticky top-0 bg-white border-r border-black border-b font-bold text-black">
                                         <SortableHeader field="company_name">Company Name</SortableHeader>
                                     </TableHead>
                                     <TableHead className="sticky top-0 bg-white border-r border-black border-b font-bold text-black">
                                         <SortableHeader field="kra_pin">KRA PIN</SortableHeader>
+                                    </TableHead>
+
+                                    <TableHead className="sticky top-0 bg-olive-200 text-center border-r border-black border-b font-bold text-black">
+                                        PIN Status
+                                    </TableHead>
+
+                                    <TableHead className="sticky top-0 bg-blue-200 text-center border-r border-black border-b font-bold text-black">
+                                        iTax Status
                                     </TableHead>
 
                                     {/* Map tax type headers - adjust colspan based on showDateColumns */}
@@ -1028,6 +1041,8 @@ export function PinCheckerDetailsReports() {
                                     <TableHead className="sticky top-8 bg-white border-r border-black border-b"></TableHead>
                                     <TableHead className="sticky top-8 bg-white border-r border-black border-b"></TableHead>
                                     <TableHead className="sticky top-8 bg-white border-r border-black border-b"></TableHead>
+                                    <TableHead className="sticky top-8 bg-white border-r border-black border-b"></TableHead>
+                                    <TableHead className="sticky top-8 bg-white border-r border-black border-b"></TableHead>
 
                                     {/* Tax type sub-headers - conditionally show date columns */}
                                     {TAX_TYPES.flatMap(taxType => {
@@ -1088,7 +1103,7 @@ export function PinCheckerDetailsReports() {
                             <TableBody>
                                 {sortedDetails.map((detail, index) => (
                                     <TableRow key={detail.id} className="h-6">
-                                        <TableCell className="border-r border-black font-bold text-black text-center">{index + 1}</TableCell>
+                                        <TableCell className="border-r border-black font-bold text-black text-center">{index + 1} | {detail.id}</TableCell>
                                         <TableCell className="border-r border-black">{detail.company_name}</TableCell>
                                         <TableCell className="border-r border-black">
                                             {detail.pinStatus === 'Missing PIN' ? (
@@ -1096,6 +1111,14 @@ export function PinCheckerDetailsReports() {
                                             ) : (
                                                 <span>{detail.companyData?.kra_pin || detail.kra_pin}</span>
                                             )}
+                                        </TableCell>
+
+                                        <TableCell className="border-r border-black bg-olive-100 text-center">
+                                            <span>{detail.pin_status || 'Not Available'}</span>
+                                        </TableCell>
+
+                                        <TableCell className="border-r border-black bg-blue-100 text-center">
+                                            <span>{detail.itax_status || 'Not Available'}</span>
                                         </TableCell>
 
                                         {/* Tax type cells - conditionally show date columns */}
@@ -1181,7 +1204,7 @@ export function PinCheckerDetailsReports() {
                                                             <div className="py-2 overflow-y-auto max-h-[calc(100vh-200px)]">
                                                                 {/* Company Information Section */}
                                                                 <div className="mb-6">
-                                                                    <div className="grid grid-cols-3 gap-4">
+                                                                    <div className="grid grid-cols-3 gap-4 mb-4">
                                                                         <div className="space-y-1">
                                                                             <p className="text-sm font-medium text-gray-500">Company Name</p>
                                                                             <p className="bg-gray-50 p-2 rounded-md">{editingDetail.company_name}</p>
@@ -1193,6 +1216,17 @@ export function PinCheckerDetailsReports() {
                                                                         <div className="space-y-1">
                                                                             <p className="text-sm font-medium text-gray-500">Last Checked</p>
                                                                             <p className="bg-gray-50 p-2 rounded-md">{formatDate(editingDetail.last_checked_at)} {new Date(editingDetail.last_checked_at).toLocaleTimeString()}</p>
+                                                                        </div>
+                                                                    </div>
+
+                                                                    <div className="grid grid-cols-2 gap-4 mb-4">
+                                                                        <div className="space-y-1 p-3 rounded-md bg-olive-50">
+                                                                            <p className="text-sm font-medium text-gray-500">PIN Status</p>
+                                                                            <p className="bg-gray-50 p-2 rounded-md">{editingDetail.pin_status || 'Not Available'}</p>
+                                                                        </div>
+                                                                        <div className="space-y-1 p-3 rounded-md bg-blue-50">
+                                                                            <p className="text-sm font-medium text-gray-500">iTax Status</p>
+                                                                            <p className="bg-gray-50 p-2 rounded-md">{editingDetail.itax_status || 'Not Available'}</p>
                                                                         </div>
                                                                     </div>
                                                                 </div>
