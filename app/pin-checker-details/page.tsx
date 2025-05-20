@@ -76,14 +76,21 @@ export default function PinCheckerDetails() {
         console.log('Filtered companies:', filteredData); // Debug log
         setCompanies(filteredData || []);
     };
+ 
+    const API_BASE_URL = process.env.NEXT_PUBLIC_KRA_AUTOMATIONS_API || 'https://your-render-deployment-url.onrender.com';
 
+    // Update the checkProgress function
     const checkProgress = async () => {
         try {
-            const response = await fetch('/api/pin-checker-details', {
+            const response = await fetch(`${API_BASE_URL}/api/automation`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: "getProgress" })
+                body: JSON.stringify({
+                    automation: "pin-checker",
+                    action: "getProgress"
+                })
             });
+
             if (!response.ok) throw new Error('Failed to fetch progress');
             const data = await response.json();
             setProgress(data.progress);
@@ -99,30 +106,30 @@ export default function PinCheckerDetails() {
         }
     };
 
-    // Reset any existing automation status before starting a new one
+    // Update the resetAutomationStatus function
     const resetAutomationStatus = async () => {
         try {
-            const response = await fetch('/api/pin-checker-details', {
+            const response = await fetch(`${API_BASE_URL}/api/automation`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
+                    automation: "pin-checker",
                     action: "stop"
                 })
             });
-            
+
             if (!response.ok) {
                 console.warn('Failed to reset automation status, but continuing anyway');
             } else {
                 console.log('Successfully reset automation status');
-                // Wait a short time to ensure status is updated in database
                 await new Promise(resolve => setTimeout(resolve, 1000));
             }
         } catch (error) {
             console.warn('Error resetting automation status:', error);
-            // Continue anyway
         }
     };
 
+    // Update the handleStartCheck function
     const handleStartCheck = async () => {
         if (isChecking) {
             alert('An automation is already running. Please wait for it to complete or stop it before starting a new one.');
@@ -139,37 +146,40 @@ export default function PinCheckerDetails() {
             await resetAutomationStatus();
 
             // Determine which IDs to send based on the run option
-            const idsToSend = runOption === 'selected' ? selectedCompanies : companies.map(company => company.id);
-            
+            const idsToSend = runOption === 'selected' ? selectedCompanies : [];
+
             console.log('Sending request with:', {
+                automation: "pin-checker",
                 action: "start",
                 runOption,
                 selectedIds: idsToSend
             });
 
-            const response = await fetch('/api/pin-checker-details', {
+            const response = await fetch(`${API_BASE_URL}/api/automation`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
+                    automation: "pin-checker",
                     action: "start",
                     runOption,
                     selectedIds: idsToSend
                 })
-            })
+            });
 
-            if (!response.ok) throw new Error('API request failed')
+            if (!response.ok) throw new Error('API request failed');
 
-            const data = await response.json()
-            console.log('PIN Checker Details started:', data)
-            setIsChecking(true)
-            setStatus("Running")
-            setActiveTab("running")
+            const data = await response.json();
+            console.log('PIN Checker Details started:', data);
+            setIsChecking(true);
+            setStatus("Running");
+            setActiveTab("running");
         } catch (error) {
-            console.error('Error starting PIN Checker Details:', error)
-            alert('Failed to start PIN Checker Details. Please try again.')
+            console.error('Error starting PIN Checker Details:', error);
+            alert('Failed to start PIN Checker Details. Please try again.');
         }
-    }
+    };
 
+    // Update the handleStopCheck function
     const handleStopCheck = async () => {
         if (!isChecking) {
             alert('There is no automation currently running.');
@@ -177,24 +187,27 @@ export default function PinCheckerDetails() {
         }
 
         try {
-            const response = await fetch('/api/pin-checker-details', {
+            const response = await fetch(`${API_BASE_URL}/api/automation`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: "stop" })
-            })
+                body: JSON.stringify({
+                    automation: "pin-checker",
+                    action: "stop"
+                })
+            });
 
-            if (!response.ok) throw new Error('Failed to stop automation')
+            if (!response.ok) throw new Error('Failed to stop automation');
 
-            const data = await response.json()
-            console.log('Automation stopped:', data)
-            setIsChecking(false)
-            setStatus("Stopped")
-            alert('Automation stopped successfully.')
+            const data = await response.json();
+            console.log('Automation stopped:', data);
+            setIsChecking(false);
+            setStatus("Stopped");
+            alert('Automation stopped successfully.');
         } catch (error) {
-            console.error('Error stopping automation:', error)
-            alert('Failed to stop automation. Please try again.')
+            console.error('Error stopping automation:', error);
+            alert('Failed to stop automation. Please try again.');
         }
-    }
+    };
 
     const handleCheckboxChange = (id: string) => {
         setSelectedCompanies((prev: string[] | never[]) =>
