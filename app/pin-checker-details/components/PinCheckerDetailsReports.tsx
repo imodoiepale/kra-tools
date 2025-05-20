@@ -363,6 +363,8 @@ export function PinCheckerDetailsReports() {
             'Index',
             'Company Name',
             'KRA PIN',
+            'PIN Status',
+            'iTax Status'
         ];
 
         // Add tax type headers
@@ -388,12 +390,15 @@ export function PinCheckerDetailsReports() {
             fgColor: { argb: 'FFFFFF00' }
         };
 
-        // Add data and apply styles
-        details.forEach((detail, index) => {
+        // Export only the filtered data that matches the current view
+        sortedDetails.forEach((detail, index) => {
             const rowData = [
                 index + 1,
                 detail.company_name,
-                detail.kra_pin,
+                // Use company PIN from company data if available, otherwise use the one from detail
+                detail.companyData?.kra_pin || detail.kra_pin || 'Missing PIN',
+                detail.pin_status || 'Not Available',
+                detail.itax_status || 'Not Available'
             ];
 
             // Add tax type data
@@ -431,13 +436,32 @@ export function PinCheckerDetailsReports() {
                 turnover_tax: 'FFFFE6CC',
                 etims_registration: 'FFE6FFFF',
                 tims_registration: 'FFCCFFCC',
-                vat_compliance: 'FFFFCCFF'
+                vat_compliance: 'FFFFCCFF',
+                pin_status: 'FFD8E4BC', // Light olive green for PIN Status
+                itax_status: 'FFB8CCE4'  // Light blue for iTax Status
             };
 
+            // Apply colors for PIN Status and iTax Status columns
+            const pinStatusCell = row.getCell(4); // PIN Status column (4th column)
+            const itaxStatusCell = row.getCell(5); // iTax Status column (5th column)
+            
+            pinStatusCell.fill = {
+                type: 'pattern',
+                pattern: 'solid',
+                fgColor: { argb: colors.pin_status }
+            };
+            
+            itaxStatusCell.fill = {
+                type: 'pattern',
+                pattern: 'solid',
+                fgColor: { argb: colors.itax_status }
+            };
+            
             // Apply colors for tax type columns
             TAX_TYPES.forEach((taxType, typeIndex) => {
                 for (let i = 0; i < 3; i++) {
-                    const cellIndex = typeIndex * 3 + 3 + i;
+                    // +5 because we now have 2 additional columns (PIN Status and iTax Status)
+                    const cellIndex = typeIndex * 3 + 5 + i + 1;
                     const cell = row.getCell(cellIndex);
                     const status = cell.value?.toString().toLowerCase();
                     if (!status) {
@@ -476,7 +500,8 @@ export function PinCheckerDetailsReports() {
 
             // Apply colors for compliance columns
             COMPLIANCE_TYPES.forEach((compType, compIndex) => {
-                const cellIndex = TAX_TYPES.length * 3 + 3 + compIndex;
+                // Add 2 to account for PIN Status and iTax Status columns
+                const cellIndex = TAX_TYPES.length * 3 + 5 + compIndex;
                 const cell = row.getCell(cellIndex);
                 const status = cell.value?.toString().toLowerCase();
 
@@ -486,7 +511,7 @@ export function PinCheckerDetailsReports() {
                         pattern: 'solid',
                         fgColor: { argb: 'FFFFCCCB' }
                     };
-                } else if (status === 'inactive' || status === 'not compliiant') {
+                } else if (status === 'inactive' || status === 'not compliant') { // Fixed typo: compliiant -> compliant
                     cell.fill = {
                         type: 'pattern',
                         pattern: 'solid',
