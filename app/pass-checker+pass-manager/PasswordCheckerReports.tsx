@@ -257,28 +257,35 @@ export default function PasswordCheckerReports() {
     }
   }
 
+  // Updated applyFiltersToData function to filter companies that match ALL selected categories
   const applyFiltersToData = (data, filters) => {
     if (!filters.categories || Object.keys(filters.categories).length === 0) {
       return data;
     }
 
-    return data.filter(manufacturer => {
-      const selectedCategories = Object.entries(filters.categories)
-        .filter(([category, isSelected]) => category && category !== 'All Categories' && isSelected)
-        .map(([category]) => category);
-
-      if (selectedCategories.length === 0) {
-        return true;
-      }
-
+    return data.filter(company => {
+      // Check if "All Categories" is selected
       if (filters.categories['All Categories']) {
         return true;
       }
 
-      const matchesCategory = selectedCategories.some(category => {
+      // Get all selected categories
+      const selectedCategories = Object.entries(filters.categories)
+        .filter(([category, isSelected]) => category !== 'All Categories' && isSelected)
+        .map(([category]) => category);
+
+      // If no categories selected, show all companies
+      if (selectedCategories.length === 0) {
+        return true;
+      }
+
+      // Check if company belongs to ALL selected categories
+      // and matches the status criteria for each selected category
+      return selectedCategories.every(category => {
+        // First check if company belongs to this category at all
         const categoryId = category.toLowerCase();
-        const fromDate = manufacturer[`${categoryId}_client_effective_from`];
-        const toDate = manufacturer[`${categoryId}_client_effective_to`];
+        const fromDate = company[`${categoryId}_client_effective_from`];
+        const toDate = company[`${categoryId}_client_effective_to`];
 
         // If no dates are set, this company doesn't belong to this category
         if (!fromDate || !toDate) {
@@ -291,24 +298,25 @@ export default function PasswordCheckerReports() {
         const effectiveTo = new Date(toDate.split('/').reverse().join('-'));
         const currentStatus = today >= effectiveFrom && today <= effectiveTo ? 'active' : 'inactive';
 
-        // Get selected statuses from filter
+        // Get the status settings for this category
         const categorySettings = filters.categorySettings?.[category];
         if (!categorySettings) {
-          return true;
+          return true; // No specific settings, so include it
         }
 
+        // Get selected client statuses
         const selectedClientStatuses = Object.entries(categorySettings.clientStatus || {})
           .filter(([_, isSelected]) => isSelected)
           .map(([status]) => status.toLowerCase());
 
+        // If "All" client status is selected or no specific status is selected, include all
         if (selectedClientStatuses.includes('all') || selectedClientStatuses.length === 0) {
           return true;
         }
 
+        // Check if company's status matches any selected status
         return selectedClientStatuses.includes(currentStatus);
       });
-
-      return matchesCategory;
     });
   };
 
@@ -544,6 +552,7 @@ export default function PasswordCheckerReports() {
     ))
   );
 
+  // Improved search functionality in useEffect
   useEffect(() => {
     if (!manufacturers.length) return;
 
@@ -552,66 +561,27 @@ export default function PasswordCheckerReports() {
     });
 
     const filteredResults = sortedManufacturers.filter(manufacturer => {
-      // Search term filtering
+      // Generic search across all fields
       if (searchTerm) {
         const query = searchTerm.toLowerCase();
-        const searchFields = [
-          manufacturer.company_name,
-          manufacturer.kra_pin,
-          manufacturer.manufacturer_name,
-          manufacturer.itax_mobile_number,
-          manufacturer.itax_main_email_address
-        ];
-        const matchesSearch = searchFields.some(field =>
-          field?.toString().toLowerCase().includes(query)
-        );
+
+        // Get all searchable fields (excluding arrays and objects)
+        const searchableFields = Object.entries(manufacturer)
+          .filter(([key, value]) =>
+            typeof value === 'string' ||
+            typeof value === 'number' ||
+            value instanceof Date
+          )
+          .map(([_, value]) => value?.toString().toLowerCase() || '');
+
+        // Check if any field contains the search term
+        const matchesSearch = searchableFields.some(field => field.includes(query));
+
         if (!matchesSearch) return false;
       }
 
-      // Category filtering
-      const selectedCategories = Object.entries(categoryFilters.categories || {})
-        .filter(([category, isSelected]) => category && category !== 'All Categories' && isSelected)
-        .map(([category]) => category);
-
-      // If no categories selected or All Categories is selected, include all
-      if (selectedCategories.length === 0 || categoryFilters.categories?.['All Categories']) {
-        return true;
-      }
-
-      return selectedCategories.some(category => {
-        const categoryId = category.toLowerCase().slice(0, 3);
-        const fromDate = manufacturer[`${categoryId}_client_effective_from`];
-        const toDate = manufacturer[`${categoryId}_client_effective_to`];
-
-        // If no dates are set, this company doesn't belong to this category
-        if (!fromDate || !toDate) {
-          return false;
-        }
-
-        // Calculate current status based on today's date
-        const today = new Date();
-        const effectiveFrom = new Date(fromDate.split('/').reverse().join('-'));
-        const effectiveTo = new Date(toDate.split('/').reverse().join('-'));
-        const currentStatus = today >= effectiveFrom && today <= effectiveTo ? 'active' : 'inactive';
-
-        // Get selected statuses from filter
-        const categorySettings = categoryFilters.categorySettings?.[category];
-        if (!categorySettings?.clientStatus) {
-          return true;
-        }
-
-        const selectedClientStatuses = Object.entries(categorySettings.clientStatus)
-          .filter(([_, isSelected]) => isSelected)
-          .map(([status]) => status.toLowerCase());
-
-        // If All is selected or no statuses selected, include all
-        if (selectedClientStatuses.includes('all') || selectedClientStatuses.length === 0) {
-          return true;
-        }
-
-        // Check if current status matches selected filters
-        return selectedClientStatuses.includes(currentStatus);
-      });
+      // Apply category filters
+      return applyFiltersToData([manufacturer], categoryFilters).length > 0;
     });
 
     setFilteredManufacturers(filteredResults);
@@ -670,7 +640,7 @@ export default function PasswordCheckerReports() {
       <div className="flex justify-between items-center space-y-2">
         <div className="flex space-x-2">
           <Input
-            placeholder="Search Manufacturers..."
+            placeholder="Search ..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="max-w-sm"
@@ -826,10 +796,10 @@ export default function PasswordCheckerReports() {
               <TableBody>
                 {isLoading ? (
                   <TableRow>
-                    <TableCell 
-                    colSpan={Object.values(columnGroups)
-                      .reduce((acc, columns) => acc + columns.filter(col => visibleColumns[col.key]).length, 0) + 2} 
-                    className="border border-r h-[200px]">
+                    <TableCell
+                      colSpan={Object.values(columnGroups)
+                        .reduce((acc, columns) => acc + columns.filter(col => visibleColumns[col.key]).length, 0) + 2}
+                      className="border border-r h-[200px]">
                       <div className="flex items-center justify-center w-full h-full">
                         <Spinner />
                       </div>
@@ -838,14 +808,14 @@ export default function PasswordCheckerReports() {
                 ) : (
                   sortedManufacturers.map((manufacturer, index) => (
                     <TableRow key={manufacturer.id} className={`h-8 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}>
-                      <TableCell className="text-center font-bold sticky-col index-col border border-r text-sm" style={{ minWidth: '50px' }}>{index + 1}</TableCell>
+                      <TableCell className="text-center font-bold sticky-col index-col border border-r text-xs" style={{ minWidth: '50px' }}>{index + 1}</TableCell>
                       {Object.values(columnGroups).flatMap(columns =>
                         columns
                           .filter(column => visibleColumns[column.key])
                           .map(column => (
                             <TableCell
                               key={`${manufacturer.id}-${column.key}`}
-                              className={`${column.key === 'company_name' ? 'text-left whitespace-nowrap font-bold sticky-col company-col border border-r text-sm' : 'text-sm text-center border border-r'}`}
+                              className={`${column.key === 'company_name' ? 'text-left whitespace-nowrap font-bold sticky-col company-col border border-r text-xs' : 'text-xs text-center border border-r'}`}
                               style={column.key === 'company_name' ? { minWidth: '200px' } : undefined}
                             >
                               {column.key.endsWith('_last_checked') && manufacturer[column.key] ? (

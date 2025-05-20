@@ -13,7 +13,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowUpDown, Search, Download, X } from "lucide-react";
+import { ArrowUpDown, Search, Download, X, Filter } from "lucide-react";
+import ClientCategoryFilter from '@/components/ClientCategoryFilter-updated-ui';
+import { Badge } from '@/components/ui/badge';
 
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 
@@ -37,33 +39,80 @@ export function WHVATExtractorReports() {
     const [showAllData, setShowAllData] = useState(false);
     const [summarySearch, setSummarySearch] = useState('');
     const [summarySort, setSummarySort] = useState({ column: 'company', direction: 'asc' });
+    const [isCategoryFilterOpen, setIsCategoryFilterOpen] = useState(false);
+    const [categoryFilters, setCategoryFilters] = useState({
+        categories: {
+            'All Categories': false,
+            'Acc': true,
+            'Imm': false,
+            'Sheria': false,
+            'Audit': false
+        },
+        categorySettings: {
+            'Acc': {
+                clientStatus: {
+                    All: false,
+                    Active: true,
+                    Inactive: false
+                },
+                sectionStatus: {
+                    All: false,
+                    Active: true,
+                    Inactive: false,
+                    Missing: false
+                }
+            }
+        }
+    });
+    const [sidebarSearchTerm, setSidebarSearchTerm] = useState('');
+
+    // Add a function to handle filter changes
+    const handleApplyFilters = (newFilters) => {
+        setCategoryFilters(newFilters);
+    };
 
     useEffect(() => {
         fetchCompanies();
         fetchAllCompanyData();
     }, []);
 
+    // Modify useEffect to apply filters
     useEffect(() => {
         if (selectedCompany) {
-            const data = allCompanyData.find(c => c.company_name === selectedCompany);
-            setCompanyData(data?.extraction_data || null);
-            filterData(data?.extraction_data);
+            // First, filter all company data based on categories
+            const filteredCompanies = applyFiltersToData(allCompanyData);
+
+            // Then find the selected company in the filtered list
+            const data = filteredCompanies.find(c => c.company_name === selectedCompany);
+
+            if (data && data.extraction_data) {
+                setCompanyData(data.extraction_data);
+                filterData(data.extraction_data);
+            } else {
+                setCompanyData(null);
+                setFilteredData(null);
+            }
         }
-    }, [selectedCompany, allCompanyData, activeTab, startMonth, startYear, endMonth, endYear, searchTerm, selectedMonth, selectedYear, showAllData]);
+    }, [selectedCompany, allCompanyData, activeTab, startMonth, startYear, endMonth, endYear, searchTerm, selectedMonth, selectedYear, showAllData, categoryFilters]);
 
     useEffect(() => {
         if (selectedCompany) {
             const data = allCompanyData.find(c => c.company_name === selectedCompany);
-            setCompanyData(data?.extraction_data || null);
-            setActiveTab('allData');
+            if (data && data.extraction_data) {
+                setCompanyData(data.extraction_data);
+                setActiveTab('allData');
+            } else {
+                setCompanyData(null);
+                setActiveTab('allData');
+            }
         }
     }, [selectedCompany, allCompanyData]);
 
     const fetchCompanies = async () => {
         try {
             const { data, error } = await supabase
-                .from('whvat_extractions')
-                .select('company_name')
+                .from('acc_portal_company_duplicate')
+                .select('id, company_name')
                 .order('company_name');
 
             if (error) throw error;
@@ -75,15 +124,155 @@ export function WHVATExtractorReports() {
 
     const fetchAllCompanyData = async () => {
         try {
-            const { data, error } = await supabase
+            // First get all companies from acc_portal_company_duplicate
+            const { data: companiesData, error: companiesError } = await supabase
+                .from('acc_portal_company_duplicate')
+                .select('*');
+
+            if (companiesError) throw companiesError;
+
+            // Then get all WHVAT extractions
+            const { data: extractionsData, error: extractionsError } = await supabase
                 .from('whvat_extractions')
                 .select('*');
 
-            if (error) throw error;
-            setAllCompanyData(data);
+            if (extractionsError) throw extractionsError;
+
+            // Map extractions by company_id for quick lookup
+            const extractionsMap = new Map();
+            extractionsData.forEach(extraction => {
+                if (!extractionsMap.has(extraction.company_id)) {
+                    extractionsMap.set(extraction.company_id, []);
+                }
+                extractionsMap.get(extraction.company_id).push(extraction);
+            });
+
+            // Helper function to determine client status
+            const calculateClientStatus = (fromDate, toDate) => {
+                if (!fromDate || !toDate) return 'inactive';
+
+                const today = new Date();
+                const from = new Date(fromDate.split('/').reverse().join('-'));
+                const to = new Date(toDate.split('/').reverse().join('-'));
+
+                return today >= from && today <= to ? 'active' : 'inactive';
+            };
+
+            // Get categories for each company
+            const mappedData = companiesData.map(company => {
+                const companyExtractions = extractionsMap.get(company.id) || [];
+                const extractionData = {};
+
+                // Process all extractions for this company
+                companyExtractions.forEach(extraction => {
+                    if (extraction.extraction_data) {
+                        Object.entries(extraction.extraction_data).forEach(([dateKey, data]) => {
+                            if (!extractionData[dateKey]) {
+                                extractionData[dateKey] = {
+                                    extractionDate: data.extractionDate,
+                                    tableData: []
+                                };
+                            }
+                            if (data.tableData) {
+                                extractionData[dateKey].tableData.push(...data.tableData);
+                            }
+                        });
+                    }
+                });
+
+                // Calculate client statuses
+                const acc_client_status = calculateClientStatus(company.acc_client_effective_from, company.acc_client_effective_to);
+                const imm_client_status = calculateClientStatus(company.imm_client_effective_from, company.imm_client_effective_to);
+                const sheria_client_status = calculateClientStatus(company.sheria_client_effective_from, company.sheria_client_effective_to);
+                const audit_client_status = calculateClientStatus(company.audit_client_effective_from, company.audit_client_effective_to);
+
+                // Determine which categories this company belongs to
+                const categories = [];
+                if (company.acc_client_effective_from && company.acc_client_effective_to) categories.push('Acc');
+                if (company.imm_client_effective_from && company.imm_client_effective_to) categories.push('Imm');
+                if (company.sheria_client_effective_from && company.sheria_client_effective_to) categories.push('Sheria');
+                if (company.audit_client_effective_from && company.audit_client_effective_to) categories.push('Audit');
+
+                return {
+                    id: company.id,
+                    company_name: company.company_name,
+                    extraction_data: extractionData,
+                    // Add category information
+                    categories,
+                    acc_client_status,
+                    imm_client_status,
+                    sheria_client_status,
+                    audit_client_status,
+                    // Keep the date fields for reference
+                    acc_client_effective_from: company.acc_client_effective_from,
+                    acc_client_effective_to: company.acc_client_effective_to,
+                    imm_client_effective_from: company.imm_client_effective_from,
+                    imm_client_effective_to: company.imm_client_effective_to,
+                    sheria_client_effective_from: company.sheria_client_effective_from,
+                    sheria_client_effective_to: company.sheria_client_effective_to,
+                    audit_client_effective_from: company.audit_client_effective_from,
+                    audit_client_effective_to: company.audit_client_effective_to,
+                };
+            });
+
+            setAllCompanyData(mappedData);
         } catch (error) {
             console.error('Error fetching all company data:', error);
         }
+    };
+
+    // Add a function to filter the data based on category filters
+    const applyFiltersToData = (data) => {
+        if (!categoryFilters.categories || Object.keys(categoryFilters.categories).length === 0) {
+            return data;
+        }
+
+        return data.filter(company => {
+            // Check if "All Categories" is selected
+            if (categoryFilters.categories['All Categories']) {
+                return true;
+            }
+
+            // Get all selected categories
+            const selectedCategories = Object.entries(categoryFilters.categories)
+                .filter(([category, isSelected]) => category !== 'All Categories' && isSelected)
+                .map(([category]) => category);
+
+            // If no categories selected, show all companies
+            if (selectedCategories.length === 0) {
+                return true;
+            }
+
+            // Check if company belongs to any of the selected categories
+            return selectedCategories.every(category => {
+                // Check if company belongs to this category
+                if (!company.categories.includes(category)) {
+                    return false;
+                }
+
+                // Get the status settings for this category
+                const categorySettings = categoryFilters.categorySettings?.[category];
+                if (!categorySettings) {
+                    return true;
+                }
+
+                // Get the client status for this category
+                const clientStatus = company[`${category.toLowerCase()}_client_status`];
+
+                // Get selected client statuses
+                const selectedClientStatuses = Object.entries(categorySettings.clientStatus || {})
+                    .filter(([_, isSelected]) => isSelected)
+                    .map(([status]) => status.toLowerCase());
+
+                // If "All" is selected or no specific status is selected, include all
+                if (selectedClientStatuses.includes('all') || selectedClientStatuses.length === 0) {
+                    return true;
+                }
+
+                // Check if company's status matches any selected status
+                return selectedClientStatuses.includes(clientStatus);
+            });
+        });
     };
 
     const calculateTotal = (monthData) => {
@@ -96,6 +285,7 @@ export function WHVATExtractorReports() {
         return Object.values(data).reduce((sum, monthData) => sum + calculateTotal(monthData), 0);
     };
 
+    // Update filterData function to use generic search
     const filterData = (data) => {
         if (!data) return;
         let filtered = { ...data };
@@ -121,12 +311,22 @@ export function WHVATExtractorReports() {
             }
         }
 
-        // Apply search term
+        // Apply search term - using generic search across all cells
         if (searchTerm) {
             Object.keys(filtered).forEach(key => {
-                filtered[key].tableData = filtered[key].tableData.filter(row =>
-                    row.some(cell => cell.toString().toLowerCase().includes(searchTerm.toLowerCase()))
-                );
+                filtered[key].tableData = filtered[key].tableData.filter(row => {
+                    // Convert all cell values to lowercase strings for comparison
+                    const rowValues = row.map(cell =>
+                        cell !== null && cell !== undefined
+                            ? cell.toString().toLowerCase()
+                            : ''
+                    );
+
+                    // Check if any cell in the row contains the search term
+                    return rowValues.some(value =>
+                        value.includes(searchTerm.toLowerCase())
+                    );
+                });
             });
         }
 
@@ -231,7 +431,7 @@ export function WHVATExtractorReports() {
                             } else {
                                 // This is a data row
                                 return (
-                                    <TableRow key={rowIndex} style={{height: '24px'}}>
+                                    <TableRow key={rowIndex} style={{ height: '24px' }}>
                                         {row.slice(0, 10).map((cell, cellIndex) => (
                                             <TableCell key={cellIndex} className="px-1 py-0.5">
                                                 {cellIndex === 8 && !isNaN(parseFloat(cell)) ? formatAmount(parseFloat(cell)) : cell}
@@ -297,7 +497,7 @@ export function WHVATExtractorReports() {
                     </TableHeader>
                     <TableBody className="text-xs">
                         {sortedData.map((row, rowIndex) => (
-                            <TableRow key={rowIndex} style={{height: '24px'}}>
+                            <TableRow key={rowIndex} style={{ height: '24px' }}>
                                 {row.map((cell, cellIndex) => (
                                     <TableCell key={cellIndex} className="px-1 py-0.5">
                                         {cellIndex === 8 ? formatAmount(parseFloat(cell)) : cell}
@@ -374,8 +574,10 @@ export function WHVATExtractorReports() {
         saveAs(new Blob([buffer]), `WHVAT_Summary.xlsx`);
     };
 
+    // Update getFilteredSortedSummary function for generic search
     const getFilteredSortedSummary = () => {
-        let data = allCompanyData.map((company) => {
+        // First apply category filters
+        let data = applyFiltersToData(allCompanyData).map((company) => {
             const extractionDates = company.extraction_data ? Object.keys(company.extraction_data) : [];
             const latestExtractionDate = extractionDates.length > 0 ?
                 new Date(Math.max(...extractionDates.map(date => new Date(company.extraction_data[date].extractionDate)))).toLocaleDateString() :
@@ -389,11 +591,28 @@ export function WHVATExtractorReports() {
                 totalAmountRaw: totalAmount,
             };
         });
+
+        // Apply generic search filter
         if (summarySearch) {
-            data = data.filter((company) =>
-                company.company_name.toLowerCase().includes(summarySearch.toLowerCase())
-            );
+            data = data.filter((company) => {
+                const searchTerm = summarySearch.toLowerCase();
+
+                // Search across these common fields
+                const searchFields = [
+                    company.company_name,
+                    company.latestExtractionDate,
+                    company.numberOfExtractions.toString(),
+                    company.totalAmount,
+                ];
+
+                // Check if any field contains the search term
+                return searchFields.some(field =>
+                    field && field.toString().toLowerCase().includes(searchTerm)
+                );
+            });
         }
+
+        // Apply sorting
         data.sort((a, b) => {
             const { column, direction } = summarySort;
             let aVal, bVal;
@@ -422,34 +641,100 @@ export function WHVATExtractorReports() {
             if (aVal > bVal) return direction === 'asc' ? 1 : -1;
             return 0;
         });
+
         return data;
     };
 
+    // First, let's update the useEffect to filter and search companies in the sidebar
+    useEffect(() => {
+        if (!allCompanyData.length) return;
+
+        // First apply category filters
+        const filteredByCategory = applyFiltersToData(allCompanyData);
+
+        // Then apply search filter to the company sidebar
+        const searchFilteredCompanies = searchTerm
+            ? filteredByCategory.filter(company =>
+                company.company_name.toLowerCase().includes(searchTerm.toLowerCase())
+            )
+            : filteredByCategory;
+
+        // Update the companies state with filtered results
+        setCompanies(searchFilteredCompanies.map(company => ({
+            id: company.id,
+            company_name: company.company_name
+        })));
+
+        // If a company is selected but now filtered out, clear the selection
+        if (selectedCompany && !searchFilteredCompanies.some(c => c.company_name === selectedCompany)) {
+            setSelectedCompany(null);
+            setCompanyData(null);
+            setFilteredData(null);
+        }
+    }, [allCompanyData, categoryFilters, searchTerm]);
+
     const renderDetailedView = () => (
-        <div className="grid grid-cols-4 gap-4 h-[600px]" >
-            <div className="col-span-1">
-                <ScrollArea className="h-[600px]">
-                    {companies.map((company) => (
-                        <div
-                            key={company.company_name}
-                            onClick={() => setSelectedCompany(company.company_name)}
-                            className={`p-2 cursor-pointer transition-colors duration-200 text-xs ${selectedCompany === company.company_name
+        <div className="grid grid-cols-4 gap-4 h-[680px]" >
+            <div className="col-span-1 border-x p-2">
+                <div className="space-y-2 flex items-center">
+                    <Input
+                        placeholder="Search companies..."
+                        value={sidebarSearchTerm}
+                        onChange={(e) => setSidebarSearchTerm(e.target.value)}
+                        className="w-full"
+                    />
+                    <div className="flex space-y-2 justify-between">
+                        <Button
+                            onClick={() => setIsCategoryFilterOpen(true)}
+                            variant="outline"
+                            size="sm"
+                            className="flex items-center whitespace-nowrap ml-2"
+                        >
+                            <Filter className="h-4 w-4 mr-1" />
+                            Filters
+                            <div className="px-2">
+                                {companies.length}
+                            </div>
+                        </Button>
+                        <ClientCategoryFilter
+                            open={isCategoryFilterOpen}
+                            onOpenChange={setIsCategoryFilterOpen}
+                            onFilterChange={handleApplyFilters}
+                            showSectionName=""
+                            initialFilters={categoryFilters}
+                            showSectionStatus={false}
+                        />
+
+                    </div>
+                </div>
+                <ScrollArea className="h-[680px] space-y-2">
+                    {companies
+                        .filter(company =>
+                            !sidebarSearchTerm ||
+                            company.company_name.toLowerCase().includes(sidebarSearchTerm.toLowerCase())
+                        )
+                        .map((company) => (
+                            <div
+                                key={company.company_name}
+                                onClick={() => setSelectedCompany(company.company_name)}
+                                className={`p-2 cursor-pointer transition-colors duration-200 text-xs ${selectedCompany === company.company_name
                                     ? 'bg-blue-500 text-white font-bold'
                                     : 'hover:bg-blue-100'
-                                }`}
-                        >
-                            {company.company_name}
-                        </div>
-                    ))}
+                                    }`}
+                            >
+                                {company.company_name}
+                            </div>
+                        ))}
                 </ScrollArea>
             </div>
+
             <div className="col-span-3">
                 {companyData && (
                     <>
                         <div className="mb-4 flex justify-between items-center">
                             <strong className="text-green-600">Overall Total: {formatAmount(calculateOverallTotal(companyData))}</strong>
                             <Input
-                                placeholder="Search..."
+                                placeholder="Search within data..."
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
                                 className="w-1/3"
@@ -470,7 +755,6 @@ export function WHVATExtractorReports() {
                                 </DialogContent>
                             </Dialog>
                         </div>
-
                         <Tabs value={activeTab} onValueChange={setActiveTab}>
                             <TabsList>
                                 <TabsTrigger value="allData">All Data</TabsTrigger>
@@ -606,35 +890,56 @@ export function WHVATExtractorReports() {
 
     const renderSummaryView = () => (
         <>
-            <div className="flex flex-wrap gap-2 items-center mb-2">
+            <div className="flex flex-wrap gap-2 items-center mb-2 justify-between">
                 <Input
-                    placeholder="Search companies..."
+                    placeholder="Search ..."
                     value={summarySearch}
                     onChange={e => setSummarySearch(e.target.value)}
-                    className="w-64"
+                    className="w-1/2"
                 />
-                <Button onClick={exportSummaryToExcel} variant="outline" size="sm">
-                    <Download className="mr-2 h-4 w-4" /> Export to Excel
-                </Button>
-                <div className="ml-auto font-bold text-blue-700">
-                    Total Companies: {getFilteredSortedSummary().length}
+                <div className="flex justify-between">
+                    <Button onClick={exportSummaryToExcel} variant="outline" size="sm">
+                        <Download className="mr-2 h-4 w-4" /> Export to Excel
+                    </Button>
+                    <Button
+                        onClick={() => setIsCategoryFilterOpen(true)}
+                        variant="outline"
+                        size="sm"
+                        className="flex items-center whitespace-nowrap ml-2"
+                    >
+                        <Filter className="h-4 w-4 mr-1" />
+                        Client Category Filter
+                        <div className="px-2">
+                            {companies.length}
+                        </div>
+                    </Button>
+                    <ClientCategoryFilter
+                        open={isCategoryFilterOpen}
+                        onOpenChange={setIsCategoryFilterOpen}
+                        onFilterChange={handleApplyFilters}
+                        showSectionName=""
+                        initialFilters={categoryFilters}
+                        showSectionStatus={false}
+                    />
                 </div>
+
             </div>
-            <ScrollArea className="h-[650px] overflow-auto" style={{overflowY: 'auto'}}>
-                <Table>
-                    <TableHeader className="text-xs">
+
+            <ScrollArea className="h-[650px] overflow-auto" style={{ overflowY: 'auto' }}>
+                <Table className='border rounded-lg'>
+                    <TableHeader className="text-xs border bg-gray-50">
                         <TableRow>
-                            <TableHead className="font-bold text-center border-r border-gray-300 text-xs py-1 px-2">#</TableHead>
-                            <TableHead onClick={() => handleSummarySort('company')} className="cursor-pointer select-none border-r border-gray-300 text-xs py-1 px-2">
+                            <TableHead className="font-bold text-center border-r border-gray-300 text-xs p-4">#</TableHead>
+                            <TableHead onClick={() => handleSummarySort('company')} className="font-bold cursor-pointer select-none border-r border-gray-300 text-xs p-4">
                                 Company <ArrowUpDown className="ml-2 h-4 w-4" />
                             </TableHead>
-                            <TableHead onClick={() => handleSummarySort('latestExtractionDate')} className="cursor-pointer select-none border-r border-gray-300 text-xs py-1 px-2">
+                            <TableHead onClick={() => handleSummarySort('latestExtractionDate')} className="font-bold cursor-pointer select-none border-r border-gray-300 text-xs p-4">
                                 Latest Extraction Date <ArrowUpDown className="ml-2 h-4 w-4" />
                             </TableHead>
-                            <TableHead onClick={() => handleSummarySort('numberOfExtractions')} className="cursor-pointer select-none border-r border-gray-300 text-xs py-1 px-2">
+                            <TableHead onClick={() => handleSummarySort('numberOfExtractions')} className="font-bold cursor-pointer select-none border-r border-gray-300 text-xs p-4">
                                 Number of Extractions <ArrowUpDown className="ml-2 h-4 w-4" />
                             </TableHead>
-                            <TableHead onClick={() => handleSummarySort('totalAmount')} className="cursor-pointer select-none border-r border-gray-300 text-xs py-1 px-2">
+                            <TableHead onClick={() => handleSummarySort('totalAmount')} className="font-bold cursor-pointer select-none border-r border-gray-300 text-xs p-4">
                                 Total Amount <ArrowUpDown className="ml-2 h-4 w-4" />
                             </TableHead>
                         </TableRow>
@@ -642,11 +947,11 @@ export function WHVATExtractorReports() {
                     <TableBody className="text-xs">
                         {getFilteredSortedSummary().map((company, index) => (
                             <TableRow key={company.company_name} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                                <TableCell className="font-bold text-center border-r border-gray-300 py-0.5 px-2 text-xs">{index + 1}</TableCell>
-                                <TableCell className="border-r border-gray-300 py-0.5 px-2 text-xs whitespace-nowrap">{company.company_name}</TableCell>
-                                <TableCell className="border-r border-gray-300 py-0.5 px-2 text-xs whitespace-nowrap">{company.latestExtractionDate}</TableCell>
-                                <TableCell className="border-r border-gray-300 py-0.5 px-2 text-xs whitespace-nowrap">{company.numberOfExtractions}</TableCell>
-                                <TableCell className="font-bold text-green-600 border-r border-gray-300 py-0.5 px-2 text-xs">{company.totalAmount}</TableCell>
+                                <TableCell className="font-bold text-center border-r border-gray-300 p-4 text-xs">{company.id}</TableCell>
+                                <TableCell className="font-bold border-r border-gray-300 p-4 text-xs whitespace-nowrap">{company.company_name}</TableCell>
+                                <TableCell className="border-r border-gray-300 p-4 text-xs whitespace-nowrap">{company.latestExtractionDate}</TableCell>
+                                <TableCell className="border-r border-gray-300 p-4 text-xs whitespace-nowrap">{company.numberOfExtractions}</TableCell>
+                                <TableCell className="font-bold text-green-600 border-r border-gray-300 p-4 text-xs">{company.totalAmount}</TableCell>
                             </TableRow>
                         ))}
                     </TableBody>
@@ -656,7 +961,7 @@ export function WHVATExtractorReports() {
     );
 
     return (
-        <Card className="w-full ">
+        <Card className="w-full h-[940px] ">
             <CardHeader>
                 <CardTitle className="text-blue-700">WH VAT Extractor Reports</CardTitle>
             </CardHeader>

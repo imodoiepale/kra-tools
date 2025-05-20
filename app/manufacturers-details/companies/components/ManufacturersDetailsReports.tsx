@@ -230,7 +230,7 @@ export function ManufacturersDetailsReports() {
         return true;
       }
 
-      const matchesCategory = selectedCategories.some(category => {
+      const matchesCategory = selectedCategories.every(category => {
         const categoryId = category.toLowerCase().slice(0, 3);
         const fromDate = manufacturer[`${categoryId}_client_effective_from`];
         const toDate = manufacturer[`${categoryId}_client_effective_to`];
