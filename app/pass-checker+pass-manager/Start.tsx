@@ -136,9 +136,23 @@ export default function Start({
       if (error) {
         console.error('Error fetching automation progress:', error);
         // Create initial record if none exists
+        const tabToIdMap = {
+          'kra': 1,
+          'nhif': 2,
+          'nssf': 3,
+          'ecitizen': 4,
+          'kebs': 5,
+          'quickbooks': 6
+        };
+        
+        const progressId = tabToIdMap[activeTab] || 999; // Default to 999 for unknown tabs
+        
+        console.log(`Creating initial progress for ${activeTab} with ID ${progressId}`);
+        
         const { error: insertError } = await supabase
           .from('PasswordChecker_AutomationProgress')
           .upsert({
+            id: progressId,
             progress: 0,
             status: 'Initial',
             logs: [],
@@ -295,9 +309,23 @@ export default function Start({
 
     try {
       // First, ensure automation is marked as running in Supabase
+      const tabToIdMap = {
+        'kra': 1,
+        'nhif': 2,
+        'nssf': 3,
+        'ecitizen': 4,
+        'kebs': 5,
+        'quickbooks': 6
+      };
+      
+      const progressId = tabToIdMap[activeTab] || 999; // Default to 999 for unknown tabs
+      
+      console.log(`Setting progress for ${activeTab} with ID ${progressId}`);
+      
       const { error: progressError } = await supabase
         .from('PasswordChecker_AutomationProgress')
         .upsert({
+          id: progressId,
           progress: 0,
           status: 'Running',
           logs: [],
@@ -337,9 +365,21 @@ export default function Start({
     } catch (error) {
       console.error(`Error starting password check for ${activeTab}:`, error);
       // Reset the automation progress on error
+      const tabToIdMap = {
+        'kra': 1,
+        'nhif': 2,
+        'nssf': 3,
+        'ecitizen': 4,
+        'kebs': 5,
+        'quickbooks': 6
+      };
+      
+      const progressId = tabToIdMap[activeTab] || 999; // Default to 999 for unknown tabs
+      
       await supabase
         .from('PasswordChecker_AutomationProgress')
         .upsert({
+          id: progressId,
           progress: 0,
           status: 'Stopped',
           logs: [],
@@ -381,9 +421,24 @@ export default function Start({
 
     try {
       // Update automation progress before resuming
+      // Generate a fixed ID based on the tab
+      const tabToIdMap = {
+        'kra': 1,
+        'nhif': 2,
+        'nssf': 3,
+        'ecitizen': 4,
+        'kebs': 5,
+        'quickbooks': 6
+      };
+      
+      const progressId = tabToIdMap[activeTab] || 999; // Default to 999 for unknown tabs
+      
+      console.log(`Setting progress for ${activeTab} with ID ${progressId} in resumeCheck`);
+      
       const { error: progressError } = await supabase
         .from('PasswordChecker_AutomationProgress')
         .upsert({
+          id: progressId,
           status: 'Running',
           tab: activeTab,
           last_updated: new Date().toISOString()
@@ -419,9 +474,21 @@ export default function Start({
     } catch (error) {
       console.error('Error resuming automation:', error);
       // Reset automation progress on error
+      const tabToIdMap = {
+        'kra': 1,
+        'nhif': 2,
+        'nssf': 3,
+        'ecitizen': 4,
+        'kebs': 5,
+        'quickbooks': 6
+      };
+      
+      const progressId = tabToIdMap[activeTab] || 999; // Default to 999 for unknown tabs
+      
       await supabase
         .from('PasswordChecker_AutomationProgress')
         .upsert({
+          id: progressId,
           status: 'Stopped',
           tab: activeTab,
           last_updated: new Date().toISOString()

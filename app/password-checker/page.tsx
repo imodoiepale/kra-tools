@@ -26,11 +26,13 @@ export default function PasswordChecker() {
     }, [])
 
     useEffect(() => {
-        if (isChecking) {
-            const interval = setInterval(checkProgress, 5000)
-            return () => clearInterval(interval)
-        }
-    }, [isChecking])
+        // Check progress immediately when component mounts to detect any running automation
+        checkProgress()
+        
+        // Set up interval for continuous checking if automation is running
+        const interval = setInterval(checkProgress, 3000)
+        return () => clearInterval(interval)
+    }, [])
 
     const fetchCompanies = async () => {
         const { data, error } = await supabase
@@ -56,13 +58,33 @@ export default function PasswordChecker() {
             });
             if (!response.ok) throw new Error('Failed to fetch progress');
             const data = await response.json();
-            setProgress(data.progress);
-            setStatus(data.status);
-            setIsChecking(data.status === "Running");
-            if (data.status === "Running") {
+            
+            // Update state based on progress data
+            setProgress(data.progress || 0);
+            setStatus(data.status || "Not Started");
+            
+            // Set checking state based on status
+            const isRunning = data.status === "Running" || data.status === "Initializing";
+            setIsChecking(isRunning);
+            
+            // Update active tab based on status
+            if (isRunning) {
                 setActiveTab("running");
             } else if (data.status === "Completed") {
                 setActiveTab("reports");
+                // Refresh companies list when completed
+                fetchCompanies();
+            } else if (data.status === "Error") {
+                console.error('Automation reported an error:', data.logs);
+                // Show the most recent error message if available
+                if (data.logs && data.logs.length > 0) {
+                    const errorLogs = data.logs.filter(log => log.type === 'error');
+                    if (errorLogs.length > 0) {
+                        alert(`Automation error: ${errorLogs[errorLogs.length - 1].message}`);
+                    } else {
+                        alert('The automation encountered an error. Please check the server logs.');
+                    }
+                }
             }
         } catch (error) {
             console.error('Error checking progress:', error);
