@@ -27,10 +27,10 @@ export default async function handler(req, res) {
             if (isRunning) {
                 return res.status(400).json({ error: "TCC extraction already running" });
             }
-            
+
             isRunning = true;
             progress = 0;
-            
+
             processTCCExtraction(companies).catch(console.error);
             return res.status(200).json({ message: "TCC extraction started" });
 
@@ -48,7 +48,7 @@ export default async function handler(req, res) {
                 isRunning,
                 progress,
                 currentCompany
-            });  
+            });
 
         case "getReports":
             const reports = await getReports();
@@ -61,12 +61,12 @@ export default async function handler(req, res) {
 
 async function processTCCExtraction(selectedCompanyIds = []) {
     let companies;
-    
+
     if (selectedCompanyIds && selectedCompanyIds.length > 0) {
         // If specific companies are selected, fetch only those
         companies = [];
         const allCompanies = await readSupabaseData();
-        
+
         // Filter to only the selected companies
         companies = allCompanies.filter(company => selectedCompanyIds.includes(company.id));
         console.log(`Processing ${companies.length} selected companies`);
@@ -75,7 +75,7 @@ async function processTCCExtraction(selectedCompanyIds = []) {
         companies = await readSupabaseData();
         console.log(`Processing all ${companies.length} companies`);
     }
-    
+
     totalCompanies = companies.length;
 
     const now = new Date();
@@ -87,7 +87,7 @@ async function processTCCExtraction(selectedCompanyIds = []) {
 
     for (let i = 0; i < companies.length && isRunning; i++) {
         currentCompany = companies[i].company_name;
-        console.log(`Processing company ${i+1}/${companies.length}: ${currentCompany}`);
+        console.log(`Processing company ${i + 1}/${companies.length}: ${currentCompany}`);
         await processCompany(companies[i], downloadFolderPath, formattedDateTime);
         progress = Math.round(((i + 1) / totalCompanies) * 100);
     }
@@ -186,10 +186,22 @@ async function loginToKRA(page, company) {
 
 async function uploadToSupabase(filePath, companyName, fileType, extractionDate) {
     try {
+        // Sanitize company name for file paths to avoid invalid keys
+        // 1. Limit length and replace invalid characters
+        const sanitizeNameForPath = (name) => {
+            // Remove special characters that might cause issues in paths
+            const sanitized = name.replace(/[^a-zA-Z0-9_\-. ]/g, '')
+                .replace(/\s+/g, '_')
+                .trim();
+            // Limit length to avoid path too long errors (max 50 chars)
+            return sanitized.substring(0, 50);
+        };
+
+        const sanitizedCompanyName = sanitizeNameForPath(companyName);
         const fileName = `${extractionDate}_${path.basename(filePath)}`;
-        const storagePath = `${companyName}/${fileType}/${fileName}`;
+        const storagePath = `${sanitizedCompanyName}/${fileType}/${fileName}`;
         const fileContent = await fs.readFile(filePath);
-        
+
         // First try to upload with upsert option to handle duplicates
         const { data, error } = await supabase.storage
             .from('kra-documents')
@@ -205,22 +217,22 @@ async function uploadToSupabase(filePath, companyName, fileType, extractionDate)
                 // Return a default value instead of throwing
                 return fileType === 'pdf' ? 'no_doc' : 'no_screenshot';
             }
-            
+
             // For duplicate errors, get the public URL instead
             console.log(`File already exists for ${companyName}, using existing file.`);
-            
+
             // Check if file exists and return its path
             const { data: fileData } = await supabase.storage
                 .from('kra-documents')
                 .getPublicUrl(storagePath);
-                
+
             if (fileData) {
                 return storagePath; // Return the path even if it's a duplicate
             } else {
                 return fileType === 'pdf' ? 'no_doc' : 'no_screenshot';
             }
         }
-        
+
         return data.path;
     } catch (error) {
         console.error(`Unexpected error during upload for ${companyName}:`, error);
@@ -238,10 +250,10 @@ async function updateSupabaseTable(companyData, extractionDate, fullTableData) {
                 message: "Missing company ID"
             };
         }
-        
+
         // Use company_id or id, whichever is available
         const companyId = companyData.company_id || companyData.id;
-        
+
         // Ensure it's a valid ID
         if (typeof companyId === 'undefined' || companyId === null) {
             console.error('Company ID is null or undefined. Cannot update database.');
@@ -250,15 +262,15 @@ async function updateSupabaseTable(companyData, extractionDate, fullTableData) {
                 message: "Invalid company ID"
             };
         }
-        
+
         console.log(`Updating database for company ID: ${companyId}`);
-        
+
         const { data: tccData, error: tccError } = await supabase
             .from('TaxComplianceCertificates')
             .select('extractions, company_id')
             .eq('company_id', companyId)
             .single();
-            
+
         if (tccError && tccError.code !== 'PGRST116') {
             console.log(`Error checking for existing extractions for company ${companyId}: ${tccError.message}`);
             // Don't throw, just return error
@@ -277,7 +289,7 @@ async function updateSupabaseTable(companyData, extractionDate, fullTableData) {
                 .eq('kyc_document_id', '5c658f23-7d16-4453-9965-619b72b9166a')
                 .eq('userid', companyId.toString())
                 .order('created_at', { ascending: false });
-                
+
             kycData = kycResponse.data;
             kycError = kycResponse.error;
         } catch (err) {
@@ -309,7 +321,7 @@ async function updateSupabaseTable(companyData, extractionDate, fullTableData) {
         if (tccData) {
             existingExtractions = tccData.extractions || {};
         }
-        
+
         // Get company PIN from the extracted data or directly from companyData
         const companyPin = companyData.PIN || companyData.kra_pin;
         if (!companyPin) {
@@ -319,40 +331,40 @@ async function updateSupabaseTable(companyData, extractionDate, fullTableData) {
                 message: "Missing company PIN"
             };
         }
-        
+
         console.log(`Creating/updating TCC record for PIN: ${companyPin}`);
-        
+
         // Create a new extraction record for this date
         const extractionRecord = {
             // Status
             status: companyData.Status || 'Unknown',
-            
+
             // Certificate details
             certificate_date: companyData.CertificateDate || '',
             expiry_date: companyData.ExpiryDate || '',
             serial_no: companyData.SerialNo || companyData.CertificateSerialNo || '',
-            
+
             // Documents
             pdf_link: companyData.pdfLink || "no_doc",
             screenshot_link: companyData.screenshotLink || "no_screenshot",
-            
+
             // Timestamps
             extraction_date: extractionDate,
             timestamp: new Date().toISOString()
         };
-        
+
         // If we have full table data, add it
         if (fullTableData && fullTableData.length > 0) {
             extractionRecord.full_table_data = fullTableData;
         }
-        
+
         // Create the database record object
         const updatedData = {
             company_pin: companyPin,
             company_id: companyId,
             company_name: companyData.company_name || companyData.TaxPayerName || "Unknown"
         };
-        
+
         // Check if we have existing extractions or create a new object
         if (tccData && tccData.extractions) {
             // Add our new extraction to the existing ones
@@ -366,7 +378,7 @@ async function updateSupabaseTable(companyData, extractionDate, fullTableData) {
                 [extractionDate]: extractionRecord
             };
         }
-        
+
         try {
             const { data, error } = await supabase
                 .from('TaxComplianceCertificates')
@@ -374,7 +386,7 @@ async function updateSupabaseTable(companyData, extractionDate, fullTableData) {
                     onConflict: 'company_pin',
                     returning: 'minimal'
                 });
-    
+
             if (error) {
                 console.error(`Error inserting/updating TCC record: ${error.message}`);
                 return {
@@ -382,7 +394,7 @@ async function updateSupabaseTable(companyData, extractionDate, fullTableData) {
                     message: `Database update failed: ${error.message}`
                 };
             }
-            
+
             return {
                 success: true,
                 data
@@ -418,12 +430,12 @@ async function processCompany(company, downloadFolderPath, formattedDateTime) {
 
         await page.getByRole("button", { name: "Consult" }).click();
         page.once("dialog", dialog => {
-            dialog.accept().catch(() => {});
+            dialog.accept().catch(() => { });
         });
 
         await page.getByRole("button", { name: "Consult" }).click();
         page.once("dialog", dialog => {
-            dialog.accept().catch(() => {});
+            dialog.accept().catch(() => { });
         });
 
         const fullTableData = await page.$$eval('#tbl tbody tr', rows => rows.map(row => {
@@ -457,19 +469,19 @@ async function processCompany(company, downloadFolderPath, formattedDateTime) {
 
         // Ensure the page is fully loaded and visible before taking screenshot
         await page.waitForTimeout(2000); // Wait for any animations/transitions to complete
-        
+
         // Prepare for clean screenshot 
         try {
             // Set viewport to ensure all content is visible
             await page.setViewportSize({ width: 1200, height: 900 });
-            
+
             // Try to remove any popups or overlays if present
             await page.evaluate(() => {
                 // Remove any modal/popup elements if present
                 document.querySelectorAll('.modal, .popup, .overlay').forEach(elem => {
                     if (elem) elem.style.display = 'none';
                 });
-                
+
                 // Clean up any fixed headers that might cover content
                 document.querySelectorAll('header, .header').forEach(elem => {
                     if (elem && elem.style.position === 'fixed') {
@@ -480,24 +492,24 @@ async function processCompany(company, downloadFolderPath, formattedDateTime) {
         } catch (err) {
             console.log('Page preparation for screenshot had minor issues, continuing anyway:', err.message);
         }
-        
+
         // Take screenshot with consistent naming and high quality
         const screenshotPath = path.join(
             downloadFolderPath,
             `${company.id}_TCC_screenshot.png`
         );
-        
-        await page.screenshot({ 
-            path: screenshotPath, 
+
+        await page.screenshot({
+            path: screenshotPath,
             fullPage: true,
             timeout: 5000 // Extra time for large pages
         });
         console.log("High-quality screenshot taken successfully.");
-        
+
         // Use the same path variable for consistency
         const screenshotFilePath = screenshotPath;
         let screenshotSupabasePath = "no_screenshot"; // Initialize with default value
-        
+
         try {
             const screenshotStats = await fs.lstat(screenshotFilePath);
             if (screenshotStats.isFile()) {
@@ -539,24 +551,38 @@ async function processCompany(company, downloadFolderPath, formattedDateTime) {
                         if (kycScreenshotError) {
                             console.log(`Error uploading screenshot to kyc-documents for company ${company.id}: ${kycScreenshotError.message}`);
                         } else {
+                            // First check if metadata column exists by looking at the column names
+                            const { data: columnInfo, error: columnError } = await supabase
+                                .rpc('get_column_names', { table_name: 'acc_portal_kyc_uploads' });
+
+                            // If we can't check columns or there's an error, try alternate approach using document_metadata
+                            const hasMetadataColumn = !columnError && columnInfo &&
+                                columnInfo.some(col => col.column_name === 'metadata');
+
+                            // Choose the appropriate column based on what's available
+                            const metadataObj = {
+                                source: 'auto-extraction',
+                                extraction_data: {
+                                    company_name: company.company_name,
+                                    status: fullTableData[0].Status,
+                                    certificate_date: fullTableData[0].CertificateDate,
+                                    expiry_date: fullTableData[0].ExpiryDate,
+                                    serial_no: fullTableData[0].SerialNo,
+                                    pdf_link: pdfSupabasePath,
+                                    screenshot_link: screenshotSupabasePath,
+                                    full_table_data: fullTableData
+                                },
+                                screenshot_path: kycScreenshotPath
+                            };
+
+                            // Use the appropriate column based on schema
+                            const updateData = hasMetadataColumn
+                                ? { metadata: JSON.stringify(metadataObj) }
+                                : { document_metadata: JSON.stringify(metadataObj) };
+
                             const { error: updateError } = await supabase
                                 .from('acc_portal_kyc_uploads')
-                                .update({
-                                    metadata: JSON.stringify({
-                                        source: 'auto-extraction',
-                                        extraction_data: {
-                                            company_name: company.company_name,
-                                            status: fullTableData[0].Status,
-                                            certificate_date: fullTableData[0].CertificateDate,
-                                            expiry_date: fullTableData[0].ExpiryDate,
-                                            serial_no: fullTableData[0].SerialNo,
-                                            pdf_link: pdfSupabasePath,
-                                            screenshot_link: screenshotSupabasePath,
-                                            full_table_data: fullTableData
-                                        },
-                                        screenshot_path: kycScreenshotPath
-                                    })
-                                })
+                                .update(updateData)
                                 .eq('id', kycUploadId);
 
                             if (updateError) {
@@ -580,17 +606,17 @@ async function processCompany(company, downloadFolderPath, formattedDateTime) {
             console.log(`No data extracted from table for company ${company.company_name}. Skipping database update.`);
             return;
         }
-        
+
         // Get the first row from table and add data
         const latestExtraction = fullTableData[0];
         latestExtraction.pdfLink = pdfSupabasePath;
         latestExtraction.screenshotLink = screenshotSupabasePath;
-        
+
         // Make sure company ID is properly set for database operations
         latestExtraction.id = company.id;
         latestExtraction.company_id = company.id;
         latestExtraction.company_name = company.company_name;
-        
+
         // Update the database with the extraction information
         await updateSupabaseTable(latestExtraction, formattedDateTime, fullTableData);
 
@@ -602,8 +628,8 @@ async function processCompany(company, downloadFolderPath, formattedDateTime) {
     } catch (error) {
         console.error(`Error occurred during processing for ${company.company_name}:`, error);
     } finally {
-        await page.close().catch(() => {});
-        await context.close().catch(() => {});
-        await browser.close().catch(() => {});
+        await page.close().catch(() => { });
+        await context.close().catch(() => { });
+        await browser.close().catch(() => { });
     }
 }
