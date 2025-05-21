@@ -516,13 +516,17 @@ const readSupabaseData = async () => {
 // Function to update the status of a company's password in Supabase
 const updateSupabaseStatus = async (id, status) => {
     try {
+        console.log(`Updating status for company ID ${id} to "${status}" in acc_portal_company_duplicate table`);
         const { error } = await supabase
-            .from("PasswordChecker")
-            .update({ status, last_checked: new Date().toISOString() })
+            .from("acc_portal_company_duplicate")
+            .update({ kra_status: status, kra_last_checked: new Date().toISOString() })
             .eq("id", id);
 
         if (error) {
+            console.error(`Error updating company ID ${id}:`, error);
             throw new Error(`Error updating status in Supabase: ${error.message}`);
+        } else {
+            console.log(`Successfully updated company ID ${id} status to "${status}"`);
         }
     } catch (error) {
         console.error("Error updating Supabase:", error);
