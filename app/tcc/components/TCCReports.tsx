@@ -11,7 +11,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogTrigger, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ArrowUpDown, Search, Eye, EyeOff, ImageIcon, MoreHorizontal, Download, ChevronLeftIcon, ChevronRightIcon, Filter, FileIcon } from "lucide-react";
+import { ArrowUpDown, Search, Eye, EyeOff, ImageIcon, MoreHorizontal, Download, ChevronLeftIcon, ChevronRightIcon, Filter, FileIcon, RefreshCw, PlayCircle, Play } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 import { createClient } from '@supabase/supabase-js';
 import * as ExcelJS from 'exceljs';
 import { Badge } from '@/components/ui/badge';
@@ -30,11 +31,16 @@ export function TCCReports() {
     const [detailedViewSearchTerm, setDetailedViewSearchTerm] = useState('');
     const [sortColumn, setSortColumn] = useState('');
     const [sortOrder, setSortOrder] = useState('asc');
+    const [selectedRows, setSelectedRows] = useState([]);
+    const [isProcessing, setIsProcessing] = useState(false);
+    const [processingStatus, setProcessingStatus] = useState('idle'); // 'idle', 'processing', 'complete', 'error'
     const [visibleColumns, setVisibleColumns] = useState({
         company_name: true,
         company_pin: true,
         status: true,
         expiry_date: true,
+        days_to_go: true,
+        doc_status: true,
         extraction_date: true,
     });
     const [activeTab, setActiveTab] = useState("summary");
@@ -86,27 +92,127 @@ export function TCCReports() {
                 .from('acc_portal_company_duplicate')
                 .select('*')
                 .order('company_name', { ascending: true });
-    
+
             if (companiesError) {
                 throw new Error(`Error fetching companies: ${companiesError.message}`);
             }
-    
+
             // Then get all TCC data
             const { data: tccData, error: tccError } = await supabase
                 .from('TaxComplianceCertificates')
                 .select('*');
-    
+
             if (tccError) {
                 throw new Error(`Error fetching TCC data: ${tccError.message}`);
             }
-    
+
+            // Define the TCC document ID (UUID format with hyphens)
+            const tccDocumentId = '5c658f23-7d16-4453-9965-619b72b9166a';
+
+            // Fetch TCC documents from acc_portal_kyc_uploads table
+            const { data: kycUploadsData, error: kycUploadsError } = await supabase
+                .from('acc_portal_kyc_uploads')
+                .select('*')
+                .eq('kyc_document_id', tccDocumentId);
+
+            if (kycUploadsError) {
+                console.error('Error fetching KYC uploads:', kycUploadsError);
+                // Don't throw - we can still show certificates from the TaxComplianceCertificates table
+            }
+
+            console.log('KYC uploads data for TCC:', kycUploadsData);
+
+            // Group KYC uploads by userid (company ID) and take the latest upload for each company
+            const kycUploadsMap = new Map();
+            if (kycUploadsData && kycUploadsData.length > 0) {
+                kycUploadsData.forEach(upload => {
+                    // Convert userid to number to match company.id
+                    const companyId = parseInt(upload.userid);
+                    if (!isNaN(companyId)) {
+                        const existingUpload = kycUploadsMap.get(companyId);
+                        // Keep only the latest upload based on created_at
+                        if (!existingUpload || new Date(upload.created_at) > new Date(existingUpload.created_at)) {
+                            kycUploadsMap.set(companyId, upload);
+                        }
+                    }
+                });
+            }
+
             // Create a map of company_id to TCC data
             const tccMap = new Map(tccData.map(tcc => [tcc.company_id, tcc]));
-    
+
             // Process and map the data
+            const calculateDaysRemaining = (expiryDateStr) => {
+                if (!expiryDateStr || typeof expiryDateStr !== 'string' || expiryDateStr === 'N/A') {
+                    return { days: null, status: 'Unknown', statusColor: 'text-gray-500' };
+                }
+
+                try {
+                    const today = new Date();
+                    // Set time to beginning of day for accurate day calculation
+                    today.setHours(0, 0, 0, 0);
+
+                    // Check for DD/MM/YYYY format
+                    let expiryDate;
+                    if (expiryDateStr.includes('/')) {
+                        // Convert from DD/MM/YYYY to YYYY-MM-DD
+                        const parts = expiryDateStr.split('/');
+                        if (parts.length === 3) {
+                            expiryDate = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
+                        } else {
+                            expiryDate = new Date(expiryDateStr);
+                        }
+                    } else {
+                        expiryDate = new Date(expiryDateStr);
+                    }
+
+                    // Check if we got a valid date
+                    if (isNaN(expiryDate.getTime())) {
+                        console.error('Invalid date format:', expiryDateStr);
+                        return { days: null, status: 'Unknown', statusColor: 'text-gray-500' };
+                    }
+
+                    expiryDate.setHours(0, 0, 0, 0);
+
+                    // Calculate difference in milliseconds
+                    const diffTime = expiryDate.getTime() - today.getTime();
+                    // Convert to days
+                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+                    let status, statusColor;
+                    if (diffDays < 0) {
+                        status = 'Expired';
+                        statusColor = 'text-red-500';
+                    } else if (diffDays <= 30) {
+                        status = 'Grace';
+                        statusColor = 'text-blue-500';
+                    } else {
+                        status = 'Safe';
+                        statusColor = 'text-green-500';
+                    }
+
+                    return { days: diffDays, status, statusColor };
+                } catch (error) {
+                    console.error('Error calculating days remaining:', error);
+                    return { days: null, status: 'Unknown', statusColor: 'text-gray-500' };
+                }
+            };
+
             const processedData = companiesData.map(company => {
                 const tccRecord = tccMap.get(company.id);
-                
+
+                // Get KYC upload document for this company (if any)
+                const kycUpload = kycUploadsMap.get(company.id);
+
+                // Generate public URL for KYC document if it exists
+                let documentUrl = null;
+                if (kycUpload && kycUpload.file_path) {
+                    const { data: { publicUrl } } = supabase.storage
+                        .from('kyc-documents')
+                        .getPublicUrl(kycUpload.file_path);
+                    documentUrl = publicUrl;
+                }
+
                 // Calculate client statuses
                 const acc_client_status = calculateClientStatus(company.acc_client_effective_from, company.acc_client_effective_to);
                 const imm_client_status = calculateClientStatus(company.imm_client_effective_from, company.imm_client_effective_to);
@@ -119,7 +225,10 @@ export function TCCReports() {
                 if (company.imm_client_effective_from && company.imm_client_effective_to) categories.push('Imm');
                 if (company.sheria_client_effective_from && company.sheria_client_effective_to) categories.push('Sheria');
                 if (company.audit_client_effective_from && company.audit_client_effective_to) categories.push('Audit');
-                
+
+                // Always calculate days remaining for reporting consistency
+                let daysRemaining = calculateDaysRemaining(null);
+
                 if (!tccRecord) {
                     return {
                         id: company.id,
@@ -129,11 +238,16 @@ export function TCCReports() {
                         certificate_date: <span className="text-red-500">Missing</span>,
                         expiry_date: <span className="text-red-500">Missing</span>,
                         serial_no: <span className="text-red-500">Missing</span>,
-                        pdf_link: null,
+                        // Use the document from KYC uploads if available (prioritize newer system)
+                        pdf_link: documentUrl,
                         screenshot_link: null,
                         full_table_data: [],
-                        extraction_date: <span className="text-red-500">Missing</span>,
+                        extraction_date: kycUpload ? new Date(kycUpload.created_at).toLocaleDateString() : <span className="text-red-500">Missing</span>,
                         client_category: company.client_category || '',
+                        days_to_go: daysRemaining.days,
+                        expiry_status: daysRemaining.status,
+                        expiry_status_color: daysRemaining.statusColor,
+                        doc_status: daysRemaining.status,
                         // Add client status fields and categories
                         acc_client_status,
                         imm_client_status,
@@ -151,13 +265,28 @@ export function TCCReports() {
                         audit_client_effective_to: company.audit_client_effective_to,
                     };
                 }
-    
+
                 const extractions = tccRecord.extractions || {};
-                const latestDate = Object.keys(extractions).sort((a, b) => 
+                const latestDate = Object.keys(extractions).sort((a, b) =>
                     new Date(b) - new Date(a)
                 )[0];
                 const latestExtraction = extractions[latestDate] || {};
-    
+
+                // Calculate days remaining until expiry
+                daysRemaining = calculateDaysRemaining(latestExtraction.expiry_date);
+
+                // Determine which documents to use - prioritize KYC uploads documents over TaxComplianceCertificates documents
+                const pdfLink = documentUrl || (
+                    latestExtraction.pdf_link && latestExtraction.pdf_link !== "no doc"
+                        ? `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/kra-documents/${latestExtraction.pdf_link}`
+                        : null
+                );
+
+                // Use the extraction date from KYC uploads if available, otherwise use the date from TaxComplianceCertificates
+                const extractionDate = kycUpload
+                    ? new Date(kycUpload.created_at).toLocaleDateString()
+                    : (latestDate || <span className="text-red-500">Missing</span>);
+
                 return {
                     id: company.id,
                     company_name: company.company_name,
@@ -166,15 +295,17 @@ export function TCCReports() {
                     certificate_date: latestExtraction.certificate_date || <span className="text-red-500">Missing</span>,
                     expiry_date: latestExtraction.expiry_date || <span className="text-red-500">Missing</span>,
                     serial_no: latestExtraction.serial_no || <span className="text-red-500">Missing</span>,
-                    pdf_link: latestExtraction.pdf_link && latestExtraction.pdf_link !== "no doc"
-                        ? `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/kra-documents/${latestExtraction.pdf_link}`
-                        : null,
+                    pdf_link: pdfLink,
                     screenshot_link: latestExtraction.screenshot_link && latestExtraction.screenshot_link !== "no doc"
                         ? `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/kra-documents/${latestExtraction.screenshot_link}`
                         : null,
                     full_table_data: latestExtraction.full_table_data || [],
-                    extraction_date: latestDate || <span className="text-red-500">Missing</span>,
+                    extraction_date: extractionDate,
                     client_category: company.client_category || '',
+                    days_to_go: daysRemaining.days,
+                    expiry_status: daysRemaining.status,
+                    expiry_status_color: daysRemaining.statusColor,
+                    doc_status: daysRemaining.status,
                     // Add client status fields and categories
                     acc_client_status,
                     imm_client_status,
@@ -192,11 +323,11 @@ export function TCCReports() {
                     audit_client_effective_to: company.audit_client_effective_to,
                 };
             });
-    
+
             setAllCompanyData(processedData);
             setReports(processedData);
             applyFilters(processedData);
-            
+
             if (processedData.length > 0) {
                 setSelectedCompany(processedData[0]);
             }
@@ -264,7 +395,7 @@ export function TCCReports() {
     const applyFilters = (data = allCompanyData) => {
         // First apply category filters
         let filteredData = applyFiltersToData(data);
-        
+
         // Then apply search filter
         if (searchTerm) {
             filteredData = filteredData.filter(report => {
@@ -279,15 +410,15 @@ export function TCCReports() {
                     typeof report.serial_no === 'string' ? report.serial_no : '',
                     typeof report.certificate_date === 'string' ? report.certificate_date : ''
                 ];
-                
-                return searchableFields.some(field => 
+
+                return searchableFields.some(field =>
                     field.toLowerCase().includes(searchValue)
                 );
             });
         }
-        
+
         setFilteredReports(filteredData);
-        
+
         // If current selected company is filtered out, select the first one in the filtered list
         if (selectedCompany && !filteredData.some(report => report.id === selectedCompany.id)) {
             setSelectedCompany(filteredData.length > 0 ? filteredData[0] : null);
@@ -297,14 +428,14 @@ export function TCCReports() {
     // Apply filter to detailed view sidebar
     const getFilteredDetailedViewCompanies = () => {
         let detailedFiltered = reports;
-        
+
         if (detailedViewSearchTerm) {
             const searchValue = detailedViewSearchTerm.toLowerCase();
-            detailedFiltered = detailedFiltered.filter(report => 
+            detailedFiltered = detailedFiltered.filter(report =>
                 report.company_name.toLowerCase().includes(searchValue)
             );
         }
-        
+
         return detailedFiltered;
     };
 
@@ -329,26 +460,36 @@ export function TCCReports() {
 
     const sortedReports = [...filteredReports].sort((a, b) => {
         if (!sortColumn) return 0;
-        
+
         const aValue = typeof a[sortColumn] === 'object' ? '' : a[sortColumn];
         const bValue = typeof b[sortColumn] === 'object' ? '' : b[sortColumn];
-        
+
         if (!aValue && !bValue) return 0;
         if (!aValue) return 1;
         if (!bValue) return -1;
-        
+
+        // Handle days_to_go as numbers
+        if (sortColumn === 'days_to_go') {
+            const numA = Number(aValue);
+            const numB = Number(bValue);
+
+            if (!isNaN(numA) && !isNaN(numB)) {
+                return sortOrder === 'asc' ? numA - numB : numB - numA;
+            }
+        }
+
         // Handle dates
         if (sortColumn === 'extraction_date' || sortColumn === 'expiry_date') {
             const dateA = new Date(aValue);
             const dateB = new Date(bValue);
-            
+
             if (!isNaN(dateA) && !isNaN(dateB)) {
                 return sortOrder === 'asc' ? dateA - dateB : dateB - dateA;
             }
         }
-        
+
         // Default string comparison for other fields
-        return sortOrder === 'asc' 
+        return sortOrder === 'asc'
             ? String(aValue).localeCompare(String(bValue))
             : String(bValue).localeCompare(String(aValue));
     });
@@ -366,6 +507,8 @@ export function TCCReports() {
             'company_pin',
             'status',
             'expiry_date',
+            'days_to_go',
+            'doc_status',
             'extraction_date',
             'pdf_link',
             'screenshot_link'
@@ -380,9 +523,16 @@ export function TCCReports() {
         // Calculate stats for each field individually
         filteredReports.forEach(report => {
             fieldsToCheck.forEach(field => {
-                if (report[field] && 
-                    (typeof report[field] !== 'object' || 
-                     (typeof report[field] === 'object' && report[field].props && report[field].props.children !== 'Missing'))) {
+                if (field === 'days_to_go') {
+                    // Special handling for days_to_go as it can be null but valid
+                    if (report[field] !== null) {
+                        stats.complete[field]++;
+                    } else {
+                        stats.missing[field]++;
+                    }
+                } else if (report[field] &&
+                    (typeof report[field] !== 'object' ||
+                        (typeof report[field] === 'object' && report[field].props && report[field].props.children !== 'Missing'))) {
                     stats.complete[field]++;
                 } else {
                     stats.missing[field]++;
@@ -394,6 +544,171 @@ export function TCCReports() {
     };
 
     const stats = calculateStats();
+
+    // Function to run TCC extraction for selected companies
+    const handleRunSelected = async () => {
+        if (selectedRows.length === 0) return;
+
+        setIsProcessing(true);
+        setProcessingStatus('processing');
+
+        try {
+            // Call the TCC extractor API
+            const response = await fetch('/api/tcc-extractor', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    action: 'start',
+                    companies: selectedRows
+                }),
+            });
+
+            if (!response.ok) {
+                throw new Error(`Error starting TCC extraction: ${response.statusText}`);
+            }
+
+            const data = await response.json();
+            console.log('TCC extraction started:', data);
+            setProcessingStatus('complete');
+
+            // Poll for progress updates
+            const pollInterval = setInterval(async () => {
+                const progressResponse = await fetch('/api/tcc-extractor', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ action: 'progress' }),
+                });
+
+                if (progressResponse.ok) {
+                    const progressData = await progressResponse.json();
+                    console.log('Progress:', progressData);
+
+                    if (!progressData.isRunning) {
+                        clearInterval(pollInterval);
+                        setIsProcessing(false);
+                        fetchReports(); // Refresh data once complete
+                    }
+                }
+            }, 5000); // Poll every 5 seconds
+
+        } catch (error) {
+            console.error('Error running TCC extraction:', error);
+            setProcessingStatus('error');
+            setIsProcessing(false);
+        }
+    };
+
+    // Function to run TCC extraction for companies missing certificates
+    const handleRunMissing = async () => {
+        setIsProcessing(true);
+        setProcessingStatus('processing');
+
+        try {
+            // Get IDs of companies missing TCC certificates
+            const missingCertCompanies = filteredReports
+                .filter(report => !report.pdf_link || report.pdf_link === "no doc")
+                .map(report => report.id);
+
+            if (missingCertCompanies.length === 0) {
+                setIsProcessing(false);
+                setProcessingStatus('idle');
+                return;
+            }
+
+            // Call the TCC extractor API
+            const response = await fetch('/api/tcc-extractor', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    action: 'start',
+                    companies: missingCertCompanies
+                }),
+            });
+
+            if (!response.ok) {
+                throw new Error(`Error starting TCC extraction: ${response.statusText}`);
+            }
+
+            const data = await response.json();
+            console.log('TCC extraction started for missing certificates:', data);
+            setProcessingStatus('complete');
+
+            // Poll for progress updates
+            const pollInterval = setInterval(async () => {
+                const progressResponse = await fetch('/api/tcc-extractor', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ action: 'progress' }),
+                });
+
+                if (progressResponse.ok) {
+                    const progressData = await progressResponse.json();
+                    console.log('Progress:', progressData);
+
+                    if (!progressData.isRunning) {
+                        clearInterval(pollInterval);
+                        setIsProcessing(false);
+                        fetchReports(); // Refresh data once complete
+                    }
+                }
+            }, 5000); // Poll every 5 seconds
+
+        } catch (error) {
+            console.error('Error running TCC extraction for missing certificates:', error);
+            setProcessingStatus('error');
+            setIsProcessing(false);
+        }
+    };
+
+    // Function to run TCC extraction for a single company
+    const handleRunSingle = async (companyId) => {
+        try {
+            // Call the TCC extractor API for a single company
+            const response = await fetch('/api/tcc-extractor', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    action: 'start',
+                    companies: [companyId]
+                }),
+            });
+
+            if (!response.ok) {
+                throw new Error(`Error starting TCC extraction: ${response.statusText}`);
+            }
+
+            const data = await response.json();
+            console.log(`TCC extraction started for company ${companyId}:`, data);
+
+            // Poll for progress once
+            setTimeout(async () => {
+                const progressResponse = await fetch('/api/tcc-extractor', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ action: 'progress' }),
+                });
+
+                if (progressResponse.ok) {
+                    fetchReports(); // Refresh data
+                }
+            }, 5000);
+
+        } catch (error) {
+            console.error(`Error running TCC extraction for company ${companyId}:`, error);
+        }
+    };
 
     const exportToExcel = async () => {
         const workbook = new ExcelJS.Workbook();
@@ -530,15 +845,15 @@ export function TCCReports() {
                             />
                         </div>
                         <div className="flex space-x-2">
-                            <Button 
-                                variant="outline" 
+                            <Button
+                                variant="outline"
                                 onClick={() => setIsCategoryFilterOpen(true)}
                             >
                                 <Filter className="h-4 w-4 mr-2" />
                                 Client Categories {filteredReports.length}
                             </Button>
-                            <Button 
-                                variant="outline" 
+                            <Button
+                                variant="outline"
                                 onClick={() => setShowStatsRows(!showStatsRows)}
                             >
                                 {showStatsRows ? <EyeOff className="h-4 w-4 mr-2" /> : <Eye className="h-4 w-4 mr-2" />}
@@ -547,13 +862,35 @@ export function TCCReports() {
                         </div>
                     </div>
                     <div className="flex gap-2">
-                        <Button onClick={exportToExcel}>
+                        <Button onClick={exportToExcel} size="sm">
                             <Download className="mr-2 h-4 w-4" />
                             Export to Excel
                         </Button>
+                        <Button variant="outline" size="sm" onClick={() => fetchReports()}>
+                            <RefreshCw className="mr-2 h-4 w-4" />
+                            Refresh
+                        </Button>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={selectedRows.length === 0 || isProcessing}
+                            onClick={() => handleRunSelected()}
+                        >
+                            <Play className="mr-2 h-4 w-4" />
+                            Run Selected ({selectedRows.length})
+                        </Button>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={isProcessing}
+                            onClick={() => handleRunMissing()}
+                        >
+                            <PlayCircle className="mr-2 h-4 w-4" />
+                            Run Missing
+                        </Button>
                         <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                                <Button variant="outline" className="ml-auto">
+                                <Button variant="outline" size="sm" className="ml-auto">
                                     Columns <MoreHorizontal className="ml-2 h-4 w-4" />
                                 </Button>
                             </DropdownMenuTrigger>
@@ -583,18 +920,33 @@ export function TCCReports() {
                     />
                 </div>
                 <div className="border rounded-md flex-1 flex flex-col">
-                    <ScrollArea className="h-[75vh]" style={{overflowY: 'auto'}}>
+                    <ScrollArea className="h-[75vh]" style={{ overflowY: 'auto' }}>
                         <Table>
                             <TableHeader className="sticky top-0 bg-white z-10">
                                 <TableRow>
+                                    <TableHead className="w-[50px] text-center">
+                                        <Checkbox
+                                            checked={selectedRows.length === filteredReports.length && filteredReports.length > 0}
+                                            onCheckedChange={(checked) => {
+                                                if (checked) {
+                                                    setSelectedRows(filteredReports.map(report => report.id));
+                                                } else {
+                                                    setSelectedRows([]);
+                                                }
+                                            }}
+                                        />
+                                    </TableHead>
                                     {[
-                                        { key: 'index', label: 'IDX | ID', alwaysVisible: true },
+                                        { key: 'index', label: 'IDX', alwaysVisible: true },
                                         { key: 'company_name', label: 'Company Name' },
                                         { key: 'company_pin', label: 'KRA PIN' },
                                         { key: 'expiry_date', label: 'Expiry Date' },
+                                        { key: 'days_to_go', label: 'Days', alwaysVisible: true },
+                                        { key: 'doc_status', label: 'Status', alwaysVisible: true },
                                         { key: 'extraction_date', label: 'Last Extracted' },
                                         { key: 'tcc_cert', label: 'TCC Cert', alwaysVisible: true },
-                                        { key: 'screenshot', label: 'Screenshot', alwaysVisible: true }
+                                        { key: 'screenshot', label: 'Screenshot', alwaysVisible: true },
+                                        { key: 'action', label: 'Action', alwaysVisible: true }
                                     ].map(({ key, label, alwaysVisible }) => (
                                         (alwaysVisible || visibleColumns[key]) && (
                                             <TableHead key={key} className={`font-bold border-r border-gray-300 ${key === 'index' ? 'text-center sticky left-0 bg-white' : ''}`}>
@@ -625,6 +977,16 @@ export function TCCReports() {
                                             <TableCell className="text-center text-[10px] border-r border-gray-300">
                                                 <span className={stats.complete.expiry_date === filteredReports.length ? 'text-green-600 font-bold' : ''}>
                                                     {stats.complete.expiry_date}
+                                                </span>
+                                            </TableCell>
+                                            <TableCell className="text-center text-[10px] border-r border-gray-300">
+                                                <span className={stats.complete.days_to_go === filteredReports.length ? 'text-green-600 font-bold' : ''}>
+                                                    {stats.complete.days_to_go}
+                                                </span>
+                                            </TableCell>
+                                            <TableCell className="text-center text-[10px] border-r border-gray-300">
+                                                <span className={stats.complete.doc_status === filteredReports.length ? 'text-green-600 font-bold' : ''}>
+                                                    {stats.complete.doc_status}
                                                 </span>
                                             </TableCell>
                                             <TableCell className="text-center text-[10px] border-r border-gray-300">
@@ -659,7 +1021,17 @@ export function TCCReports() {
                                                 <span className={stats.missing.expiry_date > 0 ? 'text-red-600 font-bold' : ''}>
                                                     {stats.missing.expiry_date}
                                                 </span>
-                                                </TableCell>
+                                            </TableCell>
+                                            <TableCell className="text-center text-[10px] border-r border-gray-300">
+                                                <span className={stats.missing.days_to_go > 0 ? 'text-red-600 font-bold' : ''}>
+                                                    {stats.missing.days_to_go}
+                                                </span>
+                                            </TableCell>
+                                            <TableCell className="text-center text-[10px] border-r border-gray-300">
+                                                <span className={stats.missing.doc_status > 0 ? 'text-red-600 font-bold' : ''}>
+                                                    {stats.missing.doc_status}
+                                                </span>
+                                            </TableCell>
                                             <TableCell className="text-center text-[10px] border-r border-gray-300">
                                                 <span className={stats.missing.extraction_date > 0 ? 'text-red-600 font-bold' : ''}>
                                                     {stats.missing.extraction_date}
@@ -683,29 +1055,58 @@ export function TCCReports() {
                                 {sortedReports.length > 0 ? (
                                     sortedReports.map((report, index) => (
                                         <TableRow key={report.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                                            <TableCell className="text-center w-[50px]">
+                                                <Checkbox
+                                                    checked={selectedRows.includes(report.id)}
+                                                    onCheckedChange={(checked) => {
+                                                        if (checked) {
+                                                            setSelectedRows(prev => [...prev, report.id]);
+                                                        } else {
+                                                            setSelectedRows(prev => prev.filter(id => id !== report.id));
+                                                        }
+                                                    }}
+                                                />
+                                            </TableCell>
                                             {[
-                                                { key: 'index', content: <div className="grid grid-cols-3 gap-1">
-                                                    <span>{index + 1}</span>
-                                                    <span>|</span>
-                                                    <span>{report.id}</span>
-                                                </div>, alwaysVisible: true },
+                                                {
+                                                    key: 'index', content: <div className="text-center">
+                                                        <span>{index + 1}</span>
+                                                    </div>, alwaysVisible: true
+                                                },
                                                 { key: 'company_name', content: report.company_name },
-                                                { key: 'company_pin', content: typeof report.company_pin === 'string' ? 
-                                                    (report.company_pin === "MISSING PIN/PASSWORD" ? <span className="text-red-500">{report.company_pin}</span> : report.company_pin) : 
-                                                    report.company_pin },
+                                                {
+                                                    key: 'company_pin', content: typeof report.company_pin === 'string' ?
+                                                        (report.company_pin === "MISSING PIN/PASSWORD" ? <span className="text-red-500">{report.company_pin}</span> : report.company_pin) :
+                                                        report.company_pin
+                                                },
                                                 {
                                                     key: 'expiry_date', content: (
-                                                        <span className={`font-bold text-center ${
-                                                            typeof report.expiry_date !== 'string' ? '' :
-                                                            report.expiry_date === 'N/A'
-                                                                ? 'text-amber-500'
-                                                                : new Date(report.expiry_date) < new Date()
-                                                                    ? 'text-red-500'
-                                                                    : 'text-green-500'
-                                                            }`}>
+                                                        <span className={`font-bold text-center ${report.expiry_status_color}`}>
                                                             {report.expiry_date}
                                                         </span>
                                                     )
+                                                },
+                                                {
+                                                    key: 'days_to_go',
+                                                    content: (
+                                                        <div className="text-center">
+                                                            <span className={`font-bold  ${report.expiry_status_color}`}>
+                                                                {report.days_to_go !== null ? report.days_to_go : '-'}
+                                                            </span>
+                                                        </div>
+                                                    ),
+                                                    alwaysVisible: true
+                                                },
+                                                {
+                                                    key: 'doc_status',
+                                                    content: (
+                                                        <div className="text-center">
+                                                            <span className={`text-xs font-medium px-2 py-1 rounded-full ${report.expiry_status_color} bg-opacity-10`}>
+                                                                {report.expiry_status || 'Unknown'}
+                                                            </span>
+                                                        </div>
+                                                    ),
+                                                    alwaysVisible: true
                                                 },
                                                 { key: 'extraction_date', content: report.extraction_date },
                                                 {
@@ -723,10 +1124,35 @@ export function TCCReports() {
                                                                     <DialogHeader>
                                                                         <DialogTitle>TCC Document</DialogTitle>
                                                                     </DialogHeader>
-                                                                    <iframe
-                                                                        src={`${report.pdf_link}#toolbar=0&navpanes=0&view=FitH&zoom=40`}
-                                                                        className="w-full h-[80vh]"
-                                                                    />
+                                                                    {/* Helper function for formatting document source paths */}
+                                                                    {(() => {
+                                                                        // Format PDF source path for iframe
+                                                                        const formatPdfSource = (pdfPath) => {
+                                                                            if (!pdfPath) return '';
+
+                                                                            // Check if it's a URL or a file path
+                                                                            const isUrl = pdfPath.startsWith('http://') || pdfPath.startsWith('https://');
+
+                                                                            if (isUrl) {
+                                                                                // For URLs, just add the PDF viewer parameters
+                                                                                return `${pdfPath}#toolbar=0&navpanes=0&view=FitH&zoom=40&embedded=true`;
+                                                                            } else {
+                                                                                // For file paths, convert to file URL format
+                                                                                // Replace backslashes with forward slashes and encode the path
+                                                                                const normalizedPath = pdfPath.replace(/\\/g, '/');
+                                                                                return `file:///${encodeURI(normalizedPath)}#toolbar=0&navpanes=0&view=FitH&zoom=40&embedded=true`;
+                                                                            }
+                                                                        };
+
+                                                                        const pdfSource = formatPdfSource(report.pdf_link);
+                                                                        return (
+                                                                            <iframe
+                                                                                src={pdfSource}
+                                                                                className="w-full h-[80vh]"
+                                                                                onError={(e) => console.error("Error loading PDF:", e)}
+                                                                            />
+                                                                        );
+                                                                    })()}
                                                                 </DialogContent>
                                                             </Dialog>
                                                         ) : (
@@ -768,6 +1194,24 @@ export function TCCReports() {
                                                         )
                                                     ),
                                                     alwaysVisible: true
+                                                },
+                                                {
+                                                    key: 'action',
+                                                    content: (
+                                                        <div className="flex items-center gap-2">
+                                                            <Button 
+                                                                variant="outline" 
+                                                                size="sm" 
+                                                                className="h-7 px-2"
+                                                                disabled={isProcessing}
+                                                                onClick={() => handleRunSingle(report.id)}
+                                                            >
+                                                                <Play className="h-3 w-3" />
+                                                                Run
+                                                            </Button>
+                                                        </div>
+                                                    ),
+                                                    alwaysVisible: true
                                                 }
                                             ].map(({ key, content, alwaysVisible }) => (
                                                 (alwaysVisible || visibleColumns[key]) && (
@@ -805,23 +1249,22 @@ export function TCCReports() {
                                     className="pl-8 w-full"
                                 />
                             </div>
-                            <Button 
-                                variant="outline" 
+                            <Button
+                                variant="outline"
                                 size="sm"
                                 onClick={() => setIsCategoryFilterOpen(true)}
                             >
                                 <Filter className="h-4 w-4" />
                             </Button>
                         </div>
-                        <ScrollArea className="h-[600px] rounded-md border border-gray-300" style={{overflowY: 'auto'}}>
+                        <ScrollArea className="h-[600px] rounded-md border border-gray-300" style={{ overflowY: 'auto' }}>
                             {getFilteredDetailedViewCompanies().map((report, index) => (
                                 <React.Fragment key={report.id}>
                                     <div
-                                        className={`p-2 cursor-pointer transition-colors duration-200 text-xs uppercase ${
-                                            selectedCompany?.id === report.id
+                                        className={`p-2 cursor-pointer transition-colors duration-200 text-xs uppercase ${selectedCompany?.id === report.id
                                                 ? 'bg-gray-500 text-white font-bold'
                                                 : 'hover:bg-gray-100'
-                                        }`}
+                                            }`}
                                         onClick={() => setSelectedCompany(report)}
                                     >
                                         {report.company_name}
@@ -916,7 +1359,32 @@ export function TCCReports() {
                                                                 <DialogHeader>
                                                                     <DialogTitle className="text-sm">TCC Certificate</DialogTitle>
                                                                 </DialogHeader>
-                                                                <iframe src={selectedCompany.pdf_link} className="w-full h-[70vh]" title="TCC Certificate" />
+                                                                {/* Helper function for detailed view PDF iframe */}
+                                                                {(() => {
+                                                                    const formatPdfSource = (pdfPath) => {
+                                                                        if (!pdfPath) return '';
+
+                                                                        // Check if it's a URL or a file path
+                                                                        const isUrl = pdfPath.startsWith('http://') || pdfPath.startsWith('https://');
+
+                                                                        if (isUrl) {
+                                                                            return `${pdfPath}#toolbar=0&navpanes=0&view=FitH&zoom=40&embedded=true`;
+                                                                        } else {
+                                                                            const normalizedPath = pdfPath.replace(/\\/g, '/');
+                                                                            return `file:///${encodeURI(normalizedPath)}#toolbar=0&navpanes=0&view=FitH&zoom=40&embedded=true`;
+                                                                        }
+                                                                    };
+
+                                                                    const pdfSource = formatPdfSource(selectedCompany.pdf_link);
+                                                                    return (
+                                                                        <iframe
+                                                                            src={pdfSource}
+                                                                            className="w-full h-[70vh]"
+                                                                            title="TCC Certificate"
+                                                                            onError={(e) => console.error("Error loading PDF:", e)}
+                                                                        />
+                                                                    );
+                                                                })()}
                                                             </DialogContent>
                                                         </Dialog>
                                                     ) : (
@@ -928,8 +1396,8 @@ export function TCCReports() {
                                                     {selectedCompany.screenshot_link && selectedCompany.screenshot_link !== "no doc" ? (
                                                         <Dialog>
                                                             <DialogTrigger asChild>
-                                                                <Image 
-                                                                    src={selectedCompany.screenshot_link} 
+                                                                <Image
+                                                                    src={selectedCompany.screenshot_link}
                                                                     alt="Screenshot"
                                                                     width={400}
                                                                     height={300}
@@ -940,8 +1408,8 @@ export function TCCReports() {
                                                                 <DialogHeader>
                                                                     <DialogTitle className="text-sm">Screenshot</DialogTitle>
                                                                 </DialogHeader>
-                                                                <Image 
-                                                                    src={selectedCompany.screenshot_link} 
+                                                                <Image
+                                                                    src={selectedCompany.screenshot_link}
                                                                     alt="Screenshot"
                                                                     width={400}
                                                                     height={300}

@@ -1,11 +1,12 @@
-// automations/pin-checker/worker.js
-import { chromium } from "playwright";
-import fs from "fs/promises";
-import path from "path";
-import os from "os";
-import ExcelJS from "exceljs";
-import { createWorker } from "tesseract.js";
-import { createClient } from "@supabase/supabase-js";
+// @ts-nocheck
+require('dotenv').config();
+const { chromium } = require('playwright');
+const fs = require('fs').promises;
+const path = require('path');
+const os = require('os');
+const ExcelJS = require('exceljs');
+const { createWorker } = require('tesseract.js');
+const { createClient } = require('@supabase/supabase-js');
 
 // Initialize Supabase client
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -17,7 +18,7 @@ const supabase = createClient(supabaseUrl, supabaseAnonKey);
  * @param {Object} company - Company object with kra_pin and company_name
  * @returns {Object} - Processed company data
  */
-export async function processCompany(company) {
+async function processCompany(company) {
     console.log(`Processing company: ${company.company_name}`);
 
     if (!company.kra_pin) {
@@ -351,23 +352,134 @@ function formatExtractedData(companyName, extractedData) {
     return data;
 }
 
+// Constants and configuration
+const DOWNLOAD_FOLDER = process.env.DOWNLOAD_FOLDER || path.join(os.tmpdir(), 'kra-automation');
+const BATCH_SIZE = parseInt(process.env.BATCH_SIZE || '5', 10); // Number of companies to process per worker
+const WORKER_ID = process.env.WORKER_ID || 'worker-1';
+
 /**
- * Save company details to the database
- * @param {Object} details - Company details to save
+ * Process a batch of companies for PIN checking
+ * @param {number} startIndex - Start index in the company list
+ * @param {number} batchSize - Number of companies to process
+ * @param {number} totalCompanies - Total number of companies
+ * @returns {Object} - Result of batch processing
  */
-async function saveCompanyDetails(details) {
+async function processBatch(startIndex, batchSize, totalCompanies) {
     try {
-        const { error } = await supabase
-            .from('PinCheckerDetails')
-            .upsert(details, { onConflict: "company_name" });
-
-        if (error) {
-            throw error;
+        console.log(`Worker ${WORKER_ID} processing batch from index ${startIndex} with size ${batchSize}`);
+        await fs.mkdir(DOWNLOAD_FOLDER, { recursive: true }).catch(console.error);
+        
+        // Get the batch of companies to process
+        const companies = await readCompanyBatch(startIndex, batchSize);
+        
+        if (companies.length === 0) {
+            console.log(`No companies found in batch starting at ${startIndex}. Worker ${WORKER_ID} finished.`);
+            return { processed: 0, success: true };
         }
-
-        console.log(`Successfully saved details for ${details.company_name}`);
+        
+        // Create an Excel workbook for reporting
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet("PIN Validation");
+        setupWorksheet(worksheet);
+        
+        console.log(`Starting to process ${companies.length} companies...`);
+        let processedCount = 0;
+        let results = [];
+        
+        // Process each company in the batch
+        for (const company of companies) {
+            console.log(`Processing company ${processedCount+1}/${companies.length}: ${company.company_name}`);
+            let result;
+            
+            try {
+                result = await processCompany(company);
+                results.push(result);
+                processedCount++;
+                
+            } catch (error) {
+                console.error(`Error processing company ${company.company_name}:`, error);
+                results.push({
+                    company_name: company.company_name,
+                    error: error.message
+                });
+            }
+        }
+        
+        // Save the Excel report
+        const reportPath = path.join(DOWNLOAD_FOLDER, `PIN-VALIDATION-BATCH-${startIndex}-${WORKER_ID}.xlsx`);
+        await workbook.xlsx.writeFile(reportPath);
+        console.log(`Batch report saved to ${reportPath}`);
+        
+        return { 
+            processed: processedCount, 
+            success: true,
+            results
+        };
+        
     } catch (error) {
-        console.error(`Error saving details for ${details.company_name}:`, error);
-        throw error;
+        console.error(`Error in processBatch for Worker ${WORKER_ID}:`, error);
+        return { processed: 0, success: false, error: error.message };
     }
 }
+
+/**
+ * Read company data from Supabase for batch processing
+ * @param {number} startIndex - Start index in the company list
+ * @param {number} limit - Maximum number of companies to read
+ * @returns {Array} - Array of company objects
+ */
+async function readCompanyBatch(startIndex, limit) {
+    try {
+        console.log(`Reading company batch from index ${startIndex} with limit ${limit}...`);
+        const { data, error } = await supabase
+            .from("acc_portal_company_duplicate")
+            .select("*")
+            .order('id')
+            .range(startIndex, startIndex + limit - 1);
+
+        if (error) {
+            console.error('Supabase query error:', error);
+            throw new Error(`Error reading data from 'acc_portal_company_duplicate' table: ${error.message}`);
+        }
+
+        if (!data || data.length === 0) {
+            console.warn('No data found in acc_portal_company_duplicate table for this batch!');
+        } else {
+            console.log(`Successfully retrieved ${data.length} records from acc_portal_company_duplicate table`);
+        }
+
+        return data || [];
+    } catch (error) {
+        console.error('Error in readCompanyBatch function:', error);
+        throw new Error(`Error reading Supabase data: ${error.message}`);
+    }
+}
+
+/**
+ * Helper function to set up worksheet
+ * @param {Worksheet} worksheet - ExcelJS worksheet
+ */
+function setupWorksheet(worksheet) {
+    const headers = ["Company Name", "KRA PIN", "Pin Status", "Processed By"];
+    const headerRow = worksheet.getRow(3);
+    headers.forEach((header, index) => {
+        const cell = headerRow.getCell(index + 3);
+        cell.value = header;
+        cell.font = { bold: true };
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+    });
+    worksheet.columns = [
+        { width: 30 }, // Company Name
+        { width: 15 }, // KRA PIN
+        { width: 15 }, // Pin Status
+        { width: 15 }  // Processed By
+    ];
+    headerRow.commit();
+}
+
+// Export the worker functions
+module.exports = {
+    processBatch,
+    readCompanyBatch,
+    processCompany
+};

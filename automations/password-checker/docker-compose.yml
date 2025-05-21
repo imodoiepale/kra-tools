@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  password-checker-1:
+    build:
+      context: ../..
+      dockerfile: automations/password-checker/Dockerfile
+    container_name: password-checker-1
+    environment:
+      - PORT=3000
+      - WORKER_ID=worker-1
+      - BATCH_SIZE=5
+      - DOWNLOAD_FOLDER=/tmp/downloads
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+    ports:
+      - "3001:3000"
+    restart: unless-stopped
+    volumes:
+      - password-checker-data:/tmp/downloads
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Additional containers with different worker IDs 
+  # Uncomment and adjust as needed for local testing
+  
+  # password-checker-2:
+  #   build:
+  #     context: ../..
+  #     dockerfile: automations/password-checker/Dockerfile
+  #   container_name: password-checker-2
+  #   environment:
+  #     - PORT=3000
+  #     - WORKER_ID=worker-2
+  #     - BATCH_SIZE=5
+  #     - DOWNLOAD_FOLDER=/tmp/downloads
+  #     - SUPABASE_URL=${SUPABASE_URL}
+  #     - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+  #   ports:
+  #     - "3002:3000"
+  #   restart: unless-stopped
+  #   volumes:
+  #     - password-checker-data:/tmp/downloads
+  #   healthcheck:
+  #     test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+  #     start_period: 10s
+
+volumes:
+  password-checker-data:

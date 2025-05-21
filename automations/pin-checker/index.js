@@ -1,209 +1,135 @@
-// automations/pin-checker/index.js
-import { processCompany } from './worker.js';
-import { createClient } from "@supabase/supabase-js";
+// @ts-nocheck
+require('dotenv').config();
+const express = require('express');
+const bodyParser = require('body-parser');
+const { processBatch, readCompanyBatch } = require('./worker');
 
-// Initialize Supabase client
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// Express app setup
+const app = express();
+app.use(bodyParser.json());
 
-// Control parallel execution
-const MAX_CONCURRENT_WORKERS = parseInt(process.env.MAX_CONCURRENT_WORKERS || '3');
+// Set port from environment or default to 3000
+const PORT = process.env.PORT || 3000;
 
-// Control flag for stopping automation
-let stopRequested = false;
+// Health check endpoint
+app.get('/health', (req, res) => {
+    res.status(200).json({ status: 'healthy' });
+});
 
-/**
- * Run the PIN Checker automation
- * @param {string} runOption - 'all' or 'selected'
- * @param {Array} selectedIds - Array of company IDs to process (when runOption is 'selected')
- * @returns {Object} - Result of the automation
- */
-export async function runPinCheckerAutomation(runOption, selectedIds) {
-    console.log(`Starting PIN Checker automation with ${MAX_CONCURRENT_WORKERS} concurrent workers`);
-
-    // Reset the stop flag
-    stopRequested = false;
-
-    // Reset automation status
-    await updateAutomationProgress(0, "Starting", []);
-
+// Webhook endpoint for n8n to trigger the automation
+app.post('/webhook/pin-checker', async (req, res) => {
     try {
-        // Get companies to process
-        const companies = await readSupabaseData(runOption, selectedIds);
-
-        if (!companies || companies.length === 0) {
-            console.log("No companies to process");
-            await updateAutomationProgress(100, "Completed", []);
-            return { message: "No companies to process" };
+        console.log('Received webhook request:', req.body);
+        
+        // Extract parameters from the webhook request
+        const { 
+            startIndex = 0, 
+            batchSize = 5,
+            totalCompanies = 0,
+            n8nWorkflowId = '',
+            callbackUrl = ''
+        } = req.body;
+        
+        // Validate required parameters
+        if (startIndex === undefined) {
+            return res.status(400).json({ error: 'startIndex parameter is required' });
         }
-
-        console.log(`Processing ${companies.length} companies`);
-
-        // Process companies in batches
-        const allResults = [];
-        let processedCount = 0;
-
-        // Process in batches of MAX_CONCURRENT_WORKERS
-        for (let i = 0; i < companies.length && !stopRequested; i += MAX_CONCURRENT_WORKERS) {
-            const batch = companies.slice(i, i + MAX_CONCURRENT_WORKERS);
-            console.log(`Processing batch ${i / MAX_CONCURRENT_WORKERS + 1} with ${batch.length} companies`);
-
-            // Process current batch in parallel
-            const batchPromises = batch.map(company => processCompany(company));
-            const batchResults = await Promise.all(batchPromises);
-
-            // Update progress
-            allResults.push(...batchResults);
-            processedCount += batch.length;
-            const progress = Math.round((processedCount / companies.length) * 100);
-
-            console.log(`Completed ${processedCount}/${companies.length} companies (${progress}%)`);
-            await updateAutomationProgress(progress, stopRequested ? "Stopped" : "Running", allResults);
-
-            // Check if we should stop
-            if (stopRequested) {
-                console.log("Automation stop requested, ending after current batch");
-                break;
-            }
-        }
-
-        // Final status update
-        const finalStatus = stopRequested ? "Stopped" : "Completed";
-        const finalProgress = stopRequested ? Math.round((processedCount / companies.length) * 100) : 100;
-
-        await updateAutomationProgress(finalProgress, finalStatus, allResults);
-        console.log(`Automation ${finalStatus.toLowerCase()} after processing ${processedCount}/${companies.length} companies`);
-
-        return {
-            message: `Automation ${finalStatus.toLowerCase()}`,
-            processed: processedCount,
-            total: companies.length,
-            results: allResults
-        };
+        
+        // Acknowledge the request immediately
+        res.status(202).json({ 
+            message: 'Automation started', 
+            startIndex,
+            batchSize,
+            status: 'processing'
+        });
+        
+        // Process the batch asynchronously
+        processBatchAndCallback(startIndex, batchSize, totalCompanies, callbackUrl, n8nWorkflowId);
+        
     } catch (error) {
-        console.error("Error in runPinCheckerAutomation:", error);
-        await updateAutomationProgress(0, "Error", [{ error: error.message }]);
-        return { error: error.message };
+        console.error('Error handling webhook:', error);
+        // Since we already sent a response, we'll just log the error
+        // The callback mechanism will handle reporting the error back to n8n
+    }
+});
+
+// Get the total count of companies
+app.get('/companies/count', async (req, res) => {
+    try {
+        // This is a simplified version - in a real scenario you'd query Supabase directly
+        const companies = await readCompanyBatch(0, 9999999);
+        res.status(200).json({ count: companies.length });
+    } catch (error) {
+        console.error('Error getting company count:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Function to process batch and send callback when done
+async function processBatchAndCallback(startIndex, batchSize, totalCompanies, callbackUrl, n8nWorkflowId) {
+    let result;
+    
+    try {
+        // Process the batch
+        console.log(`Starting batch processing: startIndex=${startIndex}, batchSize=${batchSize}`);
+        result = await processBatch(startIndex, batchSize, totalCompanies);
+        console.log(`Batch processing complete. Processed ${result.processed} companies.`);
+        
+        // Send callback to n8n if a callback URL was provided
+        if (callbackUrl) {
+            await sendCallback(callbackUrl, {
+                status: 'completed',
+                startIndex,
+                batchSize,
+                processed: result.processed,
+                success: result.success,
+                n8nWorkflowId,
+                error: result.error
+            });
+        }
+        
+    } catch (error) {
+        console.error('Error in processBatchAndCallback:', error);
+        
+        // Send error callback
+        if (callbackUrl) {
+            await sendCallback(callbackUrl, {
+                status: 'error',
+                startIndex,
+                batchSize,
+                processed: 0,
+                success: false,
+                n8nWorkflowId,
+                error: error.message
+            });
+        }
     }
 }
 
-/**
- * Stop the PIN Checker automation
- */
-export async function stopPinCheckerAutomation() {
-    console.log("Stop requested for PIN Checker automation");
-    stopRequested = true;
-    await updateAutomationProgress(
-        null, // Don't update progress percentage
-        "Stopping",
-        null // Don't update logs
-    );
-    return { message: "Stop requested" };
-}
-
-/**
- * Get the current progress of the PIN Checker automation
- * @returns {Object} - Progress object
- */
-export async function getPinCheckerProgress() {
+// Function to send callback to n8n
+async function sendCallback(callbackUrl, data) {
     try {
-        const { data, error } = await supabase
-            .from("PinCheckerDetails_AutomationProgress")
-            .select("*")
-            .eq("id", 1)
-            .single();
-
-        if (error) {
-            console.error("Supabase error getting progress:", error);
-            return { status: "Unknown", progress: 0, logs: [] };
-        }
-
-        return data || { status: "Not Started", progress: 0, logs: [] };
-    } catch (error) {
-        console.error("Error getting automation progress:", error);
-        return { status: "Error", progress: 0, logs: [{ error: error.message }] };
-    }
-}
-
-/**
- * Update the automation progress in the database
- * @param {number} progress - Progress percentage (0-100)
- * @param {string} status - Status message
- * @param {Array} logs - Array of log objects
- */
-async function updateAutomationProgress(progress, status, logs) {
-    try {
-        const updateObj = {
-            id: 1,
-            last_updated: new Date().toISOString()
-        };
-
-        // Only update fields that are provided
-        if (progress !== null && progress !== undefined) {
-            updateObj.progress = progress;
-        }
-
-        if (status) {
-            updateObj.status = status;
-        }
-
-        if (logs) {
-            updateObj.logs = logs;
-        }
-
-        await supabase
-            .from("PinCheckerDetails_AutomationProgress")
-            .upsert(updateObj);
-    } catch (error) {
-        console.error("Error updating automation progress:", error);
-    }
-}
-
-/**
- * Read company data from Supabase
- * @param {string} runOption - 'all' or 'selected'
- * @param {Array} selectedIds - Array of company IDs to process (when runOption is 'selected')
- * @returns {Array} - Array of company objects
- */
-async function readSupabaseData(runOption, selectedIds) {
-    try {
-        console.log(`Reading Supabase data for runOption: ${runOption}, with ${selectedIds?.length || 0} IDs`);
-
-        // Always start with a base query
-        let query = supabase
-            .from("acc_portal_company_duplicate")
-            .select("*")
-            .order('id', { ascending: true });
-
-        // Only filter by IDs if in 'selected' mode and we have IDs
-        if (runOption === 'selected' && selectedIds && selectedIds.length > 0) {
-            console.log(`Filtering by ${selectedIds.length} selected IDs`);
-            query = query.in('id', selectedIds);
+        console.log(`Sending callback to ${callbackUrl}`, data);
+        const response = await fetch(callbackUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(data)
+        });
+        
+        if (!response.ok) {
+            console.error(`Callback to ${callbackUrl} failed with status ${response.status}`);
         } else {
-            console.log('Running in all companies mode, no ID filtering applied');
+            console.log(`Callback to ${callbackUrl} succeeded`);
         }
-
-        // Execute the query
-        const { data, error } = await query;
-
-        if (error) {
-            console.error(`Supabase query error: ${error.message}`);
-            throw new Error(`Error reading data from companies table: ${error.message}`);
-        }
-
-        console.log(`Successfully retrieved ${data?.length || 0} companies from Supabase`);
-
-        // Filter out companies without KRA PINs
-        const filteredData = data?.filter(company => !!company.kra_pin) || [];
-
-        if (filteredData.length < (data?.length || 0)) {
-            console.log(`Filtered out ${(data?.length || 0) - filteredData.length} companies without KRA PINs`);
-        }
-
-        return filteredData;
+        
     } catch (error) {
-        console.error(`Error reading Supabase data: ${error.message}`);
-        throw error;
+        console.error('Error sending callback:', error);
     }
 }
+
+// Start the server
+app.listen(PORT, () => {
+    console.log(`PIN checker automation server listening on port ${PORT}`);
+});

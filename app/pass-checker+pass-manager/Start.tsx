@@ -812,7 +812,63 @@ export default function Start({
               'Start Password Check'}
           </Button>
           <Button 
-            onClick={() => { setStatus("Stopped"); }} 
+            onClick={async () => {
+              if (!isChecking) return;
+              
+              try {
+                // Determine which API endpoint to use based on the activeTab
+                const currentTab = (activeTab || '').toLowerCase();
+                let apiEndpoint = '';
+                
+                switch (currentTab) {
+                  case 'nssf':
+                    apiEndpoint = '/api/nssf-pass-checker';
+                    break;
+                  case 'nhif':
+                    apiEndpoint = '/api/nhif-pass-checker';
+                    break;
+                  case 'kra':
+                    apiEndpoint = '/api/password-checker';
+                    break;
+                  case 'ecitizen':
+                    apiEndpoint = '/api/ecitizen-pass-checker';
+                    break;
+                  default:
+                    console.error('Invalid tab selected for stop:', activeTab);
+                    alert('Cannot stop: Invalid tab selected');
+                    return;
+                }
+                
+                console.log(`Stopping automation for ${activeTab}...`);
+                const response = await fetch(apiEndpoint, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({
+                    action: "stop",
+                    tab: activeTab
+                  })
+                });
+                
+                if (!response.ok) {
+                  throw new Error('Failed to stop automation');
+                }
+                
+                const data = await response.json();
+                console.log('Automation stopped:', data);
+                
+                // Update local state
+                if (typeof setIsChecking === 'function') setIsChecking(false);
+                if (typeof setStatus === 'function') setStatus("Stopped");
+                await fetchAutomationProgress(); // Refresh progress data
+                
+                alert('Automation stopped successfully.');
+              } catch (error) {
+                console.error('Error stopping automation:', error);
+                alert('Failed to stop automation. Please try again.');
+              }
+            }} 
             disabled={!isChecking} 
             variant="destructive"
           >

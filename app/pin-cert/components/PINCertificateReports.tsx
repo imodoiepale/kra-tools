@@ -109,8 +109,42 @@ export function PINCertificateReports() {
 
             if (certificatesError) throw certificatesError;
 
-            // Create a map of PIN certificates by company_id for quick lookup
+            // Fetch KYC uploads with KRA PIN certificate document type (using the document ID we defined)
+            // Convert underscore format to UUID format with hyphens
+            const pinCertDocId = '92e58484-167a-40df-9836-7b110b003e86'; // UUID format with hyphens
+            
+            console.log('Fetching KYC uploads with document ID:', pinCertDocId);
+            const { data: kycUploadsData, error: kycUploadsError } = await supabase
+                .from('acc_portal_kyc_uploads')
+                .select('*')
+                .eq('kyc_document_id', pinCertDocId);
+
+            if (kycUploadsError) {
+                console.error('Error fetching KYC uploads:', kycUploadsError);
+                // Don't throw here - we can still show certificates from the PINCertificates table
+                // Just log the error and continue with empty KYC uploads data
+            }
+
+            console.log('KYC uploads data:', kycUploadsData);
+
+            // Create maps for quick lookup
             const certificatesMap = new Map(certificatesData.map(cert => [cert.company_id, cert]));
+            
+            // Group KYC uploads by userid (company ID) and take the latest upload for each company
+            const kycUploadsMap = new Map();
+            if (kycUploadsData && kycUploadsData.length > 0) {
+                kycUploadsData.forEach(upload => {
+                    // Convert userid to number to match company.id
+                    const companyId = parseInt(upload.userid);
+                    if (!isNaN(companyId)) {
+                        const existingUpload = kycUploadsMap.get(companyId);
+                        // Keep only the latest upload based on created_at
+                        if (!existingUpload || new Date(upload.created_at) > new Date(existingUpload.created_at)) {
+                            kycUploadsMap.set(companyId, upload);
+                        }
+                    }
+                });
+            }
 
             const formattedReports = companiesData.map(company => {
                 const certificate = certificatesMap.get(company.id);
@@ -118,6 +152,18 @@ export function PINCertificateReports() {
                 const extractionDates = Object.keys(extractions).sort((a, b) => new Date(b) - new Date(a));
                 const latestDate = extractionDates[0];
                 const latestExtraction = extractions[latestDate] || {};
+
+                // Get the KYC upload for this company, if any
+                const kycUpload = kycUploadsMap.get(company.id);
+                
+                // Generate the public URL for the document if it exists
+                let documentUrl = null;
+                if (kycUpload && kycUpload.file_path) {
+                    const { data: { publicUrl } } = supabase.storage
+                        .from('kyc-documents')
+                        .getPublicUrl(kycUpload.file_path);
+                    documentUrl = publicUrl;
+                }
 
                 // Calculate client statuses
                 const acc_client_status = calculateClientStatus(company.acc_client_effective_from, company.acc_client_effective_to);
@@ -132,20 +178,23 @@ export function PINCertificateReports() {
                 if (company.sheria_client_effective_from && company.sheria_client_effective_to) categories.push('Sheria');
                 if (company.audit_client_effective_from && company.audit_client_effective_to) categories.push('Audit');
 
+                // Determine document status - prioritize KYC upload document URL
+                const document_link = documentUrl || (latestExtraction.pdf_link && latestExtraction.pdf_link !== "no doc" ? latestExtraction.pdf_link : null);
+                
+                // Use the KYC upload date if available, otherwise fall back to the certificate extraction date
+                const extraction_date = kycUpload ? formatDate(kycUpload.created_at) : (certificate ?
+                    formatDate(certificate.updated_at || latestDate || new Date()) : "Not Extracted");
+
                 return {
                     id: company.id,
                     company_id: company.id,
                     company_name: company.company_name,
                     company_pin: company.kra_pin || <span className="text-red-500">Missing</span>,
-                    pin_certificate_status: certificate ?
-                        (certificate.company_pin === "MISSING PIN/PASSWORD" ? "Missing" : "Available") :
-                        "Not Extracted",
+                    pin_certificate_status: document_link ? "Available" : (certificate ?
+                        (certificate.company_pin === "MISSING PIN/PASSWORD" ? "Missing" : "Available") : "Not Extracted"),
                     expiry_date: latestExtraction?.expiry_date || 'N/A',
-                    extraction_date: certificate ?
-                        formatDate(certificate.updated_at || latestDate || new Date()) :
-                        "Not Extracted",
-                    pdf_link: latestExtraction.pdf_link && latestExtraction.pdf_link !== "no doc" ?
-                        `${latestExtraction.pdf_link}` : null,
+                    extraction_date: extraction_date,
+                    pdf_link: document_link,
                     // Add category information
                     categories,
                     acc_client_status,
@@ -671,16 +720,51 @@ export function PINCertificateReports() {
                                                                             }} />
                                                                         </div>
                                                                     </DialogHeader>
-                                                                    <iframe
-                                                                        src={`${report.pdf_link}#toolbar=0&navpanes=0&view=FitH&zoom=40&embedded=true`}
-                                                                        className="w-full h-[80vh]"
-                                                                    />
+                                                                    {/* Add helper functions for formatting the source */}
+                                                                    {(() => {
+                                                                        // Helper function to format PDF source path for iframe
+                                                                        const formatPdfSource = (pdfPath) => {
+                                                                            if (!pdfPath) return '';
+                                                                            
+                                                                            // Check if it's a URL or a file path
+                                                                            const isUrl = pdfPath.startsWith('http://') || pdfPath.startsWith('https://');
+                                                                            
+                                                                            if (isUrl) {
+                                                                                // For URLs, just add the PDF viewer parameters
+                                                                                return `${pdfPath}#toolbar=0&navpanes=0&view=FitH&zoom=40&embedded=true`;
+                                                                            } else {
+                                                                                // For file paths, convert to file URL format
+                                                                                // Replace backslashes with forward slashes and encode the path
+                                                                                const normalizedPath = pdfPath.replace(/\\/g, '/');
+                                                                                return `file:///${encodeURI(normalizedPath)}#toolbar=0&navpanes=0&view=FitH&zoom=40&embedded=true`;
+                                                                            }
+                                                                        };
+                                                                        
+                                                                        const pdfSource = formatPdfSource(report.pdf_link);
+                                                                        return (
+                                                                            <iframe
+                                                                                src={pdfSource}
+                                                                                className="w-full h-[80vh]"
+                                                                                onError={(e) => console.error("Error loading PDF:", e)}
+                                                                            />
+                                                                        );
+                                                                    })()}
                                                                 </DialogContent>
                                                             </Dialog>
                                                         </div>
                                                     ) : (
                                                         <span className="text-gray-500 text-xs flex items-center justify-center">
-                                                            <Image src={report.pdf_link || ''} alt={`PIN Certificate for ${report.company_name}`} className="inline-block mr-1 h-3 w-3" />
+                                                            {/* Fix empty src attribute issue by not rendering Image when no PDF link */}
+                                                            <span className="inline-block mr-1 h-3 w-3">
+                                                                {/* Use a placeholder icon when no image */}
+                                                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                                    <path d="M10.3 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10.8" />
+                                                                    <path d="m21 21-3.3-3.3" />
+                                                                    <path d="M15.7 17.7a4 4 0 1 0-4.4-6.6" />
+                                                                    <path d="M7 10h4" />
+                                                                    <path d="M7 14h2" />
+                                                                </svg>
+                                                            </span>
                                                             Missing
                                                         </span>
                                                     )
