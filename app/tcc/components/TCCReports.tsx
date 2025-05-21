@@ -9,6 +9,9 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogTrigger, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ArrowUpDown, Search, Eye, EyeOff, ImageIcon, MoreHorizontal, Download, ChevronLeftIcon, ChevronRightIcon, Filter, FileIcon, RefreshCw, PlayCircle, Play } from "lucide-react";
@@ -45,6 +48,8 @@ export function TCCReports() {
     });
     const [activeTab, setActiveTab] = useState("summary");
     const [isCategoryFilterOpen, setIsCategoryFilterOpen] = useState(false);
+    const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
+    const [refreshInterval, setRefreshInterval] = useState(30); // in seconds
     const [categoryFilters, setCategoryFilters] = useState({
         categories: {
             'All Categories': false,
@@ -283,9 +288,28 @@ export function TCCReports() {
                 );
 
                 // Use the extraction date from KYC uploads if available, otherwise use the date from TaxComplianceCertificates
-                const extractionDate = kycUpload
-                    ? new Date(kycUpload.created_at).toLocaleDateString()
-                    : (latestDate || <span className="text-red-500">Missing</span>);
+                let extractionDate;
+                if (kycUpload && kycUpload.created_at) {
+                    // Use KYC upload date - this will be a valid date string
+                    extractionDate = kycUpload.created_at;
+                } else if (latestDate) {
+                    // latestDate is the key from extractions object - make sure it's a valid date format
+                    // If it's already a valid ISO date string, use it as is
+                    try {
+                        const testDate = new Date(latestDate);
+                        if (!isNaN(testDate.getTime())) {
+                            extractionDate = latestDate;
+                        } else {
+                            // If it's not a valid date format, store as a string but mark it
+                            extractionDate = `Date format: ${latestDate}`;
+                        }
+                    } catch (e) {
+                        // Handle any parsing errors
+                        extractionDate = `Date format: ${latestDate}`;
+                    }
+                } else {
+                    extractionDate = null; // Will be displayed as "Not extracted"
+                }
 
                 return {
                     id: company.id,
@@ -448,6 +472,20 @@ export function TCCReports() {
     useEffect(() => {
         applyFilters();
     }, [searchTerm, categoryFilters]);
+
+    // Auto-refresh functionality
+    useEffect(() => {
+        // Set up auto-refresh timer if enabled
+        if (autoRefreshEnabled && !isProcessing) {
+            const timer = setTimeout(() => {
+                console.log(`Auto-refreshing data (${refreshInterval}s interval)`);
+                fetchReports();
+            }, refreshInterval * 1000);
+            
+            // Clean up timer on component unmount or when dependencies change
+            return () => clearTimeout(timer);
+        }
+    }, [autoRefreshEnabled, refreshInterval, reports, isProcessing]);
 
     const handleSort = (column) => {
         if (sortColumn === column) {
@@ -866,10 +904,41 @@ export function TCCReports() {
                             <Download className="mr-2 h-4 w-4" />
                             Export to Excel
                         </Button>
-                        <Button variant="outline" size="sm" onClick={() => fetchReports()}>
-                            <RefreshCw className="mr-2 h-4 w-4" />
-                            Refresh
-                        </Button>
+                        <div className="flex items-center gap-2">
+                            <Button variant="outline" size="sm" onClick={() => fetchReports()}>
+                                <RefreshCw 
+                                    className="mr-2 h-4 w-4" 
+                                    style={autoRefreshEnabled ? { animation: 'spin 3s linear infinite' } : {}} 
+                                />
+                                Refresh
+                            </Button>
+                            
+                            <div className="flex items-center gap-1 border rounded-md p-1">
+                                <Switch 
+                                    checked={autoRefreshEnabled}
+                                    onCheckedChange={setAutoRefreshEnabled}
+                                    id="auto-refresh-switch"
+                                    size="sm"
+                                />
+                                <Label htmlFor="auto-refresh-switch" className="text-xs whitespace-nowrap">Auto ({refreshInterval}s)</Label>
+                                
+                                <Select 
+                                    value={refreshInterval.toString()} 
+                                    onValueChange={(value) => setRefreshInterval(parseInt(value))}
+                                    disabled={!autoRefreshEnabled}
+                                >
+                                    <SelectTrigger className="h-7 w-16">
+                                        <SelectValue placeholder="30s" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="10">10s</SelectItem>
+                                        <SelectItem value="30">30s</SelectItem>
+                                        <SelectItem value="60">1m</SelectItem>
+                                        <SelectItem value="300">5m</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                        </div>
                         <Button
                             variant="outline"
                             size="sm"
@@ -924,8 +993,8 @@ export function TCCReports() {
                         <Table>
                             <TableHeader className="sticky top-0 bg-white z-10">
                                 <TableRow>
-                                    <TableHead className="w-[50px] text-center">
-                                        <Checkbox
+                                    <TableHead className="w-[50px] text-center" rowSpan={showStatsRows ? 3 : 1}>
+                                        <Checkbox 
                                             checked={selectedRows.length === filteredReports.length && filteredReports.length > 0}
                                             onCheckedChange={(checked) => {
                                                 if (checked) {
@@ -943,10 +1012,10 @@ export function TCCReports() {
                                         { key: 'expiry_date', label: 'Expiry Date' },
                                         { key: 'days_to_go', label: 'Days', alwaysVisible: true },
                                         { key: 'doc_status', label: 'Status', alwaysVisible: true },
-                                        { key: 'extraction_date', label: 'Last Extracted' },
                                         { key: 'tcc_cert', label: 'TCC Cert', alwaysVisible: true },
                                         { key: 'screenshot', label: 'Screenshot', alwaysVisible: true },
-                                        { key: 'action', label: 'Action', alwaysVisible: true }
+                                        { key: 'action', label: 'Action', alwaysVisible: true },
+                                        { key: 'extraction_date', label: 'Last Extracted', alwaysVisible: true }
                                     ].map(({ key, label, alwaysVisible }) => (
                                         (alwaysVisible || visibleColumns[key]) && (
                                             <TableHead key={key} className={`font-bold border-r border-gray-300 ${key === 'index' ? 'text-center sticky left-0 bg-white' : ''}`}>
@@ -990,11 +1059,6 @@ export function TCCReports() {
                                                 </span>
                                             </TableCell>
                                             <TableCell className="text-center text-[10px] border-r border-gray-300">
-                                                <span className={stats.complete.extraction_date === filteredReports.length ? 'text-green-600 font-bold' : ''}>
-                                                    {stats.complete.extraction_date}
-                                                </span>
-                                            </TableCell>
-                                            <TableCell className="text-center text-[10px] border-r border-gray-300">
                                                 <span className={stats.complete.pdf_link === filteredReports.length ? 'text-green-600 font-bold' : ''}>
                                                     {stats.complete.pdf_link}
                                                 </span>
@@ -1002,6 +1066,13 @@ export function TCCReports() {
                                             <TableCell className="text-center text-[10px] border-r border-gray-300">
                                                 <span className={stats.complete.screenshot_link === filteredReports.length ? 'text-green-600 font-bold' : ''}>
                                                     {stats.complete.screenshot_link}
+                                                </span>
+                                            </TableCell>
+                                            {/* Action column - blank cell for stats row */}
+                                            <TableCell className="text-center text-[10px] border-r border-gray-300"></TableCell>
+                                            <TableCell className="text-center text-[10px] border-r border-gray-300">
+                                                <span className={stats.complete.extraction_date === filteredReports.length ? 'text-green-600 font-bold' : ''}>
+                                                    {stats.complete.extraction_date}
                                                 </span>
                                             </TableCell>
                                         </TableRow>
@@ -1033,11 +1104,6 @@ export function TCCReports() {
                                                 </span>
                                             </TableCell>
                                             <TableCell className="text-center text-[10px] border-r border-gray-300">
-                                                <span className={stats.missing.extraction_date > 0 ? 'text-red-600 font-bold' : ''}>
-                                                    {stats.missing.extraction_date}
-                                                </span>
-                                            </TableCell>
-                                            <TableCell className="text-center text-[10px] border-r border-gray-300">
                                                 <span className={stats.missing.pdf_link > 0 ? 'text-red-600 font-bold' : ''}>
                                                     {stats.missing.pdf_link}
                                                 </span>
@@ -1045,6 +1111,13 @@ export function TCCReports() {
                                             <TableCell className="text-center text-[10px] border-r border-gray-300">
                                                 <span className={stats.missing.screenshot_link > 0 ? 'text-red-600 font-bold' : ''}>
                                                     {stats.missing.screenshot_link}
+                                                </span>
+                                            </TableCell>
+                                            {/* Action column - blank cell for stats row */}
+                                            <TableCell className="text-center text-[10px] border-r border-gray-300"></TableCell>
+                                            <TableCell className="text-center text-[10px] border-r border-gray-300">
+                                                <span className={stats.missing.extraction_date > 0 ? 'text-red-600 font-bold' : ''}>
+                                                    {stats.missing.extraction_date}
                                                 </span>
                                             </TableCell>
                                         </TableRow>
@@ -1108,7 +1181,43 @@ export function TCCReports() {
                                                     ),
                                                     alwaysVisible: true
                                                 },
-                                                { key: 'extraction_date', content: report.extraction_date },
+                                                { 
+                                                    key: 'extraction_date', 
+                                                    content: (() => {
+                                                        // Helper function to check if date is valid
+                                                        const isValidDate = (date) => {
+                                                            if (!date) return false;
+                                                            const d = new Date(date);
+                                                            return !isNaN(d.getTime());
+                                                        };
+
+                                                        if (!report.extraction_date) {
+                                                            return <div className="text-center">Not extracted</div>;
+                                                        }
+
+                                                        // Check if extraction_date is a valid date string
+                                                        if (isValidDate(report.extraction_date)) {
+                                                            return (
+                                                                <div className="text-center">
+                                                                    <span className="text-xs">
+                                                                        {new Date(report.extraction_date).toLocaleString('en-GB', {
+                                                                            day: '2-digit',
+                                                                            month: '2-digit',
+                                                                            year: 'numeric',
+                                                                            hour: '2-digit',
+                                                                            minute: '2-digit',
+                                                                            hour12: true
+                                                                        })}
+                                                                    </span>
+                                                                </div>
+                                                            );
+                                                        } else {
+                                                            // If it's not a valid date but exists, display as is
+                                                            return <div className="text-center">{report.extraction_date.toString()}</div>;
+                                                        }
+                                                    })(),
+                                                    alwaysVisible: true 
+                                                },
                                                 {
                                                     key: 'tcc_cert',
                                                     content: (
