@@ -1,5 +1,0 @@
-# Run PIN Checker automation every day at 1 AM
-0 1 * * * /usr/bin/node /app/app/pin-checker-details/automation/run-pin-checker-automation.js >> /var/log/cron.log 2>&1
-
-# Schedule can be customized - format: minute hour day-of-month month day-of-week
-# Keep this line at the end of the file

@@ -91,6 +91,10 @@ export function TCCReports() {
     };
 
     const fetchReports = async () => {
+        console.log('=========== UI: FETCHING COMPANIES DATA ===========');
+        console.log('Timestamp:', new Date().toISOString());
+        console.log('==================================================');
+
         try {
             // First get all companies from acc_portal_company_duplicate
             const { data: companiesData, error: companiesError } = await supabase
@@ -102,7 +106,13 @@ export function TCCReports() {
                 throw new Error(`Error fetching companies: ${companiesError.message}`);
             }
 
+            console.log(`UI: Found ${companiesData?.length || 0} companies`);
+
             // Then get all TCC data
+            console.log('=========== UI: FETCHING TCC DATA ===========');
+            console.log('Timestamp:', new Date().toISOString());
+            console.log('==============================================');
+
             const { data: tccData, error: tccError } = await supabase
                 .from('TaxComplianceCertificates')
                 .select('*');
@@ -111,34 +121,64 @@ export function TCCReports() {
                 throw new Error(`Error fetching TCC data: ${tccError.message}`);
             }
 
+            console.log(`UI: Found ${tccData?.length || 0} TCC records`);
+            if (tccData && tccData.length > 0) {
+                console.log('UI: Sample TCC record format:');
+                console.log(JSON.stringify(tccData[0], null, 2));
+            }
+
             // Define the TCC document ID (UUID format with hyphens)
             const tccDocumentId = '5c658f23-7d16-4453-9965-619b72b9166a';
 
-            // Fetch TCC documents from acc_portal_kyc_uploads table
-            const { data: kycUploadsData, error: kycUploadsError } = await supabase
+            // Get KYC Uploads for TCC documents
+            console.log('=========== UI: FETCHING KYC UPLOADS DATA ===========');
+            console.log('KYC Document ID:', tccDocumentId);
+            console.log('Timestamp:', new Date().toISOString());
+            console.log('====================================================');
+
+            const { data: kycUploads, error: kycError } = await supabase
                 .from('acc_portal_kyc_uploads')
                 .select('*')
                 .eq('kyc_document_id', tccDocumentId);
 
-            if (kycUploadsError) {
-                console.error('Error fetching KYC uploads:', kycUploadsError);
-                // Don't throw - we can still show certificates from the TaxComplianceCertificates table
+            if (kycError) {
+                console.error(`Error fetching KYC data: ${kycError.message}`);
+                // Continue without KYC data rather than throwing an error
             }
 
-            console.log('KYC uploads data for TCC:', kycUploadsData);
+            console.log(`UI: Found ${kycUploads?.length || 0} KYC uploads for TCC documents`);
+            if (kycUploads && kycUploads.length > 0) {
+                console.log('UI: Sample KYC upload record format:');
+                console.log(JSON.stringify(kycUploads[0], null, 2));
+            }
+
+            // Log TCC data structure for debugging
+            if (tccData && tccData.length > 0) {
+                console.log('=========== TCC DATA STRUCTURE ANALYSIS ===========');
+                console.log('First TCC record:');
+                console.log(JSON.stringify(tccData[0], null, 2));
+                console.log('Does record have full_table_data?', !!tccData[0].full_table_data);
+                if (tccData[0].full_table_data) {
+                    console.log('full_table_data length:', tccData[0].full_table_data.length);
+                    console.log('full_table_data sample:', tccData[0].full_table_data[0]);
+                }
+                console.log('====================================================');
+            }
+
+            console.log('KYC uploads data for TCC:', kycUploads);
 
             // Group KYC uploads by userid (company ID) and take the latest upload for each company
             const kycUploadsMap = new Map();
-            if (kycUploadsData && kycUploadsData.length > 0) {
-                kycUploadsData.forEach(upload => {
-                    // Convert userid to number to match company.id
-                    const companyId = parseInt(upload.userid);
-                    if (!isNaN(companyId)) {
-                        const existingUpload = kycUploadsMap.get(companyId);
-                        // Keep only the latest upload based on created_at
-                        if (!existingUpload || new Date(upload.created_at) > new Date(existingUpload.created_at)) {
-                            kycUploadsMap.set(companyId, upload);
-                        }
+            if (kycUploads && kycUploads.length > 0) {
+                console.log('UI: Processing KYC uploads to find latest for each company');
+                kycUploads.forEach(upload => {
+                    const userId = upload.userid;
+
+                    // If we don't have this company yet, or if this upload is newer than the one we have
+                    if (!kycUploadsMap.has(userId) ||
+                        new Date(upload.updated_at) > new Date(kycUploadsMap.get(userId).updated_at)) {
+                        kycUploadsMap.set(userId, upload);
+                        console.log(`UI: Set latest KYC upload for company ID ${userId}, updated_at: ${upload.updated_at}`);
                     }
                 });
             }
@@ -231,28 +271,28 @@ export function TCCReports() {
                 if (company.sheria_client_effective_from && company.sheria_client_effective_to) categories.push('Sheria');
                 if (company.audit_client_effective_from && company.audit_client_effective_to) categories.push('Audit');
 
-                // Always calculate days remaining for reporting consistency
-                let daysRemaining = calculateDaysRemaining(null);
-
+                // SAFE CHECK: Handle case where tccRecord doesn't exist
                 if (!tccRecord) {
+                    console.log(`No TCC record found for company ${company.id} (${company.company_name})`);
+
+                    // Return a minimal company record with default values
                     return {
                         id: company.id,
                         company_name: company.company_name,
                         company_pin: company.kra_pin || <span className="text-red-500">Missing</span>,
-                        status: 'No TCC Data',
+                        status: <span className="text-red-500">Missing</span>,
                         certificate_date: <span className="text-red-500">Missing</span>,
                         expiry_date: <span className="text-red-500">Missing</span>,
                         serial_no: <span className="text-red-500">Missing</span>,
-                        // Use the document from KYC uploads if available (prioritize newer system)
-                        pdf_link: documentUrl,
-                        screenshot_link: null,
+                        pdf_link: documentUrl, // Use KYC document if available
                         full_table_data: [],
-                        extraction_date: kycUpload ? new Date(kycUpload.updated_at || kycUpload.created_at).toLocaleDateString() : <span className="text-red-500">Missing</span>,
+                        extraction_date: <span className="text-red-500">Not extracted</span>,
+                        screenshot_link: null,
                         client_category: company.client_category || '',
-                        days_to_go: daysRemaining.days,
-                        expiry_status: daysRemaining.status,
-                        expiry_status_color: daysRemaining.statusColor,
-                        doc_status: daysRemaining.status,
+                        days_to_go: null,
+                        expiry_status: 'Unknown',
+                        expiry_status_color: 'text-gray-500',
+                        doc_status: 'Unknown',
                         // Add client status fields and categories
                         acc_client_status,
                         imm_client_status,
@@ -271,26 +311,203 @@ export function TCCReports() {
                     };
                 }
 
-                const extractions = tccRecord.extractions || {};
-                const latestDate = Object.keys(extractions).sort((a, b) =>
-                    new Date(b) - new Date(a)
-                )[0];
+                // If we have a TCC record, process it normally
+                // Ensure tccRecord and extractions exist to prevent TypeError
+                const extractions = tccRecord && tccRecord.extractions ? tccRecord.extractions : {};
+
+                // Debug all available extraction dates
+                console.log(`Company ${company.id} (${company.company_name}) extraction dates:`, Object.keys(extractions));
+
+                // Improved sorting logic that handles multiple date formats
+                const latestDate = Object.keys(extractions).sort((a, b) => {
+                    // First try to use standardized_date or last_extraction_datetime if available
+                    const extractionA = extractions[a];
+                    const extractionB = extractions[b];
+
+                    // Use ISO dates if available for most accurate comparison
+                    if (extractionA.last_extraction_datetime && extractionB.last_extraction_datetime) {
+                        return new Date(extractionB.last_extraction_datetime) - new Date(extractionA.last_extraction_datetime);
+                    }
+
+                    // Parse date formats reliably
+                    let dateA, dateB;
+
+                    // Try parsing format 21.5.2025
+                    if (a.includes('.')) {
+                        const [day, month, year] = a.split('.');
+                        dateA = new Date(`${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`);
+                    }
+                    // Try parsing format 22-05-2025_12-57-52
+                    else if (a.includes('-')) {
+                        dateA = new Date(a.replace(/_/g, 'T').replace(/-/g, '/'));
+                    }
+                    // Default attempt
+                    else {
+                        dateA = new Date(a);
+                    }
+
+                    // Same for date B
+                    if (b.includes('.')) {
+                        const [day, month, year] = b.split('.');
+                        dateB = new Date(`${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`);
+                    }
+                    else if (b.includes('-')) {
+                        dateB = new Date(b.replace(/_/g, 'T').replace(/-/g, '/'));
+                    }
+                    else {
+                        dateB = new Date(b);
+                    }
+
+                    // If we couldn't parse either date properly, use string comparison
+                    if (isNaN(dateA.getTime()) || isNaN(dateB.getTime())) {
+                        console.log(`Warning: Could not parse extraction dates: ${a}, ${b}`);
+                        return b.localeCompare(a); // Default to string comparison
+                    }
+
+                    return dateB.getTime() - dateA.getTime();
+                })[0];
+
+                console.log(`Latest extraction date for company ${company.id}: ${latestDate}`);
                 const latestExtraction = extractions[latestDate] || {};
 
+                // Debug the exact extraction_date value that will be shown in the UI
+                console.log(`Company ${company.id} extraction_date to display:`, latestExtraction.extraction_date);
+                console.log(`Company ${company.id} latest extraction record:`, latestExtraction);
+
+                // Handle extraction date with proper format conversion
+                let extractionDate = null;
+
+                // First priority: Use the database last_extraction_date column if available
+                // First priority: Use the database last_extraction_date column if available
+                if (tccRecord && tccRecord.last_extraction_date) {
+                    // Format the timestamp from the database (which is in UTC)
+                    try {
+                        const dbDate = new Date(tccRecord.last_extraction_date);
+                        extractionDate = formatDateWithTime(dbDate);
+                        console.log(`Using database last_extraction_date: ${extractionDate}`);
+                    } catch (error) {
+                        console.error('Error formatting database last_extraction_date:', error);
+                        // Fall through to other methods if this fails
+                    }
+                }
+
+                
+                // Second priority: Check if there's a top-level last_extraction_date field in the company record
+                if (!extractionDate) {
+                    // Second priority: Check if there's a top-level last_extraction_date field in the company record
+                    if (company.last_extraction_date) {
+                        extractionDate = formatDateWithTime(company.last_extraction_date);
+                        console.log(`Using company record last_extraction_date: ${extractionDate}`);
+                    }
+                    else if (latestExtraction.extraction_date) {
+                    // Check if the extraction date is in the old format (like "21.5.2025")
+                    if (typeof latestExtraction.extraction_date === 'string' && latestExtraction.extraction_date.includes('.')) {
+                        // Convert old format to new format
+                        try {
+                            const [day, month, year] = latestExtraction.extraction_date.split('.');
+                            const oldDate = new Date(`${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`);
+                            extractionDate = formatDateWithTime(oldDate);
+                            console.log(`Converted old date format ${latestExtraction.extraction_date} to ${extractionDate}`);
+                        } catch (error) {
+                            console.error('Error converting old date format:', error);
+                            extractionDate = latestExtraction.extraction_date;
+                        }
+                    } else {
+                        extractionDate = latestExtraction.extraction_date;
+                    }
+                }
+
+                // If there's a screenshot but no extraction date, we should still show the date
+                if (!extractionDate && latestExtraction.screenshot_link && latestExtraction.screenshot_link !== "no_screenshot") {
+                    const now = new Date();
+                    const day = now.getDate().toString().padStart(2, '0');
+                    const month = (now.getMonth() + 1).toString().padStart(2, '0');
+                    const year = now.getFullYear();
+                    const hours = now.getHours();
+                    const minutes = now.getMinutes().toString().padStart(2, '0');
+                    const seconds = now.getSeconds().toString().padStart(2, '0');
+                    const ampm = hours >= 12 ? 'PM' : 'AM';
+                    const formattedHours = (hours % 12 || 12).toString().padStart(2, '0');
+
+                    // Use today's date as the extraction date
+                    extractionDate = `${day}/${month}/${year} | ${formattedHours}:${minutes}:${seconds} ${ampm} (Screenshot Only)`;
+                    console.log(`Company ${company.id} updated with screenshot-only extraction date`);
+                }
+
                 // Calculate days remaining until expiry
-                daysRemaining = calculateDaysRemaining(latestExtraction.expiry_date);
+                const daysRemaining = calculateDaysRemaining(latestExtraction.expiry_date);
 
                 // Determine which documents to use - prioritize KYC uploads documents over TaxComplianceCertificates documents
                 let pdfLink = documentUrl;
-                
+
                 if (!pdfLink) {
                     // Check if latest extraction has a valid PDF
                     if (latestExtraction.pdf_link && latestExtraction.pdf_link !== "no doc") {
                         pdfLink = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/kra-documents/${latestExtraction.pdf_link}`;
                     } else {
                         // If latest extraction doesn't have a PDF, check previous extractions
-                        const sortedDates = Object.keys(extractions).sort((a, b) => new Date(b) - new Date(a));
-                        
+                        const sortedDates = Object.keys(extractions).sort((a, b) => {
+                            // Try to parse dates in various formats
+                            let dateA, dateB;
+
+                            // First, check if it's a standard ISO date
+                            if (!isNaN(new Date(a).getTime())) {
+                                dateA = new Date(a);
+                            } else if (a.includes('/')) {
+                                // Format: DD/MM/YYYY | HH:MM:SS AM/PM
+                                const [datePart, timePart] = a.split(' | ');
+                                if (datePart && timePart) {
+                                    const [day, month, year] = datePart.split('/');
+                                    // Create a proper date string
+                                    dateA = new Date(`${year}-${month}-${day}T${timePart}`);
+                                }
+                            } else if (a.includes('-') || a.includes('.')) {
+                                // Format could be DD-MM-YYYY or D.M.YYYY
+                                const cleanedDate = a.replace(/_/g, ' ').replace(/-/g, '/');
+                                // If this is in the format 21.5.2025
+                                if (a.includes('.')) {
+                                    const [day, month, year] = a.split('.');
+                                    dateA = new Date(`${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`);
+                                } else {
+                                    // Try to create a date
+                                    dateA = new Date(cleanedDate);
+                                }
+                            }
+
+                            // Same process for date B
+                            if (!isNaN(new Date(b).getTime())) {
+                                dateB = new Date(b);
+                            } else if (b.includes('/')) {
+                                // Format: DD/MM/YYYY | HH:MM:SS AM/PM
+                                const [datePart, timePart] = b.split(' | ');
+                                if (datePart && timePart) {
+                                    const [day, month, year] = datePart.split('/');
+                                    // Create a proper date string
+                                    dateB = new Date(`${year}-${month}-${day}T${timePart}`);
+                                }
+                            } else if (b.includes('-') || b.includes('.')) {
+                                // Format could be DD-MM-YYYY or D.M.YYYY
+                                const cleanedDate = b.replace(/_/g, ' ').replace(/-/g, '/');
+                                // If this is in the format 21.5.2025
+                                if (b.includes('.')) {
+                                    const [day, month, year] = b.split('.');
+                                    dateB = new Date(`${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`);
+                                } else {
+                                    // Try to create a date
+                                    dateB = new Date(cleanedDate);
+                                }
+                            }
+
+                            // If we couldn't parse either date, use string comparison
+                            if (!dateA || !dateB || isNaN(dateA.getTime()) || isNaN(dateB.getTime())) {
+                                // As a fallback, use simple string comparison
+                                return b.localeCompare(a);
+                            }
+
+                            // Otherwise, use the parsed dates for comparison
+                            return dateB.getTime() - dateA.getTime();
+                        });
+
                         // Skip the first one (latest) since we already checked it
                         for (let i = 1; i < sortedDates.length; i++) {
                             const extraction = extractions[sortedDates[i]];
@@ -302,44 +519,54 @@ export function TCCReports() {
                     }
                 }
 
-                // Use the most recent extraction date from either source
-                let extractionDate;
-                
-                // Get the date from KYC uploads if available
+                // Continue with KYC date processing...
                 const kycDate = kycUpload ? (kycUpload.updated_at || kycUpload.created_at) : null;
-                
-                // Look for the last_extraction_datetime field in the latest extraction record
                 const tccLastExtractionDate = latestExtraction?.last_extraction_datetime;
-                
+
                 // Compare dates and use the most recent one
                 if (kycDate && tccLastExtractionDate) {
-                    // If we have both dates, use the most recent one
                     const kycDateTime = new Date(kycDate).getTime();
                     const tccDateTime = new Date(tccLastExtractionDate).getTime();
                     extractionDate = kycDateTime > tccDateTime ? kycDate : tccLastExtractionDate;
                 } else if (kycDate) {
-                    // If we only have KYC date
                     extractionDate = kycDate;
                 } else if (tccLastExtractionDate) {
-                    // If we only have TCC last extraction date
                     extractionDate = tccLastExtractionDate;
                 } else if (latestDate) {
-                    // latestDate is the key from extractions object - make sure it's a valid date format
-                    // If it's already a valid ISO date string, use it as is
                     try {
                         const testDate = new Date(latestDate);
                         if (!isNaN(testDate.getTime())) {
                             extractionDate = latestDate;
                         } else {
-                            // If it's not a valid date format, store as a string but mark it
                             extractionDate = ` ${latestDate}`;
                         }
                     } catch (e) {
-                        // Handle any parsing errors
                         extractionDate = `${latestDate}`;
                     }
-                } else {
-                    extractionDate = null; // Will be displayed as "Not extracted"
+                }
+
+                // Get a sorted list of extraction dates with the most recent first
+                const sortedDates = Object.keys(extractions).sort((a, b) => {
+                    try {
+                        const dateA = extractions[a].standardized_date || extractions[a].last_extraction_datetime || a;
+                        const dateB = extractions[b].standardized_date || extractions[b].last_extraction_datetime || b;
+                        return new Date(dateB).getTime() - new Date(dateA).getTime();
+                    } catch (e) {
+                        return b.localeCompare(a);
+                    }
+                });
+
+                // Get full table data from latest extraction or find it in previous extractions if missing
+                let fullTableData = latestExtraction.full_table_data || [];
+
+                if (!fullTableData || fullTableData.length === 0) {
+                    for (const dateKey of sortedDates) {
+                        const extraction = extractions[dateKey];
+                        if (extraction.full_table_data && extraction.full_table_data.length > 0) {
+                            fullTableData = extraction.full_table_data;
+                            break;
+                        }
+                    }
                 }
 
                 return {
@@ -351,28 +578,24 @@ export function TCCReports() {
                     expiry_date: latestExtraction.expiry_date || <span className="text-red-500">Missing</span>,
                     serial_no: latestExtraction.serial_no || <span className="text-red-500">Missing</span>,
                     pdf_link: pdfLink,
+                    full_table_data: fullTableData,
+                    extraction_date: extractionDate || <span className="text-red-500">Not extracted</span>,
                     screenshot_link: (() => {
                         // Check if latest extraction has a valid screenshot
                         if (latestExtraction.screenshot_link && latestExtraction.screenshot_link !== "no doc") {
                             return `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/kra-documents/${latestExtraction.screenshot_link}`;
                         }
-                        
+
                         // If latest extraction doesn't have a screenshot, check previous extractions
-                        const sortedDates = Object.keys(extractions).sort((a, b) => new Date(b) - new Date(a));
-                        
-                        // Skip the first one (latest) since we already checked it
                         for (let i = 1; i < sortedDates.length; i++) {
                             const extraction = extractions[sortedDates[i]];
                             if (extraction.screenshot_link && extraction.screenshot_link !== "no doc") {
                                 return `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/kra-documents/${extraction.screenshot_link}`;
                             }
                         }
-                        
-                        // If no valid screenshot found in any extraction
+
                         return null;
                     })(),
-                    full_table_data: latestExtraction.full_table_data || [],
-                    extraction_date: extractionDate,
                     client_category: company.client_category || '',
                     days_to_go: daysRemaining.days,
                     expiry_status: daysRemaining.status,
@@ -531,7 +754,7 @@ export function TCCReports() {
                 console.log(`Auto-refreshing data (${refreshInterval}s interval)`);
                 fetchReports();
             }, refreshInterval * 1000);
-            
+
             // Clean up timer on component unmount or when dependencies change
             return () => clearTimeout(timer);
         }
@@ -633,9 +856,25 @@ export function TCCReports() {
 
     const stats = calculateStats();
 
-    // Function to run TCC extraction for selected companies
+    // Helper function to force a complete data refresh
+    const forceCompleteRefresh = async () => {
+        console.log('Forcing complete data refresh...');
+        // Clear current data
+        setReports([]);
+        setAllCompanyData([]);
+        setFilteredReports([]);
+        // Wait a moment before fetching fresh data
+        await new Promise(resolve => setTimeout(resolve, 500));
+        // Fetch fresh data
+        await fetchReports();
+        console.log('Data refresh complete');
+    };
+    
     const handleRunSelected = async () => {
         if (selectedRows.length === 0) return;
+
+        console.log(`Running extraction for ${selectedRows.length} selected companies`);
+        console.log('Selected company IDs:', selectedRows);
 
         setIsProcessing(true);
         setProcessingStatus('processing');
@@ -649,7 +888,8 @@ export function TCCReports() {
                 },
                 body: JSON.stringify({
                     action: 'start',
-                    companies: selectedRows
+                    // Ensure companies are sent as strings to avoid type mismatches
+                    companies: selectedRows.map(id => String(id))
                 }),
             });
 
@@ -798,42 +1038,182 @@ export function TCCReports() {
         }
     };
 
-    // Helper function to format dates consistently - used throughout the component
-    const formatDateWithTime = (dateString) => {
-        try {
-            const date = new Date(dateString);
-            if (isNaN(date.getTime())) {
-                return dateString?.toString() || 'N/A';
+//     // Function to run TCC extraction for companies missing certificates
+//     const handleRunMissing = async () => {
+//         setIsProcessing(true);
+//         setProcessingStatus('processing');
+
+//         try {
+//             // Get IDs of companies missing TCC certificates
+//             const missingCertCompanies = filteredReports
+//                 .filter(report => !report.pdf_link || report.pdf_link === "no doc")
+//                 .map(report => report.id);
+
+//             if (missingCertCompanies.length === 0) {
+//                 setIsProcessing(false);
+//                 setProcessingStatus('idle');
+//                 return;
+//             }
+            
+//             // Call the TCC extractor API
+//             const response = await fetch('/api/tcc-extractor', {
+//             method: 'POST',
+//             headers: {
+//                 'Content-Type': 'application/json',
+//             },
+//             body: JSON.stringify({
+//                 action: 'start',
+//                 companies: missingCertCompanies
+//             }),
+//         });
+
+//         if (!response.ok) {
+//             throw new Error(`Error starting TCC extraction: ${response.statusText}`);
+//         }
+
+//         const data = await response.json();
+//         console.log('TCC extraction started for missing certificates:', data);
+//         setProcessingStatus('complete');
+
+//         // Poll for progress updates
+//         const pollInterval = setInterval(async () => {
+//             const progressResponse = await fetch('/api/tcc-extractor', {
+//                 method: 'POST',
+//                 headers: {
+//                     'Content-Type': 'application/json',
+//                 },
+//                 body: JSON.stringify({ action: 'progress' }),
+//             });
+
+//             if (progressResponse.ok) {
+//                 const progressData = await progressResponse.json();
+//                 console.log('Progress:', progressData);
+
+//                 if (!progressData.isRunning) {
+//                     clearInterval(pollInterval);
+//                     setIsProcessing(false);
+//                     fetchReports(); // Refresh data once complete
+//                 }
+//             }
+//         }, 5000); // Poll every 5 seconds
+
+//     } catch (error) {
+//         console.error('Error running TCC extraction for missing certificates:', error);
+//         setProcessingStatus('error');
+//         setIsProcessing(false);
+//     }
+// };
+
+// Function to run TCC extraction for a single company
+// const handleRunSingle = async (companyId) => {
+//     try {
+//         // Call the TCC extractor API for a single company
+//         const response = await fetch('/api/tcc-extractor', {
+//             method: 'POST',
+//             headers: {
+//                 'Content-Type': 'application/json',
+//             },
+//             body: JSON.stringify({
+//                 action: 'start',
+//                 companies: [companyId]
+//             }),
+//         });
+
+//         if (!response.ok) {
+//             throw new Error(`Error starting TCC extraction: ${response.statusText}`);
+//         }
+
+//         const data = await response.json();
+//         console.log(`TCC extraction started for company ${companyId}:`, data);
+
+//         // Poll for progress once
+//         setTimeout(async () => {
+//             const progressResponse = await fetch('/api/tcc-extractor', {
+//                 method: 'POST',
+//                 headers: {
+//                     'Content-Type': 'application/json',
+//                 },
+//                 body: JSON.stringify({ action: 'progress' }),
+//             });
+
+//             if (progressResponse.ok) {
+//                 fetchReports(); // Refresh data
+//             }
+//         }, 5000);
+
+//     } catch (error) {
+//         console.error(`Error running TCC extraction for company ${companyId}:`, error);
+//     }
+// };
+
+// Helper function to format dates consistently - used throughout the component
+const formatDateWithTime = (dateString) => {
+    try {
+        // Check if it's an old format date (with dots)
+        if (typeof dateString === 'string' && dateString.includes('.')) {
+            console.log(`Converting old date format: ${dateString}`);
+            try {
+                // Parse old format (DD.MM.YYYY)
+                const [day, month, year] = dateString.split('.');
+                // Create a standardized format with default time
+                return `${day.padStart(2, '0')}/${month.padStart(2, '0')}/${year} | 12:00:00 PM`;
+            } catch (error) {
+                console.error(`Error converting old date format: ${dateString}`, error);
+                // Fall through to standard processing
             }
-            
-            // Format dd/mm/yyyy part
-            const day = date.getDate().toString().padStart(2, '0');
-            const month = (date.getMonth() + 1).toString().padStart(2, '0');
-            const year = date.getFullYear();
-            const datePart = `${day}/${month}/${year}`;
-            
-            // Format time part consistently
-            const hours = date.getHours();
-            const minutes = date.getMinutes().toString().padStart(2, '0');
-            const seconds = date.getSeconds().toString().padStart(2, '0');
-            const ampm = hours >= 12 ? 'PM' : 'AM';
-            const formattedHours = (hours % 12 || 12).toString().padStart(2, '0');
-            
-            const timePart = `${formattedHours}:${minutes}:${seconds} ${ampm}`;
-            
-            // Always combine date and time with pipe separator
-            return `${datePart} | ${timePart}`;
-        } catch (error) {
-            console.error('Error formatting date:', error);
+        }
+
+        // Check if it's already in the correct format (DD/MM/YYYY | HH:MM:SS AM/PM)
+        if (typeof dateString === 'string' && dateString.includes('/') && dateString.includes('|')) {
+            // Validate the format
+            const parts = dateString.split(' | ');
+            if (parts.length === 2) {
+                const datePart = parts[0];
+                const timePart = parts[1];
+                
+                // Validate date part (DD/MM/YYYY)
+                const dateComponents = datePart.split('/');
+                if (dateComponents.length === 3) {
+                    // It's already in the correct format
+                    return dateString;
+                }
+            }
+        }
+
+        // Standard date parsing for other formats
+        const date = new Date(dateString);
+        if (isNaN(date.getTime())) {
             return dateString?.toString() || 'N/A';
         }
-    };
-    
-    const exportToExcel = async () => {
-        const workbook = new ExcelJS.Workbook();
-        const worksheet = workbook.addWorksheet('TCC Reports');
 
-        // Add headers
+        // Format dd/mm/yyyy part
+        const day = date.getDate().toString().padStart(2, '0');
+        const month = (date.getMonth() + 1).toString().padStart(2, '0');
+        const year = date.getFullYear();
+        const datePart = `${day}/${month}/${year}`;
+        
+        // Format time part consistently
+        const hours = date.getHours();
+        const minutes = date.getMinutes().toString().padStart(2, '0');
+        const seconds = date.getSeconds().toString().padStart(2, '0');
+        const ampm = hours >= 12 ? 'PM' : 'AM';
+        const formattedHours = (hours % 12 || 12).toString().padStart(2, '0');
+
+        const timePart = `${formattedHours}:${minutes}:${seconds} ${ampm}`;
+
+        // Always combine date and time with pipe separator
+        return `${datePart} | ${timePart}`;
+    } catch (error) {
+        console.error('Error formatting date:', error);
+        return dateString?.toString() || 'N/A';
+    }
+};
+
+const exportToExcel = async () => {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('TCC Reports');
+    
+    // Add headers
         const headers = ['Index', 'Company Name', 'KRA PIN', 'Status', 'Expiry Date', 'Last Extracted', 'TCC Cert', 'Screenshot'];
         const headerRow = worksheet.addRow(headers);
 
@@ -991,24 +1371,36 @@ export function TCCReports() {
                                 Refresh
                             </Button>
                         </div>
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            disabled={selectedRows.length === 0 || isProcessing}
-                            onClick={() => handleRunSelected()}
-                        >
-                            <Play className="mr-2 h-4 w-4" />
-                            Run Selected ({selectedRows.length})
-                        </Button>
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            disabled={isProcessing}
-                            onClick={() => handleRunMissing()}
-                        >
-                            <PlayCircle className="mr-2 h-4 w-4" />
-                            Run Missing
-                        </Button>
+                        <div className="flex items-center space-x-2 mb-4">
+                            <Button
+                                variant="outline"
+                                className="flex items-center text-xs"
+                                onClick={handleRunSelected}
+                                disabled={selectedRows.length === 0 || isProcessing}
+                            >
+                                <Play className="h-3.5 w-3.5 mr-1" />
+                                Run Selected
+                            </Button>
+                            <Button
+                                variant="outline"
+                                className="flex items-center text-xs"
+                                onClick={handleRunMissing}
+                                disabled={isProcessing}
+                            >
+                                <PlayCircle className="h-3.5 w-3.5 mr-1" />
+                                Run Missing
+                            </Button>
+                            {/* <Button
+                                variant="outline"
+                                className="flex items-center text-xs bg-amber-50 hover:bg-amber-100"
+                                onClick={handleMigrateOldDateFormats}
+                                disabled={isProcessing}
+                                title="Fix old date formats in the database"
+                            >
+                                <RefreshCw className="h-3.5 w-3.5 mr-1" />
+                                Migrate Date Formats
+                            </Button> */}
+                        </div>
                         <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                                 <Button variant="outline" size="sm" className="ml-auto">
@@ -1240,12 +1632,32 @@ export function TCCReports() {
                                                         if (!report.extraction_date) {
                                                             return <div className="text-center">Not extracted</div>;
                                                         }
-                                                        
-                                                        // Always attempt to format with date and time
+
+                                                        // Always show the formatted date in a standard way
+                                                        // If it's in the old format like 21.5.2025, convert it to readable format
+                                                        let displayDate = report.extraction_date;
+
+                                                        // If it's today's date (within last 24 hours), mark it as "Today"
+                                                        const today = new Date();
+                                                        const yesterday = new Date(today);
+                                                        yesterday.setDate(yesterday.getDate() - 1);
+
+                                                        // Check if it's the special formatted date like 22/05/2025 | 10:11:36 AM
+                                                        if (typeof displayDate === 'string' && displayDate.includes('|')) {
+                                                            return (
+                                                                <div className="text-center">
+                                                                    <span className="text-xs font-medium text-green-600">
+                                                                        {displayDate}
+                                                                    </span>
+                                                                </div>
+                                                            );
+                                                        }
+
+                                                        // Format older dates in a consistent way
                                                         return (
                                                             <div className="text-center">
                                                                 <span className="text-xs">
-                                                                    {formatDateWithTime(report.extraction_date)}
+                                                                    {displayDate}
                                                                 </span>
                                                             </div>
                                                         );
@@ -1405,8 +1817,8 @@ export function TCCReports() {
                                 <React.Fragment key={report.id}>
                                     <div
                                         className={`p-2 cursor-pointer transition-colors duration-200 text-xs uppercase ${selectedCompany?.id === report.id
-                                                ? 'bg-gray-500 text-white font-bold'
-                                                : 'hover:bg-gray-100'
+                                            ? 'bg-gray-500 text-white font-bold'
+                                            : 'hover:bg-gray-100'
                                             }`}
                                         onClick={() => setSelectedCompany(report)}
                                     >
@@ -1535,7 +1947,7 @@ export function TCCReports() {
                                                 </TableBody>
                                             </Table>
                                         </div>
-                    
+
                                     </ScrollArea>
                                 </CardContent>
                             </Card>
