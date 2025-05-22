@@ -71,15 +71,23 @@ export function PINCertificateReports() {
 
     const formatDate = (dateString) => {
         const date = new Date(dateString);
-        return date.toLocaleString('en-US', {
-            day: '2-digit',
-            month: '2-digit',
-            year: 'numeric',
+        
+        // Format dd/mm/yyyy part
+        const day = date.getDate().toString().padStart(2, '0');
+        const month = (date.getMonth() + 1).toString().padStart(2, '0');
+        const year = date.getFullYear();
+        const datePart = `${day}/${month}/${year}`;
+        
+        // Format time part
+        const timePart = date.toLocaleString('en-US', {
             hour: '2-digit',
             minute: '2-digit',
             second: '2-digit',
             hour12: true
-        }).replace(/,/g, '').replace(/\//g, '.').toUpperCase();
+        }).split(',')[1].trim().toUpperCase();
+        
+        // Combine with the pipe separator
+        return `${datePart} | ${timePart}`;
     };
 
     const calculateClientStatus = (fromDate, toDate) => {
@@ -686,11 +694,11 @@ export function PINCertificateReports() {
                                         </TableCell>
                                         {[
                                             {
-                                                key: 'index', content: <div className="grid grid-cols-3 gap-1">
-                                                    <span>{index + 1}</span>
-                                                    <span>|</span>
-                                                    <span>{report.id}</span>
-                                                </div>, alwaysVisible: true
+                                                key: 'index', content:
+                                                    <div className="">
+                                                        <span>{index + 1} | </span>
+                                                        <span> {report.id}</span>
+                                                    </div>, alwaysVisible: true
                                             },
                                             { key: 'company_name', content: report.company_name },
                                             { key: 'company_pin', content: report.company_pin },
@@ -711,14 +719,14 @@ export function PINCertificateReports() {
                                                                 <DialogContent className="w-full max-w-5xl max-h-[90vh]">
                                                                     <DialogHeader>
                                                                         <DialogTitle>PIN Certificate Document</DialogTitle>
-                                                                        <div className="flex items-center justify-end gap-2">
+                                                                        {/* <div className="flex items-center justify-end gap-2">
                                                                             <RefreshCw className="cursor-pointer" onClick={() => window.location.reload()} />
                                                                             <Trash2Icon className="cursor-pointer" onClick={() => {
                                                                                 if (confirm(`Are you sure you want to delete this PIN Certificate?`)) {
                                                                                     deleteReport(report.id);
                                                                                 }
                                                                             }} />
-                                                                        </div>
+                                                                        </div> */}
                                                                     </DialogHeader>
                                                                     {/* Add helper functions for formatting the source */}
                                                                     {(() => {

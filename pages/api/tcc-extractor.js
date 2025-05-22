@@ -79,8 +79,23 @@ async function processTCCExtraction(selectedCompanyIds = []) {
     totalCompanies = companies.length;
 
     const now = new Date();
-    const formattedDateTime = `${now.getDate()}.${now.getMonth() + 1}.${now.getFullYear()}`;
-    const downloadFolderPath = path.join(process.cwd(), 'tmp', formattedDateTime);
+    // Format date as dd/mm/yyyy | time for consistency (for display and database)
+    const day = now.getDate().toString().padStart(2, '0');
+    const month = (now.getMonth() + 1).toString().padStart(2, '0');
+    const year = now.getFullYear();
+    const hours = now.getHours();
+    const minutes = now.getMinutes().toString().padStart(2, '0');
+    const seconds = now.getSeconds().toString().padStart(2, '0');
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    const formattedHours = (hours % 12 || 12).toString().padStart(2, '0');
+    const formattedTime = `${formattedHours}:${minutes}:${seconds} ${ampm}`;
+    
+    // Use the display format for the database
+    const formattedDateTime = `${day}/${month}/${year} | ${formattedTime}`;
+    
+    // Create a filesystem-friendly version for the folder path
+    const filesystemSafeDateTime = `${day}-${month}-${year}_${formattedHours}-${minutes}-${seconds}`;
+    const downloadFolderPath = path.join(process.cwd(), 'tmp', filesystemSafeDateTime);
     await fs.mkdir(downloadFolderPath, { recursive: true });
 
     const KRA_TCC_DOCUMENT_ID = '5c658f23-7d16-4453-9965-619b72b9166a';
@@ -88,7 +103,42 @@ async function processTCCExtraction(selectedCompanyIds = []) {
     for (let i = 0; i < companies.length && isRunning; i++) {
         currentCompany = companies[i].company_name;
         console.log(`Processing company ${i + 1}/${companies.length}: ${currentCompany}`);
-        await processCompany(companies[i], downloadFolderPath, formattedDateTime);
+        
+        // Implement retry mechanism - try up to 3 times
+        let success = false;
+        let attempts = 0;
+        let lastError = null;
+        
+        while (!success && attempts < 3) {
+            try {
+                attempts++;
+                if (attempts > 1) {
+                    console.log(`Retry attempt ${attempts} for company: ${currentCompany}`);
+                    // Add a small delay before retrying
+                    await new Promise(resolve => setTimeout(resolve, 3000));
+                }
+                
+                await processCompany(companies[i], downloadFolderPath, filesystemSafeDateTime);
+                success = true; // If we get here without an error, mark as success
+            } catch (error) {
+                lastError = error;
+                console.log(`Error processing company ${currentCompany} (Attempt ${attempts}/3): ${error.message}`);
+                
+                // Only retry on timeout errors or connection issues
+                if (!error.message.includes('timeout') && 
+                    !error.message.includes('ECONNRESET') && 
+                    !error.message.includes('navigation') && 
+                    !error.message.includes('net::ERR')) {
+                    // For non-timeout errors, don't retry
+                    break;
+                }
+            }
+        }
+        
+        if (!success) {
+            console.error(`Failed to process company ${currentCompany} after 3 attempts. Last error: ${lastError?.message}`);
+        }
+        
         progress = Math.round(((i + 1) / totalCompanies) * 100);
     }
 
@@ -416,12 +466,30 @@ async function updateSupabaseTable(companyData, extractionDate, fullTableData) {
 }
 
 async function processCompany(company, downloadFolderPath, formattedDateTime) {
-    const browser = await chromium.launch({ headless: false, channel: "chrome" });
-    const context = await browser.newContext();
-    const page = await context.newPage();
-
+    // Create a filesystem-safe version for filenames - this ensures all paths use the safe format
+    const filesystemSafeDateTime = formattedDateTime.replace(/\//g, '-').replace(/ \| /g, '_');
+    let browser = null;
+    let context = null;
+    let page = null;
+    
     try {
-        await loginToKRA(page, company);
+        // Set timeouts for browser operations
+        const navigationTimeout = 60000; // 60 seconds for navigation
+        browser = await chromium.launch({ headless: true, channel: "chrome" });
+        context = await browser.newContext();
+        page = await context.newPage();
+        
+        // Set navigation timeout
+        page.setDefaultNavigationTimeout(navigationTimeout);
+        page.setDefaultTimeout(navigationTimeout);
+        
+        // Login to KRA portal with timeout handling
+        await Promise.race([
+            loginToKRA(page, company),
+            new Promise((_, reject) => 
+                setTimeout(() => reject(new Error('Login timeout after 45 seconds')), 45000)
+            )
+        ]);
 
         await page.hover("#ddtopmenubar > ul > li:nth-child(8) > a");
         await page.evaluate(() => {
@@ -458,11 +526,12 @@ async function processCompany(company, downloadFolderPath, formattedDateTime) {
             const download = await downloadPromise;
             const pdfPath = path.join(
                 downloadFolderPath,
-                `${company.company_name} - TCC CERT - DWN- ${formattedDateTime}.pdf`
+                `${company.company_name} - TCC CERT - DWN- ${filesystemSafeDateTime}.pdf`
             );
             await download.saveAs(pdfPath);
             console.log("TCC certificate downloaded successfully.");
-            pdfSupabasePath = await uploadToSupabase(pdfPath, company.company_name, 'pdf', formattedDateTime);
+            // Use a storage-safe path for Supabase uploads
+            pdfSupabasePath = await uploadToSupabase(pdfPath, company.company_name, 'pdf', filesystemSafeDateTime);
         } else {
             console.log("Download link not found. Marking as 'no doc'.");
         }
@@ -514,7 +583,8 @@ async function processCompany(company, downloadFolderPath, formattedDateTime) {
             const screenshotStats = await fs.lstat(screenshotFilePath);
             if (screenshotStats.isFile()) {
                 const screenshotFileContent = await fs.readFile(screenshotFilePath);
-                const screenshotStoragePath = `TCC_screenshots/${formattedDateTime}_${company.id}.png`;
+                // Use filesystem-friendly format for storage paths - avoid slashes and pipes
+                const screenshotStoragePath = `TCC_screenshots/${filesystemSafeDateTime}_${company.id}.png`;
                 const { error: screenshotUploadError } = await supabase.storage
                     .from('kra-documents')
                     .upload(screenshotStoragePath, screenshotFileContent, {
@@ -540,7 +610,8 @@ async function processCompany(company, downloadFolderPath, formattedDateTime) {
 
                     if (kycData && kycData.length > 0) {
                         const kycUploadId = kycData[0].id;
-                        const kycScreenshotPath = `tcc_screenshots/${company.id}/${formattedDateTime}.png`;
+                        // Use filesystem-friendly format for KYC storage paths too
+                        const kycScreenshotPath = `tcc_screenshots/${company.id}/${filesystemSafeDateTime}.png`;
                         const { error: kycScreenshotError } = await supabase.storage
                             .from('kyc-documents')
                             .upload(kycScreenshotPath, screenshotFileContent, {
@@ -551,15 +622,7 @@ async function processCompany(company, downloadFolderPath, formattedDateTime) {
                         if (kycScreenshotError) {
                             console.log(`Error uploading screenshot to kyc-documents for company ${company.id}: ${kycScreenshotError.message}`);
                         } else {
-                            // First check if metadata column exists by looking at the column names
-                            const { data: columnInfo, error: columnError } = await supabase
-                                .rpc('get_column_names', { table_name: 'acc_portal_kyc_uploads' });
-
-                            // If we can't check columns or there's an error, try alternate approach using document_metadata
-                            const hasMetadataColumn = !columnError && columnInfo &&
-                                columnInfo.some(col => col.column_name === 'metadata');
-
-                            // Choose the appropriate column based on what's available
+                            // Create metadata object with extraction details
                             const metadataObj = {
                                 source: 'auto-extraction',
                                 extraction_data: {
@@ -572,23 +635,33 @@ async function processCompany(company, downloadFolderPath, formattedDateTime) {
                                     screenshot_link: screenshotSupabasePath,
                                     full_table_data: fullTableData
                                 },
-                                screenshot_path: kycScreenshotPath
+                                screenshot_path: kycScreenshotPath,
+                                extraction_date: formattedDateTime
                             };
+                            
+                            // Update both the extraction details and the updated_at timestamp
+                            // This ensures the Last Extracted date in the reports page will update
+                            const updateData = { 
+                                extracted_details: metadataObj,
+                                updated_at: new Date().toISOString() // Update the timestamp to current time
+                            };
+                            
+                            console.log(`Updating KYC record for company ${company.id} with metadata`);
 
-                            // Use the appropriate column based on schema
-                            const updateData = hasMetadataColumn
-                                ? { metadata: JSON.stringify(metadataObj) }
-                                : { document_metadata: JSON.stringify(metadataObj) };
+                            try {
+                                const { error: updateError } = await supabase
+                                    .from('acc_portal_kyc_uploads')
+                                    .update(updateData)
+                                    .eq('id', kycUploadId);
 
-                            const { error: updateError } = await supabase
-                                .from('acc_portal_kyc_uploads')
-                                .update(updateData)
-                                .eq('id', kycUploadId);
-
-                            if (updateError) {
-                                console.log(`Error updating KYC upload with screenshot for company ${company.id}: ${updateError.message}`);
-                            } else {
-                                console.log(`Successfully updated KYC upload with screenshot for company ${company.id}`);
+                                if (updateError) {
+                                    console.log(`Error updating KYC upload with screenshot for company ${company.id}: ${updateError.message}`);
+                                } else {
+                                    console.log(`Successfully updated KYC upload with screenshot for company ${company.id}`);
+                                }
+                            } catch (databaseError) {
+                                console.log(`Exception during KYC database update for company ${company.id}: ${databaseError.message}`);
+                                // Continue processing even if KYC update fails
                             }
                         }
                     }
@@ -607,29 +680,32 @@ async function processCompany(company, downloadFolderPath, formattedDateTime) {
             return;
         }
 
-        // Get the first row from table and add data
-        const latestExtraction = fullTableData[0];
-        latestExtraction.pdfLink = pdfSupabasePath;
-        latestExtraction.screenshotLink = screenshotSupabasePath;
+        // Prepare company data for database update
+        const companyData = {
+            ...company,
+            ...fullTableData[0],
+            pdfLink: pdfSupabasePath,
+            screenshotLink: screenshotSupabasePath
+        };
 
-        // Make sure company ID is properly set for database operations
-        latestExtraction.id = company.id;
-        latestExtraction.company_id = company.id;
-        latestExtraction.company_name = company.company_name;
+        // Update the database with the extracted certificate details
+        await updateSupabaseTable(companyData, formattedDateTime);
 
-        // Update the database with the extraction information
-        await updateSupabaseTable(latestExtraction, formattedDateTime, fullTableData);
-
-        await page.evaluate(() => {
-            logOutUser();
-        });
+        // Logout from KRA portal
+        try {
+            await page.evaluate(() => {
+                logOutUser();
+            });
+        } catch (error) {
+            console.log(`Error during logout for company ${company.company_name}: ${error.message}`);
+            // Continue even if logout fails
+        }
 
         console.log(`Processing completed for ${company.company_name}`);
     } catch (error) {
-        console.error(`Error occurred during processing for ${company.company_name}:`, error);
-    } finally {
-        await page.close().catch(() => { });
-        await context.close().catch(() => { });
-        await browser.close().catch(() => { });
+        console.error(`Error occurred during processing for ${company.company_name}: ${error.message}`);
+        
+        // Rethrow the error so the retry mechanism can catch it
+        throw error;
     }
 }

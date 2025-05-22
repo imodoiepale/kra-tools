@@ -247,7 +247,7 @@ export function TCCReports() {
                         pdf_link: documentUrl,
                         screenshot_link: null,
                         full_table_data: [],
-                        extraction_date: kycUpload ? new Date(kycUpload.created_at).toLocaleDateString() : <span className="text-red-500">Missing</span>,
+                        extraction_date: kycUpload ? new Date(kycUpload.updated_at || kycUpload.created_at).toLocaleDateString() : <span className="text-red-500">Missing</span>,
                         client_category: company.client_category || '',
                         days_to_go: daysRemaining.days,
                         expiry_status: daysRemaining.status,
@@ -289,9 +289,10 @@ export function TCCReports() {
 
                 // Use the extraction date from KYC uploads if available, otherwise use the date from TaxComplianceCertificates
                 let extractionDate;
-                if (kycUpload && kycUpload.created_at) {
-                    // Use KYC upload date - this will be a valid date string
-                    extractionDate = kycUpload.created_at;
+                if (kycUpload) {
+                    // Always use updated_at if available, as it reflects the latest extraction time
+                    // Fall back to created_at if updated_at is not available
+                    extractionDate = kycUpload.updated_at || kycUpload.created_at;
                 } else if (latestDate) {
                     // latestDate is the key from extractions object - make sure it's a valid date format
                     // If it's already a valid ISO date string, use it as is
@@ -301,11 +302,11 @@ export function TCCReports() {
                             extractionDate = latestDate;
                         } else {
                             // If it's not a valid date format, store as a string but mark it
-                            extractionDate = `Date format: ${latestDate}`;
+                            extractionDate = ` ${latestDate}`;
                         }
                     } catch (e) {
                         // Handle any parsing errors
-                        extractionDate = `Date format: ${latestDate}`;
+                        extractionDate = `${latestDate}`;
                     }
                 } else {
                     extractionDate = null; // Will be displayed as "Not extracted"
@@ -451,8 +452,10 @@ export function TCCReports() {
 
     // Apply filter to detailed view sidebar
     const getFilteredDetailedViewCompanies = () => {
-        let detailedFiltered = reports;
+        // First apply category filters - using the same logic as the main view
+        let detailedFiltered = applyFiltersToData(reports);
 
+        // Then apply search term filter
         if (detailedViewSearchTerm) {
             const searchValue = detailedViewSearchTerm.toLowerCase();
             detailedFiltered = detailedFiltered.filter(report =>
@@ -994,7 +997,7 @@ export function TCCReports() {
                             <TableHeader className="sticky top-0 bg-white z-10">
                                 <TableRow>
                                     <TableHead className="w-[50px] text-center" rowSpan={showStatsRows ? 3 : 1}>
-                                        <Checkbox 
+                                        <Checkbox
                                             checked={selectedRows.length === filteredReports.length && filteredReports.length > 0}
                                             onCheckedChange={(checked) => {
                                                 if (checked) {
@@ -1012,16 +1015,16 @@ export function TCCReports() {
                                         { key: 'expiry_date', label: 'Expiry Date' },
                                         { key: 'days_to_go', label: 'Days', alwaysVisible: true },
                                         { key: 'doc_status', label: 'Status', alwaysVisible: true },
+                                        { key: 'extraction_date', label: 'Last Extracted', alwaysVisible: true },
                                         { key: 'tcc_cert', label: 'TCC Cert', alwaysVisible: true },
                                         { key: 'screenshot', label: 'Screenshot', alwaysVisible: true },
-                                        { key: 'action', label: 'Action', alwaysVisible: true },
-                                        { key: 'extraction_date', label: 'Last Extracted', alwaysVisible: true }
+                                        { key: 'action', label: 'Action', alwaysVisible: true }
                                     ].map(({ key, label, alwaysVisible }) => (
                                         (alwaysVisible || visibleColumns[key]) && (
                                             <TableHead key={key} className={`font-bold border-r border-gray-300 ${key === 'index' ? 'text-center sticky left-0 bg-white' : ''}`}>
                                                 <div className="flex items-center justify-between">
                                                     {label}
-                                                    {key !== 'tcc_cert' && key !== 'screenshot' && key !== 'status' && (
+                                                    {key !== 'tcc_cert' && key !== 'screenshot' && key !== 'action' && key !== 'doc_status' && (
                                                         <ArrowUpDown className="h-4 w-4 cursor-pointer" onClick={() => handleSort(key)} />
                                                     )}
                                                 </div>
@@ -1059,6 +1062,11 @@ export function TCCReports() {
                                                 </span>
                                             </TableCell>
                                             <TableCell className="text-center text-[10px] border-r border-gray-300">
+                                                <span className={stats.complete.extraction_date === filteredReports.length ? 'text-green-600 font-bold' : ''}>
+                                                    {stats.complete.extraction_date}
+                                                </span>
+                                            </TableCell>
+                                            <TableCell className="text-center text-[10px] border-r border-gray-300">
                                                 <span className={stats.complete.pdf_link === filteredReports.length ? 'text-green-600 font-bold' : ''}>
                                                     {stats.complete.pdf_link}
                                                 </span>
@@ -1070,11 +1078,6 @@ export function TCCReports() {
                                             </TableCell>
                                             {/* Action column - blank cell for stats row */}
                                             <TableCell className="text-center text-[10px] border-r border-gray-300"></TableCell>
-                                            <TableCell className="text-center text-[10px] border-r border-gray-300">
-                                                <span className={stats.complete.extraction_date === filteredReports.length ? 'text-green-600 font-bold' : ''}>
-                                                    {stats.complete.extraction_date}
-                                                </span>
-                                            </TableCell>
                                         </TableRow>
                                         <TableRow className="bg-gray-50">
                                             <TableCell className="text-center text-[10px] font-bold border-r border-gray-300 sticky left-0 bg-gray-50">Missing</TableCell>
@@ -1104,6 +1107,11 @@ export function TCCReports() {
                                                 </span>
                                             </TableCell>
                                             <TableCell className="text-center text-[10px] border-r border-gray-300">
+                                                <span className={stats.missing.extraction_date > 0 ? 'text-red-600 font-bold' : ''}>
+                                                    {stats.missing.extraction_date}
+                                                </span>
+                                            </TableCell>
+                                            <TableCell className="text-center text-[10px] border-r border-gray-300">
                                                 <span className={stats.missing.pdf_link > 0 ? 'text-red-600 font-bold' : ''}>
                                                     {stats.missing.pdf_link}
                                                 </span>
@@ -1115,11 +1123,6 @@ export function TCCReports() {
                                             </TableCell>
                                             {/* Action column - blank cell for stats row */}
                                             <TableCell className="text-center text-[10px] border-r border-gray-300"></TableCell>
-                                            <TableCell className="text-center text-[10px] border-r border-gray-300">
-                                                <span className={stats.missing.extraction_date > 0 ? 'text-red-600 font-bold' : ''}>
-                                                    {stats.missing.extraction_date}
-                                                </span>
-                                            </TableCell>
                                         </TableRow>
                                     </>
                                 )}
@@ -1181,8 +1184,8 @@ export function TCCReports() {
                                                     ),
                                                     alwaysVisible: true
                                                 },
-                                                { 
-                                                    key: 'extraction_date', 
+                                                {
+                                                    key: 'extraction_date',
                                                     content: (() => {
                                                         // Helper function to check if date is valid
                                                         const isValidDate = (date) => {
@@ -1200,14 +1203,35 @@ export function TCCReports() {
                                                             return (
                                                                 <div className="text-center">
                                                                     <span className="text-xs">
-                                                                        {new Date(report.extraction_date).toLocaleString('en-GB', {
-                                                                            day: '2-digit',
-                                                                            month: '2-digit',
-                                                                            year: 'numeric',
-                                                                            hour: '2-digit',
-                                                                            minute: '2-digit',
-                                                                            hour12: true
-                                                                        })}
+                                                                        {(() => {
+                                                                            try {
+                                                                                const date = new Date(report.extraction_date);
+                                                                                if (isNaN(date.getTime())) {
+                                                                                    return report.extraction_date.toString();
+                                                                                }
+                                                                                
+                                                                                // Format dd/mm/yyyy part
+                                                                                const day = date.getDate().toString().padStart(2, '0');
+                                                                                const month = (date.getMonth() + 1).toString().padStart(2, '0');
+                                                                                const year = date.getFullYear();
+                                                                                const datePart = `${day}/${month}/${year}`;
+                                                                                
+                                                                                // Format time part - safer approach
+                                                                                const hours = date.getHours();
+                                                                                const minutes = date.getMinutes().toString().padStart(2, '0');
+                                                                                const seconds = date.getSeconds().toString().padStart(2, '0');
+                                                                                const ampm = hours >= 12 ? 'PM' : 'AM';
+                                                                                const formattedHours = (hours % 12 || 12).toString().padStart(2, '0');
+                                                                                
+                                                                                const timePart = `${formattedHours}:${minutes}:${seconds} ${ampm}`;
+                                                                                
+                                                                                // Combine with the pipe separator
+                                                                                return `${datePart} | ${timePart}`;
+                                                                            } catch (error) {
+                                                                                console.error('Error formatting date:', error);
+                                                                                return report.extraction_date ? report.extraction_date.toString() : 'N/A';
+                                                                            }
+                                                                        })()}
                                                                     </span>
                                                                 </div>
                                                             );
@@ -1216,7 +1240,7 @@ export function TCCReports() {
                                                             return <div className="text-center">{report.extraction_date.toString()}</div>;
                                                         }
                                                     })(),
-                                                    alwaysVisible: true 
+                                                    alwaysVisible: true
                                                 },
                                                 {
                                                     key: 'tcc_cert',
@@ -1287,8 +1311,8 @@ export function TCCReports() {
                                                                     <DialogHeader>
                                                                         <DialogTitle>Screenshot</DialogTitle>
                                                                     </DialogHeader>
-                                                                    <Image 
-                                                                        src={report.screenshot_link} 
+                                                                    <Image
+                                                                        src={report.screenshot_link}
                                                                         alt="Screenshot"
                                                                         width={400}
                                                                         height={300}
@@ -1308,9 +1332,9 @@ export function TCCReports() {
                                                     key: 'action',
                                                     content: (
                                                         <div className="flex items-center gap-2">
-                                                            <Button 
-                                                                variant="outline" 
-                                                                size="sm" 
+                                                            <Button
+                                                                variant="outline"
+                                                                size="sm"
                                                                 className="h-7 px-2"
                                                                 disabled={isProcessing}
                                                                 onClick={() => handleRunSingle(report.id)}
@@ -1333,7 +1357,7 @@ export function TCCReports() {
                                     ))
                                 ) : (
                                     <TableRow>
-                                        <TableCell colSpan={Object.values(visibleColumns).filter(Boolean).length + 3} className="text-center py-8">
+                                        <TableCell colSpan={11} className="text-center py-8">
                                             No records found matching your search criteria.
                                         </TableCell>
                                     </TableRow>
@@ -1393,13 +1417,6 @@ export function TCCReports() {
                             <Card className="shadow-lg">
                                 <CardHeader className="bg-gradient-to-r from-blue-500 to-purple-500 text-white">
                                     <CardTitle className="text-xl">{selectedCompany.company_name}</CardTitle>
-                                    <div className="flex gap-2 text-xs">
-                                        {selectedCompany.categories.map(category => (
-                                            <Badge key={category} variant="secondary" className="text-xs">
-                                                {category}: {selectedCompany[`${category.toLowerCase()}_client_status`]}
-                                            </Badge>
-                                        ))}
-                                    </div>
                                 </CardHeader>
                                 <CardContent className="space-y-6">
                                     <ScrollArea className="h-[600px]">
@@ -1412,6 +1429,8 @@ export function TCCReports() {
                                                         <TableHead className="text-xs border-r border-gray-300">PIN</TableHead>
                                                         <TableHead className="text-xs border-r border-gray-300">Taxpayer Name</TableHead>
                                                         <TableHead className="text-xs border-r border-gray-300">Status</TableHead>
+                                                        <TableHead className="text-xs border-r border-gray-300">TCC Cert</TableHead>
+                                                        <TableHead className="text-xs border-r border-gray-300">Screenshot</TableHead>
                                                         <TableHead className="text-xs border-r border-gray-300">Certificate Date</TableHead>
                                                         <TableHead className="text-xs border-r border-gray-300">Expiry Date</TableHead>
                                                         <TableHead className="text-xs border-r border-gray-300">Certificate Serial No</TableHead>
@@ -1434,6 +1453,58 @@ export function TCCReports() {
                                                                             {row.Status}
                                                                         </span>
                                                                     </TableCell>
+                                                                    <TableCell className="text-xs border-r border-gray-300">
+                                                                        {/* Use the extraction's pdf_link since it's not in each row */}
+                                                                        {selectedCompany.pdf_link && selectedCompany.pdf_link !== "no doc" ? (
+                                                                            <Dialog>
+                                                                                <DialogTrigger asChild>
+                                                                                    <button className="text-blue-500 hover:underline flex items-center text-xs">
+                                                                                        <FileIcon className="mr-1 h-3 w-3" />
+                                                                                        View
+                                                                                    </button>
+                                                                                </DialogTrigger>
+                                                                                <DialogContent className="w-full max-w-5xl max-h-[90vh]">
+                                                                                    <DialogHeader>
+                                                                                        <DialogTitle>TCC Document</DialogTitle>
+                                                                                    </DialogHeader>
+                                                                                    <iframe
+                                                                                        src={`${selectedCompany.pdf_link}#toolbar=0&navpanes=0&view=FitH&zoom=40&embedded=true`}
+                                                                                        className="w-full h-[80vh]"
+                                                                                        title="TCC Certificate"
+                                                                                    />
+                                                                                </DialogContent>
+                                                                            </Dialog>
+                                                                        ) : (
+                                                                            <span className="text-gray-500 text-xs">Missing</span>
+                                                                        )}
+                                                                    </TableCell>
+                                                                    <TableCell className="text-xs border-r border-gray-300">
+                                                                        {/* Use the extraction's screenshot_link since it's not in each row */}
+                                                                        {selectedCompany.screenshot_link && selectedCompany.screenshot_link !== "no doc" ? (
+                                                                            <Dialog>
+                                                                                <DialogTrigger asChild>
+                                                                                    <button className="text-blue-500 hover:underline flex items-center text-xs">
+                                                                                        <ImageIcon className="mr-1 h-3 w-3" />
+                                                                                        View
+                                                                                    </button>
+                                                                                </DialogTrigger>
+                                                                                <DialogContent className="w-full max-w-5xl max-h-[90vh]">
+                                                                                    <DialogHeader>
+                                                                                        <DialogTitle>Screenshot</DialogTitle>
+                                                                                    </DialogHeader>
+                                                                                    <Image
+                                                                                        src={selectedCompany.screenshot_link}
+                                                                                        alt="Screenshot"
+                                                                                        width={400}
+                                                                                        height={300}
+                                                                                        className="w-full h-auto max-h-[80vh] object-contain"
+                                                                                    />
+                                                                                </DialogContent>
+                                                                            </Dialog>
+                                                                        ) : (
+                                                                            <span className="text-gray-500 text-xs">Missing</span>
+                                                                        )}
+                                                                    </TableCell>
                                                                     <TableCell className="font-bold text-xs border-r border-gray-300">{row.CertificateDate}</TableCell>
                                                                     <TableCell className={`font-bold text-xs border-r border-gray-300 ${isApproved ? 'text-green-500' : 'text-red-500'}`}>
                                                                         {row.ExpiryDate}
@@ -1444,7 +1515,7 @@ export function TCCReports() {
                                                         })
                                                     ) : (
                                                         <TableRow>
-                                                            <TableCell colSpan={7} className="text-center py-4 text-red-500">
+                                                            <TableCell colSpan={9} className="text-center py-4 text-red-500">
                                                                 No table data available
                                                             </TableCell>
                                                         </TableRow>
@@ -1454,84 +1525,7 @@ export function TCCReports() {
                                                 </TableBody>
                                             </Table>
                                         </div>
-                                        <div className="max-h-[60vh] mt-8">
-                                            <h4 className="font-medium mb-3 text-base">Documents</h4>
-                                            <div className="grid grid-cols-2 gap-6">
-                                                <div className="border rounded-lg p-4">
-                                                    <h5 className="font-medium mb-3 text-sm">TCC Certificate</h5>
-                                                    {selectedCompany.pdf_link && selectedCompany.pdf_link !== "no doc" ? (
-                                                        <Dialog>
-                                                            <DialogTrigger asChild>
-                                                                <iframe src={selectedCompany.pdf_link} className="w-full h-[300px] cursor-pointer" title="TCC Certificate" />
-                                                            </DialogTrigger>
-                                                            <DialogContent className="max-w-[80vw] max-h-[80vh]">
-                                                                <DialogHeader>
-                                                                    <DialogTitle className="text-sm">TCC Certificate</DialogTitle>
-                                                                </DialogHeader>
-                                                                {/* Helper function for detailed view PDF iframe */}
-                                                                {(() => {
-                                                                    const formatPdfSource = (pdfPath) => {
-                                                                        if (!pdfPath) return '';
-
-                                                                        // Check if it's a URL or a file path
-                                                                        const isUrl = pdfPath.startsWith('http://') || pdfPath.startsWith('https://');
-
-                                                                        if (isUrl) {
-                                                                            return `${pdfPath}#toolbar=0&navpanes=0&view=FitH&zoom=40&embedded=true`;
-                                                                        } else {
-                                                                            const normalizedPath = pdfPath.replace(/\\/g, '/');
-                                                                            return `file:///${encodeURI(normalizedPath)}#toolbar=0&navpanes=0&view=FitH&zoom=40&embedded=true`;
-                                                                        }
-                                                                    };
-
-                                                                    const pdfSource = formatPdfSource(selectedCompany.pdf_link);
-                                                                    return (
-                                                                        <iframe
-                                                                            src={pdfSource}
-                                                                            className="w-full h-[70vh]"
-                                                                            title="TCC Certificate"
-                                                                            onError={(e) => console.error("Error loading PDF:", e)}
-                                                                        />
-                                                                    );
-                                                                })()}
-                                                            </DialogContent>
-                                                        </Dialog>
-                                                    ) : (
-                                                        <p className="text-red-500 text-xl font-bold flex items-center justify-center capitalize h-[300px]">Missing</p>
-                                                    )}
-                                                </div>
-                                                <div className="border rounded-lg p-4">
-                                                    <h5 className="font-medium mb-3 text-sm">Screenshot</h5>
-                                                    {selectedCompany.screenshot_link && selectedCompany.screenshot_link !== "no doc" ? (
-                                                        <Dialog>
-                                                            <DialogTrigger asChild>
-                                                                <Image
-                                                                    src={selectedCompany.screenshot_link}
-                                                                    alt="Screenshot"
-                                                                    width={400}
-                                                                    height={300}
-                                                                    className="w-[400px] h-auto max-h-[300px] object-contain cursor-zoom-in"
-                                                                />
-                                                            </DialogTrigger>
-                                                            <DialogContent className="max-w-[60vw] max-h-[80vh]">
-                                                                <DialogHeader>
-                                                                    <DialogTitle className="text-sm">Screenshot</DialogTitle>
-                                                                </DialogHeader>
-                                                                <Image
-                                                                    src={selectedCompany.screenshot_link}
-                                                                    alt="Screenshot"
-                                                                    width={400}
-                                                                    height={300}
-                                                                    className="w-full h-auto max-h-[70vh] object-contain"
-                                                                />
-                                                            </DialogContent>
-                                                        </Dialog>
-                                                    ) : (
-                                                        <p className="text-red-500 text-xl font-bold flex items-center justify-center capitalize h-[300px]">Missing</p>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        </div>
+                    
                                     </ScrollArea>
                                 </CardContent>
                             </Card>
