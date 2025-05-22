@@ -48,7 +48,7 @@ export function TCCReports() {
     });
     const [activeTab, setActiveTab] = useState("summary");
     const [isCategoryFilterOpen, setIsCategoryFilterOpen] = useState(false);
-    const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
+    const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(false);
     const [refreshInterval, setRefreshInterval] = useState(30); // in seconds
     const [categoryFilters, setCategoryFilters] = useState({
         categories: {
@@ -281,18 +281,48 @@ export function TCCReports() {
                 daysRemaining = calculateDaysRemaining(latestExtraction.expiry_date);
 
                 // Determine which documents to use - prioritize KYC uploads documents over TaxComplianceCertificates documents
-                const pdfLink = documentUrl || (
-                    latestExtraction.pdf_link && latestExtraction.pdf_link !== "no doc"
-                        ? `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/kra-documents/${latestExtraction.pdf_link}`
-                        : null
-                );
+                let pdfLink = documentUrl;
+                
+                if (!pdfLink) {
+                    // Check if latest extraction has a valid PDF
+                    if (latestExtraction.pdf_link && latestExtraction.pdf_link !== "no doc") {
+                        pdfLink = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/kra-documents/${latestExtraction.pdf_link}`;
+                    } else {
+                        // If latest extraction doesn't have a PDF, check previous extractions
+                        const sortedDates = Object.keys(extractions).sort((a, b) => new Date(b) - new Date(a));
+                        
+                        // Skip the first one (latest) since we already checked it
+                        for (let i = 1; i < sortedDates.length; i++) {
+                            const extraction = extractions[sortedDates[i]];
+                            if (extraction.pdf_link && extraction.pdf_link !== "no doc") {
+                                pdfLink = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/kra-documents/${extraction.pdf_link}`;
+                                break;
+                            }
+                        }
+                    }
+                }
 
-                // Use the extraction date from KYC uploads if available, otherwise use the date from TaxComplianceCertificates
+                // Use the most recent extraction date from either source
                 let extractionDate;
-                if (kycUpload) {
-                    // Always use updated_at if available, as it reflects the latest extraction time
-                    // Fall back to created_at if updated_at is not available
-                    extractionDate = kycUpload.updated_at || kycUpload.created_at;
+                
+                // Get the date from KYC uploads if available
+                const kycDate = kycUpload ? (kycUpload.updated_at || kycUpload.created_at) : null;
+                
+                // Look for the last_extraction_datetime field in the latest extraction record
+                const tccLastExtractionDate = latestExtraction?.last_extraction_datetime;
+                
+                // Compare dates and use the most recent one
+                if (kycDate && tccLastExtractionDate) {
+                    // If we have both dates, use the most recent one
+                    const kycDateTime = new Date(kycDate).getTime();
+                    const tccDateTime = new Date(tccLastExtractionDate).getTime();
+                    extractionDate = kycDateTime > tccDateTime ? kycDate : tccLastExtractionDate;
+                } else if (kycDate) {
+                    // If we only have KYC date
+                    extractionDate = kycDate;
+                } else if (tccLastExtractionDate) {
+                    // If we only have TCC last extraction date
+                    extractionDate = tccLastExtractionDate;
                 } else if (latestDate) {
                     // latestDate is the key from extractions object - make sure it's a valid date format
                     // If it's already a valid ISO date string, use it as is
@@ -321,9 +351,26 @@ export function TCCReports() {
                     expiry_date: latestExtraction.expiry_date || <span className="text-red-500">Missing</span>,
                     serial_no: latestExtraction.serial_no || <span className="text-red-500">Missing</span>,
                     pdf_link: pdfLink,
-                    screenshot_link: latestExtraction.screenshot_link && latestExtraction.screenshot_link !== "no doc"
-                        ? `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/kra-documents/${latestExtraction.screenshot_link}`
-                        : null,
+                    screenshot_link: (() => {
+                        // Check if latest extraction has a valid screenshot
+                        if (latestExtraction.screenshot_link && latestExtraction.screenshot_link !== "no doc") {
+                            return `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/kra-documents/${latestExtraction.screenshot_link}`;
+                        }
+                        
+                        // If latest extraction doesn't have a screenshot, check previous extractions
+                        const sortedDates = Object.keys(extractions).sort((a, b) => new Date(b) - new Date(a));
+                        
+                        // Skip the first one (latest) since we already checked it
+                        for (let i = 1; i < sortedDates.length; i++) {
+                            const extraction = extractions[sortedDates[i]];
+                            if (extraction.screenshot_link && extraction.screenshot_link !== "no doc") {
+                                return `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/kra-documents/${extraction.screenshot_link}`;
+                            }
+                        }
+                        
+                        // If no valid screenshot found in any extraction
+                        return null;
+                    })(),
                     full_table_data: latestExtraction.full_table_data || [],
                     extraction_date: extractionDate,
                     client_category: company.client_category || '',
@@ -751,6 +798,37 @@ export function TCCReports() {
         }
     };
 
+    // Helper function to format dates consistently - used throughout the component
+    const formatDateWithTime = (dateString) => {
+        try {
+            const date = new Date(dateString);
+            if (isNaN(date.getTime())) {
+                return dateString?.toString() || 'N/A';
+            }
+            
+            // Format dd/mm/yyyy part
+            const day = date.getDate().toString().padStart(2, '0');
+            const month = (date.getMonth() + 1).toString().padStart(2, '0');
+            const year = date.getFullYear();
+            const datePart = `${day}/${month}/${year}`;
+            
+            // Format time part consistently
+            const hours = date.getHours();
+            const minutes = date.getMinutes().toString().padStart(2, '0');
+            const seconds = date.getSeconds().toString().padStart(2, '0');
+            const ampm = hours >= 12 ? 'PM' : 'AM';
+            const formattedHours = (hours % 12 || 12).toString().padStart(2, '0');
+            
+            const timePart = `${formattedHours}:${minutes}:${seconds} ${ampm}`;
+            
+            // Always combine date and time with pipe separator
+            return `${datePart} | ${timePart}`;
+        } catch (error) {
+            console.error('Error formatting date:', error);
+            return dateString?.toString() || 'N/A';
+        }
+    };
+    
     const exportToExcel = async () => {
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet('TCC Reports');
@@ -784,7 +862,7 @@ export function TCCReports() {
                 typeof report.company_pin === 'string' ? report.company_pin : 'Missing',
                 typeof report.status === 'string' ? report.status : 'Missing',
                 typeof report.expiry_date === 'string' ? report.expiry_date : 'Missing',
-                typeof report.extraction_date === 'string' ? report.extraction_date : 'Missing',
+                typeof report.extraction_date === 'string' ? formatDateWithTime(report.extraction_date) : 'Missing',
                 report.pdf_link ? 'Available' : 'Missing',
                 report.screenshot_link ? 'Available' : 'Missing'
             ]);
@@ -909,38 +987,9 @@ export function TCCReports() {
                         </Button>
                         <div className="flex items-center gap-2">
                             <Button variant="outline" size="sm" onClick={() => fetchReports()}>
-                                <RefreshCw 
-                                    className="mr-2 h-4 w-4" 
-                                    style={autoRefreshEnabled ? { animation: 'spin 3s linear infinite' } : {}} 
-                                />
+                                <RefreshCw className="mr-2 h-4 w-4" />
                                 Refresh
                             </Button>
-                            
-                            <div className="flex items-center gap-1 border rounded-md p-1">
-                                <Switch 
-                                    checked={autoRefreshEnabled}
-                                    onCheckedChange={setAutoRefreshEnabled}
-                                    id="auto-refresh-switch"
-                                    size="sm"
-                                />
-                                <Label htmlFor="auto-refresh-switch" className="text-xs whitespace-nowrap">Auto ({refreshInterval}s)</Label>
-                                
-                                <Select 
-                                    value={refreshInterval.toString()} 
-                                    onValueChange={(value) => setRefreshInterval(parseInt(value))}
-                                    disabled={!autoRefreshEnabled}
-                                >
-                                    <SelectTrigger className="h-7 w-16">
-                                        <SelectValue placeholder="30s" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="10">10s</SelectItem>
-                                        <SelectItem value="30">30s</SelectItem>
-                                        <SelectItem value="60">1m</SelectItem>
-                                        <SelectItem value="300">5m</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                            </div>
                         </div>
                         <Button
                             variant="outline"
@@ -1009,7 +1058,7 @@ export function TCCReports() {
                                         />
                                     </TableHead>
                                     {[
-                                        { key: 'index', label: 'IDX', alwaysVisible: true },
+                                        { key: 'index', label: 'IDX | ID', alwaysVisible: true },
                                         { key: 'company_name', label: 'Company Name' },
                                         { key: 'company_pin', label: 'KRA PIN' },
                                         { key: 'expiry_date', label: 'Expiry Date' },
@@ -1146,7 +1195,7 @@ export function TCCReports() {
                                             {[
                                                 {
                                                     key: 'index', content: <div className="text-center">
-                                                        <span>{index + 1}</span>
+                                                        <span>{index + 1} | {report.id}</span>
                                                     </div>, alwaysVisible: true
                                                 },
                                                 { key: 'company_name', content: report.company_name },
@@ -1187,58 +1236,19 @@ export function TCCReports() {
                                                 {
                                                     key: 'extraction_date',
                                                     content: (() => {
-                                                        // Helper function to check if date is valid
-                                                        const isValidDate = (date) => {
-                                                            if (!date) return false;
-                                                            const d = new Date(date);
-                                                            return !isNaN(d.getTime());
-                                                        };
 
                                                         if (!report.extraction_date) {
                                                             return <div className="text-center">Not extracted</div>;
                                                         }
-
-                                                        // Check if extraction_date is a valid date string
-                                                        if (isValidDate(report.extraction_date)) {
-                                                            return (
-                                                                <div className="text-center">
-                                                                    <span className="text-xs">
-                                                                        {(() => {
-                                                                            try {
-                                                                                const date = new Date(report.extraction_date);
-                                                                                if (isNaN(date.getTime())) {
-                                                                                    return report.extraction_date.toString();
-                                                                                }
-                                                                                
-                                                                                // Format dd/mm/yyyy part
-                                                                                const day = date.getDate().toString().padStart(2, '0');
-                                                                                const month = (date.getMonth() + 1).toString().padStart(2, '0');
-                                                                                const year = date.getFullYear();
-                                                                                const datePart = `${day}/${month}/${year}`;
-                                                                                
-                                                                                // Format time part - safer approach
-                                                                                const hours = date.getHours();
-                                                                                const minutes = date.getMinutes().toString().padStart(2, '0');
-                                                                                const seconds = date.getSeconds().toString().padStart(2, '0');
-                                                                                const ampm = hours >= 12 ? 'PM' : 'AM';
-                                                                                const formattedHours = (hours % 12 || 12).toString().padStart(2, '0');
-                                                                                
-                                                                                const timePart = `${formattedHours}:${minutes}:${seconds} ${ampm}`;
-                                                                                
-                                                                                // Combine with the pipe separator
-                                                                                return `${datePart} | ${timePart}`;
-                                                                            } catch (error) {
-                                                                                console.error('Error formatting date:', error);
-                                                                                return report.extraction_date ? report.extraction_date.toString() : 'N/A';
-                                                                            }
-                                                                        })()}
-                                                                    </span>
-                                                                </div>
-                                                            );
-                                                        } else {
-                                                            // If it's not a valid date but exists, display as is
-                                                            return <div className="text-center">{report.extraction_date.toString()}</div>;
-                                                        }
+                                                        
+                                                        // Always attempt to format with date and time
+                                                        return (
+                                                            <div className="text-center">
+                                                                <span className="text-xs">
+                                                                    {formatDateWithTime(report.extraction_date)}
+                                                                </span>
+                                                            </div>
+                                                        );
                                                     })(),
                                                     alwaysVisible: true
                                                 },

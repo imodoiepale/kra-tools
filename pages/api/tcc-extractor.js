@@ -315,6 +315,8 @@ async function updateSupabaseTable(companyData, extractionDate, fullTableData) {
 
         console.log(`Updating database for company ID: ${companyId}`);
 
+
+
         const { data: tccData, error: tccError } = await supabase
             .from('TaxComplianceCertificates')
             .select('extractions, company_id')
@@ -400,7 +402,10 @@ async function updateSupabaseTable(companyData, extractionDate, fullTableData) {
 
             // Timestamps
             extraction_date: extractionDate,
-            timestamp: new Date().toISOString()
+            timestamp: new Date().toISOString(),
+            
+            // This field will serve as our "last_extraction_date" for display purposes
+            last_extraction_datetime: new Date().toISOString()
         };
 
         // If we have full table data, add it
@@ -430,6 +435,7 @@ async function updateSupabaseTable(companyData, extractionDate, fullTableData) {
         }
 
         try {
+            // Step 1: Update the TCC record with new extraction details
             const { data, error } = await supabase
                 .from('TaxComplianceCertificates')
                 .upsert(updatedData, {
@@ -444,7 +450,38 @@ async function updateSupabaseTable(companyData, extractionDate, fullTableData) {
                     message: `Database update failed: ${error.message}`
                 };
             }
-
+            
+            // Step 2: After successful TCC update, sync all KYC uploads for this company
+            try {
+                // Find all KYC uploads for this company for TCC documents
+                const { data: kycUploads } = await supabase
+                    .from('acc_portal_kyc_uploads')
+                    .select('id')
+                    .eq('userid', companyId.toString())
+                    .eq('kyc_document_id', '5c658f23-7d16-4453-9965-619b72b9166a');
+                
+                if (kycUploads && kycUploads.length > 0) {
+                    // Get all KYC upload IDs
+                    const kycUploadIds = kycUploads.map(upload => upload.id);
+                    
+                    // Update all KYC uploads with the new timestamp to keep them in sync
+                    const { error: updateError } = await supabase
+                        .from('acc_portal_kyc_uploads')
+                        .update({ updated_at: new Date().toISOString() })
+                        .in('id', kycUploadIds);
+                    
+                    if (updateError) {
+                        console.log(`Error updating KYC upload timestamps: ${updateError.message}`);
+                        // Continue even if the KYC update fails
+                    } else {
+                        console.log(`Successfully updated timestamps for ${kycUploadIds.length} KYC uploads`);
+                    }
+                }
+            } catch (kycError) {
+                console.log(`Error syncing KYC upload dates: ${kycError.message}`);
+                // Continue even if KYC sync fails - don't block the main process
+            }
+            
             return {
                 success: true,
                 data
@@ -574,7 +611,7 @@ async function processCompany(company, downloadFolderPath, formattedDateTime) {
             timeout: 5000 // Extra time for large pages
         });
         console.log("High-quality screenshot taken successfully.");
-
+        
         // Use the same path variable for consistency
         const screenshotFilePath = screenshotPath;
         let screenshotSupabasePath = "no_screenshot"; // Initialize with default value
