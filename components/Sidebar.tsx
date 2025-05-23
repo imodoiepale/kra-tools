@@ -70,7 +70,14 @@ const navItems = [
   {
     href: "/checklist",
     icon: BarChart2,
-    label: "Checklist",
+    label: " All Taxes Checklist",
+    category: "Accounting Cycles",
+    available: true,
+  },
+  {
+    href: "/file-management",
+    icon: BarChart2,
+    label: "File Management",
     category: "Accounting Cycles",
     available: true,
   },

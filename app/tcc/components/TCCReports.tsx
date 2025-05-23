@@ -391,7 +391,7 @@ export function TCCReports() {
                     }
                 }
 
-                
+
                 // Second priority: Check if there's a top-level last_extraction_date field in the company record
                 if (!extractionDate) {
                     // Second priority: Check if there's a top-level last_extraction_date field in the company record
@@ -400,38 +400,39 @@ export function TCCReports() {
                         console.log(`Using company record last_extraction_date: ${extractionDate}`);
                     }
                     else if (latestExtraction.extraction_date) {
-                    // Check if the extraction date is in the old format (like "21.5.2025")
-                    if (typeof latestExtraction.extraction_date === 'string' && latestExtraction.extraction_date.includes('.')) {
-                        // Convert old format to new format
-                        try {
-                            const [day, month, year] = latestExtraction.extraction_date.split('.');
-                            const oldDate = new Date(`${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`);
-                            extractionDate = formatDateWithTime(oldDate);
-                            console.log(`Converted old date format ${latestExtraction.extraction_date} to ${extractionDate}`);
-                        } catch (error) {
-                            console.error('Error converting old date format:', error);
+                        // Check if the extraction date is in the old format (like "21.5.2025")
+                        if (typeof latestExtraction.extraction_date === 'string' && latestExtraction.extraction_date.includes('.')) {
+                            // Convert old format to new format
+                            try {
+                                const [day, month, year] = latestExtraction.extraction_date.split('.');
+                                const oldDate = new Date(`${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`);
+                                extractionDate = formatDateWithTime(oldDate);
+                                console.log(`Converted old date format ${latestExtraction.extraction_date} to ${extractionDate}`);
+                            } catch (error) {
+                                console.error('Error converting old date format:', error);
+                                extractionDate = latestExtraction.extraction_date;
+                            }
+                        } else {
                             extractionDate = latestExtraction.extraction_date;
                         }
-                    } else {
-                        extractionDate = latestExtraction.extraction_date;
                     }
-                }
 
-                // If there's a screenshot but no extraction date, we should still show the date
-                if (!extractionDate && latestExtraction.screenshot_link && latestExtraction.screenshot_link !== "no_screenshot") {
-                    const now = new Date();
-                    const day = now.getDate().toString().padStart(2, '0');
-                    const month = (now.getMonth() + 1).toString().padStart(2, '0');
-                    const year = now.getFullYear();
-                    const hours = now.getHours();
-                    const minutes = now.getMinutes().toString().padStart(2, '0');
-                    const seconds = now.getSeconds().toString().padStart(2, '0');
-                    const ampm = hours >= 12 ? 'PM' : 'AM';
-                    const formattedHours = (hours % 12 || 12).toString().padStart(2, '0');
+                    // If there's a screenshot but no extraction date, we should still show the date
+                    if (!extractionDate && latestExtraction.screenshot_link && latestExtraction.screenshot_link !== "no_screenshot") {
+                        const now = new Date();
+                        const day = now.getDate().toString().padStart(2, '0');
+                        const month = (now.getMonth() + 1).toString().padStart(2, '0');
+                        const year = now.getFullYear();
+                        const hours = now.getHours();
+                        const minutes = now.getMinutes().toString().padStart(2, '0');
+                        const seconds = now.getSeconds().toString().padStart(2, '0');
+                        const ampm = hours >= 12 ? 'PM' : 'AM';
+                        const formattedHours = (hours % 12 || 12).toString().padStart(2, '0');
 
-                    // Use today's date as the extraction date
-                    extractionDate = `${day}/${month}/${year} | ${formattedHours}:${minutes}:${seconds} ${ampm} (Screenshot Only)`;
-                    console.log(`Company ${company.id} updated with screenshot-only extraction date`);
+                        // Use today's date as the extraction date
+                        extractionDate = `${day}/${month}/${year} | ${formattedHours}:${minutes}:${seconds} ${ampm} (Screenshot Only)`;
+                        console.log(`Company ${company.id} updated with screenshot-only extraction date`);
+                    }
                 }
 
                 // Calculate days remaining until expiry
@@ -869,7 +870,7 @@ export function TCCReports() {
         await fetchReports();
         console.log('Data refresh complete');
     };
-    
+
     const handleRunSelected = async () => {
         if (selectedRows.length === 0) return;
 
@@ -1038,182 +1039,182 @@ export function TCCReports() {
         }
     };
 
-//     // Function to run TCC extraction for companies missing certificates
-//     const handleRunMissing = async () => {
-//         setIsProcessing(true);
-//         setProcessingStatus('processing');
+    //     // Function to run TCC extraction for companies missing certificates
+    //     const handleRunMissing = async () => {
+    //         setIsProcessing(true);
+    //         setProcessingStatus('processing');
 
-//         try {
-//             // Get IDs of companies missing TCC certificates
-//             const missingCertCompanies = filteredReports
-//                 .filter(report => !report.pdf_link || report.pdf_link === "no doc")
-//                 .map(report => report.id);
+    //         try {
+    //             // Get IDs of companies missing TCC certificates
+    //             const missingCertCompanies = filteredReports
+    //                 .filter(report => !report.pdf_link || report.pdf_link === "no doc")
+    //                 .map(report => report.id);
 
-//             if (missingCertCompanies.length === 0) {
-//                 setIsProcessing(false);
-//                 setProcessingStatus('idle');
-//                 return;
-//             }
-            
-//             // Call the TCC extractor API
-//             const response = await fetch('/api/tcc-extractor', {
-//             method: 'POST',
-//             headers: {
-//                 'Content-Type': 'application/json',
-//             },
-//             body: JSON.stringify({
-//                 action: 'start',
-//                 companies: missingCertCompanies
-//             }),
-//         });
+    //             if (missingCertCompanies.length === 0) {
+    //                 setIsProcessing(false);
+    //                 setProcessingStatus('idle');
+    //                 return;
+    //             }
 
-//         if (!response.ok) {
-//             throw new Error(`Error starting TCC extraction: ${response.statusText}`);
-//         }
+    //             // Call the TCC extractor API
+    //             const response = await fetch('/api/tcc-extractor', {
+    //             method: 'POST',
+    //             headers: {
+    //                 'Content-Type': 'application/json',
+    //             },
+    //             body: JSON.stringify({
+    //                 action: 'start',
+    //                 companies: missingCertCompanies
+    //             }),
+    //         });
 
-//         const data = await response.json();
-//         console.log('TCC extraction started for missing certificates:', data);
-//         setProcessingStatus('complete');
+    //         if (!response.ok) {
+    //             throw new Error(`Error starting TCC extraction: ${response.statusText}`);
+    //         }
 
-//         // Poll for progress updates
-//         const pollInterval = setInterval(async () => {
-//             const progressResponse = await fetch('/api/tcc-extractor', {
-//                 method: 'POST',
-//                 headers: {
-//                     'Content-Type': 'application/json',
-//                 },
-//                 body: JSON.stringify({ action: 'progress' }),
-//             });
+    //         const data = await response.json();
+    //         console.log('TCC extraction started for missing certificates:', data);
+    //         setProcessingStatus('complete');
 
-//             if (progressResponse.ok) {
-//                 const progressData = await progressResponse.json();
-//                 console.log('Progress:', progressData);
+    //         // Poll for progress updates
+    //         const pollInterval = setInterval(async () => {
+    //             const progressResponse = await fetch('/api/tcc-extractor', {
+    //                 method: 'POST',
+    //                 headers: {
+    //                     'Content-Type': 'application/json',
+    //                 },
+    //                 body: JSON.stringify({ action: 'progress' }),
+    //             });
 
-//                 if (!progressData.isRunning) {
-//                     clearInterval(pollInterval);
-//                     setIsProcessing(false);
-//                     fetchReports(); // Refresh data once complete
-//                 }
-//             }
-//         }, 5000); // Poll every 5 seconds
+    //             if (progressResponse.ok) {
+    //                 const progressData = await progressResponse.json();
+    //                 console.log('Progress:', progressData);
 
-//     } catch (error) {
-//         console.error('Error running TCC extraction for missing certificates:', error);
-//         setProcessingStatus('error');
-//         setIsProcessing(false);
-//     }
-// };
+    //                 if (!progressData.isRunning) {
+    //                     clearInterval(pollInterval);
+    //                     setIsProcessing(false);
+    //                     fetchReports(); // Refresh data once complete
+    //                 }
+    //             }
+    //         }, 5000); // Poll every 5 seconds
 
-// Function to run TCC extraction for a single company
-// const handleRunSingle = async (companyId) => {
-//     try {
-//         // Call the TCC extractor API for a single company
-//         const response = await fetch('/api/tcc-extractor', {
-//             method: 'POST',
-//             headers: {
-//                 'Content-Type': 'application/json',
-//             },
-//             body: JSON.stringify({
-//                 action: 'start',
-//                 companies: [companyId]
-//             }),
-//         });
+    //     } catch (error) {
+    //         console.error('Error running TCC extraction for missing certificates:', error);
+    //         setProcessingStatus('error');
+    //         setIsProcessing(false);
+    //     }
+    // };
 
-//         if (!response.ok) {
-//             throw new Error(`Error starting TCC extraction: ${response.statusText}`);
-//         }
+    // Function to run TCC extraction for a single company
+    // const handleRunSingle = async (companyId) => {
+    //     try {
+    //         // Call the TCC extractor API for a single company
+    //         const response = await fetch('/api/tcc-extractor', {
+    //             method: 'POST',
+    //             headers: {
+    //                 'Content-Type': 'application/json',
+    //             },
+    //             body: JSON.stringify({
+    //                 action: 'start',
+    //                 companies: [companyId]
+    //             }),
+    //         });
 
-//         const data = await response.json();
-//         console.log(`TCC extraction started for company ${companyId}:`, data);
+    //         if (!response.ok) {
+    //             throw new Error(`Error starting TCC extraction: ${response.statusText}`);
+    //         }
 
-//         // Poll for progress once
-//         setTimeout(async () => {
-//             const progressResponse = await fetch('/api/tcc-extractor', {
-//                 method: 'POST',
-//                 headers: {
-//                     'Content-Type': 'application/json',
-//                 },
-//                 body: JSON.stringify({ action: 'progress' }),
-//             });
+    //         const data = await response.json();
+    //         console.log(`TCC extraction started for company ${companyId}:`, data);
 
-//             if (progressResponse.ok) {
-//                 fetchReports(); // Refresh data
-//             }
-//         }, 5000);
+    //         // Poll for progress once
+    //         setTimeout(async () => {
+    //             const progressResponse = await fetch('/api/tcc-extractor', {
+    //                 method: 'POST',
+    //                 headers: {
+    //                     'Content-Type': 'application/json',
+    //                 },
+    //                 body: JSON.stringify({ action: 'progress' }),
+    //             });
 
-//     } catch (error) {
-//         console.error(`Error running TCC extraction for company ${companyId}:`, error);
-//     }
-// };
+    //             if (progressResponse.ok) {
+    //                 fetchReports(); // Refresh data
+    //             }
+    //         }, 5000);
 
-// Helper function to format dates consistently - used throughout the component
-const formatDateWithTime = (dateString) => {
-    try {
-        // Check if it's an old format date (with dots)
-        if (typeof dateString === 'string' && dateString.includes('.')) {
-            console.log(`Converting old date format: ${dateString}`);
-            try {
-                // Parse old format (DD.MM.YYYY)
-                const [day, month, year] = dateString.split('.');
-                // Create a standardized format with default time
-                return `${day.padStart(2, '0')}/${month.padStart(2, '0')}/${year} | 12:00:00 PM`;
-            } catch (error) {
-                console.error(`Error converting old date format: ${dateString}`, error);
-                // Fall through to standard processing
-            }
-        }
+    //     } catch (error) {
+    //         console.error(`Error running TCC extraction for company ${companyId}:`, error);
+    //     }
+    // };
 
-        // Check if it's already in the correct format (DD/MM/YYYY | HH:MM:SS AM/PM)
-        if (typeof dateString === 'string' && dateString.includes('/') && dateString.includes('|')) {
-            // Validate the format
-            const parts = dateString.split(' | ');
-            if (parts.length === 2) {
-                const datePart = parts[0];
-                const timePart = parts[1];
-                
-                // Validate date part (DD/MM/YYYY)
-                const dateComponents = datePart.split('/');
-                if (dateComponents.length === 3) {
-                    // It's already in the correct format
-                    return dateString;
+    // Helper function to format dates consistently - used throughout the component
+    const formatDateWithTime = (dateString) => {
+        try {
+            // Check if it's an old format date (with dots)
+            if (typeof dateString === 'string' && dateString.includes('.')) {
+                console.log(`Converting old date format: ${dateString}`);
+                try {
+                    // Parse old format (DD.MM.YYYY)
+                    const [day, month, year] = dateString.split('.');
+                    // Create a standardized format with default time
+                    return `${day.padStart(2, '0')}/${month.padStart(2, '0')}/${year} | 12:00:00 PM`;
+                } catch (error) {
+                    console.error(`Error converting old date format: ${dateString}`, error);
+                    // Fall through to standard processing
                 }
             }
-        }
 
-        // Standard date parsing for other formats
-        const date = new Date(dateString);
-        if (isNaN(date.getTime())) {
+            // Check if it's already in the correct format (DD/MM/YYYY | HH:MM:SS AM/PM)
+            if (typeof dateString === 'string' && dateString.includes('/') && dateString.includes('|')) {
+                // Validate the format
+                const parts = dateString.split(' | ');
+                if (parts.length === 2) {
+                    const datePart = parts[0];
+                    const timePart = parts[1];
+
+                    // Validate date part (DD/MM/YYYY)
+                    const dateComponents = datePart.split('/');
+                    if (dateComponents.length === 3) {
+                        // It's already in the correct format
+                        return dateString;
+                    }
+                }
+            }
+
+            // Standard date parsing for other formats
+            const date = new Date(dateString);
+            if (isNaN(date.getTime())) {
+                return dateString?.toString() || 'N/A';
+            }
+
+            // Format dd/mm/yyyy part
+            const day = date.getDate().toString().padStart(2, '0');
+            const month = (date.getMonth() + 1).toString().padStart(2, '0');
+            const year = date.getFullYear();
+            const datePart = `${day}/${month}/${year}`;
+
+            // Format time part consistently
+            const hours = date.getHours();
+            const minutes = date.getMinutes().toString().padStart(2, '0');
+            const seconds = date.getSeconds().toString().padStart(2, '0');
+            const ampm = hours >= 12 ? 'PM' : 'AM';
+            const formattedHours = (hours % 12 || 12).toString().padStart(2, '0');
+
+            const timePart = `${formattedHours}:${minutes}:${seconds} ${ampm}`;
+
+            // Always combine date and time with pipe separator
+            return `${datePart} | ${timePart}`;
+        } catch (error) {
+            console.error('Error formatting date:', error);
             return dateString?.toString() || 'N/A';
         }
+    };
 
-        // Format dd/mm/yyyy part
-        const day = date.getDate().toString().padStart(2, '0');
-        const month = (date.getMonth() + 1).toString().padStart(2, '0');
-        const year = date.getFullYear();
-        const datePart = `${day}/${month}/${year}`;
-        
-        // Format time part consistently
-        const hours = date.getHours();
-        const minutes = date.getMinutes().toString().padStart(2, '0');
-        const seconds = date.getSeconds().toString().padStart(2, '0');
-        const ampm = hours >= 12 ? 'PM' : 'AM';
-        const formattedHours = (hours % 12 || 12).toString().padStart(2, '0');
+    const exportToExcel = async () => {
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet('TCC Reports');
 
-        const timePart = `${formattedHours}:${minutes}:${seconds} ${ampm}`;
-
-        // Always combine date and time with pipe separator
-        return `${datePart} | ${timePart}`;
-    } catch (error) {
-        console.error('Error formatting date:', error);
-        return dateString?.toString() || 'N/A';
-    }
-};
-
-const exportToExcel = async () => {
-    const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet('TCC Reports');
-    
-    // Add headers
+        // Add headers
         const headers = ['Index', 'Company Name', 'KRA PIN', 'Status', 'Expiry Date', 'Last Extracted', 'TCC Cert', 'Screenshot'];
         const headerRow = worksheet.addRow(headers);
 

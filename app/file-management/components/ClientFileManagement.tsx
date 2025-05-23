@@ -4,21 +4,21 @@ import React, { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast, Toaster } from 'react-hot-toast';
-import SearchBar from '../components/SearchBar';
-import ExportDialog from '../components/ExportDialog';
-import MonthlyTable from '../components/MonthlyTable';
-import DetailedView from '../components/DetailedView';
-import AllDataView from '../components/AllDataView';
+import SearchBar from './SearchBar';
+import ExportDialog from './ExportDialog';
+import MonthlyTable from './MonthlyTable';
+import DetailedView from './DetailedView';
+import AllDataView from './AllDataView';
 import { Company, ChecklistItem, MonthlyTableProps } from './MonthlyTable.types';
 
 // Define types for better type safety
 interface ClientFileManagementProps {
-  filteredCompanies: Company[];
+    filteredCompanies: Company[];
 }
 
 const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+    process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
 );
 
 export default function ClientFileManagement({ filteredCompanies = [] as Company[] }: ClientFileManagementProps) {
@@ -69,10 +69,10 @@ export default function ClientFileManagement({ filteredCompanies = [] as Company
     );
 
     const updateClientStatus = async (
-        companyName: string, 
-        year: string, 
-        month: string, 
-        status: Record<string, any>, 
+        companyName: string,
+        year: string,
+        month: string,
+        status: Record<string, any>,
         kraPin: string
     ) => {
         const updatedFileManagement = {
@@ -82,8 +82,8 @@ export default function ClientFileManagement({ filteredCompanies = [] as Company
                 [month]: {
                     ...checklist[companyName]?.file_management?.[year]?.[month],
                     ...status,
-                    filesDelivered: status.filesDelivered !== undefined 
-                        ? status.filesDelivered 
+                    filesDelivered: status.filesDelivered !== undefined
+                        ? status.filesDelivered
                         : checklist[companyName]?.file_management?.[year]?.[month]?.filesDelivered
                 }
             }
