@@ -52,7 +52,10 @@ export function WHVATCompanyTable({ selectedCompanies, setSelectedCompanies, fil
         // Fetch companies from acc_portal_company_duplicate table
         const { data, error } = await supabase
           .from('acc_portal_company_duplicate')
-          .select('id, company_name, kra_pin, acc_client_effective_from, acc_client_effective_to, audit_client_effective_from, audit_client_effective_to');
+          .select('id, company_name, kra_pin, acc_client_effective_from, acc_client_effective_to, audit_client_effective_from, audit_client_effective_to')
+          .order('company_name');
+
+        console.log(`Initial database query returned ${data?.length || 0} companies`);
 
         if (error) {
           throw error;
@@ -60,29 +63,34 @@ export function WHVATCompanyTable({ selectedCompanies, setSelectedCompanies, fil
 
         // Process and format company data
         const processedData = data?.map(company => {
-          // Determine if company is active (either acc or audit client active now)
-          // A company is active if:
-          // 1. Both effective dates exist
-          // 2. effective_from is before or equal to today
-          // 3. effective_to is after or equal to today (i.e., in the future or today)
+          // Consider a company as an active accounting client if:
+          // 1. acc_client_effective_to exists and is in the future
+          // No need to check effective_from for this use case since we want all accounting clients
           const isAccActive = Boolean(
-            company.acc_client_effective_from && 
-            company.acc_client_effective_to && 
-            new Date(company.acc_client_effective_from) <= new Date(currentDate) && 
-            new Date(company.acc_client_effective_to) >= new Date(currentDate)
+            // Check if they have an effective_from date (indicating they are/were accounting clients)
+            company.acc_client_effective_from && (
+              // Either no end date (ongoing relationship) OR end date is in the future
+              !company.acc_client_effective_to ||
+              new Date(company.acc_client_effective_to) >= new Date(currentDate)
+            )
           );
-                             
+
+          // For audit clients, use the same simplified logic
           const isAuditActive = Boolean(
-            company.audit_client_effective_from && 
-            company.audit_client_effective_to && 
-            new Date(company.audit_client_effective_from) <= new Date(currentDate) && 
+            company.audit_client_effective_to &&
             new Date(company.audit_client_effective_to) >= new Date(currentDate)
           );
 
-          // Determine service categories based on active status
+          // Add base categories for all companies plus any active service relationships
           const serviceCategories = [];
+
+          // Always add accounting for companies with non-expired acc_client_effective_to
           if (isAccActive) serviceCategories.push('accounting');
           if (isAuditActive) serviceCategories.push('audit');
+
+          // Only add other categories if they're not from a filtered set
+          // This ensures accounting companies remain visible even if other categories are selected
+          serviceCategories.push('tax', 'sheria', 'immigration');
 
           return {
             id: company.id,
@@ -100,6 +108,14 @@ export function WHVATCompanyTable({ selectedCompanies, setSelectedCompanies, fil
         }) || [];
 
         setCompanies(processedData);
+
+        // Detailed logging to debug the company filtering issue
+        const accActiveCount = processedData.filter(c => c.service_categories.includes('accounting')).length;
+        const auditActiveCount = processedData.filter(c => c.service_categories.includes('audit')).length;
+
+        console.log(`Loaded ${processedData.length} total companies from database`);
+        console.log(`Active accounting clients: ${accActiveCount}`);
+        console.log(`Active audit clients: ${auditActiveCount}`);
       } catch (error) {
         console.error('Error fetching companies:', error);
       } finally {
@@ -119,7 +135,7 @@ export function WHVATCompanyTable({ selectedCompanies, setSelectedCompanies, fil
 
     if (!matchesSearch) return false;
 
-    // Filter by client type
+    // Filter by client type - this is a separate filter from the categories
     if (clientType === 'acc' && !company.service_categories?.includes('accounting')) {
       return false;
     }
@@ -131,6 +147,30 @@ export function WHVATCompanyTable({ selectedCompanies, setSelectedCompanies, fil
     // If no categories are selected or filteredCategories is undefined, show all companies
     if (!filteredCategories || filteredCategories.length === 0) return true;
 
+    // Extract regular categories and status-specific filters
+    const regularCategories = filteredCategories.filter(filter => !filter.includes('_status_'));
+    const statusFilters = filteredCategories.filter(filter => filter.includes('_status_'));
+
+    // If we have regular categories but no status filters, just check if any category matches
+    if (regularCategories.length > 0 && statusFilters.length === 0) {
+      return regularCategories.some(category =>
+        company.service_categories?.includes(category)
+      );
+    }
+
+    // If we have status filters, we need to check each one
+    if (statusFilters.length > 0) {
+      return statusFilters.some(filter => {
+        const [category, _, status] = filter.split('_');
+        const isActive = status === 'active';
+
+        // Check if company belongs to this category and matches the active status
+        return company.service_categories?.includes(category) &&
+          ((isActive && company.status?.is_active === true) ||
+            (!isActive && company.status?.is_active === false));
+      });
+    }
+
     // Check if company matches any of the selected category filters
     return filteredCategories.some(filter => {
       if (filter.includes('_status_')) {
@@ -139,7 +179,8 @@ export function WHVATCompanyTable({ selectedCompanies, setSelectedCompanies, fil
         const isActive = status === 'active';
 
         return company.service_categories?.includes(category) &&
-          company.status?.is_active === isActive;
+          ((isActive && company.status?.is_active === true) ||
+            (!isActive && company.status?.is_active === false));
       } else {
         // Handle regular category filters
         return company.service_categories?.includes(filter);
@@ -259,8 +300,8 @@ export function WHVATCompanyTable({ selectedCompanies, setSelectedCompanies, fil
 
           <div className="flex justify-between items-center">
             <div className="text-sm text-muted-foreground">
-              {selectedCompanies.length > 0 ? 
-                `${selectedCompanies.length} companies selected` : 
+              {selectedCompanies.length > 0 ?
+                `${selectedCompanies.length} companies selected` :
                 `${filteredCompanies.length} companies found`}
             </div>
             <Button

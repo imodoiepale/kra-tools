@@ -52,7 +52,7 @@ export function WHVATCategoryFilters({ setSelectedCategories, className }: Categ
   // Update selected values when category statuses change
   useEffect(() => {
     const newSelectedValues: string[] = [];
-    
+
     // Process selected categories with their status
     Object.entries(categoryStatuses).forEach(([category, status]) => {
       if (status !== 'all') {
@@ -61,14 +61,14 @@ export function WHVATCategoryFilters({ setSelectedCategories, className }: Categ
         newSelectedValues.push(category);
       }
     });
-    
+
     // Add any plain categories that are selected
     categories.forEach(cat => {
       if (selectedValues.includes(cat.value) && !newSelectedValues.some(v => v.startsWith(cat.value))) {
         newSelectedValues.push(cat.value);
       }
     });
-    
+
     updateSelectedCategories(newSelectedValues);
   }, [categoryStatuses]);
 
@@ -80,7 +80,7 @@ export function WHVATCategoryFilters({ setSelectedCategories, className }: Categ
         return prev.filter(item => item !== category && !item.startsWith(`${category}_status_`));
       }
     });
-    
+
     if (!checked) {
       // Reset status if category is unchecked
       setCategoryStatuses(prev => ({
@@ -116,30 +116,30 @@ export function WHVATCategoryFilters({ setSelectedCategories, className }: Categ
             <CommandEmpty>No categories found.</CommandEmpty>
             <CommandGroup heading="Service Categories">
               {categories.map((category) => {
-                const isSelected = selectedValues.includes(category.value) || 
-                                   selectedValues.some(v => v.startsWith(`${category.value}_status_`));
+                const isSelected = selectedValues.includes(category.value) ||
+                  selectedValues.some(v => v.startsWith(`${category.value}_status_`));
                 const status = categoryStatuses[category.value];
-                
+
                 return (
                   <div key={category.value} className="flex flex-col">
-                    <CommandItem 
+                    <CommandItem
                       value={category.value}
                       className="flex items-center"
-                      onSelect={() => {}}
+                      onSelect={() => { }}
                     >
-                      <div className="flex items-center space-x-2 flex-1" 
-                           onClick={(e) => {
-                             e.stopPropagation();
-                             handleCategorySelect(category.value, !isSelected);
-                           }}>
-                        <Checkbox 
+                      <div className="flex items-center space-x-2 flex-1"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleCategorySelect(category.value, !isSelected);
+                        }}>
+                        <Checkbox
                           checked={isSelected}
-                          onCheckedChange={() => {}}
+                          onCheckedChange={() => { }}
                           className="mr-2"
                         />
                         <span>{category.label}</span>
                       </div>
-                      
+
                       {isSelected && (
                         <div className="flex items-center ml-auto gap-1">
                           {status !== 'all' && (
@@ -150,12 +150,12 @@ export function WHVATCategoryFilters({ setSelectedCategories, className }: Categ
                         </div>
                       )}
                     </CommandItem>
-                    
+
                     {isSelected && (
                       <div className="ml-8 mb-2">
                         {statuses.map((statusOption) => (
                           <div key={statusOption.value} className="flex items-center space-x-2 py-1">
-                            <Checkbox 
+                            <Checkbox
                               checked={status === statusOption.value}
                               onCheckedChange={(checked) => {
                                 if (checked) {
@@ -169,24 +169,24 @@ export function WHVATCategoryFilters({ setSelectedCategories, className }: Categ
                         ))}
                       </div>
                     )}
-                    
+
                     <Separator className="my-1" />
                   </div>
                 );
               })}
             </CommandGroup>
-            
+
             <CommandSeparator />
-            
+
             <div className="p-2 flex flex-wrap gap-1">
               {Object.entries(categoryStatuses).map(([category, status]) => {
                 if (selectedValues.includes(category) || status !== 'all') {
                   const categoryObj = categories.find(c => c.value === category);
                   return (
                     <Badge key={category} variant="outline" className="flex items-center gap-1">
-                      {categoryObj?.label} 
+                      {categoryObj?.label}
                       {status !== 'all' && `(${status})`}
-                      <button 
+                      <button
                         className="ml-1 ring-offset-background rounded-full outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
                         onClick={() => {
                           handleCategorySelect(category, false);
