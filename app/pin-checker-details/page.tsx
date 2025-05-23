@@ -2,7 +2,7 @@
 // @ts-nocheck
 "use client"
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react' // Added useCallback
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
@@ -13,38 +13,47 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { motion } from "framer-motion"
 import { supabase } from '@/lib/supabase'
-import { EditDatesDialog } from './components/EditDatesDialog'
-import { formatDateForDisplay } from './utils/dateUtils'
+import { EditDatesDialog } from './components/EditDatesDialog' // Make sure this path is correct, might be @/app/...
 
 export default function PinCheckerDetails() {
     const [isChecking, setIsChecking] = useState(false)
-    const [activeTab, setActiveTab] = useState("reports")
+    const [activeTab, setActiveTab] = useState("reports") // Default to reports, can change based on initial check
     const [progress, setProgress] = useState(0)
     const [status, setStatus] = useState("Not Started")
     const [companies, setCompanies] = useState([])
     const [selectedCompanies, setSelectedCompanies] = useState([])
     const [runOption, setRunOption] = useState('all')
-    const [clientType, setClientType] = useState('all')
-    const [selectedCompany, setSelectedCompany] = useState<any>(null);
-    const [editDialogOpen, setEditDialogOpen] = useState(false);
+    const [clientType, setClientType] = useState('acc') // <--- FIXED: Default to 'acc'
+    const [selectedCompany, setSelectedCompany] = useState<any>(null); // Not used in this component, but kept
+    const [editDialogOpen, setEditDialogOpen] = useState(false); // Not used in this component, but kept
 
-    useEffect(() => {
-        fetchCompanies()
-    }, [clientType])
-
-    useEffect(() => {
-        if (isChecking) {
-            const interval = setInterval(checkProgress, 5000)
-            return () => clearInterval(interval)
-        }
-    }, [isChecking])
-
-    const fetchCompanies = async () => {
+    // useCallback for fetchCompanies to avoid re-creation on every render
+    const fetchCompanies = useCallback(async () => {
         const currentDate = new Date().toISOString().split('T')[0]; // Get current date in YYYY-MM-DD format
 
         let query = supabase
             .from('acc_portal_company_duplicate')
-            .select('id, company_name, kra_pin, acc_client_effective_from, acc_client_effective_to, audit_client_effective_from, audit_client_effective_to');
+            .select('id, company_name, kra_pin, acc_client_effective_from, acc_client_effective_to, audit_client_effective_from, audit_client_effective_to')
+            .order('company_name', { ascending: true }); // Order for consistent display
+
+        // <--- FIXED: Filter data directly in Supabase query for efficiency
+        if (clientType === 'all') {
+            query = query.or(
+                `acc_client_effective_from.lte.${currentDate},acc_client_effective_to.gte.${currentDate}`,
+                `audit_client_effective_from.lte.${currentDate},audit_client_effective_to.gte.${currentDate}`
+            );
+        } else if (clientType === 'acc') {
+            query = query.and(
+                `acc_client_effective_from.lte.${currentDate}`,
+                `acc_client_effective_to.gte.${currentDate}`
+            );
+        } else if (clientType === 'audit') {
+            query = query.and(
+                `audit_client_effective_from.lte.${currentDate}`,
+                `audit_client_effective_to.gte.${currentDate}`
+            );
+        }
+        // Removed the redundant JS-side filtering. Supabase handles it now.
 
         const { data, error } = await query;
 
@@ -53,33 +62,15 @@ export default function PinCheckerDetails() {
             return;
         }
 
-        // Filter the data in JavaScript
-        const filteredData = data?.filter(company => {
-            if (clientType === 'all') {
-                // For 'all', show any company that is active in either acc or audit
-                return (
-                    (company.acc_client_effective_from <= currentDate && company.acc_client_effective_to >= currentDate) ||
-                    (company.audit_client_effective_from <= currentDate && company.audit_client_effective_to >= currentDate)
-                );
-            } else if (clientType === 'acc') {
-                return company.acc_client_effective_from <= currentDate && company.acc_client_effective_to >= currentDate;
-            } else if (clientType === 'audit') {
-                return company.audit_client_effective_from <= currentDate && company.audit_client_effective_to >= currentDate;
-            } else {
-                // All clients - either ACC or Audit
-                const isAccClient = company.acc_client_effective_from <= currentDate && company.acc_client_effective_to >= currentDate;
-                const isAuditClient = company.audit_client_effective_from <= currentDate && company.audit_client_effective_to >= currentDate;
-                return isAccClient || isAuditClient;
-            }
-        });
+        console.log(`Fetched companies for ${clientType} client type:`, data);
+        setCompanies(data || []);
+        setSelectedCompanies([]); // Clear selected companies when client type changes
+    }, [clientType]); // Only re-create if clientType changes
 
-        console.log('Filtered companies:', filteredData); // Debug log
-        setCompanies(filteredData || []);
-    };
-
-    const checkProgress = async () => {
+    // <--- FIXED: Initial fetch of progress status on component mount
+    const checkProgress = useCallback(async () => {
         try {
-            const response = await fetch('/api/pin-checker-details', {
+            const response = await fetch('/api/pin-checker-details', { // Ensure this is the correct API endpoint
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ action: "getProgress" })
@@ -88,16 +79,33 @@ export default function PinCheckerDetails() {
             const data = await response.json();
             setProgress(data.progress);
             setStatus(data.status);
-            setIsChecking(data.status === "Running");
+            setIsChecking(data.status === "Running"); // Set isChecking based on fetched status
             if (data.status === "Running") {
                 setActiveTab("running");
-            } else if (data.status === "Completed") {
+            } else if (data.status === "Completed" || data.status === "Stopped" || data.status === "Error") {
                 setActiveTab("reports");
             }
         } catch (error) {
             console.error('Error checking progress:', error);
+            setIsChecking(false); // Assume not checking on error
+            setStatus("Error fetching progress");
         }
-    };
+    }, []); // No dependencies, runs once on mount and can be called explicitly
+
+    // Run initial fetch of companies and progress
+    useEffect(() => {
+        fetchCompanies();
+        checkProgress(); // <--- FIXED: Check progress on mount
+    }, [fetchCompanies, checkProgress]); // Dependencies to ensure they are fetched
+
+    // Polling for progress (only if isChecking is true)
+    useEffect(() => {
+        let interval: NodeJS.Timeout;
+        if (isChecking) {
+            interval = setInterval(checkProgress, 5000); // Poll every 5 seconds
+        }
+        return () => clearInterval(interval); // Clean up interval on unmount or if isChecking becomes false
+    }, [isChecking, checkProgress]); // <--- FIXED: Poll only if isChecking
 
     // Reset any existing automation status before starting a new one
     const resetAutomationStatus = async () => {
@@ -109,7 +117,7 @@ export default function PinCheckerDetails() {
                     action: "stop"
                 })
             });
-            
+
             if (!response.ok) {
                 console.warn('Failed to reset automation status, but continuing anyway');
             } else {
@@ -140,7 +148,7 @@ export default function PinCheckerDetails() {
 
             // Determine which IDs to send based on the run option
             const idsToSend = runOption === 'selected' ? selectedCompanies : companies.map(company => company.id);
-            
+
             console.log('Sending request with:', {
                 action: "start",
                 runOption,
@@ -157,16 +165,22 @@ export default function PinCheckerDetails() {
                 })
             })
 
-            if (!response.ok) throw new Error('API request failed')
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(`API request failed: ${errorData.message || response.statusText}`);
+            }
 
             const data = await response.json()
             console.log('PIN Checker Details started:', data)
             setIsChecking(true)
             setStatus("Running")
             setActiveTab("running")
+            setProgress(0); // Reset progress on start
         } catch (error) {
             console.error('Error starting PIN Checker Details:', error)
-            alert('Failed to start PIN Checker Details. Please try again.')
+            alert(`Failed to start PIN Checker Details. ${error.message}. Please try again.`)
+            setIsChecking(false); // Reset state if start fails
+            setStatus("Not Started / Error");
         }
     }
 
@@ -190,6 +204,7 @@ export default function PinCheckerDetails() {
             setIsChecking(false)
             setStatus("Stopped")
             alert('Automation stopped successfully.')
+            checkProgress(); // Immediately check progress after stopping to update state
         } catch (error) {
             console.error('Error stopping automation:', error)
             alert('Failed to stop automation. Please try again.')
@@ -228,7 +243,7 @@ export default function PinCheckerDetails() {
                                             <label className="block mb-2">Client Type:</label>
                                             <Select value={clientType} onValueChange={(value) => {
                                                 setClientType(value)
-                                                setSelectedCompanies([])
+                                                setSelectedCompanies([]) // Clear selected companies when client type changes
                                             }}>
                                                 <SelectTrigger className="w-[180px]">
                                                     <SelectValue placeholder="Select client type" />
@@ -269,7 +284,7 @@ export default function PinCheckerDetails() {
                                                             <TableRow>
                                                                 <TableHead className="w-[50px] sticky top-0 bg-white">
                                                                     <Checkbox
-                                                                        checked={selectedCompanies.length === companies.length}
+                                                                        checked={selectedCompanies.length === companies.length && companies.length > 0}
                                                                         onCheckedChange={(checked) => {
                                                                             if (checked) {
                                                                                 setSelectedCompanies(companies.map(c => c.id))

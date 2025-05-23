@@ -1,3 +1,4 @@
+
 // @ts-nocheck
 'use client'
 
@@ -59,7 +60,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
-import ClientCategoryFilter from '@/components/ClientCategoryFilter-updated-ui';
+import ClientCategoryFilter from '@/components/ClientCategoryFilter-updated-ui'; // Assuming this path is correct
 
 // Icons
 import {
@@ -108,8 +109,8 @@ const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.
 // ========================== UTILITY FUNCTIONS ==========================
 // Format amount as KSH with proper formatting
 const formatAmount = (amount) => {
-    if (amount === undefined || amount === null) return 'KSH 0.00';
-    return `KSH ${Number(amount).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
+    if (amount === undefined || amount === null || isNaN(amount)) return 'KSH 0.00';
+    return `KSH ${Number(amount).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")} `;
 };
 
 // Format date to readable format
@@ -119,9 +120,13 @@ const formatDate = (dateString) => {
     // Try to parse as ISO first
     let date = parseISO(dateString);
 
-    // If not valid, try other formats
+    // If not valid, try dd/MM/yyyy
     if (!isValid(date)) {
         date = parse(dateString, 'dd/MM/yyyy', new Date());
+    }
+    // If still not valid, try yyyy-MM-dd
+    if (!isValid(date)) {
+        date = parse(dateString, 'yyyy-MM-dd', new Date());
     }
 
     if (!isValid(date)) {
@@ -150,6 +155,24 @@ const getUniqueFilterOptions = (data, columnIndex) => {
     return Array.from(unique).sort();
 };
 
+// Helper function to determine client status
+const calculateClientStatus = (fromDateStr, toDateStr) => {
+    if (!fromDateStr || !toDateStr) return 'missing'; // Or 'inactive' based on your logic
+
+    const fromDate = parse(fromDateStr, 'dd/MM/yyyy', new Date());
+    const toDate = parse(toDateStr, 'dd/MM/yyyy', new Date());
+    const today = new Date();
+
+    if (!isValid(fromDate) || !isValid(toDate)) return 'missing';
+
+    // Set time to start/end of day for accurate range comparison
+    fromDate.setHours(0, 0, 0, 0);
+    toDate.setHours(23, 59, 59, 999);
+    today.setHours(0, 0, 0, 0);
+
+    return today >= fromDate && today <= toDate ? 'active' : 'inactive';
+};
+
 // ========================== REUSABLE COMPONENTS ==========================
 // Icons with labels for better visualization
 const IconLabel = ({ icon: Icon, label, className }) => (
@@ -165,75 +188,80 @@ const DateRangePicker = ({ value, onChange }) => {
         from: value?.from || undefined,
         to: value?.to || undefined,
     });
+    const [popoverOpen, setPopoverOpen] = useState(false);
 
     useEffect(() => {
-        if (date.from && date.to) {
-            onChange(date);
-        }
+        setDate({ from: value?.from || undefined, to: value?.to || undefined });
+    }, [value]);
+
+    const handleApply = useCallback(() => {
+        onChange(date);
+        setPopoverOpen(false);
     }, [date, onChange]);
 
+    const handleReset = useCallback(() => {
+        setDate({ from: undefined, to: undefined });
+        onChange({ from: null, to: null });
+        setPopoverOpen(false);
+    }, [onChange]);
+
     return (
-        <div className="grid gap-2">
-            <Popover>
-                <PopoverTrigger asChild>
-                    <Button
-                        id="date"
-                        variant="outline"
-                        className={cn(
-                            "w-full justify-start text-left bg-white border-slate-200 hover:bg-slate-50",
-                            !date && "text-muted-foreground"
-                        )}
-                    >
-                        <CalendarIcon className="mr-2 h-4 w-4 text-slate-500" />
-                        {date?.from ? (
-                            date.to ? (
-                                <>
-                                    {format(date.from, "MMM d, yyyy")} - {format(date.to, "MMM d, yyyy")}
-                                </>
-                            ) : (
-                                format(date.from, "MMM d, yyyy")
-                            )
+        <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
+            <PopoverTrigger asChild>
+                <Button
+                    id="date"
+                    variant="outline"
+                    className={cn(
+                        "w-full justify-start text-left bg-white border-slate-200 hover:bg-slate-50",
+                        !date.from && "text-muted-foreground"
+                    )}
+                >
+                    <CalendarIcon className="mr-2 h-4 w-4 text-slate-500" />
+                    {date?.from ? (
+                        date.to ? (
+                            <>
+                                {format(date.from, "MMM d, yyyy")} - {format(date.to, "MMM d, yyyy")}
+                            </>
                         ) : (
-                            <span className="text-slate-500">Select date range</span>
-                        )}
+                            format(date.from, "MMM d, yyyy")
+                        )
+                    ) : (
+                        <span className="text-slate-500">Select date range</span>
+                    )}
+                </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="start">
+                <div className="border-b border-slate-200 bg-slate-50 p-3">
+                    <h3 className="text-sm font-medium">Select Date Range</h3>
+                    <p className="text-xs text-slate-500">Choose start and end dates</p>
+                </div>
+                <Calendar
+                    initialFocus
+                    mode="range"
+                    defaultMonth={date?.from}
+                    selected={date}
+                    onSelect={setDate}
+                    numberOfMonths={2}
+                    className="p-3"
+                />
+                <div className="flex items-center justify-between border-t border-slate-200 p-3">
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleReset}
+                    >
+                        Reset
                     </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
-                    <div className="border-b border-slate-200 bg-slate-50 p-3">
-                        <h3 className="text-sm font-medium">Select Date Range</h3>
-                        <p className="text-xs text-slate-500">Choose start and end dates</p>
-                    </div>
-                    <Calendar
-                        initialFocus
-                        mode="range"
-                        defaultMonth={date?.from}
-                        selected={date}
-                        onSelect={setDate}
-                        numberOfMonths={2}
-                        className="p-3"
-                    />
-                    <div className="flex items-center justify-between border-t border-slate-200 p-3">
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setDate({ from: undefined, to: undefined })}
-                        >
-                            Reset
-                        </Button>
-                        <Button
-                            size="sm"
-                            onClick={() => {
-                                if (date.from && date.to) {
-                                    document.querySelector('[data-state="open"][role="dialog"]')?.querySelector('[role="button"]')?.click();
-                                }
-                            }}
-                        >
-                            Apply
-                        </Button>
-                    </div>
-                </PopoverContent>
-            </Popover>
-        </div>
+                    <Button
+                        size="sm"
+                        onClick={handleApply}
+                        disabled={!date.from || !date.to}
+                    >
+                        Apply
+                    </Button>
+                </div>
+            </PopoverContent>
+        </Popover>
     );
 };
 
@@ -242,10 +270,14 @@ const MonthYearSelector = ({ onSelect, selectedYear, selectedMonth }) => {
     const [year, setYear] = useState(selectedYear || new Date().getFullYear());
     const [month, setMonth] = useState(selectedMonth || null);
 
-    const years = Array.from(
-        { length: new Date().getFullYear() - 2013 + 1 },
-        (_, i) => 2013 + i
-    ).reverse();
+    const years = useMemo(() => {
+        const currentYear = new Date().getFullYear();
+        const yearsArray = Array.from(
+            { length: currentYear - 2013 + 1 },
+            (_, i) => 2013 + i
+        ).reverse();
+        return yearsArray;
+    }, []);
 
     const months = [
         "January", "February", "March", "April",
@@ -253,17 +285,18 @@ const MonthYearSelector = ({ onSelect, selectedYear, selectedMonth }) => {
         "September", "October", "November", "December"
     ];
 
-    const handleSelect = (selectedMonth) => {
-        setMonth(selectedMonth);
-        onSelect(year, selectedMonth);
-    };
+    const handleSelectMonth = useCallback((selectedMonthIndex) => {
+        setMonth(selectedMonthIndex);
+        onSelect(year, selectedMonthIndex);
+    }, [year, onSelect]);
 
-    const handleYearChange = (newYear) => {
-        setYear(parseInt(newYear));
+    const handleYearChange = useCallback((newYearStr) => {
+        const newYear = parseInt(newYearStr);
+        setYear(newYear);
         if (month) {
-            onSelect(parseInt(newYear), month);
+            onSelect(newYear, month);
         }
-    };
+    }, [month, onSelect]);
 
     return (
         <div className="w-full space-y-4">
@@ -293,7 +326,7 @@ const MonthYearSelector = ({ onSelect, selectedYear, selectedMonth }) => {
                             "h-10 justify-center",
                             month === index + 1 ? "bg-blue-600 hover:bg-blue-700" : "bg-white"
                         )}
-                        onClick={() => handleSelect(index + 1)}
+                        onClick={() => handleSelectMonth(index + 1)}
                     >
                         {m.substring(0, 3)}
                     </Button>
@@ -304,16 +337,30 @@ const MonthYearSelector = ({ onSelect, selectedYear, selectedMonth }) => {
 };
 
 // Advanced Export Options Dialog
-const ExportOptionsDialog = ({ data, company, onExport }) => {
+const ExportOptionsDialog = ({ data, companyName, onExport }) => {
     const [exportType, setExportType] = useState("all");
     const [exportRange, setExportRange] = useState("all");
     const [includeSuppliers, setIncludeSuppliers] = useState(true);
     const [includeCustomers, setIncludeCustomers] = useState(true);
     const [dateRange, setDateRange] = useState({ from: null, to: null });
     const [exportFormat, setExportFormat] = useState("xlsx");
+    const [dialogOpen, setDialogOpen] = useState(false);
+
+
+    const handleExportClick = useCallback(() => {
+        onExport({
+            type: exportType,
+            range: exportRange,
+            includeSuppliers,
+            includeCustomers,
+            dateRange,
+            format: exportFormat
+        });
+        setDialogOpen(false); // Close dialog on export
+    }, [exportType, exportRange, includeSuppliers, includeCustomers, dateRange, exportFormat, onExport]);
 
     return (
-        <Dialog>
+        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
                 <Button>
                     <Download className="mr-2 h-4 w-4" /> Export
@@ -323,7 +370,7 @@ const ExportOptionsDialog = ({ data, company, onExport }) => {
                 <DialogHeader>
                     <DialogTitle>Export Options</DialogTitle>
                     <DialogDescription>
-                        Customize your export for {company || "this data"}
+                        Customize your export for {companyName || "this data"}
                     </DialogDescription>
                 </DialogHeader>
 
@@ -331,7 +378,7 @@ const ExportOptionsDialog = ({ data, company, onExport }) => {
                     <div className="space-y-2">
                         <h3 className="text-sm font-medium">Data Selection</h3>
                         <RadioGroup
-                            defaultValue={exportType}
+                            value={exportType}
                             onValueChange={setExportType}
                             className="flex flex-col space-y-2"
                         >
@@ -401,7 +448,7 @@ const ExportOptionsDialog = ({ data, company, onExport }) => {
                     <div className="space-y-2">
                         <h3 className="text-sm font-medium">Time Range</h3>
                         <RadioGroup
-                            defaultValue={exportRange}
+                            value={exportRange}
                             onValueChange={setExportRange}
                             className="flex flex-col space-y-2"
                         >
@@ -411,7 +458,7 @@ const ExportOptionsDialog = ({ data, company, onExport }) => {
                             </div>
                             <div className="flex items-center space-x-2">
                                 <RadioGroupItem value="current" id="t2" />
-                                <Label htmlFor="t2">Current Selection</Label>
+                                <Label htmlFor="t2">Current View (Filtered)</Label>
                             </div>
                             <div className="flex items-center space-x-2">
                                 <RadioGroupItem value="custom" id="t3" />
@@ -432,7 +479,7 @@ const ExportOptionsDialog = ({ data, company, onExport }) => {
                     <div className="space-y-2">
                         <h3 className="text-sm font-medium">Format</h3>
                         <RadioGroup
-                            defaultValue={exportFormat}
+                            value={exportFormat}
                             onValueChange={setExportFormat}
                             className="flex space-x-4"
                         >
@@ -458,14 +505,7 @@ const ExportOptionsDialog = ({ data, company, onExport }) => {
                     <DialogClose asChild>
                         <Button variant="outline">Cancel</Button>
                     </DialogClose>
-                    <Button onClick={() => onExport({
-                        type: exportType,
-                        range: exportRange,
-                        includeSuppliers,
-                        includeCustomers,
-                        dateRange,
-                        format: exportFormat
-                    })}>
+                    <Button onClick={handleExportClick}>
                         <Download className="mr-2 h-4 w-4" />
                         Export
                     </Button>
@@ -475,69 +515,31 @@ const ExportOptionsDialog = ({ data, company, onExport }) => {
     );
 };
 
-const debugCompanyData = () => {
-    console.log('=== DEBUG COMPANY DATA ===');
-    console.log('selectedCompany:', selectedCompany);
-    console.log('companyData:', companyData);
-    console.log('filteredData:', filteredData);
-    console.log('activeTab:', activeTab);
-    console.log('selectedMonthKey:', selectedMonthKey);
-    console.log('searchTerm:', searchTerm);
-    console.log('dateRange:', dateRange);
-
-    if (companyData) {
-        console.log('companyData keys:', Object.keys(companyData));
-        Object.entries(companyData).forEach(([key, data]) => {
-            console.log(`Month ${key}:`, {
-                hasTableData: !!data.tableData,
-                tableDataLength: data.tableData?.length || 0,
-                extractionDate: data.extractionDate
-            });
-        });
-    }
-
-    if (filteredData) {
-        console.log('filteredData keys:', Object.keys(filteredData));
-        Object.entries(filteredData).forEach(([key, data]) => {
-            console.log(`Filtered Month ${key}:`, {
-                hasTableData: !!data.tableData,
-                tableDataLength: data.tableData?.length || 0
-            });
-        });
-    }
-};
-
 // Enhanced data table with advanced features
 export function EnhancedDataTable({
     columns,
-    data,
-    searchPlaceholder = "Search...",
-    onSearch,
+    data, // Data is already filtered/searched by parent
+    searchPlaceholder = "Search...", // This is now just a visual placeholder
     pagination = true,
-    additionalFilters = [],
-    monthLabel,
+    additionalFilters = [], // Custom components for filters (like search input)
+    monthLabel, // Specific label for month-wise view
     onRowClick,
     isLoading = false,
     emptyMessage = "No results found",
     showColumnToggle = true,
     initialPageSize = 10,
-    tableMaxHeight = "max-h-[600px]", // Added a prop for max table height, defaulting to 600px
+    tableMaxHeight = "max-h-[600px]",
+    // NEW: Pass page-related state/setters if parent handles pagination
+    // onPageIndexChange, onPageSizeChange, currentPageIndex, currentPageSize, totalRowCount
 }) {
     const [sorting, setSorting] = useState([]);
-    const [columnFilters, setColumnFilters] = useState([]);
+    const [columnFilters, setColumnFilters] = useState([]); // This will likely be empty if parent handles filtering
     const [columnVisibility, setColumnVisibility] = useState({});
     const [rowSelection, setRowSelection] = useState({});
-    const [searchValue, setSearchValue] = useState("");
     const [pageSize, setPageSize] = useState(initialPageSize);
 
-    const handleSearch = (e) => {
-        const value = e.target.value;
-        setSearchValue(value);
-        if (onSearch) {
-            onSearch(value);
-        }
-    };
-
+    // If the parent component manages the data, ensure it's stable.
+    // The data prop here should be the *final* data for the table.
     const table = useReactTable({
         data,
         columns,
@@ -545,27 +547,23 @@ export function EnhancedDataTable({
         getPaginationRowModel: pagination ? getPaginationRowModel() : undefined,
         onSortingChange: setSorting,
         getSortedRowModel: getSortedRowModel(),
-        onColumnFiltersChange: setColumnFilters,
-        getFilteredRowModel: getFilteredRowModel(),
+        // No need for onColumnFiltersChange and getFilteredRowModel if parent handles all filtering
+        // onColumnFiltersChange: setColumnFilters,
+        // getFilteredRowModel: getFilteredRowModel(),
         onColumnVisibilityChange: setColumnVisibility,
         onRowSelectionChange: setRowSelection,
         state: {
             sorting,
-            columnFilters,
+            columnFilters, // This might be unused
             columnVisibility,
             rowSelection,
             pagination: {
                 pageSize,
-                pageIndex: 0
+                pageIndex: 0 // Always reset to 0 as data is filtered by parent
             }
         },
-        // Manual pagination control is needed if page size changes affect server-side fetching
-        // For client-side pagination, this is fine.
-        // manualPagination: true, // if pagination is server-side
-        // pageCount: calculatedPageCount, // if pagination is server-side
     });
 
-    // Update table page size when local pageSize state changes
     React.useEffect(() => {
         table.setPageSize(pageSize);
     }, [pageSize, table]);
@@ -573,10 +571,10 @@ export function EnhancedDataTable({
 
     const renderLoading = () => (
         <>
-            {Array.from({ length: initialPageSize }).map((_, i) => ( // Use initialPageSize for skeleton rows
-                <TableRow key={`skeleton-${i}`}>
+            {Array.from({ length: initialPageSize }).map((_, i) => (
+                <TableRow key={`skeleton - ${i} `}>
                     {columns.map((col, j) => (
-                        <TableCell key={`skeleton-cell-${i}-${j}`}>
+                        <TableCell key={`skeleton - cell - ${i} -${j} `}>
                             <Skeleton className="h-6 w-full" />
                         </TableCell>
                     ))}
@@ -589,18 +587,9 @@ export function EnhancedDataTable({
         <div className="space-y-3">
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 flex-1">
-                    <div className="relative flex-1 max-w-md">
-                        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
-                        <Input
-                            placeholder={searchPlaceholder}
-                            value={searchValue}
-                            onChange={handleSearch}
-                            className="pl-9 bg-white border-slate-200"
-                        />
-                    </div>
-
+                    {/* The search input is now always passed via additionalFilters from parent */}
                     {additionalFilters.map((filter, index) => (
-                        <React.Fragment key={`filter-${index}`}>
+                        <React.Fragment key={`filter - ${index} `}>
                             {filter}
                         </React.Fragment>
                     ))}
@@ -648,23 +637,19 @@ export function EnhancedDataTable({
                 </div>
             </div>
 
-            {/* MODIFIED: Added overflow-y-auto and tableMaxHeight (e.g., max-h-[600px]) to this div. Removed overflow-hidden. */}
             <div className={cn(
                 "rounded-md border border-slate-200 bg-white overflow-y-auto",
-                tableMaxHeight // Use the prop for max height
+                tableMaxHeight
             )}>
                 <Table>
-                    {/* MODIFIED: Added sticky, top-0, and z-10 to TableHeader */}
                     <TableHeader className="bg-slate-50 sticky top-0 z-10">
                         {table.getHeaderGroups().map((headerGroup) => (
-                            <TableRow key={headerGroup.id} className="border-b-slate-200"> {/* Ensure border color consistency */}
+                            <TableRow key={headerGroup.id} className="border-b-slate-200">
                                 {headerGroup.headers.map((header) => {
                                     return (
                                         <TableHead
                                             key={header.id}
                                             className="font-semibold text-slate-700 whitespace-nowrap h-10 px-4 text-xs"
-                                        // Optional: Add a specific background to TableHead if TableHeader's bg isn't enough or for override
-                                        // style={{ backgroundColor: 'inherit' }} // or specific color like 'var(--slate-50)'
                                         >
                                             {header.isPlaceholder
                                                 ? null
@@ -716,139 +701,116 @@ export function EnhancedDataTable({
                 </Table>
             </div>
 
-            {pagination && ( // Conditionally render pagination
-                <div className="flex flex-col sm:flex-row items-center justify-between gap-2 py-2">
-                    <div className="flex flex-1 items-center text-sm text-slate-500">
-                        {table.getFilteredRowModel().rows.length > 0 ? (
-                            <>
-                                Showing {table.getState().pagination.pageIndex * pageSize + 1} to{" "}
-                                {Math.min(
-                                    (table.getState().pagination.pageIndex + 1) * pageSize,
-                                    table.getFilteredRowModel().rows.length
-                                )}{" "}
-                                of {table.getFilteredRowModel().rows.length} entries
-                            </>
-                        ) : (
-                            "Showing 0 to 0 of 0 entries"
-                        )}
+            {pagination && (
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-2 py-2">
+                <div className="flex flex-1 items-center text-sm text-slate-500">
+                    {table.getFilteredRowModel().rows.length > 0 ? (
+                        <>
+                            Showing {table.getState().pagination.pageIndex * pageSize + 1} to{" "}
+                            {Math.min(
+                                (table.getState().pagination.pageIndex + 1) * pageSize,
+                                table.getFilteredRowModel().rows.length
+                            )}{" "}
+                            of {table.getFilteredRowModel().rows.length} entries
+                        </>
+                    ) : (
+                        "Showing 0 to 0 of 0 entries"
+                    )}
+                </div>
+
+                <div className="flex items-center space-x-6">
+                    <div className="flex items-center space-x-2">
+                        <p className="text-sm font-medium">Rows</p>
+                        <Select
+                            value={`${pageSize} `}
+                            onValueChange={(value) => {
+                                setPageSize(Number(value));
+                            }}
+                        >
+                            <SelectTrigger className="h-8 w-[70px]">
+                                <SelectValue placeholder={pageSize} />
+                            </SelectTrigger>
+                            <SelectContent side="top">
+                                {[10, 20, 30, 50, 100].map((size) => (
+                                    <SelectItem key={size} value={`${size} `}>
+                                        {size}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
                     </div>
 
-                    <div className="flex items-center space-x-6">
-                        <div className="flex items-center space-x-2">
-                            <p className="text-sm font-medium">Rows</p>
-                            <Select
-                                value={`${pageSize}`}
-                                onValueChange={(value) => {
-                                    setPageSize(Number(value));
-                                }}
-                            >
-                                <SelectTrigger className="h-8 w-[70px]">
-                                    <SelectValue placeholder={pageSize} />
-                                </SelectTrigger>
-                                <SelectContent side="top">
-                                    {[10, 20, 30, 50, 100].map((size) => (
-                                        <SelectItem key={size} value={`${size}`}>
-                                            {size}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                        </div>
+                    <div className="flex items-center space-x-2">
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => table.previousPage()}
+                            disabled={!table.getCanPreviousPage()}
+                            className="h-8 w-8 p-0"
+                        >
+                            <span className="sr-only">Previous</span>
+                            <ChevronDown className="h-4 w-4 rotate-90" />
+                        </Button>
+                        <div className="flex items-center gap-1.5">
+                            {table.getPageCount() > 0 && Array.from({ length: Math.min(5, table.getPageCount()) }).map((_, i) => {
+                                const currentPage = table.getState().pagination.pageIndex;
+                                const totalPages = table.getPageCount();
+                                let pageIdxToShow;
 
-                        <div className="flex items-center space-x-2">
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => table.previousPage()}
-                                disabled={!table.getCanPreviousPage()}
-                                className="h-8 w-8 p-0"
-                            >
-                                <span className="sr-only">Previous</span>
-                                <ChevronDown className="h-4 w-4 rotate-90" />
-                            </Button>
-                            <div className="flex items-center gap-1.5">
-                                {table.getPageCount() > 0 && Array.from({ length: Math.min(5, table.getPageCount()) }).map((_, i) => {
-                                    let pageIdxToShow;
-                                    const currentPage = table.getState().pagination.pageIndex;
-                                    const totalPages = table.getPageCount();
-
-                                    if (totalPages <= 5) {
+                                if (totalPages <= 5) {
+                                    pageIdxToShow = i;
+                                } else {
+                                    if (currentPage < 2) { // Near start
                                         pageIdxToShow = i;
-                                    } else {
-                                        // Logic for ellipsis or more complex pagination display
-                                        // Simplified: show current and pages around it
-                                        if (i === 0) pageIdxToShow = 0; // First page
-                                        else if (i === 4) pageIdxToShow = totalPages - 1; // Last page
-                                        else if (i === 1 && currentPage > 1 && currentPage < totalPages - 2) pageIdxToShow = currentPage - 1;
-                                        else if (i === 2) pageIdxToShow = currentPage; // Current page (or middle one)
-                                        else if (i === 3 && currentPage < totalPages - 2 && currentPage > 0) pageIdxToShow = currentPage + 1;
-                                        else { // Fallback or simple sequence if near start/end
-                                            if (currentPage < 2) pageIdxToShow = i;
-                                            else if (currentPage > totalPages - 3) pageIdxToShow = totalPages - (5 - i);
-                                            else pageIdxToShow = currentPage + (i - 2) // Centered around current
-                                        }
+                                    } else if (currentPage > totalPages - 3) { // Near end
+                                        pageIdxToShow = totalPages - (5 - i);
+                                    } else { // Middle
+                                        pageIdxToShow = currentPage - 2 + i;
                                     }
-                                    // Ensure pageIdxToShow is valid
-                                    if (pageIdxToShow < 0 || pageIdxToShow >= totalPages) return null;
-                                    // Avoid duplicate page numbers if logic above results in them
-                                    // This pagination button logic is a bit complex and might need more robust handling for all edge cases
-                                    // For simplicity, the original logic was kept but can be improved.
-                                    // The key is that pageIdxToShow should be a valid index.
-                                    // A simpler approach for limited buttons:
-                                    // const pageIdx = i; // if showing first 5 pages always, or adjust based on current
+                                }
 
-                                    // Using the original logic for page button indices for now:
-                                    pageIdxToShow = i === 0
-                                        ? 0
-                                        : i === 4
-                                            ? table.getPageCount() - 1
-                                            : table.getState().pagination.pageIndex - 2 + i; // This needs care for boundaries
+                                // Ensure page index is within bounds and not negative
+                                if (pageIdxToShow < 0 || pageIdxToShow >= totalPages) return null;
 
-                                    if (pageIdxToShow < 0 || pageIdxToShow >= table.getPageCount()) {
-                                        // Fallback for simple pagination buttons if complex logic fails
-                                        // This section ensures we still render *some* buttons if the above logic is tricky
-                                        if (i < table.getPageCount()) pageIdxToShow = i; else return null;
-                                    }
-                                    // Ensure unique pages if calculated indices overlap, not handled here perfectly.
-
-                                    return (
-                                        <Button
-                                            key={`page-${pageIdxToShow}`}
-                                            variant={table.getState().pagination.pageIndex === pageIdxToShow ? "default" : "outline"}
-                                            size="sm"
-                                            onClick={() => table.setPageIndex(pageIdxToShow)}
-                                            className={cn(
-                                                "h-8 w-8 p-0",
-                                                table.getState().pagination.pageIndex === pageIdxToShow
-                                                    ? "bg-blue-600 text-white hover:bg-blue-700"
-                                                    : "text-slate-600"
-                                            )}
-                                        >
-                                            {pageIdxToShow + 1}
-                                        </Button>
-                                    );
-                                })}
-                            </div>
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => table.nextPage()}
-                                disabled={!table.getCanNextPage()}
-                                className="h-8 w-8 p-0"
-                            >
-                                <span className="sr-only">Next</span>
-                                <ChevronDown className="h-4 w-4 -rotate-90" />
-                            </Button>
+                                return (
+                                    <Button
+                                        key={`page - ${pageIdxToShow} `}
+                                        variant={table.getState().pagination.pageIndex === pageIdxToShow ? "default" : "outline"}
+                                        size="sm"
+                                        onClick={() => table.setPageIndex(pageIdxToShow)}
+                                        className={cn(
+                                            "h-8 w-8 p-0",
+                                            table.getState().pagination.pageIndex === pageIdxToShow
+                                                ? "bg-blue-600 text-white hover:bg-blue-700"
+                                                : "text-slate-600"
+                                        )}
+                                    >
+                                        {pageIdxToShow + 1}
+                                    </Button>
+                                );
+                            })}
                         </div>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => table.nextPage()}
+                            disabled={!table.getCanNextPage()}
+                            className="h-8 w-8 p-0"
+                        >
+                            <span className="sr-only">Next</span>
+                            <ChevronDown className="h-4 w-4 -rotate-90" />
+                        </Button>
                     </div>
                 </div>
-            )}
-        </div>
+            </div>
+        )
+    }
+        </div >
     );
 }
 
 // Month Sidebar Component
-const MonthSidebar = ({ months, selectedMonth, onSelectMonth }) => {
+const MonthSidebar = ({ months, selectedMonthKey, onSelectMonth }) => {
     const [yearFilter, setYearFilter] = useState("all");
 
     // Extract years from month data
@@ -871,19 +833,25 @@ const MonthSidebar = ({ months, selectedMonth, onSelectMonth }) => {
                 const [year] = month.split('-');
                 return year === yearFilter;
             })
-            .sort(([a], [b]) => new Date(b) - new Date(a))
-            .map(([month, data]) => {
-                const [year, monthNum] = month.split('-');
+            .sort(([a], [b]) => new Date(b) - new Date(a)) // Sort by date descending
+            .map(([monthKey, data]) => {
+                const [year, monthNum] = monthKey.split('-');
                 const monthName = getMonthName(monthNum);
                 return {
-                    key: month,
-                    label: `${monthName} ${year}`,
-                    data
+                    key: monthKey,
+                    label: `${monthName} ${year} `,
+                    tableData: data.tableData // Pass the table data directly
                 };
             });
     }, [months, yearFilter]);
 
-    if (years.length === 0) return null;
+    if (years.length === 0 && Object.keys(months || {}).length === 0) {
+        return (
+            <div className="p-4 text-center text-slate-500">
+                No monthly data available.
+            </div>
+        );
+    }
 
     return (
         <div className="space-y-4">
@@ -907,8 +875,8 @@ const MonthSidebar = ({ months, selectedMonth, onSelectMonth }) => {
             <ScrollArea className="h-[600px]">
                 <div className="space-y-1 pr-2">
                     {filteredMonths.map(month => {
-                        const isSelected = selectedMonth === month.key;
-                        const hasData = month.data.tableData && month.data.tableData.length > 0;
+                        const isSelected = selectedMonthKey === month.key;
+                        const hasData = month.tableData && month.tableData.length > 0;
                         return (
                             <button
                                 key={month.key}
@@ -927,7 +895,7 @@ const MonthSidebar = ({ months, selectedMonth, onSelectMonth }) => {
                                 </div>
                                 {hasData ? (
                                     <Badge variant={isSelected ? "outline" : "secondary"} className={isSelected ? "bg-blue-500 text-white" : ""}>
-                                        {month.data.tableData.length}
+                                        {month.tableData.length}
                                     </Badge>
                                 ) : (
                                     <Badge variant="outline" className="bg-red-50 text-red-600 border-red-200">
@@ -985,7 +953,7 @@ const AnimatedStatsCard = ({ title, value, description, icon, trend, trendValue,
 // Year Summary Table component for totals view
 const YearSummaryTable = ({ year, data }) => {
     // Columns for the year summary table
-    const columns = [
+    const columns = useMemo(() => [
         {
             accessorKey: "month",
             header: ({ column }) => (
@@ -1057,29 +1025,31 @@ const YearSummaryTable = ({ year, data }) => {
                 </div>
             ),
         },
-    ];
+    ], []);
 
     // Generate data for each month
-    const monthlyData = [...Array(12)].map((_, index) => {
-        const monthNumber = index + 1;
-        const monthKey = `${year}-${String(monthNumber).padStart(2, '0')}`;
-        const monthData = data[monthKey];
-        const transactions = monthData?.tableData?.length || 0;
-        const hasData = transactions > 0;
-        const amount = hasData ? monthData.tableData.reduce((sum, row) => sum + parseFloat(row[8] || 0), 0) : 0;
+    const monthlyData = useMemo(() => {
+        return [...Array(12)].map((_, index) => {
+            const monthNumber = index + 1;
+            const monthKey = `${year} -${String(monthNumber).padStart(2, '0')} `;
+            const monthData = data[monthKey]; // Data is already filtered by parent
+            const transactions = monthData?.tableData?.length || 0;
+            const hasData = transactions > 0;
+            const amount = hasData ? monthData.tableData.reduce((sum, row) => sum + parseFloat(row[8] || 0), 0) : 0;
 
-        return {
-            month: getMonthName(monthNumber),
-            monthKey,
-            transactions,
-            amount,
-            hasData
-        };
-    });
+            return {
+                month: getMonthName(monthNumber),
+                monthKey,
+                transactions,
+                amount,
+                hasData
+            };
+        });
+    }, [year, data]);
 
     // Calculate year totals
-    const totalTransactions = monthlyData.reduce((sum, month) => sum + month.transactions, 0);
-    const totalAmount = monthlyData.reduce((sum, month) => sum + month.amount, 0);
+    const totalTransactions = useMemo(() => monthlyData.reduce((sum, month) => sum + month.transactions, 0), [monthlyData]);
+    const totalAmount = useMemo(() => monthlyData.reduce((sum, month) => sum + month.amount, 0), [monthlyData]);
 
     return (
         <Card className="overflow-hidden">
@@ -1104,6 +1074,7 @@ const YearSummaryTable = ({ year, data }) => {
                     data={monthlyData}
                     pagination={false}
                     showColumnToggle={false}
+                    tableMaxHeight="max-h-[unset]" // Allow table to size dynamically
                 />
             </CardContent>
         </Card>
@@ -1111,35 +1082,53 @@ const YearSummaryTable = ({ year, data }) => {
 };
 
 // Advanced Filter Panel Component
-const AdvancedFilterPanel = ({ data, onFilterChange }) => {
-    const [filters, setFilters] = useState({
-        withholderPIN: '',
-        withholdeeTypes: {
-            suppliers: true,
-            customers: true
-        },
-        status: 'all',
-        amountRange: [0, 100000]
-    });
+const AdvancedFilterPanel = ({ rawAllDetailedData, currentFilters, onFilterChange, onReset }) => {
+    const [filters, setFilters] = useState(currentFilters);
 
-    // Generate options for filter dropdowns
-    const withholderPINs = getUniqueFilterOptions(data, 1); // Assuming index 1 has withholder PIN
-    const statuses = getUniqueFilterOptions(data, 5); // Assuming index 5 has status
+    useEffect(() => {
+        setFilters(currentFilters);
+    }, [currentFilters]);
 
-    // Find the max amount for the slider
-    const maxAmount = data && data.length
-        ? Math.max(...data.map(row => parseFloat(row[8] || 0))) + 10000
-        : 100000;
+    // Calculate max amount for the slider based on current data
+    const maxAmount = useMemo(() => {
+        if (!rawAllDetailedData || rawAllDetailedData.length === 0) return 100000;
+        const amounts = rawAllDetailedData.map(row => parseFloat(row[8] || 0));
+        return Math.max(...amounts) + 1000; // Add buffer
+    }, [rawAllDetailedData]);
 
-    const handleFilterChange = (key, value) => {
-        const newFilters = {
-            ...filters,
-            [key]: value
+    // Generate options for filter dropdowns from all detailed data
+    const withholderPINs = useMemo(() => getUniqueFilterOptions(rawAllDetailedData, 1), [rawAllDetailedData]);
+    const statuses = useMemo(() => getUniqueFilterOptions(rawAllDetailedData, 5), [rawAllDetailedData]);
+
+    const handleFilterChange = useCallback((key, value) => {
+        setFilters(prev => {
+            const newFilters = { ...prev, [key]: value };
+            onFilterChange(newFilters);
+            return newFilters;
+        });
+    }, [onFilterChange]);
+
+    const handleReset = useCallback(() => {
+        const resetFilters = {
+            withholderPIN: '',
+            withholdeeTypes: {
+                suppliers: true,
+                customers: true
+            },
+            status: 'all',
+            amountRange: [0, maxAmount]
         };
+        setFilters(resetFilters);
+        onReset(resetFilters);
+    }, [maxAmount, onReset]);
 
-        setFilters(newFilters);
-        onFilterChange(newFilters);
-    };
+    // Ensure amount range is within maxAmount bounds on initial load/reset
+    useEffect(() => {
+        if (filters.amountRange[1] > maxAmount) {
+            setFilters(prev => ({ ...prev, amountRange: [prev.amountRange[0], maxAmount] }));
+        }
+    }, [maxAmount, filters.amountRange]);
+
 
     return (
         <div className="space-y-4 p-4 bg-white rounded-md border border-slate-200">
@@ -1148,19 +1137,7 @@ const AdvancedFilterPanel = ({ data, onFilterChange }) => {
                 <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => {
-                        const resetFilters = {
-                            withholderPIN: '',
-                            withholdeeTypes: {
-                                suppliers: true,
-                                customers: true
-                            },
-                            status: 'all',
-                            amountRange: [0, maxAmount]
-                        };
-                        setFilters(resetFilters);
-                        onFilterChange(resetFilters);
-                    }}
+                    onClick={handleReset}
                     className="h-8 text-xs"
                 >
                     <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
@@ -1194,7 +1171,7 @@ const AdvancedFilterPanel = ({ data, onFilterChange }) => {
                     <div className="grid grid-cols-2 gap-2">
                         <div className="flex items-center space-x-2">
                             <Checkbox
-                                id="suppliers"
+                                id="adv-suppliers"
                                 checked={filters.withholdeeTypes.suppliers}
                                 onCheckedChange={(checked) => {
                                     handleFilterChange('withholdeeTypes', {
@@ -1204,7 +1181,7 @@ const AdvancedFilterPanel = ({ data, onFilterChange }) => {
                                 }}
                             />
                             <label
-                                htmlFor="suppliers"
+                                htmlFor="adv-suppliers"
                                 className="text-xs font-medium leading-none"
                             >
                                 Suppliers
@@ -1212,7 +1189,7 @@ const AdvancedFilterPanel = ({ data, onFilterChange }) => {
                         </div>
                         <div className="flex items-center space-x-2">
                             <Checkbox
-                                id="customers"
+                                id="adv-customers"
                                 checked={filters.withholdeeTypes.customers}
                                 onCheckedChange={(checked) => {
                                     handleFilterChange('withholdeeTypes', {
@@ -1222,7 +1199,7 @@ const AdvancedFilterPanel = ({ data, onFilterChange }) => {
                                 }}
                             />
                             <label
-                                htmlFor="customers"
+                                htmlFor="adv-customers"
                                 className="text-xs font-medium leading-none"
                             >
                                 Customers
@@ -1272,762 +1249,644 @@ const AdvancedFilterPanel = ({ data, onFilterChange }) => {
     );
 };
 
+
 // ========================== MAIN COMPONENT ==========================
 export function WHVATExtractorReports() {
-    const exportSummaryToExcel = async () => {
-        const workbook = new ExcelJS.Workbook();
-        const worksheet = workbook.addWorksheet('Summary');
+    // ======== State Management ========
+    const [view, setView] = useState('summary'); // 'summary' | 'detailed'
+    const [allRawCompaniesData, setAllRawCompaniesData] = useState([]); // All companies with their raw extraction data
+    const [selectedCompanyId, setSelectedCompanyId] = useState(null); // ID of the currently selected company
+    const [loading, setLoading] = useState(true);
 
-        // Add headers with separate IDX and ID columns
-        worksheet.addRow(['IDX', 'ID', 'Company', 'Latest Extraction Date', 'Number of Extractions', 'Total Amount']);
-
-        getFilteredSortedSummary().forEach((company, idx) => {
-            worksheet.addRow([
-                idx + 1,                // IDX
-                company.id,             // ID
-                company.company_name,    // Company Name
-                company.latestExtractionDate,
-                company.numberOfExtractions,
-                company.totalAmountRaw
-            ]);
-        });
-
-        // Style the header row
-        worksheet.getRow(1).font = { bold: true };
-
-        // Auto-fit columns
-        worksheet.columns.forEach(column => {
-            column.width = 15;  // Set a minimum width
-        });
-
-        const buffer = await workbook.xlsx.writeBuffer();
-        const timestamp = new Date().toISOString().split('T')[0];
-        saveAs(new Blob([buffer]), `WHVAT_Summary_${timestamp}.xlsx`);
-    };
-
-    // State variables
-    const [view, setView] = useState('summary');
-    const [companies, setCompanies] = useState([]);
-    const [allCompanyData, setAllCompanyData] = useState([]);
-    const [selectedCompany, setSelectedCompany] = useState(null);
-    const [companyData, setCompanyData] = useState(null);
-    const [searchTerm, setSearchTerm] = useState('');
-    const [activeTab, setActiveTab] = useState('allData');
-    const [filteredData, setFilteredData] = useState(null);
-    const [showAllData, setShowAllData] = useState(false);
+    // Summary View States
     const [summarySearch, setSummarySearch] = useState('');
     const [isCategoryFilterOpen, setIsCategoryFilterOpen] = useState(false);
-    const [dateRange, setDateRange] = useState({ from: null, to: null });
-    const [loading, setLoading] = useState(true);
-    const [sidebarSearchTerm, setSidebarSearchTerm] = useState('');
-    const [advancedFilters, setAdvancedFilters] = useState(null);
-    const [selectedMonthKey, setSelectedMonthKey] = useState(null);
-    const [showFiltersPanel, setShowFiltersPanel] = useState(false);
     const [categoryFilters, setCategoryFilters] = useState({
         categories: {
-            'All Categories': false,
+            'All Categories': false, // Default to false, let specific categories drive
             'Acc': true,
             'Imm': false,
             'Sheria': false,
             'Audit': false
         },
         categorySettings: {
-            'Acc': {
-                clientStatus: {
-                    All: false,
-                    Active: true,
-                    Inactive: false
-                },
-                sectionStatus: {
-                    All: false,
-                    Active: true,
-                    Inactive: false,
-                    Missing: false
-                }
-            }
+            'Acc': { clientStatus: { All: false, Active: true, Inactive: false, Missing: false }, sectionStatus: { All: false, Active: true, Inactive: false, Missing: false } },
+            'Imm': { clientStatus: { All: false, Active: true, Inactive: false, Missing: false }, sectionStatus: { All: false, Active: true, Inactive: false, Missing: false } },
+            'Sheria': { clientStatus: { All: false, Active: true, Inactive: false, Missing: false }, sectionStatus: { All: false, Active: true, Inactive: false, Missing: false } },
+            'Audit': { clientStatus: { All: false, Active: true, Inactive: false, Missing: false }, sectionStatus: { All: false, Active: true, Inactive: false, Missing: false } },
         }
     });
 
-    // Handle category filter changes
-    const handleApplyFilters = (newFilters) => {
-        setCategoryFilters(newFilters);
-    };
+    // Detailed View States
+    const [sidebarSearchTerm, setSidebarSearchTerm] = useState('');
+    const [activeTab, setActiveTab] = useState('allData'); // 'allData' | 'monthWise' | 'totals'
+    const [detailedSearchTerm, setDetailedSearchTerm] = useState('');
+    const [detailedDateRange, setDetailedDateRange] = useState({ from: null, to: null });
+    const [selectedMonthKey, setSelectedMonthKey] = useState(null); // YYYY-MM format
+    const [showFiltersPanel, setShowFiltersPanel] = useState(false);
+    const [advancedFilters, setAdvancedFilters] = useState({
+        withholderPIN: '',
+        withholdeeTypes: { suppliers: true, customers: true },
+        status: 'all',
+        amountRange: [0, 100000] // Initial arbitrary range, updated dynamically
+    });
 
-    // Handle advanced filter changes
-    const handleAdvancedFilterChange = (filters) => {
-        setAdvancedFilters(filters);
-        if (companyData) {
-            filterData(companyData, filters);
-        }
-    };
-
-    // Initial data fetch
-    useEffect(() => {
-        fetchCompanies();
-        fetchAllCompanyData();
-    }, []);
-
-    // Handle company selection & filtering
-    useEffect(() => {
-        console.log('=== Company Selection Effect ===');
-        console.log('selectedCompany changed to:', selectedCompany);
-
-        if (selectedCompany) {
-            // Filter all company data based on categories first
-            const filteredCompanies = applyFiltersToData(allCompanyData);
-            console.log('Filtered companies count:', filteredCompanies.length);
-
-            // Find the selected company in the filtered list
-            const companyRecord = filteredCompanies.find(c => c.company_name === selectedCompany);
-            console.log('Found company record:', !!companyRecord);
-
-            if (companyRecord && companyRecord.extraction_data) {
-                console.log('Setting company data:', {
-                    companyName: companyRecord.company_name,
-                    extractionDataKeys: Object.keys(companyRecord.extraction_data),
-                    totalMonths: Object.keys(companyRecord.extraction_data).length
-                });
-
-                setCompanyData(companyRecord.extraction_data);
-
-                // Reset to allData tab when new company is selected
-                setActiveTab('allData');
-
-                // Call filterData immediately without any filters to set initial filteredData
-                console.log('Calling filterData for initial setup...');
-                filterData(companyRecord.extraction_data, null);
-
-                // Set initial selected month to the most recent one with data
-                const monthsWithData = Object.entries(companyRecord.extraction_data)
-                    .filter(([_, monthData]) => monthData.tableData && monthData.tableData.length > 0)
-                    .map(([monthKey]) => monthKey);
-
-                console.log('Months with data:', monthsWithData);
-
-                if (monthsWithData.length > 0) {
-                    // Sort by date and pick the most recent
-                    const sortedMonths = monthsWithData.sort((a, b) => new Date(b + '-01') - new Date(a + '-01'));
-                    console.log('Setting selected month to:', sortedMonths[0]);
-                    setSelectedMonthKey(sortedMonths[0]);
-                } else {
-                    // If no months have data, still pick the most recent month key
-                    const sortedMonths = Object.keys(companyRecord.extraction_data).sort((a, b) => new Date(b + '-01') - new Date(a + '-01'));
-                    console.log('No data found, setting month to:', sortedMonths[0]);
-                    setSelectedMonthKey(sortedMonths[0]);
-                }
-            } else {
-                console.log('No extraction data found for company:', selectedCompany);
-                setCompanyData(null);
-                setFilteredData(null);
-                setSelectedMonthKey(null);
-                setActiveTab('allData'); // Reset tab even when no data
-            }
-        } else {
-            console.log('No company selected, clearing data');
-            setCompanyData(null);
-            setFilteredData(null);
-            setSelectedMonthKey(null);
-            setActiveTab('allData'); // Reset tab when no company selected
-        }
-    }, [selectedCompany, allCompanyData, categoryFilters]);
-
-    useEffect(() => {
-        // When company data is loaded and we don't have an active tab or it's not appropriate
-        if (companyData && Object.keys(companyData).length > 0) {
-            // If we're not on a valid tab, default to 'allData'
-            if (!activeTab || !['allData', 'monthWise', 'totals'].includes(activeTab)) {
-                console.log('Setting activeTab to allData due to data load');
-                setActiveTab('allData');
-            }
-        }
-    }, [companyData])
-
-    useEffect(() => {
-        console.log('=== Filter Effect ===');
-        if (companyData) {
-            console.log('Applying filters to company data...');
-            filterData(companyData, advancedFilters);
-        }
-    }, [searchTerm, dateRange, advancedFilters]);
-
-
-    // Update filtered data when month selection changes
-    useEffect(() => {
-        if (companyData && selectedMonthKey && activeTab === 'monthWise') {
-            const filtered = { [selectedMonthKey]: companyData[selectedMonthKey] };
-            setFilteredData(filtered);
-        }
-    }, [selectedMonthKey, companyData, activeTab]);
-
-    // Handle date range changes
-    const handleDateRangeChange = (range) => {
-        setDateRange(range);
-        if (companyData) {
-            filterData(companyData, advancedFilters);
-        }
-    };
-
-    // Handle month selection
-    const handleMonthSelect = (monthKey) => {
-        setSelectedMonthKey(monthKey);
-        if (activeTab !== 'monthWise') {
-            setActiveTab('monthWise');
-        }
-    };
-
-    // Fetch companies
-    const fetchCompanies = async () => {
+    // ======== Data Fetching ========
+    const fetchCompaniesAndExtractions = useCallback(async () => {
+        setLoading(true);
         try {
-            setLoading(true);
-            const { data, error } = await supabase
+            // Fetch all companies
+            const { data: companiesData, error: companiesError } = await supabase
                 .from('acc_portal_company_duplicate')
-                .select('id, company_name')
-                .order('company_name');
+                .select('*');
+            if (companiesError) throw companiesError;
 
-            if (error) throw error;
-            setCompanies(data);
-        } catch (error) {
-            console.error('Error fetching companies:', error);
-            toast({
-                title: "Error",
-                description: "Failed to fetch companies. Please try again.",
-                variant: "destructive"
-            });
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    // Fetch all company data
-    const fetchAllCompanyData = async () => {
-        try {
-            setLoading(true);
-
-            // Get all WHVAT extractions with company data
+            // Fetch all WHVAT extractions
             const { data: extractionsData, error: extractionsError } = await supabase
                 .from('whvat_extractions')
-                .select(`
-                *,
-                acc_portal_company_duplicate!inner(*)
-            `);
-
+                .select('company_id, extraction_data'); // Only need company_id and the actual data blob
             if (extractionsError) throw extractionsError;
 
-            console.log('Raw extractions data:', extractionsData);
-
-            // Helper function to determine client status
-            const calculateClientStatus = (fromDate, toDate) => {
-                if (!fromDate || !toDate) return 'inactive';
-
-                const today = new Date();
-                const from = new Date(fromDate.split('/').reverse().join('-'));
-                const to = new Date(toDate.split('/').reverse().join('-'));
-
-                return today >= from && today <= to ? 'active' : 'inactive';
-            };
-
-            // Group extractions by company
-            const companiesMap = new Map();
-
+            // Map extractions by company_id for efficient lookup
+            const extractionsMap = new Map();
             extractionsData.forEach(extraction => {
-                const company = extraction.acc_portal_company_duplicate;
-                if (!company) return;
-
-                const companyKey = company.company_name;
-
-                if (!companiesMap.has(companyKey)) {
-                    // Calculate client statuses
-                    const acc_client_status = calculateClientStatus(company.acc_client_effective_from, company.acc_client_effective_to);
-                    const imm_client_status = calculateClientStatus(company.imm_client_effective_from, company.imm_client_effective_to);
-                    const sheria_client_status = calculateClientStatus(company.sheria_client_effective_from, company.sheria_client_effective_to);
-                    const audit_client_status = calculateClientStatus(company.audit_client_effective_from, company.audit_client_effective_to);
-
-                    // Determine which categories this company belongs to
-                    const categories = [];
-                    if (company.acc_client_effective_from && company.acc_client_effective_to) categories.push('Acc');
-                    if (company.imm_client_effective_from && company.imm_client_effective_to) categories.push('Imm');
-                    if (company.sheria_client_effective_from && company.sheria_client_effective_to) categories.push('Sheria');
-                    if (company.audit_client_effective_from && company.audit_client_effective_to) categories.push('Audit');
-
-                    companiesMap.set(companyKey, {
-                        id: company.id,
-                        company_name: company.company_name,
-                        extraction_data: {},
-                        categories,
-                        acc_client_status,
-                        imm_client_status,
-                        sheria_client_status,
-                        audit_client_status,
-                        suppliers: new Set(),
-                        customers: new Set(),
-                        // Keep the date fields for reference
-                        acc_client_effective_from: company.acc_client_effective_from,
-                        acc_client_effective_to: company.acc_client_effective_to,
-                        imm_client_effective_from: company.imm_client_effective_from,
-                        imm_client_effective_to: company.imm_client_effective_to,
-                        sheria_client_effective_from: company.sheria_client_effective_from,
-                        sheria_client_effective_to: company.sheria_client_effective_to,
-                        audit_client_effective_from: company.audit_client_effective_from,
-                        audit_client_effective_to: company.audit_client_effective_to,
-                    });
+                if (!extractionsMap.has(extraction.company_id)) {
+                    extractionsMap.set(extraction.company_id, {});
                 }
-
-                const companyRecord = companiesMap.get(companyKey);
-
-                // Process extraction data
+                // Merge all month data for a company from all its extractions
                 if (extraction.extraction_data) {
                     Object.entries(extraction.extraction_data).forEach(([dateKey, data]) => {
-                        if (!companyRecord.extraction_data[dateKey]) {
-                            companyRecord.extraction_data[dateKey] = {
-                                extractionDate: data.extractionDate,
+                        if (!extractionsMap.get(extraction.company_id)[dateKey]) {
+                            extractionsMap.get(extraction.company_id)[dateKey] = {
+                                extractionDate: data.extractionDate, // Keep the latest extraction date if multiple for a month
                                 tableData: []
                             };
                         }
-                        if (data.tableData && Array.isArray(data.tableData)) {
-                            companyRecord.extraction_data[dateKey].tableData.push(...data.tableData);
-
-                            // Track suppliers and customers
-                            data.tableData.forEach(row => {
-                                if (row[1]) companyRecord.suppliers.add(row[1]); // Withholder PIN
-                                if (row[2]) companyRecord.customers.add(row[2]); // Withholdee PIN
-                            });
+                        if (data.tableData) {
+                            extractionsMap.get(extraction.company_id)[dateKey].tableData.push(...data.tableData);
                         }
                     });
                 }
             });
 
-            // Convert to array and finalize data
-            const mappedData = Array.from(companiesMap.values()).map(company => ({
-                ...company,
-                suppliers: Array.from(company.suppliers),
-                customers: Array.from(company.customers)
-            }));
+            // Combine company info with aggregated extraction data and calculated categories/statuses
+            const combinedData = companiesData.map(company => {
+                const companyExtractions = extractionsMap.get(company.id) || {};
 
-            console.log('Processed company data:', mappedData);
+                // Calculate client statuses for categories
+                const acc_client_status = calculateClientStatus(company.acc_client_effective_from, company.acc_client_effective_to);
+                const imm_client_status = calculateClientStatus(company.imm_client_effective_from, company.imm_client_effective_to);
+                const sheria_client_status = calculateClientStatus(company.sheria_client_effective_from, company.sheria_client_effective_to);
+                const audit_client_status = calculateClientStatus(company.audit_client_effective_from, company.audit_client_effective_to);
 
-            setAllCompanyData(mappedData);
-        } catch (error) {
-            console.error('Error fetching all company data:', error);
-            toast({
-                title: "Error",
-                description: "Failed to fetch extraction data. Please try again.",
-                variant: "destructive"
+                // Determine which categories this company belongs to (based on whether the fields exist)
+                const categories = [];
+                if (company.acc_client_effective_from || company.acc_client_effective_to) categories.push('Acc');
+                if (company.imm_client_effective_from || company.imm_client_effective_to) categories.push('Imm');
+                if (company.sheria_client_effective_from || company.sheria_client_effective_to) categories.push('Sheria');
+                if (company.audit_client_effective_from || company.audit_client_effective_to) categories.push('Audit');
+
+                // Basic supplier/customer identification (Placeholder logic)
+                const suppliers = new Set();
+                const customers = new Set();
+                Object.values(companyExtractions).forEach(({ tableData }) => {
+                    tableData?.forEach(row => {
+                        // Assuming row[1] is Withholder PIN and row[2] is Withholdee PIN
+                        // Example: If PIN starts with 'S' it's a supplier, if 'C' it's a customer
+                        if (row[1] && row[1].toString().startsWith('S')) suppliers.add(row[1]);
+                        if (row[2] && row[2].toString().startsWith('C')) customers.add(row[2]);
+                    });
+                });
+
+                // Calculate total amount and latest extraction date for summary view
+                let latestExtractionDate = 'N/A';
+                let totalAmountRaw = 0;
+                let numberOfExtractions = 0; // Number of unique month extractions
+                const extractionDates = [];
+
+                Object.values(companyExtractions).forEach(monthData => {
+                    if (monthData.tableData && monthData.tableData.length > 0) {
+                        numberOfExtractions++;
+                        totalAmountRaw += monthData.tableData.reduce((sum, row) => sum + parseFloat(row[8] || 0), 0);
+                        if (monthData.extractionDate) {
+                            extractionDates.push(new Date(monthData.extractionDate));
+                        }
+                    }
+                });
+
+                if (extractionDates.length > 0) {
+                    latestExtractionDate = new Date(Math.max(...extractionDates)).toLocaleDateString();
+                }
+
+                return {
+                    id: company.id,
+                    company_name: company.company_name,
+                    extraction_data: companyExtractions, // Monthly aggregated data for this company
+                    categories,
+                    acc_client_status, imm_client_status, sheria_client_status, audit_client_status,
+                    suppliers: Array.from(suppliers),
+                    customers: Array.from(customers),
+                    latestExtractionDate,
+                    numberOfExtractions,
+                    totalAmountRaw,
+                };
             });
+            setAllRawCompaniesData(combinedData);
+        } catch (error) {
+            console.error('Error fetching data:', error);
+            toast.error('Failed to fetch data. Please try again.');
         } finally {
             setLoading(false);
         }
-    };
+    }, []);
 
-    // Apply category filters to data
-    const applyFiltersToData = (data) => {
-        if (!categoryFilters.categories || Object.keys(categoryFilters.categories).length === 0) {
-            return data;
+    useEffect(() => {
+        fetchCompaniesAndExtractions();
+    }, [fetchCompaniesAndExtractions]);
+
+    // ======== Filter Functions (Memoized) ========
+
+    // Apply category filters to the *full* list of companies for sidebar and summary
+    const applyCategoryFilters = useCallback((companies, filters) => {
+        if (!filters || Object.keys(filters.categories).length === 0) {
+            return companies;
         }
 
-        return data.filter(company => {
-            // Check if "All Categories" is selected
-            if (categoryFilters.categories['All Categories']) {
-                return true;
+        const selectedCategories = Object.entries(filters.categories)
+            .filter(([category, isSelected]) => isSelected && category !== 'All Categories')
+            .map(([category]) => category);
+
+        const isAllCategoriesSelected = filters.categories['All Categories'];
+
+        if (selectedCategories.length === 0 && !isAllCategoriesSelected) {
+            // If no specific categories are selected and "All Categories" is also not selected
+            // This might mean "show nothing" or "show all by default if no active filters"
+            // For now, let's interpret as show all (no filter applied) if nothing specific picked.
+            return companies;
+        }
+
+        return companies.filter(company => {
+            if (isAllCategoriesSelected) {
+                return true; // If "All Categories" is checked, include all companies regardless of their specific categories
             }
 
-            // Get all selected categories
-            const selectedCategories = Object.entries(categoryFilters.categories)
-                .filter(([category, isSelected]) => category !== 'All Categories' && isSelected)
-                .map(([category]) => category);
+            // Check if the company belongs to at least one of the actively selected categories
+            const companyHasSelectedCategory = selectedCategories.some(selectedCat =>
+                company.categories.includes(selectedCat)
+            );
 
-            // If no categories selected, show all companies
-            if (selectedCategories.length === 0) {
-                return true;
+            if (!companyHasSelectedCategory) {
+                return false;
             }
 
-            // Check if company belongs to any of the selected categories
-            return selectedCategories.every(category => {
-                // Check if company belongs to this category
-                if (!company.categories.includes(category)) {
-                    return false;
-                }
-
-                // Get the status settings for this category
-                const categorySettings = categoryFilters.categorySettings?.[category];
+            // Now apply client status filters for the selected categories
+            return selectedCategories.every(selectedCat => {
+                const categorySettings = filters.categorySettings?.[selectedCat];
                 if (!categorySettings) {
-                    return true;
+                    return true; // No settings for this category, so no further filtering
                 }
 
-                // Get the client status for this category
-                const clientStatus = company[`${category.toLowerCase()}_client_status`];
-
-                // Get selected client statuses
+                const clientStatus = company[`${selectedCat.toLowerCase()} _client_status`];
                 const selectedClientStatuses = Object.entries(categorySettings.clientStatus || {})
                     .filter(([_, isSelected]) => isSelected)
                     .map(([status]) => status.toLowerCase());
 
-                // If "All" is selected or no specific status is selected, include all
                 if (selectedClientStatuses.includes('all') || selectedClientStatuses.length === 0) {
-                    return true;
+                    return true; // If 'All' status is selected or no specific status, include all
                 }
 
-                // Check if company's status matches any selected status
                 return selectedClientStatuses.includes(clientStatus);
             });
         });
-    };
+    }, []);
 
-    // Calculate total for month data
-    const calculateTotal = (monthData) => {
-        if (!monthData || !monthData.tableData) return 0;
-        return monthData.tableData.reduce((sum, row) => sum + parseFloat(row[8] || 0), 0);
-    };
+    // Apply detailed filters to a specific company's raw extraction data
+    const applyDetailedFilters = useCallback((
+        extractionDataByMonth, // e.g., selectedCompanyDetails.extraction_data
+        searchTerm,
+        dateRange,
+        advFilters
+    ) => {
+        if (!extractionDataByMonth) return {};
 
-    // Calculate overall total
-    const calculateOverallTotal = (data) => {
-        if (!data) return 0;
-        return Object.values(data).reduce((sum, monthData) => sum + calculateTotal(monthData), 0);
-    };
+        let filteredMonths = { ...extractionDataByMonth };
 
-    // Filter data based on criteria
-    const filterData = (data, advFilters = null) => {
-        if (!data) {
-            console.log('filterData: No data provided');
-            return;
-        }
-
-        console.log('filterData called with:', {
-            dataKeys: Object.keys(data),
-            searchTerm,
-            dateRange,
-            advFilters
-        });
-
-        let filtered = { ...data };
-
-        // Filter by date range
+        // 1. Filter by date range (if applicable)
         if (dateRange.from && dateRange.to) {
-            console.log('Applying date range filter:', dateRange);
-            filtered = Object.fromEntries(
-                Object.entries(filtered).filter(([key]) => {
+            filteredMonths = Object.fromEntries(
+                Object.entries(filteredMonths).filter(([key]) => {
                     const [year, month] = key.split('-');
-                    const keyDate = new Date(year, parseInt(month) - 1, 1);
-                    const isInRange = keyDate >= dateRange.from && keyDate <= dateRange.to;
-                    console.log(`Date ${key} (${keyDate}) in range:`, isInRange);
-                    return isInRange;
+                    const keyDate = new Date(parseInt(year), parseInt(month) - 1);
+                    return keyDate >= dateRange.from && keyDate <= dateRange.to;
                 })
             );
         }
 
-        // Apply advanced filters to tableData in each month
-        if (advFilters) {
-            console.log('Applying advanced filters:', advFilters);
-            Object.keys(filtered).forEach(key => {
-                if (filtered[key].tableData) {
-                    const originalLength = filtered[key].tableData.length;
-                    filtered[key].tableData = filtered[key].tableData.filter(row => {
-                        // Filter by withholder PIN
+        // 2. Apply advanced filters and general search term to `tableData` within each month
+        Object.keys(filteredMonths).forEach(monthKey => {
+            if (filteredMonths[monthKey].tableData) {
+                filteredMonths[monthKey].tableData = filteredMonths[monthKey].tableData.filter(row => {
+                    // Advanced Filters
+                    if (advFilters) {
+                        // Withholder PIN
                         if (advFilters.withholderPIN && row[1] !== advFilters.withholderPIN) {
                             return false;
                         }
 
-                        // Filter by status
+                        // Withholdee Types (Suppliers/Customers) - Placeholder logic
+                        const isSupplier = row[1]?.toString().startsWith('S'); // Example: PIN starts with 'S'
+                        const isCustomer = row[2]?.toString().startsWith('C'); // Example: PIN starts with 'C'
+                        const includeSuppliers = advFilters.withholdeeTypes.suppliers;
+                        const includeCustomers = advFilters.withholdeeTypes.customers;
+
+                        if (!includeSuppliers && isSupplier) return false;
+                        if (!includeCustomers && isCustomer) return false;
+                        // If both are false and it's either, then it's filtered out.
+                        // If only one is true, and it matches that type, keep it.
+                        // If it's neither type, but both types are selected, keep it? No, if it's not a supplier and not a customer, and you've filtered by suppliers/customers, it should probably be excluded.
+                        // A more robust check for `withholdeeTypes`:
+                        if (!includeSuppliers && !includeCustomers) return false; // If neither is selected, exclude all
+                        if (includeSuppliers && !isSupplier && !includeCustomers) return false; // Only suppliers selected, but this isn't one
+                        if (includeCustomers && !isCustomer && !includeSuppliers) return false; // Only customers selected, but this isn't one
+
+                        // Status
                         if (advFilters.status !== 'all' && row[5] !== advFilters.status) {
                             return false;
                         }
 
-                        // Filter by amount range
+                        // Amount Range
                         const amount = parseFloat(row[8] || 0);
                         if (amount < advFilters.amountRange[0] || amount > advFilters.amountRange[1]) {
                             return false;
                         }
+                    }
 
-                        return true;
-                    });
-                    console.log(`Advanced filter ${key}: ${originalLength} -> ${filtered[key].tableData.length}`);
-                }
-            });
-        }
-
-        // Apply search term - using generic search across all cells
-        if (searchTerm && searchTerm.trim()) {
-            console.log('Applying search filter:', searchTerm);
-            Object.keys(filtered).forEach(key => {
-                if (filtered[key].tableData) {
-                    const originalLength = filtered[key].tableData.length;
-                    filtered[key].tableData = filtered[key].tableData.filter(row => {
-                        // Convert all cell values to lowercase strings for comparison
+                    // General Search Term (applies to all cells)
+                    if (searchTerm) {
+                        const lowerSearchTerm = searchTerm.toLowerCase();
                         const rowValues = row.map(cell =>
                             cell !== null && cell !== undefined
-                                ? cell.toString().toLowerCase().trim()
+                                ? cell.toString().toLowerCase()
                                 : ''
                         );
+                        if (!rowValues.some(value => value.includes(lowerSearchTerm))) {
+                            return false;
+                        }
+                    }
 
-                        // Check if any cell in the row contains the search term
-                        const matches = rowValues.some(value =>
-                            value.includes(searchTerm.toLowerCase().trim())
-                        );
-                        return matches;
-                    });
-                    console.log(`Search filter ${key}: ${originalLength} -> ${filtered[key].tableData.length}`);
-                }
-            });
-        }
-
-        // Sort the filtered data by date (latest first)
-        const sortedFiltered = Object.fromEntries(
-            Object.entries(filtered).sort((a, b) => new Date(b[0] + '-01') - new Date(a[0] + '-01'))
-        );
-
-        console.log('Final filtered data:', {
-            keys: Object.keys(sortedFiltered),
-            totalRecords: Object.values(sortedFiltered).reduce((sum, data) => sum + (data.tableData?.length || 0), 0)
-        });
-
-        setFilteredData(sortedFiltered);
-    };
-
-
-    // Clear filters
-    const clearFilters = () => {
-        setDateRange({ from: null, to: null });
-        setSearchTerm('');
-        setShowAllData(false);
-        setAdvancedFilters(null);
-        filterData(companyData);
-    };
-
-    // Handle export with advanced options
-    const handleExport = async (options) => {
-        if (!filteredData) return;
-
-        const workbook = new ExcelJS.Workbook();
-
-        // Apply supplier/customer filters based on options
-        const filterData = (tableData, options) => {
-            if (!tableData) return [];
-
-            // If we're exporting all types, no filtering needed
-            if (options.type === 'all') return tableData;
-
-            // If we're doing custom filtering
-            if (options.type === 'custom') {
-                return tableData.filter(row => {
-                    const pin = row[1]; // Assuming index 1 is withholder PIN
-
-                    // This is simplified logic - replace with real business rules
-                    const isSupplier = pin?.startsWith('A'); // Example logic
-                    const isCustomer = pin?.startsWith('B'); // Example logic
-
-                    if (options.includeSuppliers && isSupplier) return true;
-                    if (options.includeCustomers && isCustomer) return true;
-
-                    return false;
+                    return true;
                 });
             }
+        });
 
-            // Filter by specific type
-            return tableData.filter(row => {
-                const pin = row[1];
-                const isSupplier = pin?.startsWith('A'); // Example logic
-                const isCustomer = pin?.startsWith('B'); // Example logic
+        // Remove months that become empty after filtering
+        return Object.fromEntries(
+            Object.entries(filteredMonths).filter(([, data]) => data.tableData?.length > 0)
+        );
+    }, []);
 
-                if (options.type === 'suppliers' && isSupplier) return true;
-                if (options.type === 'customers' && isCustomer) return true;
+    // ======== Derived States with useMemo ========
 
-                return false;
+    // Companies for the left sidebar (filtered by categories and sidebar search)
+    const sidebarCompanies = useMemo(() => {
+        const filteredByCategories = applyCategoryFilters(allRawCompaniesData, categoryFilters);
+        return filteredByCategories
+            .filter(company =>
+                !sidebarSearchTerm ||
+                company.company_name.toLowerCase().includes(sidebarSearchTerm.toLowerCase())
+            )
+            .sort((a, b) => a.company_name.localeCompare(b.company_name));
+    }, [allRawCompaniesData, categoryFilters, sidebarSearchTerm, applyCategoryFilters]);
+
+    // Data for the Summary tab table
+    const summaryTableData = useMemo(() => {
+        let data = applyCategoryFilters(allRawCompaniesData, categoryFilters);
+
+        if (summarySearch) {
+            const lowerSearchTerm = summarySearch.toLowerCase();
+            data = data.filter((company) => {
+                const searchFields = [
+                    company.company_name,
+                    company.categories.join(' '),
+                    company.latestExtractionDate,
+                    company.numberOfExtractions.toString(),
+                    formatAmount(company.totalAmountRaw),
+                ];
+                return searchFields.some(field =>
+                    field && field.toString().toLowerCase().includes(lowerSearchTerm)
+                );
             });
-        };
+        }
+        return data.sort((a, b) => a.company_name.toLowerCase().localeCompare(b.company_name.toLowerCase()));
+    }, [allRawCompaniesData, categoryFilters, summarySearch, applyCategoryFilters]);
 
-        // Get data to export based on range option
+
+    // Currently selected company's full details
+    const selectedCompanyDetails = useMemo(() => {
+        return allRawCompaniesData.find(company => company.id === selectedCompanyId) || null;
+    }, [allRawCompaniesData, selectedCompanyId]);
+
+    // Raw extraction data for the selected company (before any detailed filtering)
+    const companyRawExtractions = useMemo(() => {
+        return selectedCompanyDetails?.extraction_data || {};
+    }, [selectedCompanyDetails]);
+
+    // Filtered extraction data for the detailed view tabs
+    const filteredDetailedExtractions = useMemo(() => {
+        return applyDetailedFilters(companyRawExtractions, detailedSearchTerm, detailedDateRange, advancedFilters);
+    }, [companyRawExtractions, detailedSearchTerm, detailedDateRange, advancedFilters, applyDetailedFilters]);
+
+    // Flattened data for "All Data" tab in detailed view
+    const allDetailedTableData = useMemo(() => {
+        return Object.entries(filteredDetailedExtractions).flatMap(([monthKey, data]) => {
+            if (!data.tableData || data.tableData.length === 0) {
+                return [];
+            }
+            const [year, monthNum] = monthKey.split('-');
+            const monthName = `${getMonthName(monthNum)} ${year} `;
+            return data.tableData.map(row => ({
+                id: `${monthKey} -${row[0]} -${row[6]} `, // Unique ID for each row for React Table
+                monthName,
+                monthKey,
+                ...row // Spread original row data
+            }));
+        }).sort((a, b) => new Date(b.monthKey) - new Date(a.monthKey)); // Sort by month descending
+    }, [filteredDetailedExtractions]);
+
+    // Data for the "Month Wise" tab, specifically for the selected month
+    const selectedMonthDataForTable = useMemo(() => {
+        return selectedMonthKey && filteredDetailedExtractions[selectedMonthKey]
+            ? filteredDetailedExtractions[selectedMonthKey].tableData
+            : [];
+    }, [selectedMonthKey, filteredDetailedExtractions]);
+
+    // Years available for the "Totals" view
+    const yearsForTotalsView = useMemo(() => {
+        const years = new Set();
+        Object.keys(filteredDetailedExtractions).forEach(month => {
+            const [year] = month.split('-');
+            years.add(year);
+        });
+        return Array.from(years).sort((a, b) => b - a);
+    }, [filteredDetailedExtractions]);
+
+    // ======== Handlers ========
+
+    const handleSelectCompany = useCallback((id) => {
+        setSelectedCompanyId(id);
+        // Reset detailed view states when a new company is selected
+        setActiveTab('allData');
+        setDetailedSearchTerm('');
+        setDetailedDateRange({ from: null, to: null });
+        setSelectedMonthKey(null);
+        setAdvancedFilters({
+            withholderPIN: '',
+            withholdeeTypes: { suppliers: true, customers: true },
+            status: 'all',
+            amountRange: [0, 100000]
+        }); // Amount range will be dynamically adjusted by AdvancedFilterPanel
+        setShowFiltersPanel(false);
+    }, []);
+
+    const handleCategoryFilterChange = useCallback((newFilters) => {
+        setCategoryFilters(newFilters);
+    }, []);
+
+    const handleAdvancedFilterChange = useCallback((filters) => {
+        setAdvancedFilters(filters);
+    }, []);
+
+    const handleAdvancedFilterReset = useCallback((resetFilters) => {
+        setAdvancedFilters(resetFilters);
+    }, []);
+
+    const handleDetailedDateRangeChange = useCallback((range) => {
+        setDetailedDateRange(range);
+    }, []);
+
+    const handleMonthSelect = useCallback((monthKey) => {
+        setSelectedMonthKey(monthKey);
+        setActiveTab('monthWise');
+    }, []);
+
+    const clearDetailedViewFilters = useCallback(() => {
+        setDetailedSearchTerm('');
+        setDetailedDateRange({ from: null, to: null });
+        setAdvancedFilters({
+            withholderPIN: '',
+            withholdeeTypes: { suppliers: true, customers: true },
+            status: 'all',
+            amountRange: [0, 100000]
+        });
+        setSelectedMonthKey(null); // Clear month selection if not in month view
+        if (activeTab === 'monthWise') {
+            // If currently in month-wise view, keep the latest month selected if available,
+            // or switch to 'allData' if no months exist after filter reset.
+            const sortedMonths = Object.keys(companyRawExtractions).sort((a, b) => new Date(b) - new Date(a));
+            if (sortedMonths.length > 0) {
+                setSelectedMonthKey(sortedMonths[0]);
+            } else {
+                setActiveTab('allData');
+            }
+        }
+    }, [activeTab, companyRawExtractions]);
+
+    // Set initial selected month for detailed view when company or data changes
+    useEffect(() => {
+        if (activeTab === 'monthWise' && !selectedMonthKey && Object.keys(companyRawExtractions).length > 0) {
+            const sortedMonths = Object.keys(companyRawExtractions).sort((a, b) => new Date(b) - new Date(a));
+            if (sortedMonths.length > 0) {
+                setSelectedMonthKey(sortedMonths[0]);
+            }
+        }
+        // If the current selected month is filtered out, reset it
+        if (selectedMonthKey && !filteredDetailedExtractions[selectedMonthKey] && Object.keys(filteredDetailedExtractions).length > 0) {
+            const sortedMonths = Object.keys(filteredDetailedExtractions).sort((a, b) => new Date(b) - new Date(a));
+            if (sortedMonths.length > 0) {
+                setSelectedMonthKey(sortedMonths[0]);
+            } else {
+                setSelectedMonthKey(null); // No months left after filter
+            }
+        } else if (selectedMonthKey && !filteredDetailedExtractions[selectedMonthKey] && Object.keys(filteredDetailedExtractions).length === 0) {
+            setSelectedMonthKey(null);
+        }
+    }, [selectedCompanyId, companyRawExtractions, selectedMonthKey, activeTab, filteredDetailedExtractions]);
+
+
+    // Export logic
+    const exportSummaryToExcel = useCallback(async () => {
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet('Company Summary');
+
+        worksheet.addRow(['IDX', 'ID', 'Company Name', 'Categories', 'Suppliers', 'Customers', 'Latest Extraction Date', 'Number of Extractions', 'Total Amount (KSH)']);
+
+        worksheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+        worksheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E40AF' } };
+
+        summaryTableData.forEach((company, idx) => {
+            worksheet.addRow([
+                idx + 1,
+                company.id,
+                company.company_name,
+                company.categories.join(', '),
+                company.suppliers.length,
+                company.customers.length,
+                company.latestExtractionDate,
+                company.numberOfExtractions,
+                company.totalAmountRaw, // Use raw amount for export to allow excel formatting
+            ]);
+        });
+
+        worksheet.columns.forEach(column => {
+            column.width = 20;
+        });
+        worksheet.getColumn(9).numFmt = '#,##0.00'; // Format amount column in Excel
+
+        const buffer = await workbook.xlsx.writeBuffer();
+        const timestamp = format(new Date(), 'yyyyMMdd_HHmmss');
+        saveAs(new Blob([buffer]), `WHVAT_Summary_${timestamp}.xlsx`);
+        toast.success("Summary exported successfully!");
+    }, [summaryTableData]);
+
+    const handleExportDetailedData = useCallback(async (options) => {
+        const workbook = new ExcelJS.Workbook();
+        const companyName = selectedCompanyDetails?.company_name || 'Selected_Company';
+
         let dataToExport;
         if (options.range === 'all') {
-            dataToExport = { ...companyData };
+            dataToExport = companyRawExtractions;
         } else if (options.range === 'current') {
-            dataToExport = { ...filteredData };
+            dataToExport = filteredDetailedExtractions;
         } else if (options.range === 'custom' && options.dateRange.from && options.dateRange.to) {
-            dataToExport = Object.fromEntries(
-                Object.entries(companyData).filter(([key]) => {
-                    const [year, month] = key.split('-');
-                    const keyDate = new Date(year, parseInt(month) - 1);
-                    return keyDate >= options.dateRange.from && keyDate <= options.dateRange.to;
-                })
+            dataToExport = applyDetailedFilters(
+                companyRawExtractions,
+                '', // No search term
+                options.dateRange,
+                null // No advanced filters
             );
         } else {
-            dataToExport = { ...filteredData };
+            // Fallback for current view data if range is not recognized or custom range is invalid
+            dataToExport = filteredDetailedExtractions;
         }
 
-        const worksheet = workbook.addWorksheet('All Data');
+        const worksheet = workbook.addWorksheet('Extraction Data');
         const headers = [
             'Month/Year', 'Sr.No.', 'Withholder PIN', 'Withholdee PIN', 'Withholder Name',
             'Pay Point Name', 'Status', 'Invoice No', 'Certificate Date',
             'VAT Withholding Amount', 'WHT Certificate No'
         ];
         worksheet.addRow(headers);
-
-        // Add different styles for headers
         worksheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
         worksheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E40AF' } };
 
-        Object.entries(dataToExport).forEach(([month, data]) => {
-            const [year, monthNum] = month.split('-');
-            const monthName = `${getMonthName(monthNum)} ${year}`;
+        // Process data for export, applying internal export dialog filters
+        const processDataForExport = (tableData, exportOptions) => {
+            return tableData.filter(row => {
+                // This is a placeholder for actual supplier/customer type identification
+                // You'd need a more robust system (e.g., a lookup table or a flag in your data)
+                const isSupplier = row[1]?.toString().startsWith('S'); // Example: PIN starts with 'S'
+                const isCustomer = row[2]?.toString().startsWith('C'); // Example: PIN starts with 'C'
+
+                if (exportOptions.type === 'suppliers' && !isSupplier) return false;
+                if (exportOptions.type === 'customers' && !isCustomer) return false;
+                if (exportOptions.type === 'custom') {
+                    if (!exportOptions.includeSuppliers && isSupplier) return false;
+                    if (!exportOptions.includeCustomers && isCustomer) return false;
+                    // If neither included, only include if it's neither supplier nor customer type
+                    if (!exportOptions.includeSuppliers && !exportOptions.includeCustomers && (isSupplier || isCustomer)) return false;
+                }
+                return true;
+            });
+        };
+
+        Object.entries(dataToExport).sort(([a], [b]) => new Date(a) - new Date(b)).forEach(([monthKey, data]) => {
+            const [year, monthNum] = monthKey.split('-');
+            const monthLabel = `${getMonthName(monthNum)} ${year} `;
 
             if (data.tableData && data.tableData.length > 0) {
-                // Apply supplier/customer filter to the data
-                const filteredTableData = filterData(data.tableData, options);
+                const filteredTableData = processDataForExport(data.tableData, options);
 
                 if (filteredTableData.length > 0) {
-                    // Add data rows
                     filteredTableData.forEach(row => {
-                        worksheet.addRow([monthName, ...row]);
+                        // Assuming the 'row' itself contains all cell values
+                        worksheet.addRow([monthLabel, ...row]);
                     });
 
-                    // Add month total
                     const monthTotal = filteredTableData.reduce((sum, row) => sum + parseFloat(row[8] || 0), 0);
                     const totalRow = worksheet.addRow([
-                        monthName, 'Total', '', '', '', '', '', '', '', formatAmount(monthTotal), ''
+                        monthLabel, 'Total', '', '', '', '', '', '', '', monthTotal, '' // Raw amount for Excel formatting
                     ]);
-
-                    // Style total row
                     totalRow.font = { bold: true };
                     totalRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE5F7E8' } };
-
-                    // Add separator row
-                    worksheet.addRow([]);
+                    worksheet.addRow([]); // Blank row separator
                 }
-            } else {
-                worksheet.addRow([monthName, `No records found for ${monthName}`]);
             }
         });
 
-        // Auto-fit columns
         worksheet.columns.forEach(column => {
             column.width = 15;
         });
-
-        // Format currency column
-        worksheet.getColumn(10).numFmt = '#,##0.00 "KSH"';
+        worksheet.getColumn(10).numFmt = '#,##0.00'; // Format VAT Amount column
 
         // Add a summary sheet
         const summarySheet = workbook.addWorksheet('Summary');
-        summarySheet.addRow(['Month/Year', 'Number of Transactions', 'Total Amount']);
+        summarySheet.addRow(['Month/Year', 'Number of Transactions', 'Total Amount (KSH)']);
         summarySheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
         summarySheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E40AF' } };
 
-        // Add summary data
-        Object.entries(dataToExport).forEach(([month, data]) => {
-            const [year, monthNum] = month.split('-');
-            const monthName = `${getMonthName(monthNum)} ${year}`;
+        let grandTotal = 0;
+        let grandTotalTransactions = 0;
+
+        Object.entries(dataToExport).sort(([a], [b]) => new Date(a) - new Date(b)).forEach(([monthKey, data]) => {
+            const [year, monthNum] = monthKey.split('-');
+            const monthLabel = `${getMonthName(monthNum)} ${year} `;
 
             if (data.tableData && data.tableData.length > 0) {
-                // Apply supplier/customer filter to the data
-                const filteredTableData = filterData(data.tableData, options);
+                const filteredTableData = processDataForExport(data.tableData, options);
                 const monthTotal = filteredTableData.reduce((sum, row) => sum + parseFloat(row[8] || 0), 0);
+                const monthTransactions = filteredTableData.length;
+
+                grandTotal += monthTotal;
+                grandTotalTransactions += monthTransactions;
 
                 summarySheet.addRow([
-                    monthName,
-                    filteredTableData.length,
-                    formatAmount(monthTotal).replace('KSH ', '')
+                    monthLabel,
+                    monthTransactions,
+                    monthTotal
                 ]);
             } else {
-                summarySheet.addRow([monthName, 0, '0.00']);
+                summarySheet.addRow([monthLabel, 0, 0]);
             }
         });
 
-        // Add grand total
-        const grandTotal = Object.entries(dataToExport).reduce((sum, [_, data]) => {
-            if (!data.tableData) return sum;
-            const filteredTableData = filterData(data.tableData, options);
-            return sum + filteredTableData.reduce((s, row) => s + parseFloat(row[8] || 0), 0);
-        }, 0);
-
-        const totalTransactions = Object.entries(dataToExport).reduce((sum, [_, data]) => {
-            if (!data.tableData) return sum;
-            const filteredTableData = filterData(data.tableData, options);
-            return sum + filteredTableData.length;
-        }, 0);
-
         const grandTotalRow = summarySheet.addRow([
-            'GRAND TOTAL', totalTransactions, formatAmount(grandTotal).replace('KSH ', '')
+            'GRAND TOTAL', grandTotalTransactions, grandTotal
         ]);
         grandTotalRow.font = { bold: true };
         grandTotalRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFD9D9' } };
 
-        // Auto-fit columns
         summarySheet.columns.forEach(column => {
             column.width = 20;
         });
-        summarySheet.getColumn(3).numFmt = '#,##0.00 "KSH"';
+        summarySheet.getColumn(3).numFmt = '#,##0.00';
 
-        const fileName = `${selectedCompany}_WHVAT_Extractions_${new Date().toISOString().split('T')[0]}.${options.format}`;
+        const timestamp = format(new Date(), 'yyyyMMdd_HHmmss');
+        const fileName = `${companyName.replace(/[^a-zA-Z0-9]/g, '_')}_WHVAT_Extractions_${timestamp}.${options.format} `;
 
-        // Save the file
         if (options.format === 'xlsx') {
             const buffer = await workbook.xlsx.writeBuffer();
             saveAs(new Blob([buffer]), fileName);
         } else {
-            const buffer = await workbook.csv.writeBuffer();
-            saveAs(new Blob([buffer]), fileName.replace('.xlsx', '.csv'));
+            // For CSV, we need to convert the worksheet to CSV string. ExcelJS can do this.
+            const csvContent = await workbook.csv.writeBuffer();
+            saveAs(new Blob([csvContent], { type: 'text/csv;charset=utf-8' }), fileName.replace('.xlsx', '.csv'));
         }
+        toast.success(`Exported "${fileName}" successfully!`);
+    }, [selectedCompanyDetails, companyRawExtractions, filteredDetailedExtractions, applyDetailedFilters]);
 
-        toast({
-            title: "Export Complete",
-            description: `File "${fileName}" has been downloaded successfully.`,
-        });
-    };
 
-    // Get filtered and sorted summary data
-    const getFilteredSortedSummary = () => {
-        // First apply category filters
-        let data = applyFiltersToData(allCompanyData).map((company) => {
-            const extractionDates = company.extraction_data ? Object.keys(company.extraction_data) : [];
-            let latestExtractionDate = 'N/A';
+    // ======== Column Definitions ========
 
-            if (extractionDates.length > 0) {
-                const dates = extractionDates
-                    .map(date => company.extraction_data[date].extractionDate)
-                    .filter(date => date) // Filter out undefined/null dates
-                    .map(date => new Date(date));
-
-                if (dates.length > 0) {
-                    latestExtractionDate = new Date(Math.max(...dates)).toLocaleDateString();
-                }
-            }
-
-            const totalAmount = calculateOverallTotal(company.extraction_data);
-            return {
-                ...company,
-                latestExtractionDate,
-                numberOfExtractions: extractionDates.length,
-                totalAmount: formatAmount(totalAmount),
-                totalAmountRaw: totalAmount,
-            };
-        });
-
-        // Apply generic search filter
-        if (summarySearch) {
-            data = data.filter((company) => {
-                const searchTerm = summarySearch.toLowerCase();
-
-                // Search across these common fields
-                const searchFields = [
-                    company.company_name,
-                    company.categories.join(' '),
-                    company.latestExtractionDate,
-                    company.numberOfExtractions.toString(),
-                    company.totalAmount,
-                ];
-
-                // Check if any field contains the search term
-                return searchFields.some(field =>
-                    field && field.toString().toLowerCase().includes(searchTerm)
-                );
-            });
-        }
-
-        // Default sort by company name
-        data.sort((a, b) => a.company_name.toLowerCase().localeCompare(b.company_name.toLowerCase()));
-
-        return data;
-    };
-
-    // Column definition for summary table
     const summaryColumns = useMemo(() => [
         {
             accessorKey: "index",
@@ -2058,7 +1917,7 @@ export function WHVATExtractorReports() {
                 <div
                     className="font-medium text-blue-700 hover:text-blue-900 cursor-pointer"
                     onClick={() => {
-                        setSelectedCompany(row.original.company_name);
+                        handleSelectCompany(row.original.id);
                         setView('detailed');
                     }}
                 >
@@ -2066,25 +1925,25 @@ export function WHVATExtractorReports() {
                 </div>
             ),
         },
-        // {
-        //     accessorKey: "categories",
-        //     header: "Categories",
-        //     cell: ({ row }) => (
-        //         <div className="flex flex-wrap gap-1">
-        //             {row.original.categories.map((category) => (
-        //                 <Badge key={category} variant="outline" className={
-        //                     category === 'Acc' ? 'bg-blue-50 text-blue-800 border-blue-200' :
-        //                         category === 'Imm' ? 'bg-green-50 text-green-800 border-green-200' :
-        //                             category === 'Sheria' ? 'bg-purple-50 text-purple-800 border-purple-200' :
-        //                                 category === 'Audit' ? 'bg-amber-50 text-amber-800 border-amber-200' :
-        //                                     ''
-        //                 }>
-        //                     {category}
-        //                 </Badge>
-        //             ))}
-        //         </div>
-        //     ),
-        // },
+        {
+            accessorKey: "categories",
+            header: "Categories",
+            cell: ({ row }) => (
+                <div className="flex flex-wrap gap-1">
+                    {row.original.categories.map((category) => (
+                        <Badge key={category} variant="outline" className={cn(
+                            category === 'Acc' ? 'bg-blue-50 text-blue-800 border-blue-200' :
+                                category === 'Imm' ? 'bg-green-50 text-green-800 border-green-200' :
+                                    category === 'Sheria' ? 'bg-purple-50 text-purple-800 border-purple-200' :
+                                        category === 'Audit' ? 'bg-amber-50 text-amber-800 border-amber-200' :
+                                            ''
+                        )}>
+                            {category}
+                        </Badge>
+                    ))}
+                </div>
+            ),
+        },
         {
             accessorKey: "suppliers",
             header: ({ column }) => (
@@ -2197,14 +2056,14 @@ export function WHVATExtractorReports() {
             ),
             cell: ({ row }) => (
                 <div className="text-right font-bold text-green-600 whitespace-nowrap">
-                    {row.original.totalAmount}
+                    {formatAmount(row.original.totalAmountRaw)}
                 </div>
             ),
         },
-    ], []);
+    ], [handleSelectCompany]);
 
     // Create month data table columns
-    const createMonthDataColumns = () => [
+    const detailedTableColumns = useMemo(() => [
         {
             accessorKey: "monthName",
             header: ({ column }) => (
@@ -2224,9 +2083,10 @@ export function WHVATExtractorReports() {
                 </div>
             ),
             cell: ({ row }) => <div className="font-medium">{row.original.monthName}</div>,
+            enableSorting: true, // Allow sorting by month
         },
         {
-            accessorKey: "0",
+            accessorKey: "0", // Maps to Sr.No. in original data structure
             header: ({ column }) => (
                 <div className="flex items-center">
                     <Button
@@ -2242,7 +2102,7 @@ export function WHVATExtractorReports() {
             cell: ({ row }) => <div>{row.original[0]}</div>,
         },
         {
-            accessorKey: "1",
+            accessorKey: "1", // Withholder PIN
             header: ({ column }) => (
                 <div className="flex items-center">
                     <Button
@@ -2264,7 +2124,7 @@ export function WHVATExtractorReports() {
             ),
         },
         {
-            accessorKey: "2",
+            accessorKey: "2", // Withholdee PIN
             header: ({ column }) => (
                 <div className="flex items-center">
                     <Button
@@ -2286,7 +2146,7 @@ export function WHVATExtractorReports() {
             ),
         },
         {
-            accessorKey: "3",
+            accessorKey: "3", // Withholder Name
             header: ({ column }) => (
                 <div className="flex items-center">
                     <Button
@@ -2302,7 +2162,7 @@ export function WHVATExtractorReports() {
             cell: ({ row }) => <div>{row.original[3]}</div>,
         },
         {
-            accessorKey: "4",
+            accessorKey: "4", // Pay Point Name
             header: ({ column }) => (
                 <div className="flex items-center">
                     <Button
@@ -2318,7 +2178,7 @@ export function WHVATExtractorReports() {
             cell: ({ row }) => <div>{row.original[4]}</div>,
         },
         {
-            accessorKey: "5",
+            accessorKey: "5", // Status
             header: ({ column }) => (
                 <div className="flex items-center">
                     <Button
@@ -2338,7 +2198,7 @@ export function WHVATExtractorReports() {
             ),
         },
         {
-            accessorKey: "6",
+            accessorKey: "6", // Invoice No
             header: ({ column }) => (
                 <div className="flex items-center">
                     <Button
@@ -2354,7 +2214,7 @@ export function WHVATExtractorReports() {
             cell: ({ row }) => <div>{row.original[6]}</div>,
         },
         {
-            accessorKey: "7",
+            accessorKey: "7", // Certificate Date
             header: ({ column }) => (
                 <div className="flex items-center">
                     <Button
@@ -2370,7 +2230,7 @@ export function WHVATExtractorReports() {
             cell: ({ row }) => <div>{formatDate(row.original[7])}</div>,
         },
         {
-            accessorKey: "8",
+            accessorKey: "8", // VAT Withholding Amount
             header: ({ column }) => (
                 <div className="flex items-center justify-end">
                     <Button
@@ -2394,7 +2254,7 @@ export function WHVATExtractorReports() {
             ),
         },
         {
-            accessorKey: "9",
+            accessorKey: "9", // WHT Certificate No
             header: ({ column }) => (
                 <div className="flex items-center">
                     <Button
@@ -2413,64 +2273,21 @@ export function WHVATExtractorReports() {
             ),
             cell: ({ row }) => <div className="font-mono text-xs">{row.original[9]}</div>,
         },
-    ];
+    ], []);
 
-    // Get all data with month/year column
-    const getAllDataWithMonth = () => {
-        if (!filteredData) {
-            console.log('getAllDataWithMonth: No filteredData');
-            return [];
-        }
+    // Columns for month-wise view (without the 'monthName' column)
+    const monthWiseTableColumns = useMemo(() => detailedTableColumns.slice(1), [detailedTableColumns]);
 
-        console.log('getAllDataWithMonth called with filteredData keys:', Object.keys(filteredData));
+    // ======== Render Views ========
 
-        const allData = Object.entries(filteredData).flatMap(([month, data]) => {
-            if (!data.tableData || data.tableData.length === 0) {
-                console.log(`Month ${month}: No table data`);
-                return [];
-            }
-
-            const [year, monthNum] = month.split('-');
-            const monthName = `${getMonthName(monthNum)} ${year}`;
-
-            console.log(`Month ${month}: Processing ${data.tableData.length} records`);
-
-            return data.tableData.map((row, index) => ({
-                ...row,
-                monthName,
-                monthKey: month,
-                rowId: `${month}-${index}` // Add unique ID for debugging
-            }));
-        });
-
-        console.log('getAllDataWithMonth result:', allData.length, 'total records');
-        return allData;
-    };
-
-    // Get unique years from filtered data
-    const getYearsFromData = () => {
-        if (!filteredData) return [];
-
-        const years = new Set();
-        Object.keys(filteredData).forEach(month => {
-            const [year] = month.split('-');
-            years.add(year);
-        });
-
-        return Array.from(years).sort((a, b) => b - a); // Sort descending
-    };
-
-    // Render summary view
     const renderSummaryView = () => {
-        const summaryData = getFilteredSortedSummary(summarySearch);
-
         // Calculate summary statistics
-        const totalCompanies = summaryData.length;
-        const totalExtractions = summaryData.reduce((sum, company) => sum + company.numberOfExtractions, 0);
-        const totalAmount = summaryData.reduce((sum, company) => sum + company.totalAmountRaw, 0);
-        const companiesWithExtractions = summaryData.filter(c => c.numberOfExtractions > 0).length;
-        const totalSuppliers = summaryData.reduce((sum, company) => sum + (company.suppliers?.length || 0), 0);
-        const totalCustomers = summaryData.reduce((sum, company) => sum + (company.customers?.length || 0), 0);
+        const totalCompanies = summaryTableData.length;
+        const totalExtractions = summaryTableData.reduce((sum, company) => sum + company.numberOfExtractions, 0);
+        const totalAmount = summaryTableData.reduce((sum, company) => sum + company.totalAmountRaw, 0);
+        const companiesWithExtractions = summaryTableData.filter(c => c.numberOfExtractions > 0).length;
+        const totalSuppliers = summaryTableData.reduce((sum, company) => sum + (company.suppliers?.length || 0), 0);
+        const totalCustomers = summaryTableData.reduce((sum, company) => sum + (company.customers?.length || 0), 0);
 
         return (
             <>
@@ -2494,7 +2311,7 @@ export function WHVATExtractorReports() {
                             <Filter className="h-4 w-4 mr-1" />
                             Filter Categories
                             <Badge variant="secondary" className="ml-2">
-                                {summaryData.length}
+                                {summaryTableData.length}
                             </Badge>
                         </Button>
                     </div>
@@ -2505,15 +2322,20 @@ export function WHVATExtractorReports() {
                         <Button
                             onClick={() => {
                                 setSummarySearch('');
-                                handleApplyFilters({
+                                setCategoryFilters({
                                     categories: {
-                                        'All Categories': true,
-                                        'Acc': false,
+                                        'All Categories': false, // Uncheck all
+                                        'Acc': true, // Reset to default 'Acc' selected
                                         'Imm': false,
                                         'Sheria': false,
                                         'Audit': false
                                     },
-                                    categorySettings: {}
+                                    categorySettings: { // Reset settings too
+                                        'Acc': { clientStatus: { All: false, Active: true, Inactive: false, Missing: false }, sectionStatus: { All: false, Active: true, Inactive: false, Missing: false } },
+                                        'Imm': { clientStatus: { All: false, Active: true, Inactive: false, Missing: false }, sectionStatus: { All: false, Active: true, Inactive: false, Missing: false } },
+                                        'Sheria': { clientStatus: { All: false, Active: true, Inactive: false, Missing: false }, sectionStatus: { All: false, Active: true, Inactive: false, Missing: false } },
+                                        'Audit': { clientStatus: { All: false, Active: true, Inactive: false, Missing: false }, sectionStatus: { All: false, Active: true, Inactive: false, Missing: false } },
+                                    }
                                 });
                             }}
                             variant="ghost"
@@ -2527,7 +2349,7 @@ export function WHVATExtractorReports() {
                 <ClientCategoryFilter
                     open={isCategoryFilterOpen}
                     onOpenChange={setIsCategoryFilterOpen}
-                    onFilterChange={handleApplyFilters}
+                    onFilterChange={handleCategoryFilterChange}
                     showSectionName=""
                     initialFilters={categoryFilters}
                     showSectionStatus={false}
@@ -2544,11 +2366,11 @@ export function WHVATExtractorReports() {
                         <CardContent className="p-0">
                             <EnhancedDataTable
                                 columns={summaryColumns}
-                                data={summaryData}
-                                searchPlaceholder="Search companies, amounts..."
-                                onSearch={setSummarySearch}
+                                data={summaryTableData}
                                 isLoading={loading}
-                                pagination={false}
+                                pagination={true} // Enable pagination for summary table
+                                showColumnToggle={false} // Maybe not needed for summary
+                                tableMaxHeight="max-h-[700px]" // Let it scroll if too many
                             />
                         </CardContent>
                     </Card>
@@ -2557,10 +2379,9 @@ export function WHVATExtractorReports() {
         );
     };
 
-    // Render detailed view
     const renderDetailedView = () => (
         <div className="grid grid-cols-5 gap-4 h-[680px]">
-            {/* Left sidebar */}
+            {/* Left sidebar - Company Selection */}
             <div className="col-span-1 bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
                 <div className="p-3 bg-slate-50 border-b border-slate-200">
                     <div className="relative">
@@ -2584,7 +2405,7 @@ export function WHVATExtractorReports() {
                         <Filter className="h-4 w-4 mr-1" />
                         Filter Categories
                         <Badge variant="secondary" className="ml-2">
-                            {companies.length}
+                            {sidebarCompanies.length}
                         </Badge>
                     </Button>
                 </div>
@@ -2592,10 +2413,10 @@ export function WHVATExtractorReports() {
                 <ClientCategoryFilter
                     open={isCategoryFilterOpen}
                     onOpenChange={setIsCategoryFilterOpen}
-                    onFilterChange={handleApplyFilters}
+                    onFilterChange={handleCategoryFilterChange}
                     showSectionName=""
                     initialFilters={categoryFilters}
-                    showSectionStatus={false}
+                    showSectionStatus={true} // Keep section status filtering for sidebar if needed
                 />
 
                 {loading ? (
@@ -2609,22 +2430,15 @@ export function WHVATExtractorReports() {
                 ) : (
                     <ScrollArea className="h-[590px]">
                         <div className="space-y-0.5 px-1 py-2">
-                            {companies
-                                .filter(company =>
-                                    !sidebarSearchTerm ||
-                                    company.company_name.toLowerCase().includes(sidebarSearchTerm.toLowerCase())
-                                )
-                                .sort((a, b) => a.company_name.localeCompare(b.company_name))
-                                .map((company) => {
-                                    const isSelected = selectedCompany === company.company_name;
-                                    // Get company data for badges
-                                    const companyData = allCompanyData.find(c => c.company_name === company.company_name);
-                                    const hasExtractions = companyData && Object.keys(companyData.extraction_data || {}).length > 0;
+                            {sidebarCompanies.length > 0 ? (
+                                sidebarCompanies.map((company) => {
+                                    const isSelected = selectedCompanyId === company.id;
+                                    const hasExtractions = Object.keys(company.extraction_data || {}).length > 0;
 
                                     return (
                                         <button
-                                            key={company.company_name}
-                                            onClick={() => setSelectedCompany(company.company_name)}
+                                            key={company.id}
+                                            onClick={() => handleSelectCompany(company.id)}
                                             className={cn(
                                                 "w-full flex items-center justify-between px-3 py-2.5 text-sm rounded-md transition-all",
                                                 isSelected
@@ -2634,9 +2448,9 @@ export function WHVATExtractorReports() {
                                             )}
                                         >
                                             <div className="truncate flex-1 text-left">{company.company_name}</div>
-                                            {companyData?.categories?.length > 0 && (
+                                            {company.categories?.length > 0 && (
                                                 <div className="flex gap-0.5 ml-2">
-                                                    {companyData.categories.slice(0, 2).map((category) => (
+                                                    {company.categories.slice(0, 2).map((category) => (
                                                         <Badge
                                                             key={category}
                                                             variant="outline"
@@ -2656,7 +2470,7 @@ export function WHVATExtractorReports() {
                                                             {category}
                                                         </Badge>
                                                     ))}
-                                                    {companyData.categories.length > 2 && (
+                                                    {company.categories.length > 2 && (
                                                         <Badge
                                                             variant="outline"
                                                             className={cn(
@@ -2664,14 +2478,19 @@ export function WHVATExtractorReports() {
                                                                 isSelected ? "bg-blue-500 border-blue-400 text-white" : "bg-slate-50 border-slate-200"
                                                             )}
                                                         >
-                                                            +{companyData.categories.length - 2}
+                                                            +{company.categories.length - 2}
                                                         </Badge>
                                                     )}
                                                 </div>
                                             )}
                                         </button>
                                     );
-                                })}
+                                })
+                            ) : (
+                                <div className="p-4 text-center text-slate-500">
+                                    No companies found with current filters.
+                                </div>
+                            )}
                         </div>
                     </ScrollArea>
                 )}
@@ -2679,22 +2498,22 @@ export function WHVATExtractorReports() {
 
             {/* Main content area */}
             <div className="col-span-4">
-                {selectedCompany ? (
+                {selectedCompanyDetails ? (
                     loading ? (
                         <div className="space-y-4">
                             <Skeleton className="h-10 w-full" />
                             <Skeleton className="h-60 w-full" />
                             <Skeleton className="h-40 w-full" />
                         </div>
-                    ) : companyData ? (
+                    ) : (
                         <div className="space-y-4">
                             <div className="flex justify-between items-center bg-white p-4 rounded-lg border border-slate-200 shadow-sm">
                                 <div>
-                                    <h2 className="text-xl font-bold text-slate-800">{selectedCompany}</h2>
+                                    <h2 className="text-xl font-bold text-slate-800">{selectedCompanyDetails.company_name}</h2>
                                     <div className="text-sm text-slate-500 mt-1">
-                                        {Object.keys(companyData).length} extraction periods | {" "}
+                                        {Object.keys(companyRawExtractions).length} extraction periods | {" "}
                                         <span className="text-green-600 font-semibold">
-                                            Total: {formatAmount(calculateOverallTotal(companyData))}
+                                            Total: {formatAmount(selectedCompanyDetails.totalAmountRaw)}
                                         </span>
                                     </div>
                                 </div>
@@ -2708,7 +2527,7 @@ export function WHVATExtractorReports() {
                                     >
                                         <SlidersHorizontal className="h-4 w-4" />
                                         Filters
-                                        {advancedFilters && (
+                                        {(advancedFilters.withholderPIN || advancedFilters.status !== 'all' || !advancedFilters.withholdeeTypes.suppliers || !advancedFilters.withholdeeTypes.customers || advancedFilters.amountRange[0] !== 0 || advancedFilters.amountRange[1] !== 100000) && ( // Basic check for active filters
                                             <Badge variant={showFiltersPanel ? "outline" : "secondary"} className={showFiltersPanel ? "bg-blue-500 text-white" : ""}>
                                                 Active
                                             </Badge>
@@ -2716,86 +2535,58 @@ export function WHVATExtractorReports() {
                                     </Button>
 
                                     <ExportOptionsDialog
-                                        data={companyData}
-                                        company={selectedCompany}
-                                        onExport={handleExport}
+                                        data={companyRawExtractions} // Pass raw data to dialog, let it filter internally
+                                        companyName={selectedCompanyDetails.company_name}
+                                        onExport={handleExportDetailedData}
                                     />
                                 </div>
                             </div>
 
-                            <div className="grid grid-cols-4 gap-4">
+                            <div className={cn(
+                                "grid gap-4",
+                                showFiltersPanel ? "grid-cols-4" : "grid-cols-1"
+                            )}>
                                 {/* Advanced filters panel */}
                                 {showFiltersPanel && (
                                     <div className="col-span-1 row-span-2">
                                         <AdvancedFilterPanel
-                                            data={getAllDataWithMonth()}
+                                            rawAllDetailedData={allDetailedTableData} // Pass raw data for options
+                                            currentFilters={advancedFilters}
                                             onFilterChange={handleAdvancedFilterChange}
+                                            onReset={handleAdvancedFilterReset}
                                         />
                                     </div>
                                 )}
 
                                 <div className={cn(
-                                    "col-span-4 space-y-4",
-                                    showFiltersPanel && "col-span-3"
+                                    "space-y-4",
+                                    showFiltersPanel ? "col-span-3" : "col-span-1"
                                 )}>
                                     <Card className="border-slate-200">
                                         <CardHeader className="py-3 px-4 flex flex-row items-center justify-between bg-slate-50 border-b">
                                             <CardTitle className="text-base font-semibold">
-                                                <Tabs value={activeTab} onValueChange={(value) => {
-                                                    console.log('Tab changed to:', value);
-                                                    setActiveTab(value);
-                                                }} className="w-full">
+                                                <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
                                                     <TabsList className="bg-slate-200/70 h-9 w-auto">
                                                         <TabsTrigger
                                                             value="allData"
-                                                            className={cn(
-                                                                "transition-all duration-200",
-                                                                activeTab === "allData"
-                                                                    ? "bg-white shadow-sm text-blue-600"
-                                                                    : "hover:bg-slate-100 text-slate-700 data-[state=active]:bg-white"
-                                                            )}
+                                                            className={activeTab === "allData" ? "bg-white shadow-sm" : "hover:bg-slate-100 text-slate-700 data-[state=active]:bg-white"}
                                                         >
                                                             <BookOpen className="h-4 w-4 mr-1.5" />
                                                             All Data
-                                                            {filteredData && (
-                                                                <Badge variant="secondary" className="ml-1.5 text-xs">
-                                                                    {Object.values(filteredData).reduce((sum, data) => sum + (data.tableData?.length || 0), 0)}
-                                                                </Badge>
-                                                            )}
                                                         </TabsTrigger>
                                                         <TabsTrigger
                                                             value="monthWise"
-                                                            className={cn(
-                                                                "transition-all duration-200",
-                                                                activeTab === "monthWise"
-                                                                    ? "bg-white shadow-sm text-blue-600"
-                                                                    : "hover:bg-slate-100 text-slate-700 data-[state=active]:bg-white"
-                                                            )}
+                                                            className={activeTab === "monthWise" ? "bg-white shadow-sm" : "hover:bg-slate-100 text-slate-700 data-[state=active]:bg-white"}
                                                         >
                                                             <CalendarIcon className="h-4 w-4 mr-1.5" />
                                                             Month View
-                                                            {companyData && (
-                                                                <Badge variant="secondary" className="ml-1.5 text-xs">
-                                                                    {Object.keys(companyData).length}
-                                                                </Badge>
-                                                            )}
                                                         </TabsTrigger>
                                                         <TabsTrigger
                                                             value="totals"
-                                                            className={cn(
-                                                                "transition-all duration-200",
-                                                                activeTab === "totals"
-                                                                    ? "bg-white shadow-sm text-blue-600"
-                                                                    : "hover:bg-slate-100 text-slate-700 data-[state=active]:bg-white"
-                                                            )}
+                                                            className={activeTab === "totals" ? "bg-white shadow-sm" : "hover:bg-slate-100 text-slate-700 data-[state=active]:bg-white"}
                                                         >
                                                             <BarChart3 className="h-4 w-4 mr-1.5" />
                                                             Totals
-                                                            {getYearsFromData().length > 0 && (
-                                                                <Badge variant="secondary" className="ml-1.5 text-xs">
-                                                                    {getYearsFromData().length} years
-                                                                </Badge>
-                                                            )}
                                                         </TabsTrigger>
                                                     </TabsList>
                                                 </Tabs>
@@ -2803,217 +2594,175 @@ export function WHVATExtractorReports() {
 
                                             <div className="flex items-center gap-2">
                                                 <Button
-                                                    onClick={() => {
-                                                        console.log('Current state before clear:', { activeTab, companyData: !!companyData, filteredData: !!filteredData });
-                                                        clearFilters();
-                                                    }}
+                                                    onClick={clearDetailedViewFilters}
                                                     variant="ghost"
                                                     size="sm"
                                                     className="h-9 gap-1.5 text-slate-700 hover:text-slate-900"
                                                 >
                                                     <RefreshCw className="h-3.5 w-3.5" />
-                                                    <span className="hidden sm:inline">Reset</span>
+                                                    <span className="hidden sm:inline">Reset All</span>
                                                 </Button>
-                                                <Badge variant="outline" className="text-xs">
-                                                    Tab: {activeTab}
-                                                </Badge>
                                             </div>
                                         </CardHeader>
 
                                         <CardContent className="p-0">
-                                            {/* Force re-render by adding key */}
-                                            <div key={`${selectedCompany}-${activeTab}`}>
-                                                <TabsContent value="allData" className="m-0" forceMount={activeTab === 'allData'}>
-                                                    {activeTab === 'allData' && (
-                                                        <>
-                                                            <div className="p-4 bg-white border-b">
-                                                                <div className="flex flex-wrap gap-4 items-center">
-                                                                    <DateRangePicker
-                                                                        value={dateRange}
-                                                                        onChange={handleDateRangeChange}
-                                                                    />
+                                            <TabsContent value="allData" className="m-0">
+                                                <div className="p-4 bg-white border-b">
+                                                    <div className="flex flex-wrap gap-4 items-center">
+                                                        <DateRangePicker
+                                                            value={detailedDateRange}
+                                                            onChange={handleDetailedDateRangeChange}
+                                                        />
 
-                                                                    <div className="flex items-center gap-2 ml-auto">
-                                                                        <Input
-                                                                            placeholder="Search within data..."
-                                                                            value={searchTerm}
-                                                                            onChange={(e) => setSearchTerm(e.target.value)}
-                                                                            className="w-64 bg-white border-slate-200"
-                                                                        />
-                                                                        <Badge variant="outline" className="text-xs">
-                                                                            {getAllDataWithMonth().length} records
-                                                                        </Badge>
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-
-                                                            {(() => {
-                                                                const allDataWithMonth = getAllDataWithMonth();
-                                                                console.log('Rendering AllData tab with data length:', allDataWithMonth.length);
-
-                                                                return allDataWithMonth.length > 0 ? (
-                                                                    <div className="h-[420px] overflow-hidden">
-                                                                        <EnhancedDataTable
-                                                                            columns={createMonthDataColumns()}
-                                                                            data={allDataWithMonth}
-                                                                            searchPlaceholder="Search in all months..."
-                                                                            isLoading={loading}
-                                                                            initialPageSize={20}
-                                                                            tableMaxHeight="max-h-[380px]"
-                                                                            pagination={true}
-                                                                        />
-                                                                    </div>
-                                                                ) : (
-                                                                    <div className="flex items-center justify-center h-[400px] border-t">
-                                                                        <div className="text-center max-w-md p-6">
-                                                                            <div className="mx-auto w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center mb-4">
-                                                                                <Search className="h-8 w-8 text-slate-400" />
-                                                                            </div>
-                                                                            <h3 className="text-lg font-semibold text-slate-800">No Data Available</h3>
-                                                                            <p className="text-slate-500 mt-2">
-                                                                                {dateRange.from && dateRange.to
-                                                                                    ? "No data found in the selected date range"
-                                                                                    : searchTerm
-                                                                                        ? `No results found for "${searchTerm}"`
-                                                                                        : "No extraction data available for this company"}
-                                                                            </p>
-                                                                            <div className="mt-4 space-y-2">
-                                                                                <p className="text-xs text-slate-400">
-                                                                                    Active Tab: {activeTab}<br />
-                                                                                    Company: {selectedCompany}<br />
-                                                                                    Raw data months: {companyData ? Object.keys(companyData).length : 0}<br />
-                                                                                    Filtered months: {filteredData ? Object.keys(filteredData).length : 0}
-                                                                                </p>
-                                                                                {(dateRange.from || dateRange.to || searchTerm) && (
-                                                                                    <Button onClick={clearFilters} variant="outline">
-                                                                                        Clear Filters
-                                                                                    </Button>
-                                                                                )}
-                                                                            </div>
-                                                                        </div>
-                                                                    </div>
-                                                                );
-                                                            })()}
-                                                        </>
-                                                    )}
-                                                </TabsContent>
-
-                                                <TabsContent value="monthWise" className="m-0" forceMount={activeTab === 'monthWise'}>
-                                                    {activeTab === 'monthWise' && (
-                                                        <div className="grid grid-cols-4 h-[500px] divide-x divide-slate-200">
-                                                            <div className="col-span-1 border-r">
-                                                                <div className="p-3 bg-slate-50 border-b">
-                                                                    <h3 className="text-sm font-medium text-slate-700">Extractions by Month</h3>
-                                                                </div>
-                                                                <MonthSidebar
-                                                                    months={companyData}
-                                                                    selectedMonth={selectedMonthKey}
-                                                                    onSelectMonth={handleMonthSelect}
+                                                        <div className="flex items-center gap-2 ml-auto">
+                                                            <div className="relative flex-1 min-w-[200px]">
+                                                                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
+                                                                <Input
+                                                                    placeholder="Search within data..."
+                                                                    value={detailedSearchTerm}
+                                                                    onChange={(e) => setDetailedSearchTerm(e.target.value)}
+                                                                    className="w-full pl-9 bg-white border-slate-200"
                                                                 />
                                                             </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
 
-                                                            <div className="col-span-3 border-l overflow-hidden">
-                                                                {selectedMonthKey && filteredData && filteredData[selectedMonthKey] ? (
-                                                                    <div className="h-full flex flex-col">
-                                                                        <div className="bg-slate-50 p-3 border-b flex justify-between items-center">
-                                                                            <div>
-                                                                                <h3 className="text-base font-semibold text-slate-800">
-                                                                                    {(() => {
-                                                                                        const [year, monthNum] = selectedMonthKey.split('-');
-                                                                                        return `${getMonthName(monthNum)} ${year}`;
-                                                                                    })()}
-                                                                                </h3>
-                                                                                <p className="text-sm text-slate-500">
-                                                                                    {filteredData[selectedMonthKey].tableData?.length || 0} records
+                                                {allDetailedTableData && allDetailedTableData.length > 0 ? (
+                                                    <EnhancedDataTable
+                                                        columns={detailedTableColumns}
+                                                        data={allDetailedTableData}
+                                                        isLoading={loading}
+                                                        initialPageSize={20}
+                                                        pagination={true}
+                                                        tableMaxHeight="max-h-[420px]"
+                                                        emptyMessage="No records found in this filtered view."
+                                                    />
+                                                ) : (
+                                                    <div className="flex items-center justify-center h-[400px] border-t">
+                                                        <div className="text-center max-w-md p-6">
+                                                            <div className="mx-auto w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center mb-4">
+                                                                <Search className="h-8 w-8 text-slate-400" />
+                                                            </div>
+                                                            <h3 className="text-lg font-semibold text-slate-800">No Data Available</h3>
+                                                            <p className="text-slate-500 mt-2">
+                                                                No extraction data found with the current filters applied.
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </TabsContent>
+
+                                            <TabsContent value="monthWise" className="m-0">
+                                                <div className="grid grid-cols-4 h-[500px] divide-x divide-slate-200">
+                                                    <div className="col-span-1 border-r">
+                                                        <div className="p-3 bg-slate-50 border-b">
+                                                            <h3 className="text-sm font-medium text-slate-700">Extractions by Month</h3>
+                                                        </div>
+                                                        <MonthSidebar
+                                                            months={filteredDetailedExtractions} // Pass already filtered months
+                                                            selectedMonthKey={selectedMonthKey}
+                                                            onSelectMonth={handleMonthSelect}
+                                                        />
+                                                    </div>
+
+                                                    <div className="col-span-3 border-l overflow-hidden">
+                                                        {selectedMonthKey && filteredDetailedExtractions[selectedMonthKey] ? (
+                                                            <div className="h-full flex flex-col">
+                                                                <div className="bg-slate-50 p-3 border-b flex justify-between items-center">
+                                                                    <div>
+                                                                        <h3 className="text-base font-semibold text-slate-800">
+                                                                            {(() => {
+                                                                                const [year, monthNum] = selectedMonthKey.split('-');
+                                                                                return `${getMonthName(monthNum)} ${year} `;
+                                                                            })()}
+                                                                        </h3>
+                                                                        <p className="text-sm text-slate-500">
+                                                                            {selectedMonthDataForTable?.length || 0} records
+                                                                        </p>
+                                                                    </div>
+                                                                    <div className="text-lg font-bold text-green-600">
+                                                                        {formatAmount(selectedMonthDataForTable?.reduce((sum, row) => sum + parseFloat(row[8] || 0), 0))}
+                                                                    </div>
+                                                                </div>
+
+                                                                <div className="flex-1 overflow-auto p-4">
+                                                                    {selectedMonthDataForTable && selectedMonthDataForTable.length > 0 ? (
+                                                                        <EnhancedDataTable
+                                                                            columns={monthWiseTableColumns}
+                                                                            data={selectedMonthDataForTable}
+                                                                            isLoading={loading}
+                                                                            pagination={true}
+                                                                            tableMaxHeight="max-h-[400px]"
+                                                                            emptyMessage="No records found for this month with current filters."
+                                                                            // Removed internal search, as parent handles it now
+                                                                            // additionalFilters now is solely for adding components like the search input
+                                                                            additionalFilters={[
+                                                                                <div key="search-input-month" className="relative flex-1 max-w-sm">
+                                                                                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
+                                                                                    <Input
+                                                                                        placeholder={`Search in ${getMonthName(selectedMonthKey.split('-')[1])} data...`}
+                                                                                        value={detailedSearchTerm}
+                                                                                        onChange={(e) => setDetailedSearchTerm(e.target.value)}
+                                                                                        className="w-full pl-9 bg-white border-slate-200"
+                                                                                    />
+                                                                                </div>
+                                                                            ]}
+                                                                        />
+                                                                    ) : (
+                                                                        <div className="flex items-center justify-center h-full">
+                                                                            <div className="text-center">
+                                                                                <h3 className="text-lg font-semibold text-slate-800">No Records Found</h3>
+                                                                                <p className="text-slate-500 mt-2">
+                                                                                    This month has no extraction data matching the current filters.
                                                                                 </p>
                                                                             </div>
-                                                                            <div className="text-lg font-bold text-green-600">
-                                                                                {formatAmount(calculateTotal(filteredData[selectedMonthKey]))}
-                                                                            </div>
                                                                         </div>
-
-                                                                        <div className="flex-1 overflow-auto p-4">
-                                                                            {filteredData[selectedMonthKey].tableData &&
-                                                                                filteredData[selectedMonthKey].tableData.length > 0 ? (
-                                                                                <EnhancedDataTable
-                                                                                    columns={createMonthDataColumns().slice(1)} // Remove month column
-                                                                                    data={filteredData[selectedMonthKey].tableData}
-                                                                                    searchPlaceholder={`Search in ${getMonthName(selectedMonthKey.split('-')[1])}...`}
-                                                                                    onSearch={setSearchTerm}
-                                                                                    pagination={false}
-                                                                                />
-                                                                            ) : (
-                                                                                <div className="flex items-center justify-center h-full">
-                                                                                    <div className="text-center">
-                                                                                        <h3 className="text-lg font-semibold text-slate-800">No Records Found</h3>
-                                                                                        <p className="text-slate-500 mt-2">
-                                                                                            This month has no extraction data
-                                                                                        </p>
-                                                                                    </div>
-                                                                                </div>
-                                                                            )}
-                                                                        </div>
-                                                                    </div>
-                                                                ) : (
-                                                                    <div className="flex items-center justify-center h-full">
-                                                                        <div className="text-center">
-                                                                            <h3 className="text-lg font-semibold text-slate-800">No Month Selected</h3>
-                                                                            <p className="text-slate-500 mt-2">
-                                                                                Select a month from the sidebar to view details
-                                                                            </p>
-                                                                        </div>
-                                                                    </div>
-                                                                )}
+                                                                    )}
+                                                                </div>
                                                             </div>
-                                                        </div>
-                                                    )}
-                                                </TabsContent>
-
-                                                <TabsContent value="totals" className="m-0" forceMount={activeTab === 'totals'}>
-                                                    {activeTab === 'totals' && (
-                                                        <ScrollArea className="h-[500px]">
-                                                            <div className="p-6 space-y-6">
-                                                                {getYearsFromData().map(year => (
-                                                                    <YearSummaryTable
-                                                                        key={year}
-                                                                        year={year}
-                                                                        data={filteredData}
-                                                                    />
-                                                                ))}
-
-                                                                {getYearsFromData().length === 0 && (
-                                                                    <div className="flex items-center justify-center h-[400px]">
-                                                                        <div className="text-center">
-                                                                            <h3 className="text-lg font-semibold text-slate-800">No Data Available</h3>
-                                                                            <p className="text-slate-500 mt-2">
-                                                                                No extraction data available for totals view
-                                                                            </p>
-                                                                        </div>
-                                                                    </div>
-                                                                )}
+                                                        ) : (
+                                                            <div className="flex items-center justify-center h-full">
+                                                                <div className="text-center">
+                                                                    <h3 className="text-lg font-semibold text-slate-800">No Month Selected or Data Empty</h3>
+                                                                    <p className="text-slate-500 mt-2">
+                                                                        Select a month from the sidebar to view details, or adjust filters.
+                                                                    </p>
+                                                                </div>
                                                             </div>
-                                                        </ScrollArea>
-                                                    )}
-                                                </TabsContent>
-                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </TabsContent>
+
+                                            <TabsContent value="totals" className="m-0">
+                                                <ScrollArea className="h-[500px]">
+                                                    <div className="p-6 space-y-6">
+                                                        {yearsForTotalsView.length > 0 ? (
+                                                            yearsForTotalsView.map(year => (
+                                                                <YearSummaryTable
+                                                                    key={year}
+                                                                    year={year}
+                                                                    data={filteredDetailedExtractions}
+                                                                />
+                                                            ))
+                                                        ) : (
+                                                            <div className="flex items-center justify-center h-[400px]">
+                                                                <div className="text-center">
+                                                                    <h3 className="text-lg font-semibold text-slate-800">No Data Available</h3>
+                                                                    <p className="text-slate-500 mt-2">
+                                                                        No extraction data available for totals view with current filters.
+                                                                    </p>
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </ScrollArea>
+                                            </TabsContent>
                                         </CardContent>
                                     </Card>
+
                                 </div>
-                            </div>
-                        </div>
-                    ) : (
-                        <div className="flex items-center justify-center h-full bg-white p-8 rounded-lg border border-slate-200">
-                            <div className="text-center max-w-md">
-                                <div className="mx-auto w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center mb-4">
-                                    <Search className="h-8 w-8 text-slate-400" />
-                                </div>
-                                <h3 className="text-lg font-semibold text-slate-800">No Data Available</h3>
-                                <p className="text-slate-500 mt-2">
-                                    No extraction data found for this company
-                                </p>
-                                <Button variant="outline" className="mt-4" onClick={() => setSelectedCompany(null)}>
-                                    Select Another Company
-                                </Button>
                             </div>
                         </div>
                     )
@@ -3025,14 +2774,14 @@ export function WHVATExtractorReports() {
                             </div>
                             <h3 className="text-lg font-semibold text-slate-800">Select a Company</h3>
                             <p className="text-slate-500 mt-2">
-                                Choose a company from the sidebar to view WHVAT extraction data
+                                Choose a company from the sidebar to view WHVAT extraction data.
                             </p>
                         </div>
                     </div>
                 )}
             </div>
         </div>
-    );// Responsive view wrapper
+    );
 
     const renderResponsiveView = () => (
         <div className="hidden md:block">
@@ -3040,7 +2789,7 @@ export function WHVATExtractorReports() {
         </div>
     );
 
-    // Mobile view
+    // Mobile view fallback message
     const renderMobileView = () => (
         <div className="md:hidden p-4">
             <Card className="border-slate-200">
