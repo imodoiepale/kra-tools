@@ -64,6 +64,19 @@ const COMPLIANCE_TYPES = [
     { id: 'vat_compliance', label: 'VAT Compliance' }
 ];
 
+// Define status types for statistics
+const STATUS_TYPES = [
+    { id: 'registered', label: 'Registered', colorClass: 'bg-green-400 text-green-800' },
+    { id: 'active', label: 'Active', colorClass: 'bg-green-400 text-green-800' },
+    { id: 'compliant', label: 'Compliant', colorClass: 'bg-green-400 text-green-800' },
+    { id: 'cancelled', label: 'Cancelled', colorClass: 'bg-amber-500 text-amber-800' },
+    { id: 'dormant', label: 'Dormant', colorClass: 'bg-red-500 text-red-800' },
+    { id: 'inactive', label: 'Inactive', colorClass: 'bg-red-400 text-red-800' },
+    { id: 'not compliant', label: 'Not Compliant', colorClass: 'bg-red-400 text-red-800' },
+    { id: 'no obligation', label: 'No Obligation', colorClass: 'bg-red-100 text-red-600' },
+    { id: 'not available', label: 'Not Available', colorClass: 'bg-gray-100 text-gray-600' }
+];
+
 export function PinCheckerDetailsReports() {
     const [details, setDetails] = useState<PinCheckerDetail[]>([])
     const [companies, setCompanies] = useState<any[]>([]);
@@ -629,14 +642,15 @@ export function PinCheckerDetailsReports() {
     const fieldsToCheck = [
         'company_name',
         'kra_pin',
+        'pin_status',          // Added missing PIN Status
+        'itax_status',         // Added missing iTax Status
         // Generate tax field names
-        ...TAX_TYPES.flatMap(taxType =>
-            TAX_COLUMNS.map(col =>
-                `${taxType.id}_${col.toLowerCase()}`
-            )
-        ),
-        // Generate compliance field names (without _status suffix)
-        ...COMPLIANCE_TYPES.map(compType => compType.id)
+        ...TAX_TYPES.flatMap(taxType => [
+            `${taxType.id}_status`,
+            ...(showDateColumns ? [`${taxType.id}_effective_from`, `${taxType.id}_effective_to`] : [])
+        ]),
+        // Generate compliance field names (these are the actual field names, not with _status suffix)
+        ...COMPLIANCE_TYPES.map(compType => compType.id)  // etims_registration, tims_registration, vat_compliance
     ];
 
     const sortedDetails = React.useMemo(() => {
@@ -653,13 +667,38 @@ export function PinCheckerDetailsReports() {
                 bValue = new Date(b.last_checked_at).toLocaleTimeString();
             } else if (sortField.endsWith('_status')) {
                 // For status fields, use a custom sorting order
-                const statusOrder = ['Registered', 'Active', 'Compliant', 'Suspended', 'Cancelled', 'Inactive', 'Not Compliant', 'No Obligation', 'Dormant'];
-                aValue = statusOrder.indexOf(aValue || 'No Obligation');
-                bValue = statusOrder.indexOf(bValue || 'No Obligation');
+                const statusOrder = ['Registered', 'Active', 'Compliant', 'Suspended', 'Cancelled', 'Inactive', 'Not Compliant', 'No Obligation', 'Dormant', 'Not Available'];
+                
+                // Normalize status values for comparison
+                const normalizeStatus = (val: any) => {
+                    if (!val) return 'Not Available';
+                    return typeof val === 'string' ? val : val.toString();
+                };
+                
+                const aStatus = normalizeStatus(aValue);
+                const bStatus = normalizeStatus(bValue);
+                
+                aValue = statusOrder.indexOf(aStatus) !== -1 ? statusOrder.indexOf(aStatus) : statusOrder.length;
+                bValue = statusOrder.indexOf(bStatus) !== -1 ? statusOrder.indexOf(bStatus) : statusOrder.length;
             } else if (sortField.endsWith('_from') || sortField.endsWith('_to')) {
                 // For date fields, convert to Date objects for comparison
                 aValue = aValue ? new Date(aValue) : new Date(0);
                 bValue = bValue ? new Date(bValue) : new Date(0);
+            } else if (COMPLIANCE_TYPES.some(comp => comp.id === sortField)) {
+                // For compliance fields (without _status suffix)
+                const statusOrder = ['Active', 'Compliant', 'Inactive', 'Not Compliant', 'Not Available'];
+                
+                // Normalize status values for comparison
+                const normalizeStatus = (val: any) => {
+                    if (!val) return 'Not Available';
+                    return typeof val === 'string' ? val : val.toString();
+                };
+                
+                const aStatus = normalizeStatus(aValue);
+                const bStatus = normalizeStatus(bValue);
+                
+                aValue = statusOrder.indexOf(aStatus) !== -1 ? statusOrder.indexOf(aStatus) : statusOrder.length;
+                bValue = statusOrder.indexOf(bStatus) !== -1 ? statusOrder.indexOf(bStatus) : statusOrder.length;
             }
 
             // Perform the comparison
@@ -693,7 +732,38 @@ export function PinCheckerDetailsReports() {
                         stats.missing[field]++;
                     }
                 }
-                // For status fields, 'No Obligation' or 'Inactive' is considered missing
+                // Special handling for PIN Status
+                else if (field === 'pin_status') {
+                    const value = detail[field];
+                    if (value && value.toString().trim() !== '' && value.toString().toLowerCase() !== 'not available') {
+                        stats.complete[field]++;
+                    } else {
+                        stats.missing[field]++;
+                    }
+                }
+                // Special handling for iTax Status
+                else if (field === 'itax_status') {
+                    const value = detail[field];
+                    if (value && value.toString().trim() !== '' && value.toString().toLowerCase() !== 'not available') {
+                        stats.complete[field]++;
+                    } else {
+                        stats.missing[field]++;
+                    }
+                }
+                // For compliance fields (etims_registration, tims_registration, vat_compliance)
+                else if (['etims_registration', 'tims_registration', 'vat_compliance'].includes(field)) {
+                    const value = detail[field];
+                    if (value &&
+                        value.toString().trim() !== '' &&
+                        value.toString().toLowerCase() !== 'not available' &&
+                        value.toString().toLowerCase() !== 'inactive' &&
+                        value.toString().toLowerCase() !== 'not compliant') {
+                        stats.complete[field]++;
+                    } else {
+                        stats.missing[field]++;
+                    }
+                }
+                // For tax obligation status fields
                 else if (field.endsWith('_status')) {
                     const value = detail[field as keyof PinCheckerDetail];
                     if (value &&
@@ -715,8 +785,8 @@ export function PinCheckerDetailsReports() {
                         stats.missing[field]++;
                     }
                 }
-                // For other fields (excluding kra_pin which is handled separately)
-                else if (field !== 'kra_pin') {
+                // For other fields
+                else {
                     const value = detail[field as keyof PinCheckerDetail];
                     if (value && value.toString().trim() !== '') {
                         stats.complete[field]++;
@@ -753,7 +823,18 @@ export function PinCheckerDetailsReports() {
                 ? <span className="font-bold text-gray-600">Not Available</span>
                 : <span className="font-bold text-red-600">No Obligation</span>;
         }
-
+        
+        // Find matching status type for styling
+        const statusType = STATUS_TYPES.find(st => st.id === status.toLowerCase());
+        if (statusType) {
+            return (
+                <span className={`${statusType.colorClass} px-1 py-1 rounded-full text-xs font-semibold`}>
+                    {status}
+                </span>
+            );
+        }
+        
+        // Handle specific status cases
         if (status.toLowerCase() === 'cancelled') {
             return (
                 <span className="bg-amber-500 text-amber-800 px-1 py-1 rounded-full text-xs font-semibold">
@@ -917,6 +998,18 @@ export function PinCheckerDetailsReports() {
                                                 </span>
                                             </TableCell>
 
+                                            <TableCell className="text-center text-[10px] border-r border-black bg-olive-100">
+                                                <span className={stats.complete.pin_status === sortedDetails.length ? 'text-green-600 font-bold' : ''}>
+                                                    {stats.complete.pin_status}
+                                                </span>
+                                            </TableCell>
+
+                                            <TableCell className="text-center text-[10px] border-r border-black bg-blue-100">
+                                                <span className={stats.complete.itax_status === sortedDetails.length ? 'text-green-600 font-bold' : ''}>
+                                                    {stats.complete.itax_status}
+                                                </span>
+                                            </TableCell>
+
                                             {/* Map tax type stats cells - conditionally show date columns */}
                                             {TAX_TYPES.flatMap(taxType => {
                                                 const statusField = `${taxType.id}_status`;
@@ -962,7 +1055,8 @@ export function PinCheckerDetailsReports() {
 
                                             {/* Map compliance type stats cells */}
                                             {COMPLIANCE_TYPES.map(compType => {
-                                                const fieldName = `${compType.id}_status`;
+                                                // Use the direct field ID, not with _status suffix
+                                                const fieldName = compType.id;
                                                 return (
                                                     <TableCell
                                                         key={`${compType.id}-complete`}
@@ -996,6 +1090,19 @@ export function PinCheckerDetailsReports() {
                                                     {stats.missing.kra_pin}
                                                 </span>
                                             </TableCell>
+
+                                            <TableCell className="text-center text-[10px] border-r border-black bg-olive-100">
+                                                <span className={stats.missing.pin_status > 0 ? 'text-red-600 font-bold' : ''}>
+                                                    {stats.missing.pin_status}
+                                                </span>
+                                            </TableCell>
+
+                                            <TableCell className="text-center text-[10px] border-r border-black bg-blue-100">
+                                                <span className={stats.missing.itax_status > 0 ? 'text-red-600 font-bold' : ''}>
+                                                    {stats.missing.itax_status}
+                                                </span>
+                                            </TableCell>
+
 
                                             {/* Map tax type stats cells - conditionally show date columns */}
                                             {TAX_TYPES.flatMap(taxType => {
@@ -1042,7 +1149,7 @@ export function PinCheckerDetailsReports() {
 
                                             {/* Map compliance type stats cells */}
                                             {COMPLIANCE_TYPES.map(compType => {
-                                                const fieldName = `${compType.id}_status`;
+                                                const fieldName = compType.id; // Use the actual field name: etims_registration, tims_registration, vat_compliance
                                                 return (
                                                     <TableCell
                                                         key={`${compType.id}-missing`}
@@ -1104,7 +1211,8 @@ export function PinCheckerDetailsReports() {
 
                                     {/* Compliance type sub-headers */}
                                     {COMPLIANCE_TYPES.map(compType => {
-                                        const field = `${compType.id}_status` as SortField;
+                                        // Use the field ID directly as the sort field, not with _status suffix
+                                        const field = compType.id as SortField;
                                         return (
                                             <TableHead
                                                 key={`${compType.id}-status`}
