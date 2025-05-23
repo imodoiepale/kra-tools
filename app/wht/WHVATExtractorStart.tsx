@@ -88,7 +88,7 @@ export function WHVATExtractorStart({ onStart, onStop }) {
             setIsInitializing(true);
             
             // Display toast notification
-            toast({
+            toast({ 
                 title: "Starting WHVAT extraction",
                 description: "Connecting to the KRA portal and initializing the process. This may take a moment."
             });
