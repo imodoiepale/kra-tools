@@ -4,10 +4,9 @@ import React, { useEffect, useState } from 'react'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { supabase } from '@/lib/supabase'
 import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogClose } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Trash2, Download, RefreshCw, ArrowUpDown, Trash2Icon, Filter, Eye, EyeOff, Calendar } from 'lucide-react'
+import { ArrowUpDown, Trash2, Download, RefreshCw, Filter, Eye, EyeOff, Calendar } from 'lucide-react'
 import ExcelJS from 'exceljs'
 import { ClientCategoryFilter } from "./ClientCategoryFilter"
 
@@ -35,9 +34,9 @@ interface PinCheckerDetail {
     turnover_tax_status: string;
     turnover_tax_effective_from: string;
     turnover_tax_effective_to: string;
-    etims_registration: string;  // Field for eTIMS Registration status
-    tims_registration: string;   // Field for TIMS Registration status
-    vat_compliance: string;      // Field for VAT Compliance status
+    etims_registration: string;
+    tims_registration: string;
+    vat_compliance: string;
     error_message?: string;
     last_checked_at: string;
 }
@@ -45,7 +44,6 @@ interface PinCheckerDetail {
 type SortField = keyof PinCheckerDetail | 'last_checked_date' | 'last_checked_time';
 type SortOrder = 'asc' | 'desc';
 
-// Define tax types once to avoid repetition
 const TAX_TYPES = [
     { id: 'income_tax_company', label: 'Income Tax Company' },
     { id: 'vat', label: 'VAT' },
@@ -55,26 +53,18 @@ const TAX_TYPES = [
     { id: 'turnover_tax', label: 'Turnover Tax' }
 ];
 
-const TAX_COLUMNS = ['Status', 'From', 'To'];
-
-// Define compliance types for the new columns
 const COMPLIANCE_TYPES = [
     { id: 'etims_registration', label: 'eTIMS Registration' },
     { id: 'tims_registration', label: 'TIMS Registration' },
     { id: 'vat_compliance', label: 'VAT Compliance' }
 ];
 
-// Define status types for statistics
-const STATUS_TYPES = [
-    { id: 'registered', label: 'Registered', colorClass: 'bg-green-400 text-green-800' },
-    { id: 'active', label: 'Active', colorClass: 'bg-green-400 text-green-800' },
-    { id: 'compliant', label: 'Compliant', colorClass: 'bg-green-400 text-green-800' },
-    { id: 'cancelled', label: 'Cancelled', colorClass: 'bg-amber-500 text-amber-800' },
-    { id: 'dormant', label: 'Dormant', colorClass: 'bg-red-500 text-red-800' },
-    { id: 'inactive', label: 'Inactive', colorClass: 'bg-red-400 text-red-800' },
-    { id: 'not compliant', label: 'Not Compliant', colorClass: 'bg-red-400 text-red-800' },
-    { id: 'no obligation', label: 'No Obligation', colorClass: 'bg-red-100 text-red-600' },
-    { id: 'not available', label: 'Not Available', colorClass: 'bg-gray-100 text-gray-600' }
+// Fields for the initial columns in the header that display stats
+const initialStatsDisplayFields = [
+    { key: 'company_name', label: 'Company Name' },
+    { key: 'kra_pin', label: 'KRA PIN' },
+    { key: 'pin_status', label: 'PIN Status', color: 'bg-olive-100' },
+    { key: 'itax_status', label: 'iTax Status', color: 'bg-blue-100' }
 ];
 
 export function PinCheckerDetailsReports() {
@@ -94,7 +84,6 @@ export function PinCheckerDetailsReports() {
         fetchReports();
         fetchCompanies();
 
-        // Set default filter for accounting if not already initialized
         if (!initialized && Object.keys(categoryFilters).length === 0) {
             setCategoryFilters({
                 'acc': { 'all': true }
@@ -120,18 +109,18 @@ export function PinCheckerDetailsReports() {
         const { data, error } = await supabase
             .from('acc_portal_company_duplicate')
             .select(`
-      id,
-      company_name,
-      kra_pin,
-      imm_client_effective_from,
-      imm_client_effective_to,
-      acc_client_effective_from,
-      acc_client_effective_to,
-      sheria_client_effective_from,
-      sheria_client_effective_to,
-      audit_client_effective_from,
-      audit_client_effective_to
-    `);
+                id,
+                company_name,
+                kra_pin,
+                imm_client_effective_from,
+                imm_client_effective_to,
+                acc_client_effective_from,
+                acc_client_effective_to,
+                sheria_client_effective_from,
+                sheria_client_effective_to,
+                audit_client_effective_from,
+                audit_client_effective_to
+            `);
 
         if (error) {
             console.error('Error fetching companies:', error);
@@ -140,21 +129,16 @@ export function PinCheckerDetailsReports() {
         }
     };
 
-    // Helper function to determine if a client date range is active
     const isClientTypeActive = (fromDate, toDate) => {
         if (!fromDate || !toDate) return false;
 
-        const currentDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+        const currentDate = new Date().toISOString().split('T')[0];
 
-        // Parse dates with format handling
         const parseDate = (dateStr) => {
-            // Handle different date formats
             if (dateStr.includes('/')) {
-                // Format: DD/MM/YYYY
                 const [day, month, year] = dateStr.split('/').map(Number);
                 return new Date(year, month - 1, day);
             } else {
-                // Format: YYYY-MM-DD
                 return new Date(dateStr);
             }
         };
@@ -166,10 +150,8 @@ export function PinCheckerDetailsReports() {
         return from <= current && current <= to;
     };
 
-    // Join details with company data
     const joinedDetails = React.useMemo(() => {
         return details.map(detail => {
-            // Find matching company by name
             const matchingCompany = companies.find(
                 company => company.company_name === detail.company_name
             );
@@ -177,14 +159,12 @@ export function PinCheckerDetailsReports() {
             return {
                 ...detail,
                 companyData: matchingCompany || null,
-                // Add missing PIN indicator
                 pinStatus: matchingCompany && matchingCompany.kra_pin ? 'PIN available' : 'Missing PIN'
             };
         });
     }, [details, companies]);
 
 
-    // Helper function to determine if a detail has active tax obligations
     const isDetailActiveByTaxStatus = (detail) => {
         const activeStatuses = ['Registered', 'Active'];
 
@@ -200,10 +180,8 @@ export function PinCheckerDetailsReports() {
         );
     };
 
-    // Filter joined details based on search and category filters
     const filteredDetails = React.useMemo(() => {
         if (Object.keys(categoryFilters).length === 0) {
-            // If no category filters, apply search filter to joined details
             return joinedDetails.filter(detail =>
                 searchTerm === '' ||
                 Object.entries(detail).some(([key, value]) => {
@@ -215,9 +193,7 @@ export function PinCheckerDetailsReports() {
             );
         }
 
-        // Apply both category filters and search filter
         return joinedDetails.filter(detail => {
-            // Apply search filter
             const matchesSearch = searchTerm === '' ||
                 Object.entries(detail).some(([key, value]) => {
                     if (value === null || value === undefined || key === 'companyData') {
@@ -228,20 +204,15 @@ export function PinCheckerDetailsReports() {
 
             if (!matchesSearch) return false;
 
-            // Get company data
             const company = detail.companyData;
             if (!company) return false;
 
-            // Determine if detail has active tax obligations
             const hasActiveTaxObligations = isDetailActiveByTaxStatus(detail);
             const status = hasActiveTaxObligations ? 'active' : 'inactive';
 
-            // Check if the detail matches any selected category-status
             for (const [category, statusFilters] of Object.entries(categoryFilters)) {
-                // Skip if no status is selected for this category
                 if (!Object.values(statusFilters).some(isSelected => isSelected)) continue;
 
-                // For 'all' category, check if any client type is active
                 if (category === 'all') {
                     const anyClientTypeActive = ['acc', 'imm', 'sheria', 'audit'].some(cat =>
                         isClientTypeActive(
@@ -252,7 +223,6 @@ export function PinCheckerDetailsReports() {
 
                     if (!anyClientTypeActive) continue;
                 } else {
-                    // For specific categories, check if that client type is active
                     const isClientActive = isClientTypeActive(
                         company[`${category}_client_effective_from`],
                         company[`${category}_client_effective_to`]
@@ -261,7 +231,6 @@ export function PinCheckerDetailsReports() {
                     if (!isClientActive) continue;
                 }
 
-                // Check if the status matches any selected status
                 if (statusFilters['all'] || statusFilters[status]) {
                     return true;
                 }
@@ -271,7 +240,6 @@ export function PinCheckerDetailsReports() {
         });
     }, [joinedDetails, categoryFilters, searchTerm]);
 
-    // Calculate counts for display in the filter UI
     const calculateCategoryCounts = () => {
         const counts = {
             'all': { 'all': 0, 'active': 0, 'inactive': 0 },
@@ -281,7 +249,6 @@ export function PinCheckerDetailsReports() {
             'audit': { 'all': 0, 'active': 0, 'inactive': 0 },
         };
 
-        // Filter details based on search term only
         const searchFilteredDetails = joinedDetails.filter(detail =>
             searchTerm === '' ||
             Object.entries(detail).some(([key, value]) => {
@@ -292,23 +259,18 @@ export function PinCheckerDetailsReports() {
             })
         );
 
-        // Count all search-filtered items
         counts['all']['all'] = searchFilteredDetails.length;
 
         searchFilteredDetails.forEach(detail => {
-            // Get the company details if available
             const company = detail.companyData;
 
             if (!company) {
-                // If company data is not available, count as 'all' and 'inactive'
                 counts['all']['inactive']++;
                 return;
             }
 
-            // Check if the detail has any active tax obligations
             const hasActiveTaxObligations = isDetailActiveByTaxStatus(detail);
 
-            // Count for each client type category
             const categories = ['acc', 'imm', 'sheria', 'audit'];
             let hasAnyActiveClientType = false;
 
@@ -325,7 +287,6 @@ export function PinCheckerDetailsReports() {
                 }
             });
 
-            // Update 'all' category counts if any client type is active
             if (hasAnyActiveClientType) {
                 counts['all'][hasActiveTaxObligations ? 'active' : 'inactive']++;
             }
@@ -371,31 +332,39 @@ export function PinCheckerDetailsReports() {
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet('PIN Checker Details');
 
+        // Helper function to return 'N/A' for null, undefined, empty, or 'Unknown' for VAT Compliance
+        const getValueForExport = (value: any, isVatCompliance: boolean = false) => {
+            if (value === null || value === undefined || String(value).trim() === '') {
+                return 'N/A';
+            }
+            if (isVatCompliance && String(value).toLowerCase().trim() === 'unknown') {
+                return 'N/A';
+            }
+            return String(value);
+        };
+
         // Add headers
         const headers = [
             'Index',
+            'ID',
             'Company Name',
             'KRA PIN',
             'PIN Status',
             'iTax Status'
         ];
 
-        // Add tax type headers
         TAX_TYPES.forEach(taxType => {
             headers.push(`${taxType.label} Status`, `${taxType.label} From`, `${taxType.label} To`);
         });
 
-        // Add compliance headers
         COMPLIANCE_TYPES.forEach(compType => {
-            headers.push(`${compType.label} Status`);
+            headers.push(`${compType.label}`);
         });
 
-        // Add last checked headers
-        headers.push('Error Message', 'Last Checked At');
+        headers.push('Error Message', 'Last Checked Date', 'Last Checked Time');
 
         worksheet.addRow(headers);
 
-        // Style header row
         worksheet.getRow(1).font = { bold: true };
         worksheet.getRow(1).fill = {
             type: 'pattern',
@@ -403,149 +372,97 @@ export function PinCheckerDetailsReports() {
             fgColor: { argb: 'FFFFFF00' }
         };
 
-        // Export only the filtered data that matches the current view
         sortedDetails.forEach((detail, index) => {
             const rowData = [
                 index + 1,
+                detail.id,
                 detail.company_name,
-                // Use company PIN from company data if available, otherwise use the one from detail
                 detail.companyData?.kra_pin || detail.kra_pin || 'Missing PIN',
-                detail.pin_status || 'Not Available',
-                detail.itax_status || 'Not Available'
+                getValueForExport(detail.pin_status),
+                getValueForExport(detail.itax_status)
             ];
 
-            // Add tax type data
             TAX_TYPES.forEach(taxType => {
                 rowData.push(
-                    detail[`${taxType.id}_status`],
-                    detail[`${taxType.id}_effective_from`],
-                    detail[`${taxType.id}_effective_to`]
+                    getValueForExport(detail[`${taxType.id}_status`]),
+                    getValueForExport(detail[`${taxType.id}_effective_from`]),
+                    getValueForExport(detail[`${taxType.id}_effective_to`])
                 );
             });
 
-            // Add compliance data - directly use the field without _status suffix
             COMPLIANCE_TYPES.forEach(compType => {
-                const status = detail[compType.id]; // Direct field access
-                rowData.push(status || 'Not Available');
+                const status = detail[compType.id];
+                rowData.push(getValueForExport(status, compType.id === 'vat_compliance'));
             });
 
-            // Add last checked data
-            rowData.push(detail.error_message, detail.last_checked_at);
+            rowData.push(
+                detail.error_message || '', // Ensure blank if null/undefined/empty
+                formatDate(detail.last_checked_at),
+                new Date(detail.last_checked_at).toLocaleTimeString()
+            );
 
             const row = worksheet.addRow(rowData);
 
-            // Make indexing bold and centered
             const indexCell = row.getCell(1);
             indexCell.font = { bold: true };
             indexCell.alignment = { vertical: 'middle', horizontal: 'center' };
 
-            // Apply background colors
             const colors = {
-                income_tax_company: 'FFE6F2FF',
-                vat: 'FFE6FFE6',
-                paye: 'FFFFF2E6',
-                rent_income_mri: 'FFF2E6FF',
-                resident_individual: 'FFFFE6F2',
-                turnover_tax: 'FFFFE6CC',
-                etims_registration: 'FFE6FFFF',
-                tims_registration: 'FFCCFFCC',
-                vat_compliance: 'FFFFCCFF',
-                pin_status: 'FFD8E4BC', // Light olive green for PIN Status
-                itax_status: 'FFB8CCE4'  // Light blue for iTax Status
+                income_tax_company: 'FFE6F2FF', // Light Blue
+                vat: 'FFE6FFE6', // Light Green
+                paye: 'FFFFF2E6', // Light Orange
+                rent_income_mri: 'FFF2E6FF', // Light Purple
+                resident_individual: 'FFFFE6F2', // Light Pink
+                turnover_tax: 'FFFFE6CC', // Light Gold
+                etims_registration: 'FFE6FFFF', // Light Cyan
+                tims_registration: 'FFCCFFCC', // Lighter Green
+                vat_compliance: 'FFFFCCFF', // Light Magenta
+                pin_status: 'FFD8E4BC', // Light olive green
+                itax_status: 'FFB8CCE4'  // Light blue
             };
 
             // Apply colors for PIN Status and iTax Status columns
-            const pinStatusCell = row.getCell(4); // PIN Status column (4th column)
-            const itaxStatusCell = row.getCell(5); // iTax Status column (5th column)
-            
-            pinStatusCell.fill = {
-                type: 'pattern',
-                pattern: 'solid',
-                fgColor: { argb: colors.pin_status }
-            };
-            
-            itaxStatusCell.fill = {
-                type: 'pattern',
-                pattern: 'solid',
-                fgColor: { argb: colors.itax_status }
-            };
-            
+            const pinStatusCell = row.getCell(5);
+            const itaxStatusCell = row.getCell(6);
+
+            pinStatusCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: colors.pin_status } };
+            itaxStatusCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: colors.itax_status } };
+
             // Apply colors for tax type columns
             TAX_TYPES.forEach((taxType, typeIndex) => {
                 for (let i = 0; i < 3; i++) {
-                    // +5 because we now have 2 additional columns (PIN Status and iTax Status)
-                    const cellIndex = typeIndex * 3 + 5 + i + 1;
+                    const cellIndex = 6 + (typeIndex * 3) + i + 1;
                     const cell = row.getCell(cellIndex);
                     const status = cell.value?.toString().toLowerCase();
-                    if (!status) {
-                        cell.fill = {
-                            type: 'pattern',
-                            pattern: 'solid',
-                            fgColor: { argb: 'FFFFCCCB' }
-                        };
-                    } else if (status === 'no obligation') {
-                        cell.fill = {
-                            type: 'pattern',
-                            pattern: 'solid',
-                            fgColor: { argb: 'FFFFCCCB' }
-                        };
+                    let cellColor = colors[taxType.id];
+
+                    if (!status || status === 'no obligation' || status === 'dormant' || status === 'inactive' || status === 'not compliant' || status === 'n/a') {
+                        cellColor = 'FFFFCCCB'; // Light Red for 'Missing/No Obligation/Dormant/Inactive/N/A'
                     } else if (status === 'cancelled') {
-                        cell.fill = {
-                            type: 'pattern',
-                            pattern: 'solid',
-                            fgColor: { argb: 'FFFFFF00' }
-                        };
-                    } else if (status === 'dormant') {
-                        cell.fill = {
-                            type: 'pattern',
-                            pattern: 'solid',
-                            fgColor: { argb: 'FFFFCCCB' }
-                        };
-                    } else {
-                        cell.fill = {
-                            type: 'pattern',
-                            pattern: 'solid',
-                            fgColor: { argb: colors[taxType.id] }
-                        };
+                        cellColor = 'FFFFFF00'; // Yellow for 'Cancelled'
+                    } else if (['registered', 'active', 'compliant', 'ipage updated'].includes(status)) {
+                        cellColor = 'FFE6FFE6'; // Light Green for 'Registered/Active/Compliant/iPage Updated'
                     }
+
+                    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: cellColor } };
                 }
             });
 
             // Apply colors for compliance columns
             COMPLIANCE_TYPES.forEach((compType, compIndex) => {
-                // Add 2 to account for PIN Status and iTax Status columns
-                const cellIndex = TAX_TYPES.length * 3 + 5 + compIndex;
+                const cellIndex = 6 + (TAX_TYPES.length * 3) + compIndex + 1;
                 const cell = row.getCell(cellIndex);
                 const status = cell.value?.toString().toLowerCase();
+                let cellColor = colors[compType.id];
 
-                if (!status) {
-                    cell.fill = {
-                        type: 'pattern',
-                        pattern: 'solid',
-                        fgColor: { argb: 'FFFFCCCB' }
-                    };
-                } else if (status === 'inactive' || status === 'not compliant') { // Fixed typo: compliiant -> compliant
-                    cell.fill = {
-                        type: 'pattern',
-                        pattern: 'solid',
-                        fgColor: { argb: 'FFFFCCCB' }
-                    };
+                if (!status || status === 'inactive' || status === 'not compliant' || status === 'n/a') {
+                    cellColor = 'FFFFCCCB'; // Light Red for 'Inactive/Not Compliant/N/A'
                 } else if (status === 'active' || status === 'compliant') {
-                    cell.fill = {
-                        type: 'pattern',
-                        pattern: 'solid',
-                        fgColor: { argb: 'FFE6FFE6' }
-                    };
-                } else {
-                    cell.fill = {
-                        type: 'pattern',
-                        pattern: 'solid',
-                        fgColor: { argb: colors[compType.id] }
-                    };
+                    cellColor = 'FFE6FFE6'; // Light Green for 'Active/Compliant'
                 }
+                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: cellColor } };
             });
 
-            // Add borders
             row.eachCell({ includeEmpty: true }, cell => {
                 cell.border = {
                     top: { style: 'thin' },
@@ -556,7 +473,6 @@ export function PinCheckerDetailsReports() {
             });
         });
 
-        // Auto-fit columns
         worksheet.columns.forEach(column => {
             let maxLength = 0;
             column.eachCell({ includeEmpty: true }, cell => {
@@ -568,16 +484,31 @@ export function PinCheckerDetailsReports() {
             column.width = maxLength < 10 ? 10 : maxLength;
         });
 
-        // Generate Excel file
         const buffer = await workbook.xlsx.writeBuffer();
         const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
         const link = document.createElement('a');
         link.href = window.URL.createObjectURL(blob);
-        link.download = 'pin_checker_details.xlsx';
+        const currentDate = new Date().toLocaleDateString('en-GB').replace(/\//g, '.');
+
+        // --- Start of the fix: Define clientCategory based on categoryFilters ---
+        let clientCategoryString = 'ALL'; // Default to 'ALL' if no specific category is selected or filter object is empty
+
+        // Find the first active category filter to use in the filename
+        const categories = ['all', 'acc', 'imm', 'sheria', 'audit'];
+        for (const cat of categories) {
+            if (categoryFilters[cat] && Object.values(categoryFilters[cat]).some(val => val === true)) {
+                clientCategoryString = cat;
+                // If 'all' is explicitly selected, prioritize it for the filename, then break
+                if (cat === 'all') break;
+            }
+        }
+        const clientCategory = clientCategoryString.toUpperCase();
+        // --- End of the fix ---
+
+        link.download = `PIN CHECKER DETAILS - ${clientCategory} - ${currentDate}.xlsx`;
         link.click();
     }
 
-    // Helper function to get cell color based on type
     const getCellColor = (type: string) => {
         const colorMap = {
             'income_tax_company': 'bg-blue-100',
@@ -590,7 +521,6 @@ export function PinCheckerDetailsReports() {
             'tims_registration': 'bg-lime-100',
             'vat_compliance': 'bg-fuchsia-100'
         };
-
         return colorMap[type] || '';
     }
 
@@ -605,110 +535,71 @@ export function PinCheckerDetailsReports() {
 
     const formatDate = (dateString: string) => {
         if (!dateString) return '';
-
-        // Try parsing the date
         const date = new Date(dateString);
-
-        // Check if the date is valid
         if (isNaN(date.getTime())) {
-            // If parsing fails, try to handle common formats
             const parts = dateString.split(/[-/.]/);
             if (parts.length === 3) {
-                // Assume yyyy-mm-dd, dd-mm-yyyy, or mm-dd-yyyy
                 const [a, b, c] = parts;
                 if (a.length === 4) {
-                    // yyyy-mm-dd
-                    date.setFullYear(parseInt(a), parseInt(b) - 1, parseInt(c));
+                    return `${c}.${b}.${a}`; // yyyy-mm-dd to dd.mm.yyyy
                 } else if (c.length === 4) {
-                    // dd-mm-yyyy or mm-dd-yyyy
-                    date.setFullYear(parseInt(c), parseInt(b) - 1, parseInt(a));
+                    return `${a}.${b}.${c}`; // dd-mm-yyyy or mm-dd-yyyy to dd.mm.yyyy
                 }
-            } else {
-                // If we can't parse it, return the original string
-                return dateString;
             }
+            return dateString;
         }
-
-        // Format the date
         const day = date.getDate().toString().padStart(2, '0');
-        // const month = date.toLocaleString('en-GB', { month: 'short' });
         const month = (date.getMonth() + 1).toString().padStart(2, '0');
         const year = date.getFullYear();
-
         return `${day}.${month}.${year}`;
     }
-
-    // Generate the fields to check for stats
-    const fieldsToCheck = [
-        'company_name',
-        'kra_pin',
-        'pin_status',          // Added missing PIN Status
-        'itax_status',         // Added missing iTax Status
-        // Generate tax field names
-        ...TAX_TYPES.flatMap(taxType => [
-            `${taxType.id}_status`,
-            ...(showDateColumns ? [`${taxType.id}_effective_from`, `${taxType.id}_effective_to`] : [])
-        ]),
-        // Generate compliance field names (these are the actual field names, not with _status suffix)
-        ...COMPLIANCE_TYPES.map(compType => compType.id)  // etims_registration, tims_registration, vat_compliance
-    ];
 
     const sortedDetails = React.useMemo(() => {
         return [...filteredDetails].sort((a, b) => {
             let aValue: any = a[sortField as keyof PinCheckerDetail];
             let bValue: any = b[sortField as keyof PinCheckerDetail];
 
-            // Handle special cases for last_checked_date and last_checked_time
             if (sortField === 'last_checked_date') {
                 aValue = new Date(a.last_checked_at).toLocaleDateString();
                 bValue = new Date(b.last_checked_at).toLocaleDateString();
             } else if (sortField === 'last_checked_time') {
                 aValue = new Date(a.last_checked_at).toLocaleTimeString();
                 bValue = new Date(b.last_checked_at).toLocaleTimeString();
-            } else if (sortField.endsWith('_status')) {
-                // For status fields, use a custom sorting order
-                const statusOrder = ['Registered', 'Active', 'Compliant', 'Suspended', 'Cancelled', 'Inactive', 'Not Compliant', 'No Obligation', 'Dormant', 'Not Available'];
-                
-                // Normalize status values for comparison
-                const normalizeStatus = (val: any) => {
-                    if (!val) return 'Not Available';
-                    return typeof val === 'string' ? val : val.toString();
-                };
-                
-                const aStatus = normalizeStatus(aValue);
-                const bStatus = normalizeStatus(bValue);
-                
-                aValue = statusOrder.indexOf(aStatus) !== -1 ? statusOrder.indexOf(aStatus) : statusOrder.length;
-                bValue = statusOrder.indexOf(bStatus) !== -1 ? statusOrder.indexOf(bStatus) : statusOrder.length;
+            } else if (sortField.endsWith('_status') || COMPLIANCE_TYPES.some(ct => ct.id === sortField)) { // Check for _status or direct compliance fields
+                // Custom sorting order for all status fields
+                const statusOrder = [
+                    'Registered', 'Active', 'Compliant', 'iPage Updated', // Positive statuses first
+                    'Suspended', // Neutral/Warning
+                    'Cancelled', 'Dormant', 'Inactive', 'Not Compliant', 'No Obligation', // Negative statuses last
+                    'Not Available', '' // Empty/Unknown at the very end
+                ];
+                aValue = statusOrder.indexOf(aValue || '');
+                bValue = statusOrder.indexOf(bValue || '');
             } else if (sortField.endsWith('_from') || sortField.endsWith('_to')) {
-                // For date fields, convert to Date objects for comparison
                 aValue = aValue ? new Date(aValue) : new Date(0);
                 bValue = bValue ? new Date(bValue) : new Date(0);
-            } else if (COMPLIANCE_TYPES.some(comp => comp.id === sortField)) {
-                // For compliance fields (without _status suffix)
-                const statusOrder = ['Active', 'Compliant', 'Inactive', 'Not Compliant', 'Not Available'];
-                
-                // Normalize status values for comparison
-                const normalizeStatus = (val: any) => {
-                    if (!val) return 'Not Available';
-                    return typeof val === 'string' ? val : val.toString();
-                };
-                
-                const aStatus = normalizeStatus(aValue);
-                const bStatus = normalizeStatus(bValue);
-                
-                aValue = statusOrder.indexOf(aStatus) !== -1 ? statusOrder.indexOf(aStatus) : statusOrder.length;
-                bValue = statusOrder.indexOf(bStatus) !== -1 ? statusOrder.indexOf(bStatus) : statusOrder.length;
             }
 
-            // Perform the comparison
             if (aValue < bValue) return sortOrder === 'asc' ? -1 : 1;
             if (aValue > bValue) return sortOrder === 'asc' ? 1 : -1;
             return 0;
         });
     }, [filteredDetails, sortField, sortOrder]);
 
-    // Calculate statistics for complete and missing entries
+    // Define all fields for which statistics are calculated
+    const allStatsFields = React.useMemo(() => [
+        'company_name',
+        'kra_pin',
+        'pin_status',
+        'itax_status',
+        ...TAX_TYPES.flatMap(taxType => [
+            `${taxType.id}_status`,
+            `${taxType.id}_effective_from`,
+            `${taxType.id}_effective_to`
+        ]),
+        ...COMPLIANCE_TYPES.map(compType => compType.id)
+    ], []);
+
     const calculateStats = () => {
         const stats = {
             complete: {},
@@ -716,92 +607,48 @@ export function PinCheckerDetailsReports() {
         };
 
         // Initialize stats for each field
-        fieldsToCheck.forEach(field => {
+        allStatsFields.forEach(field => {
             stats.complete[field] = 0;
             stats.missing[field] = 0;
         });
 
-        // Calculate stats for each field individually
         sortedDetails.forEach(detail => {
-            fieldsToCheck.forEach(field => {
-                // Special handling for KRA PIN to account for the pinStatus field
+            allStatsFields.forEach(field => {
+                let isComplete = false;
+                const value = detail[field as keyof PinCheckerDetail];
+                const lowerValue = (value || '').toString().toLowerCase().trim();
+
                 if (field === 'kra_pin') {
-                    if (detail.pinStatus === 'PIN available') {
-                        stats.complete[field]++;
-                    } else {
-                        stats.missing[field]++;
-                    }
+                    // KRA PIN is complete if companyData has it
+                    isComplete = detail.pinStatus === 'PIN available';
+                } else if (field === 'pin_status' || field === 'itax_status') {
+                    // PIN Status/iTax Status is complete if 'active' or 'ipage updated'
+                    isComplete = ['active', 'ipage updated'].includes(lowerValue);
+                } else if (COMPLIANCE_TYPES.some(ct => ct.id === field)) {
+                    // Compliance fields are complete if 'active' or 'compliant'
+                    isComplete = ['active', 'compliant'].includes(lowerValue);
+                } else if (TAX_TYPES.some(tt => `${tt.id}_status` === field)) {
+                    // Tax obligation statuses are complete if 'registered' or 'active'
+                    isComplete = ['registered', 'active'].includes(lowerValue);
+                } else if (field.endsWith('_from') || field.endsWith('_to')) {
+                    // Date fields are complete if they have a non-empty value
+                    isComplete = !!value;
+                } else if (field === 'company_name') {
+                    // Company name is complete if it has a non-empty value
+                    isComplete = !!value;
                 }
-                // Special handling for PIN Status
-                else if (field === 'pin_status') {
-                    const value = detail[field];
-                    if (value && value.toString().trim() !== '' && value.toString().toLowerCase() !== 'not available') {
-                        stats.complete[field]++;
-                    } else {
-                        stats.missing[field]++;
-                    }
-                }
-                // Special handling for iTax Status
-                else if (field === 'itax_status') {
-                    const value = detail[field];
-                    if (value && value.toString().trim() !== '' && value.toString().toLowerCase() !== 'not available') {
-                        stats.complete[field]++;
-                    } else {
-                        stats.missing[field]++;
-                    }
-                }
-                // For compliance fields (etims_registration, tims_registration, vat_compliance)
-                else if (['etims_registration', 'tims_registration', 'vat_compliance'].includes(field)) {
-                    const value = detail[field];
-                    if (value &&
-                        value.toString().trim() !== '' &&
-                        value.toString().toLowerCase() !== 'not available' &&
-                        value.toString().toLowerCase() !== 'inactive' &&
-                        value.toString().toLowerCase() !== 'not compliant') {
-                        stats.complete[field]++;
-                    } else {
-                        stats.missing[field]++;
-                    }
-                }
-                // For tax obligation status fields
-                else if (field.endsWith('_status')) {
-                    const value = detail[field as keyof PinCheckerDetail];
-                    if (value &&
-                        value.toString().trim() !== '' &&
-                        value.toString().toLowerCase() !== 'no obligation' &&
-                        value.toString().toLowerCase() !== 'inactive' &&
-                        value.toString().toLowerCase() !== 'not compliant') {
-                        stats.complete[field]++;
-                    } else {
-                        stats.missing[field]++;
-                    }
-                }
-                // For date fields
-                else if (field.endsWith('_from') || field.endsWith('_to')) {
-                    const value = detail[field as keyof PinCheckerDetail];
-                    if (value && value.toString().trim() !== '') {
-                        stats.complete[field]++;
-                    } else {
-                        stats.missing[field]++;
-                    }
-                }
-                // For other fields
-                else {
-                    const value = detail[field as keyof PinCheckerDetail];
-                    if (value && value.toString().trim() !== '') {
-                        stats.complete[field]++;
-                    } else {
-                        stats.missing[field]++;
-                    }
+
+                if (isComplete) {
+                    stats.complete[field]++;
+                } else {
+                    stats.missing[field]++;
                 }
             });
         });
-
         return stats;
     };
 
     const stats = calculateStats();
-
 
     const SortableHeader: React.FC<{ field: SortField; children: React.ReactNode }> = ({ field, children }) => (
         <Button variant="ghost" onClick={() => handleSort(field)} className="h-8 px-2">
@@ -810,70 +657,51 @@ export function PinCheckerDetailsReports() {
         </Button>
     );
 
-    // Helper function to render status cell with proper styling
     const renderStatusCell = (detail: any, typeId: string) => {
-        // For compliance types, use the field directly, for other types append _status
-        const status = ['etims_registration', 'tims_registration', 'vat_compliance'].includes(typeId)
-            ? detail[typeId]
-            : detail[`${typeId}_status`];
-        const isComplianceType = ['etims_registration', 'tims_registration', 'vat_compliance'].includes(typeId);
+        let statusValue: string | undefined;
 
-        if (!status) {
-            return isComplianceType
-                ? <span className="font-bold text-gray-600">Not Available</span>
-                : <span className="font-bold text-red-600">No Obligation</span>;
-        }
-        
-        // Find matching status type for styling
-        const statusType = STATUS_TYPES.find(st => st.id === status.toLowerCase());
-        if (statusType) {
-            return (
-                <span className={`${statusType.colorClass} px-1 py-1 rounded-full text-xs font-semibold`}>
-                    {status}
-                </span>
-            );
-        }
-        
-        // Handle specific status cases
-        if (status.toLowerCase() === 'cancelled') {
-            return (
-                <span className="bg-amber-500 text-amber-800 px-1 py-1 rounded-full text-xs font-semibold">
-                    {status}
-                </span>
-            );
+        // Determine how to get the status value based on the typeId
+        if (typeId === 'pin_status' || typeId === 'itax_status' || COMPLIANCE_TYPES.some(ct => ct.id === typeId)) {
+            // These are direct fields on the detail object
+            statusValue = detail[typeId];
+        } else {
+            // Tax types use the '_status' suffix
+            statusValue = detail[`${typeId}_status`];
         }
 
-        if (status.toLowerCase() === 'dormant') {
-            return (
-                <span className="bg-red-500 text-red-800 px-1 py-1 rounded-full text-xs font-semibold">
-                    {status}
-                </span>
-            );
+        const lowerStatus = (statusValue || '').toLowerCase(); // Convert to lowercase for easier comparison, handle null/undefined
+
+        // Specific handling for "Unknown" in VAT Compliance
+        if (typeId === 'vat_compliance' && lowerStatus === 'unknown') {
+            return <span className="font-bold text-red-600 px-1 py-1 rounded-full text-xs font-semibold whitespace-nowrap">N/A</span>;
         }
 
-        if (status.toLowerCase() === 'registered' || status.toLowerCase() === 'active' || status.toLowerCase() === 'compliant') {
-            return (
-                <span className="bg-green-400 text-green-800 px-1 py-1 rounded-full text-xs font-semibold">
-                    {status}
-                </span>
-            );
+        // Handle generic "Not Available" if statusValue is null, undefined, or empty after initial retrieval
+        if (!statusValue || lowerStatus.trim() === '') {
+            return <span className="font-bold text-gray-600 whitespace-nowrap">Not Available</span>;
         }
 
-        if (status.toLowerCase() === 'inactive' || status.toLowerCase() === 'not compliant') {
-            return (
-                <span className="bg-red-400 text-red-800 px-1 py-1 rounded-full text-xs font-semibold">
-                    {status}
-                </span>
-            );
+        // Apply specific styling based on status content
+        if (lowerStatus === 'cancelled' || lowerStatus === 'ipage updated') {
+            return <span className="bg-amber-500 text-amber-800 px-1 py-1 rounded-full text-xs font-semibold whitespace-nowrap">{statusValue}</span>;
+        }
+        if (lowerStatus === 'dormant') {
+            return <span className="bg-red-500 text-red-800 px-1 py-1 rounded-full text-xs font-semibold whitespace-nowrap">{statusValue}</span>;
+        }
+        if (['registered', 'active', 'compliant', 'ipage updated'].includes(lowerStatus)) {
+            return <span className="bg-green-400 text-green-800 px-1 py-1 rounded-full text-xs font-semibold whitespace-nowrap">{statusValue}</span>;
+        }
+        if (['inactive', 'not compliant', 'no obligation', 'ipage not updated'].includes(lowerStatus)) {
+            return <span className="bg-red-400 text-red-800 px-1 py-1 rounded-full text-xs font-semibold whitespace-nowrap">{statusValue}</span>;
         }
 
-        return status;
+        // Default return for statuses not covered by specific rules (e.g., 'Suspended' if not styled)
+        return statusValue;
     };
 
     return (
         <div className="space-y-4">
             <div className="flex justify-between items-center">
-                {/* <h3 className="text-lg font-medium">PIN Checker Details Reports</h3> */}
                 <div className="flex space-x-2">
                     <Input
                         placeholder="Search details..."
@@ -920,18 +748,15 @@ export function PinCheckerDetailsReports() {
                         <Download className="h-4 w-4 mr-2" />
                         Download Excel
                     </Button>
-
                 </div>
             </div>
 
-
             <div className="rounded-md border">
-                {/* Scale hack: Apply 90% scaling to make everything fit better */}
                 <div className="overflow-x-auto" style={{
                     transform: 'scale(0.9)',
                     transformOrigin: 'top left',
-                    width: '111%', // Compensate for scaling (100% ÷ 0.9 = ~111%)
-                    height: '111%' // Compensate for scaling
+                    width: '111%',
+                    height: '111%'
                 }}>
                     <div className="max-h-[calc(100vh-300px)] overflow-y-auto">
                         <Table className="text-xs pb-2">
@@ -953,7 +778,6 @@ export function PinCheckerDetailsReports() {
                                         iTax Status
                                     </TableHead>
 
-                                    {/* Map tax type headers - adjust colspan based on showDateColumns */}
                                     {TAX_TYPES.map(taxType => (
                                         <TableHead
                                             key={taxType.id}
@@ -964,7 +788,6 @@ export function PinCheckerDetailsReports() {
                                         </TableHead>
                                     ))}
 
-                                    {/* Map compliance type headers */}
                                     {COMPLIANCE_TYPES.map(compType => (
                                         <TableHead
                                             key={compType.id}
@@ -980,82 +803,47 @@ export function PinCheckerDetailsReports() {
 
                                 {showStatsRows && (
                                     <>
-                                        {/* Complete Stats Row - conditionally show date columns */}
+                                        {/* Complete Stats Row */}
                                         <TableRow className="h-6 bg-blue-50">
                                             <TableCell className="text-center text-[10px] font-bold border-r border-black">Complete</TableCell>
 
-                                            {/* Company Name stats */}
-                                            <TableCell className="text-center text-[10px] border-r border-black">
-                                                <span className={stats.complete.company_name === sortedDetails.length ? 'text-green-600 font-bold' : ''}>
-                                                    {stats.complete.company_name}
-                                                </span>
-                                            </TableCell>
+                                            {initialStatsDisplayFields.map(field => (
+                                                <TableCell key={field.key} className={`text-center text-[10px] border-r border-black ${field.color || ''}`}>
+                                                    <span className={stats.complete[field.key] === sortedDetails.length ? 'text-green-600 font-bold' : ''}>
+                                                        {stats.complete[field.key]}
+                                                    </span>
+                                                </TableCell>
+                                            ))}
 
-                                            {/* KRA PIN stats */}
-                                            <TableCell className="text-center text-[10px] border-r border-black">
-                                                <span className={stats.complete.kra_pin === sortedDetails.length ? 'text-green-600 font-bold' : ''}>
-                                                    {stats.complete.kra_pin}
-                                                </span>
-                                            </TableCell>
-
-                                            <TableCell className="text-center text-[10px] border-r border-black bg-olive-100">
-                                                <span className={stats.complete.pin_status === sortedDetails.length ? 'text-green-600 font-bold' : ''}>
-                                                    {stats.complete.pin_status}
-                                                </span>
-                                            </TableCell>
-
-                                            <TableCell className="text-center text-[10px] border-r border-black bg-blue-100">
-                                                <span className={stats.complete.itax_status === sortedDetails.length ? 'text-green-600 font-bold' : ''}>
-                                                    {stats.complete.itax_status}
-                                                </span>
-                                            </TableCell>
-
-                                            {/* Map tax type stats cells - conditionally show date columns */}
                                             {TAX_TYPES.flatMap(taxType => {
-                                                const statusField = `${taxType.id}_status`;
                                                 const cells = [
-                                                    // Status cell is always shown
                                                     <TableCell
                                                         key={`${taxType.id}-status-complete`}
                                                         className={`text-center text-[10px] border-r border-black ${getCellColor(taxType.id)}`}
                                                     >
-                                                        <span className={stats.complete[statusField] === sortedDetails.length ? 'text-green-600 font-bold' : ''}>
-                                                            {stats.complete[statusField]}
+                                                        <span className={stats.complete[`${taxType.id}_status`] === sortedDetails.length ? 'text-green-600 font-bold' : ''}>
+                                                            {stats.complete[`${taxType.id}_status`]}
                                                         </span>
                                                     </TableCell>
                                                 ];
-
-                                                // From and To cells conditionally shown
                                                 if (showDateColumns) {
-                                                    const fromField = `${taxType.id}_effective_from`;
-                                                    const toField = `${taxType.id}_effective_to`;
-
                                                     cells.push(
-                                                        <TableCell
-                                                            key={`${taxType.id}-from-complete`}
-                                                            className={`text-center text-[10px] border-r border-black ${getCellColor(taxType.id)}`}
-                                                        >
-                                                            <span className={stats.complete[fromField] === sortedDetails.length ? 'text-green-600 font-bold' : ''}>
-                                                                {stats.complete[fromField]}
+                                                        <TableCell key={`${taxType.id}-from-complete`} className={`text-center text-[10px] border-r border-black ${getCellColor(taxType.id)}`}>
+                                                            <span className={stats.complete[`${taxType.id}_effective_from`] === sortedDetails.length ? 'text-green-600 font-bold' : ''}>
+                                                                {stats.complete[`${taxType.id}_effective_from`]}
                                                             </span>
                                                         </TableCell>,
-                                                        <TableCell
-                                                            key={`${taxType.id}-to-complete`}
-                                                            className={`text-center text-[10px] border-r border-black ${getCellColor(taxType.id)}`}
-                                                        >
-                                                            <span className={stats.complete[toField] === sortedDetails.length ? 'text-green-600 font-bold' : ''}>
-                                                                {stats.complete[toField]}
+                                                        <TableCell key={`${taxType.id}-to-complete`} className={`text-center text-[10px] border-r border-black ${getCellColor(taxType.id)}`}>
+                                                            <span className={stats.complete[`${taxType.id}_effective_to`] === sortedDetails.length ? 'text-green-600 font-bold' : ''}>
+                                                                {stats.complete[`${taxType.id}_effective_to`]}
                                                             </span>
                                                         </TableCell>
                                                     );
                                                 }
-
                                                 return cells;
                                             })}
 
-                                            {/* Map compliance type stats cells */}
                                             {COMPLIANCE_TYPES.map(compType => {
-                                                // Use the direct field ID, not with _status suffix
                                                 const fieldName = compType.id;
                                                 return (
                                                     <TableCell
@@ -1073,83 +861,48 @@ export function PinCheckerDetailsReports() {
                                             <TableCell></TableCell>
                                         </TableRow>
 
-                                        {/* Missing Stats Row - conditionally show date columns */}
+                                        {/* Missing Stats Row */}
                                         <TableRow className="h-6 bg-red-50">
                                             <TableCell className="text-center text-[10px] font-bold border-r border-black">Missing</TableCell>
 
-                                            {/* Company Name stats */}
-                                            <TableCell className="text-center text-[10px] border-r border-black">
-                                                <span className={stats.missing.company_name > 0 ? 'text-red-600 font-bold' : ''}>
-                                                    {stats.missing.company_name}
-                                                </span>
-                                            </TableCell>
+                                            {initialStatsDisplayFields.map(field => (
+                                                <TableCell key={field.key} className={`text-center text-[10px] border-r border-black ${field.color || ''}`}>
+                                                    <span className={stats.missing[field.key] > 0 ? 'text-red-600 font-bold' : ''}>
+                                                        {stats.missing[field.key]}
+                                                    </span>
+                                                </TableCell>
+                                            ))}
 
-                                            {/* KRA PIN stats */}
-                                            <TableCell className="text-center text-[10px] border-r border-black">
-                                                <span className={stats.missing.kra_pin > 0 ? 'text-red-600 font-bold' : ''}>
-                                                    {stats.missing.kra_pin}
-                                                </span>
-                                            </TableCell>
-
-                                            <TableCell className="text-center text-[10px] border-r border-black bg-olive-100">
-                                                <span className={stats.missing.pin_status > 0 ? 'text-red-600 font-bold' : ''}>
-                                                    {stats.missing.pin_status}
-                                                </span>
-                                            </TableCell>
-
-                                            <TableCell className="text-center text-[10px] border-r border-black bg-blue-100">
-                                                <span className={stats.missing.itax_status > 0 ? 'text-red-600 font-bold' : ''}>
-                                                    {stats.missing.itax_status}
-                                                </span>
-                                            </TableCell>
-
-
-                                            {/* Map tax type stats cells - conditionally show date columns */}
                                             {TAX_TYPES.flatMap(taxType => {
-                                                const statusField = `${taxType.id}_status`;
                                                 const cells = [
-                                                    // Status cell is always shown
                                                     <TableCell
                                                         key={`${taxType.id}-status-missing`}
                                                         className={`text-center text-[10px] border-r border-black ${getCellColor(taxType.id)}`}
                                                     >
-                                                        <span className={stats.missing[statusField] > 0 ? 'text-red-600 font-bold' : ''}>
-                                                            {stats.missing[statusField]}
+                                                        <span className={stats.missing[`${taxType.id}_status`] > 0 ? 'text-red-600 font-bold' : ''}>
+                                                            {stats.missing[`${taxType.id}_status`]}
                                                         </span>
                                                     </TableCell>
                                                 ];
-
-                                                // From and To cells conditionally shown
                                                 if (showDateColumns) {
-                                                    const fromField = `${taxType.id}_effective_from`;
-                                                    const toField = `${taxType.id}_effective_to`;
-
                                                     cells.push(
-                                                        <TableCell
-                                                            key={`${taxType.id}-from-missing`}
-                                                            className={`text-center text-[10px] border-r border-black ${getCellColor(taxType.id)}`}
-                                                        >
-                                                            <span className={stats.missing[fromField] > 0 ? 'text-red-600 font-bold' : ''}>
-                                                                {stats.missing[fromField]}
+                                                        <TableCell key={`${taxType.id}-from-missing`} className={`text-center text-[10px] border-r border-black ${getCellColor(taxType.id)}`}>
+                                                            <span className={stats.missing[`${taxType.id}_effective_from`] > 0 ? 'text-red-600 font-bold' : ''}>
+                                                                {stats.missing[`${taxType.id}_effective_from`]}
                                                             </span>
                                                         </TableCell>,
-                                                        <TableCell
-                                                            key={`${taxType.id}-to-missing`}
-                                                            className={`text-center text-[10px] border-r border-black ${getCellColor(taxType.id)}`}
-                                                        >
-                                                            <span className={stats.missing[toField] > 0 ? 'text-red-600 font-bold' : ''}>
-                                                                {stats.missing[toField]}
+                                                        <TableCell key={`${taxType.id}-to-missing`} className={`text-center text-[10px] border-r border-black ${getCellColor(taxType.id)}`}>
+                                                            <span className={stats.missing[`${taxType.id}_effective_to`] > 0 ? 'text-red-600 font-bold' : ''}>
+                                                                {stats.missing[`${taxType.id}_effective_to`]}
                                                             </span>
                                                         </TableCell>
                                                     );
                                                 }
-
                                                 return cells;
                                             })}
 
-                                            {/* Map compliance type stats cells */}
                                             {COMPLIANCE_TYPES.map(compType => {
-                                                const fieldName = compType.id; // Use the actual field name: etims_registration, tims_registration, vat_compliance
+                                                const fieldName = compType.id;
                                                 return (
                                                     <TableCell
                                                         key={`${compType.id}-missing`}
@@ -1168,7 +921,6 @@ export function PinCheckerDetailsReports() {
                                     </>
                                 )}
 
-                                {/* Column sub-headers */}
                                 <TableRow className="h-8">
                                     <TableHead className="sticky top-8 bg-white border-r border-black border-b"></TableHead>
                                     <TableHead className="sticky top-8 bg-white border-r border-black border-b"></TableHead>
@@ -1176,9 +928,7 @@ export function PinCheckerDetailsReports() {
                                     <TableHead className="sticky top-8 bg-white border-r border-black border-b"></TableHead>
                                     <TableHead className="sticky top-8 bg-white border-r border-black border-b"></TableHead>
 
-                                    {/* Tax type sub-headers - conditionally show date columns */}
                                     {TAX_TYPES.flatMap(taxType => {
-                                        // Status column is always shown
                                         const headers = [
                                             <TableHead
                                                 key={`${taxType.id}-status`}
@@ -1187,32 +937,21 @@ export function PinCheckerDetailsReports() {
                                                 <SortableHeader field={`${taxType.id}_status` as SortField}>Status</SortableHeader>
                                             </TableHead>
                                         ];
-
-                                        // From and To columns conditionally shown
                                         if (showDateColumns) {
                                             headers.push(
-                                                <TableHead
-                                                    key={`${taxType.id}-from`}
-                                                    className={`sticky top-8 ${getCellColor(taxType.id)} border-r border-black border-b text-black text-center`}
-                                                >
+                                                <TableHead key={`${taxType.id}-from`} className={`sticky top-8 ${getCellColor(taxType.id)} border-r border-black border-b text-black text-center`}>
                                                     <SortableHeader field={`${taxType.id}_effective_from` as SortField}>From</SortableHeader>
                                                 </TableHead>,
-                                                <TableHead
-                                                    key={`${taxType.id}-to`}
-                                                    className={`sticky top-8 ${getCellColor(taxType.id)} border-r border-black border-b text-black text-center`}
-                                                >
+                                                <TableHead key={`${taxType.id}-to`} className={`sticky top-8 ${getCellColor(taxType.id)} border-r border-black border-b text-black text-center`}>
                                                     <SortableHeader field={`${taxType.id}_effective_to` as SortField}>To</SortableHeader>
                                                 </TableHead>
                                             );
                                         }
-
                                         return headers;
                                     })}
 
-                                    {/* Compliance type sub-headers */}
                                     {COMPLIANCE_TYPES.map(compType => {
-                                        // Use the field ID directly as the sort field, not with _status suffix
-                                        const field = compType.id as SortField;
+                                        const field = compType.id as SortField; // Direct field name for sorting
                                         return (
                                             <TableHead
                                                 key={`${compType.id}-status`}
@@ -1247,28 +986,22 @@ export function PinCheckerDetailsReports() {
                                         </TableCell>
 
                                         <TableCell className="border-r border-black bg-olive-100 text-center">
-                                            <span>{detail.pin_status || 'Not Available'}</span>
+                                            {renderStatusCell(detail, 'pin_status')}
                                         </TableCell>
 
                                         <TableCell className="border-r border-black bg-blue-100 text-center">
-                                            <span>{detail.itax_status || 'Not Available'}</span>
+                                            {renderStatusCell(detail, 'itax_status')}
                                         </TableCell>
 
-                                        {/* Tax type cells - conditionally show date columns */}
                                         {TAX_TYPES.flatMap(taxType => {
-                                            // Status cell is always shown
                                             const cells = [
                                                 <TableCell
                                                     key={`${taxType.id}-status-${detail.id}`}
-                                                    className={`${getCellColor(taxType.id)} border-l border-r border-black 
-                                                        ${!detail[`${taxType.id}_status`] || detail[`${taxType.id}_status`]?.toLowerCase() === 'no obligation'
-                                                            ? 'font-bold text-red-600 bg-red-100' : ''} text-center`}
+                                                    className={`${getCellColor(taxType.id)} border-l border-r border-black text-center`}
                                                 >
                                                     {renderStatusCell(detail, taxType.id)}
                                                 </TableCell>
                                             ];
-
-                                            // From and To cells conditionally shown
                                             if (showDateColumns) {
                                                 cells.push(
                                                     <TableCell
@@ -1291,21 +1024,13 @@ export function PinCheckerDetailsReports() {
                                                     </TableCell>
                                                 );
                                             }
-
                                             return cells;
                                         })}
 
-                                        {/* Compliance type cells */}
                                         {COMPLIANCE_TYPES.map(compType => (
                                             <TableCell
                                                 key={compType.id}
-                                                className={`${getCellColor(compType.id)} border-r border-black text-center 
-            ${!detail[`${compType.id}_status`]
-                                                        ? 'font-bold text-gray-600 bg-gray-100'
-                                                        : (detail[`${compType.id}_status`]?.toLowerCase() === 'inactive' ||
-                                                            detail[`${compType.id}_status`]?.toLowerCase() === 'not compliant'
-                                                            ? 'font-bold text-red-600 bg-red-100'
-                                                            : '')}`}
+                                                className={`${getCellColor(compType.id)} border-r border-black text-center`}
                                             >
                                                 {renderStatusCell(detail, compType.id)}
                                             </TableCell>
@@ -1335,7 +1060,6 @@ export function PinCheckerDetailsReports() {
 
                                                         {editingDetail && (
                                                             <div className="py-2 overflow-y-auto max-h-[calc(100vh-200px)]">
-                                                                {/* Company Information Section */}
                                                                 <div className="mb-6">
                                                                     <div className="grid grid-cols-3 gap-4 mb-4">
                                                                         <div className="space-y-1">
@@ -1353,46 +1077,28 @@ export function PinCheckerDetailsReports() {
                                                                     </div>
 
                                                                     <div className="grid grid-cols-2 gap-4 mb-4">
-                                                                        <div className="space-y-1 p-3 rounded-md bg-olive-50">
-                                                                            <p className="text-sm font-medium text-gray-500">PIN Status</p>
-                                                                            <p className="bg-gray-50 p-2 rounded-md">{editingDetail.pin_status || 'Not Available'}</p>
+                                                                        <div className="space-y-1 p-3 rounded-md bg-amber-50">
+                                                                            <p className="text-sm font-medium text-gray-500">PIN Status : {renderStatusCell(editingDetail, 'pin_status')}</p>
                                                                         </div>
                                                                         <div className="space-y-1 p-3 rounded-md bg-blue-50">
-                                                                            <p className="text-sm font-medium text-gray-500">iTax Status</p>
-                                                                            <p className="bg-gray-50 p-2 rounded-md">{editingDetail.itax_status || 'Not Available'}</p>
+                                                                            <p className="text-sm font-medium text-gray-500">iTax Status : {renderStatusCell(editingDetail, 'itax_status')}</p>
                                                                         </div>
                                                                     </div>
                                                                 </div>
 
-                                                                {/* Tax Obligations Section */}
                                                                 <div className="mb-6">
                                                                     <h3 className="text-md font-medium text-gray-700 mb-3 pb-2 border-b">Tax Obligations</h3>
-
-                                                                    {/* Group tax types and display them in a structured way */}
                                                                     <div className="grid grid-cols-3 gap-4">
                                                                         {TAX_TYPES.map(taxType => (
                                                                             <div key={taxType.id} className={`p-3 rounded-md ${getCellColor(taxType.id)}`}>
                                                                                 <h4 className="font-medium mb-2 pb-1 border-b border-gray-200">{taxType.label}</h4>
                                                                                 <div className="space-y-2">
                                                                                     <div className="space-y-1">
-                                                                                        <p className="text-sm font-medium text-gray-500">Status :{editingDetail[`${taxType.id}_status` as keyof PinCheckerDetail] ? (
-                                                                                            <span className={`px-2 py-1 rounded-full text-xs font-semibold ${editingDetail[`${taxType.id}_status` as keyof PinCheckerDetail]?.toString().toLowerCase() === 'registered' ||
-                                                                                                editingDetail[`${taxType.id}_status` as keyof PinCheckerDetail]?.toString().toLowerCase() === 'active'
-                                                                                                ? 'bg-green-100 text-green-800'
-                                                                                                : editingDetail[`${taxType.id}_status` as keyof PinCheckerDetail]?.toString().toLowerCase() === 'cancelled'
-                                                                                                    ? 'bg-amber-100 text-amber-800'
-                                                                                                    : 'bg-red-100 text-red-800'
-                                                                                                }`}>
-                                                                                                {editingDetail[`${taxType.id}_status` as keyof PinCheckerDetail]}
-                                                                                            </span>
-                                                                                        ) : (
-                                                                                            <span className="text-red-600 font-medium">No Obligation</span>
-                                                                                        )}
-                                                                                        </p>
+                                                                                        <p className="text-sm font-medium text-gray-500">Status : {renderStatusCell(editingDetail, taxType.id)}</p>
                                                                                     </div>
                                                                                     <div className="grid grid-cols-2 gap-2">
                                                                                         <div className="space-y-1">
-                                                                                            <p className="text-sm font-medium text-gray-500">From :   {editingDetail[`${taxType.id}_effective_from` as keyof PinCheckerDetail]
+                                                                                            <p className="text-sm font-medium text-gray-500">From : {editingDetail[`${taxType.id}_effective_from` as keyof PinCheckerDetail]
                                                                                                 ? formatDate(editingDetail[`${taxType.id}_effective_from` as keyof PinCheckerDetail] as string)
                                                                                                 : 'N/A'}</p>
                                                                                         </div>
@@ -1408,7 +1114,6 @@ export function PinCheckerDetailsReports() {
                                                                     </div>
                                                                 </div>
 
-                                                                {/* Compliance Section */}
                                                                 <div className="mb-6">
                                                                     <h3 className="text-md font-medium text-gray-700 mb-3 pb-2 border-b">Registration & Compliance Status</h3>
                                                                     <div className="grid grid-cols-3 gap-4">
@@ -1416,24 +1121,13 @@ export function PinCheckerDetailsReports() {
                                                                             <div key={compType.id} className={`p-3 rounded-md ${getCellColor(compType.id)}`}>
                                                                                 <h4 className="font-medium mb-2 pb-1 border-b border-gray-200">{compType.label}</h4>
                                                                                 <div className="space-y-1">
-                                                                                    <p className="text-sm font-medium text-gray-500">Status : {editingDetail[`${compType.id}_status` as keyof PinCheckerDetail] ? (
-                                                                                        <span className={`px-2 py-1 rounded-full text-xs font-semibold ${editingDetail[`${compType.id}_status` as keyof PinCheckerDetail]?.toString().toLowerCase() === 'active' ||
-                                                                                            editingDetail[`${compType.id}_status` as keyof PinCheckerDetail]?.toString().toLowerCase() === 'compliant'
-                                                                                            ? 'bg-green-100 text-green-800'
-                                                                                            : 'bg-red-100 text-red-800'
-                                                                                            }`}>
-                                                                                            {editingDetail[`${compType.id}_status` as keyof PinCheckerDetail]}
-                                                                                        </span>
-                                                                                    ) : (
-                                                                                        <span className="text-gray-500">Not Available</span>
-                                                                                    )}</p>
+                                                                                    <p className="text-sm font-medium text-gray-500">Status : {renderStatusCell(editingDetail, compType.id)}</p>
                                                                                 </div>
                                                                             </div>
                                                                         ))}
                                                                     </div>
                                                                 </div>
 
-                                                                {/* Additional Information Section */}
                                                                 {editingDetail.error_message && (
                                                                     <div>
                                                                         <h3 className="text-md font-medium text-gray-700 mb-3 pb-2 border-b">Additional Information</h3>
