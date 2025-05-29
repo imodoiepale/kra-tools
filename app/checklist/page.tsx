@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Filter, Search } from "lucide-react";
 import CompanyListTable from './taxes/components/CompanyListTable';
 import { supabase } from '@/lib/supabase';
-import ClientFileManagement from './file-management/components/ClientFileManagement';
+import ClientFileManagement from '../file-management/components/ClientFileManagement';
 import TaxesPage from './taxes/components/TaxesPageComponent';
 import { ClientCategoryFilter } from '@/components/ClientCategoryFilter';
 import { toast } from 'react-hot-toast';
@@ -21,7 +21,7 @@ export default function MainPage() {
     const [searchTerm, setSearchTerm] = useState('');
     const [isCategoryFilterOpen, setIsCategoryFilterOpen] = useState(false);
     const [categoryFilters, setCategoryFilters] = useState({});
-    
+
     // State for checklist tab
     const [checklistSearchTerm, setChecklistSearchTerm] = useState('');
     const [isChecklistCategoryFilterOpen, setIsChecklistCategoryFilterOpen] = useState(false);
@@ -30,7 +30,7 @@ export default function MainPage() {
     useEffect(() => {
         fetchCompanies();
     }, []);
-    
+
     // Debug the filter state when it changes
     useEffect(() => {
         console.log('Category filters changed:', categoryFilters);
@@ -57,56 +57,56 @@ export default function MainPage() {
             console.log('No companies to filter');
             return [];
         }
-        
+
         let filtered = [...companies];
         console.log('Starting with companies:', filtered.length);
-        
+
         // Apply search filter
         if (searchTerm) {
             const term = searchTerm.toLowerCase();
             filtered = filtered.filter(company => {
                 return (
-                    (company.company_name && company.company_name.toLowerCase().includes(term)) || 
+                    (company.company_name && company.company_name.toLowerCase().includes(term)) ||
                     (company.kra_pin && company.kra_pin.toLowerCase().includes(term))
                 );
             });
             console.log('After search filter:', filtered.length);
         }
-        
+
         // Apply category filters
         if (Object.keys(categoryFilters).length > 0) {
-            const hasActiveFilters = Object.values(categoryFilters).some(categoryStatus => 
+            const hasActiveFilters = Object.values(categoryFilters).some(categoryStatus =>
                 Object.values(categoryStatus as Record<string, boolean>).some(isSelected => isSelected)
             );
-            
+
             if (hasActiveFilters) {
                 console.log('Applying category filters:', categoryFilters);
                 filtered = filtered.filter(company => {
                     // Check if any selected filter matches
                     for (const [category, statuses] of Object.entries(categoryFilters)) {
                         const statusObj = statuses as Record<string, boolean>;
-                        
+
                         // Skip if this category doesn't have any selected statuses
                         if (!Object.values(statusObj).some(isSelected => isSelected)) {
                             continue;
                         }
-                        
+
                         // For 'all' category, check all service types
                         if (category === 'all') {
                             // If 'all' status is selected, include all companies
                             if (statusObj.all) {
                                 return true;
                             }
-                            
+
                             // Check each service type
                             const serviceTypes = ['acc', 'imm', 'audit', 'sheria'];
                             for (const serviceType of serviceTypes) {
                                 const fromField = `${serviceType === 'sheria' ? 'cps_sheria' : serviceType}${serviceType === 'audit' ? '_tax' : ''}_client_effective_from`;
                                 const toField = `${serviceType === 'sheria' ? 'cps_sheria' : serviceType}${serviceType === 'audit' ? '_tax' : ''}_client_effective_to`;
-                                
+
                                 const status = calculateClientStatus(company[fromField], company[toField]);
-                                
-                                if ((status === 'Active' && statusObj.active) || 
+
+                                if ((status === 'Active' && statusObj.active) ||
                                     (status === 'Inactive' && statusObj.inactive)) {
                                     return true;
                                 }
@@ -115,26 +115,26 @@ export default function MainPage() {
                             // For specific categories
                             const fromField = `${category === 'sheria' ? 'cps_sheria' : category}${category === 'audit' ? '_tax' : ''}_client_effective_from`;
                             const toField = `${category === 'sheria' ? 'cps_sheria' : category}${category === 'audit' ? '_tax' : ''}_client_effective_to`;
-                            
+
                             const status = calculateClientStatus(company[fromField], company[toField]);
-                            
-                            if ((status === 'Active' && statusObj.active) || 
+
+                            if ((status === 'Active' && statusObj.active) ||
                                 (status === 'Inactive' && statusObj.inactive) ||
                                 statusObj.all) {
                                 return true;
                             }
                         }
                     }
-                    
+
                     return false;
                 });
                 console.log('After category filter:', filtered.length);
             }
         }
-        
+
         return filtered;
     }, [companies, searchTerm, categoryFilters]);
-    
+
     // Helper function to calculate client status based on from/to dates
     function calculateClientStatus(fromDate, toDate) {
         try {
@@ -148,32 +148,32 @@ export default function MainPage() {
             return 'Inactive';
         }
     }
-    
+
     // Filter companies for checklist tab
     const filteredChecklistCompanies = React.useMemo(() => {
         let filtered = companies;
-        
+
         // Apply search filter
         if (checklistSearchTerm) {
             const term = checklistSearchTerm.toLowerCase();
-            filtered = filtered.filter(company => 
-                company.company_name?.toLowerCase().includes(term) || 
+            filtered = filtered.filter(company =>
+                company.company_name?.toLowerCase().includes(term) ||
                 company.kra_pin?.toLowerCase().includes(term)
             );
         }
-        
+
         // Apply category filters
         if (Object.keys(checklistCategoryFilters).length > 0) {
-            const hasActiveFilters = Object.values(checklistCategoryFilters).some(categoryStatus => 
+            const hasActiveFilters = Object.values(checklistCategoryFilters).some(categoryStatus =>
                 Object.values(categoryStatus as Record<string, boolean>).some(isSelected => isSelected)
             );
-            
+
             if (hasActiveFilters) {
                 filtered = filtered.filter(company => {
                     // Get the company's category and status
                     const category = company.category || 'all';
                     const status = company.status === 'active' ? 'active' : 'inactive';
-                    
+
                     // Check if this category has any filters
                     const categoryFilter = checklistCategoryFilters[category] as Record<string, boolean> | undefined;
                     if (!categoryFilter) {
@@ -181,13 +181,13 @@ export default function MainPage() {
                         const allCategoryFilter = checklistCategoryFilters['all'] as Record<string, boolean> | undefined;
                         return allCategoryFilter?.[status] || allCategoryFilter?.['all'];
                     }
-                    
+
                     // Check if this specific status is selected for this category
                     return categoryFilter[status] || categoryFilter['all'];
                 });
             }
         }
-        
+
         return filtered;
     }, [companies, checklistSearchTerm, checklistCategoryFilters]);
 
@@ -231,7 +231,7 @@ export default function MainPage() {
             console.error('Error toggling lock:', error);
         }
     }
-    
+
     async function deleteCompany(companyId) {
         try {
             const { error } = await supabase
@@ -270,9 +270,9 @@ export default function MainPage() {
                             <Filter className="mr-2 h-4 w-4" /> Categories Filters
                         </Button>
                     </div>
-                    <ClientCategoryFilter 
-                        isOpen={isCategoryFilterOpen} 
-                        onClose={() => setIsCategoryFilterOpen(false)} 
+                    <ClientCategoryFilter
+                        isOpen={isCategoryFilterOpen}
+                        onClose={() => setIsCategoryFilterOpen(false)}
                         onApplyFilters={(filters) => setCategoryFilters(filters)}
                         onClearFilters={() => setCategoryFilters({})}
                         selectedFilters={categoryFilters}
@@ -300,9 +300,9 @@ export default function MainPage() {
                             <Filter className="mr-2 h-4 w-4" /> Categories Filters
                         </Button>
                     </div>
-                    <ClientCategoryFilter 
-                        isOpen={isChecklistCategoryFilterOpen} 
-                        onClose={() => setIsChecklistCategoryFilterOpen(false)} 
+                    <ClientCategoryFilter
+                        isOpen={isChecklistCategoryFilterOpen}
+                        onClose={() => setIsChecklistCategoryFilterOpen(false)}
                         onApplyFilters={(filters) => setChecklistCategoryFilters(filters)}
                         onClearFilters={() => setChecklistCategoryFilters({})}
                         selectedFilters={checklistCategoryFilters}

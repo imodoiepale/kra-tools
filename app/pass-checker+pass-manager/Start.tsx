@@ -4,11 +4,19 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Spinner } from '@/components/Spinner';
 import { Button } from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { motion } from "framer-motion";
 import { supabase } from '@/lib/supabase';
 
 import { usePathname } from 'next/navigation'
+import { formatDateTime, getStatusColorClass } from '../lib/format.utils';
 
 interface StartProps {
   activeTab?: string;
@@ -27,9 +35,91 @@ export default function Start({
 }: StartProps) {
   const [selectedCompanies, setSelectedCompanies] = useState<number[]>([]);
   const [runOption, setRunOption] = useState('all');
+  const [selectedChecker, setSelectedChecker] = useState('kra');
   const [automationProgress, setAutomationProgress] = useState(null);
   const [companies, setCompanies] = useState([]);
   const pathname = usePathname();
+
+  const checkerOptions = [
+    { value: 'kra', label: 'KRA' },
+    { value: 'nssf', label: 'NSSF' },
+    { value: 'nhif', label: 'NHIF' },
+    { value: 'kebs', label: 'KEBS' },
+    { value: 'quickbooks', label: 'QuickBooks' },
+    { value: 'all', label: 'All Checkers' }
+  ];
+
+  const getColumnsForChecker = (checker: string) => {
+    const commonColumns = [
+      { key: 'select', label: 'Select', width: '50px' },
+      { key: 'index', label: '#', width: '50px' },
+      { key: 'company_name', label: 'Company Name', width: '200px' }
+    ];
+
+    const checkerColumns = {
+      kra: [
+        { key: 'kra_pin', label: 'KRA PIN', width: '120px' },
+        { key: 'kra_password', label: 'KRA Password', width: '120px' },
+        { key: 'kra_status', label: 'Status', width: '100px' }
+      ],
+      nssf: [
+        { key: 'nssf_id', label: 'NSSF ID', width: '120px' },
+        { key: 'nssf_code', label: 'NSSF Code', width: '120px' },
+        { key: 'nssf_password', label: 'NSSF Password', width: '120px' },
+        { key: 'nssf_status', label: 'Status', width: '100px' }
+      ],
+      nhif: [
+        { key: 'nhif_id', label: 'NHIF ID', width: '120px' },
+        { key: 'nhif_code', label: 'NHIF Code', width: '120px' },
+        { key: 'nhif_password', label: 'NHIF Password', width: '120px' },
+        { key: 'nhif_status', label: 'Status', width: '100px' }
+      ],
+      kebs: [
+        { key: 'kebs_id', label: 'KEBS ID', width: '120px' },
+        { key: 'kebs_password', label: 'KEBS Password', width: '120px' },
+        { key: 'kebs_status', label: 'Status', width: '100px' }
+      ],
+      quickbooks: [
+        { key: 'quickbooks_id', label: 'QuickBooks ID', width: '120px' },
+        { key: 'quickbooks_password', label: 'QuickBooks Password', width: '120px' },
+        { key: 'quickbooks_status', label: 'Status', width: '100px' }
+      ],
+      all: [
+        { 
+          key: 'kra',
+          label: 'KRA',
+          width: '100px',
+          fields: ['kra_pin', 'kra_password', 'kra_status', 'kra_last_checked']
+        },
+        { 
+          key: 'nssf',
+          label: 'NSSF',
+          width: '100px',
+          fields: ['nssf_id', 'nssf_code', 'nssf_password', 'nssf_status', 'nssf_last_checked']
+        },
+        { 
+          key: 'nhif',
+          label: 'NHIF',
+          width: '100px',
+          fields: ['nhif_id', 'nhif_code', 'nhif_password', 'nhif_status', 'nhif_last_checked']
+        },
+        { 
+          key: 'kebs',
+          label: 'KEBS',
+          width: '100px',
+          fields: ['kebs_id', 'kebs_password', 'kebs_status', 'kebs_last_checked']
+        },
+        { 
+          key: 'quickbooks',
+          label: 'QB',
+          width: '100px',
+          fields: ['quickbooks_id', 'quickbooks_password', 'quickbooks_status', 'quickbooks_last_checked']
+        }
+      ]
+    };
+
+    return [...commonColumns, ...(checkerColumns[checker] || [])];
+  };
 
   const fetchAutomationProgress = useCallback(async () => {
     if (!activeTab) return;
@@ -46,9 +136,23 @@ export default function Start({
       if (error) {
         console.error('Error fetching automation progress:', error);
         // Create initial record if none exists
+        const tabToIdMap = {
+          'kra': 1,
+          'nhif': 2,
+          'nssf': 3,
+          'ecitizen': 4,
+          'kebs': 5,
+          'quickbooks': 6
+        };
+        
+        const progressId = tabToIdMap[activeTab] || 999; // Default to 999 for unknown tabs
+        
+        console.log(`Creating initial progress for ${activeTab} with ID ${progressId}`);
+        
         const { error: insertError } = await supabase
           .from('PasswordChecker_AutomationProgress')
           .upsert({
+            id: progressId,
             progress: 0,
             status: 'Initial',
             logs: [],
@@ -92,7 +196,7 @@ export default function Start({
   const fetchCompanies = useCallback(async () => {
     try {
       const { data, error } = await supabase
-        .from('PasswordChecker')
+        .from('acc_portal_company_duplicate')
         .select('*')
         .order('id', { ascending: true });
 
@@ -205,9 +309,23 @@ export default function Start({
 
     try {
       // First, ensure automation is marked as running in Supabase
+      const tabToIdMap = {
+        'kra': 1,
+        'nhif': 2,
+        'nssf': 3,
+        'ecitizen': 4,
+        'kebs': 5,
+        'quickbooks': 6
+      };
+      
+      const progressId = tabToIdMap[activeTab] || 999; // Default to 999 for unknown tabs
+      
+      console.log(`Setting progress for ${activeTab} with ID ${progressId}`);
+      
       const { error: progressError } = await supabase
         .from('PasswordChecker_AutomationProgress')
         .upsert({
+          id: progressId,
           progress: 0,
           status: 'Running',
           logs: [],
@@ -247,9 +365,21 @@ export default function Start({
     } catch (error) {
       console.error(`Error starting password check for ${activeTab}:`, error);
       // Reset the automation progress on error
+      const tabToIdMap = {
+        'kra': 1,
+        'nhif': 2,
+        'nssf': 3,
+        'ecitizen': 4,
+        'kebs': 5,
+        'quickbooks': 6
+      };
+      
+      const progressId = tabToIdMap[activeTab] || 999; // Default to 999 for unknown tabs
+      
       await supabase
         .from('PasswordChecker_AutomationProgress')
         .upsert({
+          id: progressId,
           progress: 0,
           status: 'Stopped',
           logs: [],
@@ -291,9 +421,24 @@ export default function Start({
 
     try {
       // Update automation progress before resuming
+      // Generate a fixed ID based on the tab
+      const tabToIdMap = {
+        'kra': 1,
+        'nhif': 2,
+        'nssf': 3,
+        'ecitizen': 4,
+        'kebs': 5,
+        'quickbooks': 6
+      };
+      
+      const progressId = tabToIdMap[activeTab] || 999; // Default to 999 for unknown tabs
+      
+      console.log(`Setting progress for ${activeTab} with ID ${progressId} in resumeCheck`);
+      
       const { error: progressError } = await supabase
         .from('PasswordChecker_AutomationProgress')
         .upsert({
+          id: progressId,
           status: 'Running',
           tab: activeTab,
           last_updated: new Date().toISOString()
@@ -329,9 +474,21 @@ export default function Start({
     } catch (error) {
       console.error('Error resuming automation:', error);
       // Reset automation progress on error
+      const tabToIdMap = {
+        'kra': 1,
+        'nhif': 2,
+        'nssf': 3,
+        'ecitizen': 4,
+        'kebs': 5,
+        'quickbooks': 6
+      };
+      
+      const progressId = tabToIdMap[activeTab] || 999; // Default to 999 for unknown tabs
+      
       await supabase
         .from('PasswordChecker_AutomationProgress')
         .upsert({
+          id: progressId,
           status: 'Stopped',
           tab: activeTab,
           last_updated: new Date().toISOString()
@@ -347,17 +504,32 @@ export default function Start({
         <CardDescription>Begin the password validation process for companies.</CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="mb-4">
-          <label className="block mb-2">Run option:</label>
-          <Select value={runOption} onValueChange={(value) => setRunOption(value)}>
-            <SelectTrigger className="w-[180px]">
-              <SelectValue placeholder="Select run option" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Companies</SelectItem>
-              <SelectItem value="selected">Selected Companies</SelectItem>
-            </SelectContent>
-          </Select>
+        <div className="flex gap-4 mb-4">
+          <div>
+            <label className="block mb-2">Run for:</label>
+            <Select value={selectedChecker} onValueChange={(value) => setSelectedChecker(value)}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="Select checker" />
+              </SelectTrigger>
+              <SelectContent>
+                {checkerOptions.map(option => (
+                  <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <label className="block mb-2">Run option:</label>
+            <Select value={runOption} onValueChange={(value) => setRunOption(value)}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="Select run option" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Companies</SelectItem>
+                <SelectItem value="selected">Selected Companies</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
         {runOption === 'selected' && (
           <div className="flex">
@@ -371,37 +543,111 @@ export default function Start({
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="w-[50px] sticky top-0 bg-white">Select</TableHead>
-                      <TableHead className="w-[50px] sticky top-0 bg-white">#</TableHead>
-                      <TableHead className="min-w-[200px] sticky top-0 bg-white">Company Name</TableHead>
-                      <TableHead className="w-[120px] sticky top-0 bg-white">KRA PIN</TableHead>
-                      <TableHead className="w-[120px] sticky top-0 bg-white">KRA Password</TableHead>
-                      <TableHead className="w-[100px] sticky top-0 bg-white text-center">Status</TableHead>
+                      {getColumnsForChecker(selectedChecker).map(column => (
+                        <TableHead
+                          key={column.key}
+                          className={`${column.width ? `w-[${column.width}]` : ''} sticky top-0 bg-white ${column.key === 'company_name' ? 'min-w-[200px]' : ''}`}
+                        >
+                          {column.label}
+                        </TableHead>
+                      ))}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {companies.map((company, index) => (
                       <TableRow key={company.id}>
-                        <TableCell className="w-[50px]">
-                          <Checkbox
-                            checked={selectedCompanies.includes(company.id)}
-                            onCheckedChange={() => handleCheckboxChange(company.id)}
-                          />
-                        </TableCell>
-                        <TableCell className="w-[50px] text-center">{index + 1}</TableCell>
-                        <TableCell className="min-w-[200px] whitespace-nowrap overflow-hidden text-ellipsis">
-                          {company.company_name}
-                        </TableCell>
-                        <TableCell className="w-[120px] font-mono">{company.kra_pin}</TableCell>
-                        <TableCell className="w-[120px] font-mono">{company.kra_password}</TableCell>
-                        <TableCell className="w-[100px] text-center">
-                          <span className={`${company.status?.toLowerCase() === 'valid' ? 'bg-green-500' :
-                              company.status?.toLowerCase() === 'invalid' ? 'bg-red-500' :
-                                'bg-yellow-500'
-                            } text-white px-2 py-1 rounded whitespace-nowrap text-sm`}>
-                            {company.status || 'Pending'}
-                          </span>
-                        </TableCell>
+                        {getColumnsForChecker(selectedChecker).map(column => {
+                          if (column.key === 'select') {
+                            return (
+                              <TableCell key={column.key} className={`w-[${column.width}]`}>
+                                <Checkbox
+                                  checked={selectedCompanies.includes(company.id)}
+                                  onCheckedChange={() => handleCheckboxChange(company.id)}
+                                />
+                              </TableCell>
+                            );
+                          }
+                          if (column.key === 'index') {
+                            return (
+                              <TableCell key={column.key} className={`w-[${column.width}] text-center`}>
+                                {index + 1}
+                              </TableCell>
+                            );
+                          }
+                          if (column.key === 'company_name') {
+                            return (
+                              <TableCell key={column.key} className="min-w-[200px] whitespace-nowrap overflow-hidden text-ellipsis">
+                                {company[column.key]}
+                              </TableCell>
+                            );
+                          }
+                          if (selectedChecker === 'all' && column.fields) {
+                            const status = company[`${column.key}_status`]?.toLowerCase();
+                            const identifier = company[`${column.key}_pin`] || company[`${column.key}_id`] || 'N/A';
+                            const tooltipContent = column.fields.map(field => {
+                              let value = company[field] || 'N/A';
+                              const label = field.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+                              
+                              // Format status with color
+                              if (field.endsWith('_status')) {
+                                const status = value.toLowerCase();
+                                value = `<span class="${getStatusColorClass(status)}">${value}</span>`;
+                              }
+                              
+                              // Format last checked date
+                              if (field.endsWith('_last_checked') && value !== 'N/A') {
+                                value = formatDateTime(value);
+                              }
+                              
+                              return `<div class="flex justify-between gap-4"><span class="font-medium">${label}:</span><span>${value}</span></div>`;
+                            }).join('');
+
+                            const textColorClass = getStatusColorClass(status);
+
+                            return (
+                              <TableCell key={column.key} className={`w-[${column.width}] text-center`}>
+                                <TooltipProvider>
+                                  <Tooltip>
+                                    <TooltipTrigger>
+                                      <span className={`${textColorClass} cursor-pointer`}>
+                                        {identifier}
+                                      </span>
+                                    </TooltipTrigger>
+                                    <TooltipContent className="bg-white border border-gray-200 shadow-lg p-3 rounded-lg min-w-[300px]">
+                                      <div 
+                                        className="text-sm text-gray-700 space-y-2"
+                                        dangerouslySetInnerHTML={{ __html: tooltipContent }}
+                                      />
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+                              </TableCell>
+                            );
+                          } else if (column.key.endsWith('_status')) {
+                            const status = company[column.key]?.toLowerCase();
+                            const textColorClass = getStatusColorClass(status);
+                            
+                            return (
+                              <TableCell key={column.key} className={`w-[${column.width}] text-center`}>
+                                <span className={textColorClass}>
+                                  {company[column.key] || 'Pending'}
+                                </span>
+                              </TableCell>
+                            );
+                          }
+                          const value = company[column.key];
+                          return (
+                            <TableCell key={column.key} className={`w-[${column.width}] text-center`}>
+                              {column.key.endsWith('_last_checked') ? (
+                                value ? formatDateTime(value) : <span className="text-red-500 font-medium">Missing</span>
+                              ) : column.key.endsWith('_status') ? (
+                                <span className={getStatusColorClass(value)}>{value || 'Pending'}</span>
+                              ) : (
+                                value || <span className="text-red-500 font-medium">Missing</span>
+                              )}
+                            </TableCell>
+                          );
+                        })}
                       </TableRow>
                     ))}
                   </TableBody>
@@ -413,67 +659,148 @@ export default function Start({
                 className="pl-2"
                 initial={{ width: "0%", opacity: 0 }}
                 animate={{ width: "50%", opacity: 1 }}
+                exit={{ width: "0%", opacity: 0 }}
                 transition={{ duration: 0.3 }}
               >
-                <div className="mb-4">
-                  <h3 className="text-lg font-semibold mb-2">Selected Companies ({selectedCompanies.length})</h3>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="w-[50px]">#</TableHead>
-                        <TableHead className="min-w-[200px]">Company Name</TableHead>
-                        <TableHead className="w-[120px]">KRA PIN</TableHead>
-                        <TableHead className="w-[120px]">KRA Password</TableHead>
-                        <TableHead className="w-[100px] text-center">Status</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {companies
-                        .filter(company => selectedCompanies.includes(company.id))
-                        .map((company, index) => (
-                          <TableRow key={company.id} className="bg-blue-100">
-                            <TableCell className="w-[50px] text-center">{index + 1}</TableCell>
-                            <TableCell className="min-w-[200px] whitespace-nowrap overflow-hidden text-ellipsis">
-                              {company.company_name}
-                            </TableCell>
-                            <TableCell className="w-[120px] font-mono">{company.kra_pin}</TableCell>
-                            <TableCell className="w-[120px] font-mono">{company.kra_password}</TableCell>
-                            <TableCell className="w-[100px] text-center">
-                              <span className={`${company.status?.toLowerCase() === 'valid' ? 'bg-green-500' :
-                                  company.status?.toLowerCase() === 'invalid' ? 'bg-red-500' :
-                                    'bg-yellow-500'
-                                } text-white px-2 py-1 rounded whitespace-nowrap text-sm`}>
-                                {company.status || 'Pending'}
-                              </span>
-                            </TableCell>
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Selected Companies ({selectedCompanies.length})</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-4">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            {getColumnsForChecker(selectedChecker)
+                              .filter(column => column.key !== 'select')
+                              .map(column => (
+                                <TableHead 
+                                  key={column.key}
+                                  className={`${column.width ? `w-[${column.width}]` : ''} sticky top-0 bg-white ${column.key === 'company_name' ? 'min-w-[200px]' : ''}`}
+                                >
+                                  {column.label}
+                                </TableHead>
+                              ))}
                           </TableRow>
-                        ))}
-                    </TableBody>
-                  </Table>
-                </div>
-                <div className="mt-4">
-                  <Button
-                    onClick={automationProgress?.status === 'Stopped' ? resumeCheck : startCheck}
-                    disabled={isChecking && automationProgress?.status !== 'Stopped'}
-                    className={automationProgress?.status === 'Completed' ? 'bg-green-500 text-white' : ''}
-                  >
-                    {isChecking ? 'Running...' :
-                      automationProgress?.status === 'Stopped' ? 'Resume' :
-                        automationProgress?.status === 'Completed' ? 'Start New Check' :
-                          'Start Password Check'}
-                  </Button>
+                        </TableHeader>
+                        <TableBody>
+                          {companies
+                            .filter(company => selectedCompanies.includes(company.id))
+                            .map((company, index) => (
+                              <TableRow key={company.id} className="hover:bg-blue-50">
+                                {getColumnsForChecker(selectedChecker)
+                                  .filter(column => column.key !== 'select')
+                                  .map(column => {
+                                    if (column.key === 'index') {
+                                      return (
+                                        <TableCell key={column.key} className="w-[50px] text-center">
+                                          {index + 1}
+                                        </TableCell>
+                                      );
+                                    }
+                                    if (column.key === 'company_name') {
+                                      return (
+                                        <TableCell key={column.key} className="min-w-[200px] whitespace-nowrap overflow-hidden text-ellipsis">
+                                          {company[column.key]}
+                                        </TableCell>
+                                      );
+                                    }
+                                    if (selectedChecker === 'all' && column.fields) {
+                                      const status = company[`${column.key}_status`]?.toLowerCase();
+                                      const identifier = company[`${column.key}_pin`] || company[`${column.key}_id`] || 'N/A';
+                                      const tooltipContent = column.fields.map(field => {
+                                        let value = company[field] || 'N/A';
+                                        const label = field.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+                                        
+                                        // Format status with color
+                                        if (field.endsWith('_status')) {
+                                          value = `<span class="${getStatusColorClass(value)}">${value}</span>`;
+                                        }
+                                        
+                                        // Format last checked date
+                                        if (field.endsWith('_last_checked') && value !== 'N/A') {
+                                          value = formatDateTime(value);
+                                        }
+                                        
+                                        return `<div class="flex justify-between gap-4"><span class="font-medium">${label}:</span><span>${value}</span></div>`;
+                                      }).join('');
 
-                  <Button onClick={() => { setStatus("Stopped"); }} disabled={!isChecking} variant="destructive" className="ml-2">
-                    Stop Password Check
-                  </Button>
-                </div>
+                                      const textColorClass = getStatusColorClass(status);
+
+                                      return (
+                                        <TableCell key={column.key} className={`w-[${column.width}] text-center`}>
+                                          <TooltipProvider>
+                                            <Tooltip>
+                                              <TooltipTrigger>
+                                                <span className={`${textColorClass} cursor-pointer`}>
+                                                  {identifier}
+                                                </span>
+                                              </TooltipTrigger>
+                                              <TooltipContent className="bg-white border border-gray-200 shadow-lg p-3 rounded-lg min-w-[300px]">
+                                                <div 
+                                                  className="text-sm text-gray-700 space-y-2"
+                                                  dangerouslySetInnerHTML={{ __html: tooltipContent }}
+                                                />
+                                              </TooltipContent>
+                                            </Tooltip>
+                                          </TooltipProvider>
+                                        </TableCell>
+                                      );
+                                    } else if (column.key.endsWith('_status')) {
+                                      const status = company[column.key]?.toLowerCase();
+                                      const textColorClass = getStatusColorClass(status);
+                                      
+                                      return (
+                                        <TableCell key={column.key} className={`w-[${column.width}] text-center`}>
+                                          <span className={textColorClass}>
+                                            {company[column.key] || 'Pending'}
+                                          </span>
+                                        </TableCell>
+                                      );
+                                    }
+                                    return (
+                                      <TableCell key={column.key} className={`w-[${column.width}] text-center`}>
+                                        {column.key.endsWith('_last_checked') && company[column.key] ? (
+                                          formatDateTime(company[column.key])
+                                        ) : (
+                                          company[column.key] || <span className="text-red-500 font-medium">Missing</span>
+                                        )}
+                                      </TableCell>
+                                    );
+                                  })}
+                              </TableRow>
+                            ))}
+                        </TableBody>
+                      </Table>
+                      <div className="flex justify-end space-x-2">
+                        <Button
+                          onClick={automationProgress?.status === 'Stopped' ? resumeCheck : startCheck}
+                          disabled={isChecking && automationProgress?.status !== 'Stopped'}
+                          className={automationProgress?.status === 'Completed' ? 'bg-green-500 text-white' : ''}
+                        >
+                          {isChecking ? 'Running...' :
+                            automationProgress?.status === 'Stopped' ? 'Resume' :
+                            automationProgress?.status === 'Completed' ? 'Start New Check' :
+                            'Start Password Check'}
+                        </Button>
+                        <Button 
+                          onClick={() => { setStatus("Stopped"); }} 
+                          disabled={!isChecking} 
+                          variant="destructive"
+                        >
+                          Stop Password Check
+                        </Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
               </motion.div>
             )}
           </div>
         )}
       </CardContent>
       {runOption === 'all' && (
-        <CardFooter>
+        <CardFooter className="flex justify-end space-x-2">
           <Button
             onClick={automationProgress?.status === 'Stopped' ? resumeCheck : startCheck}
             disabled={isChecking && automationProgress?.status !== 'Stopped'}
@@ -481,11 +808,70 @@ export default function Start({
           >
             {isChecking ? 'Running...' :
               automationProgress?.status === 'Stopped' ? 'Resume' :
-                automationProgress?.status === 'Completed' ? 'Start New Check' :
-                  'Start Password Check'}
+              automationProgress?.status === 'Completed' ? 'Start New Check' :
+              'Start Password Check'}
           </Button>
-
-          <Button onClick={() => { setStatus("Stopped"); }} disabled={!isChecking} variant="destructive" className="ml-2">
+          <Button 
+            onClick={async () => {
+              if (!isChecking) return;
+              
+              try {
+                // Determine which API endpoint to use based on the activeTab
+                const currentTab = (activeTab || '').toLowerCase();
+                let apiEndpoint = '';
+                
+                switch (currentTab) {
+                  case 'nssf':
+                    apiEndpoint = '/api/nssf-pass-checker';
+                    break;
+                  case 'nhif':
+                    apiEndpoint = '/api/nhif-pass-checker';
+                    break;
+                  case 'kra':
+                    apiEndpoint = '/api/password-checker';
+                    break;
+                  case 'ecitizen':
+                    apiEndpoint = '/api/ecitizen-pass-checker';
+                    break;
+                  default:
+                    console.error('Invalid tab selected for stop:', activeTab);
+                    alert('Cannot stop: Invalid tab selected');
+                    return;
+                }
+                
+                console.log(`Stopping automation for ${activeTab}...`);
+                const response = await fetch(apiEndpoint, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({
+                    action: "stop",
+                    tab: activeTab
+                  })
+                });
+                
+                if (!response.ok) {
+                  throw new Error('Failed to stop automation');
+                }
+                
+                const data = await response.json();
+                console.log('Automation stopped:', data);
+                
+                // Update local state
+                if (typeof setIsChecking === 'function') setIsChecking(false);
+                if (typeof setStatus === 'function') setStatus("Stopped");
+                await fetchAutomationProgress(); // Refresh progress data
+                
+                alert('Automation stopped successfully.');
+              } catch (error) {
+                console.error('Error stopping automation:', error);
+                alert('Failed to stop automation. Please try again.');
+              }
+            }} 
+            disabled={!isChecking} 
+            variant="destructive"
+          >
             Stop Password Check
           </Button>
         </CardFooter>

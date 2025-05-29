@@ -1,0 +1,123 @@
+# automations/docker-compose.yml
+version: '3.8'
+
+services:
+  # Main automation server
+  main-server:
+    build: .
+    container_name: kra-automations-main
+    ports:
+      - "3000:3000"
+    environment:
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - NODE_ENV=production
+      - AUTOMATION_TYPE=main
+    volumes:
+      - kra-data:/app/data
+      - /tmp/downloads:/tmp/downloads
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  # Password checker worker containers
+  password-checker-1:
+    build: .
+    container_name: password-checker-1
+    environment:
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - AUTOMATION_TYPE=password-checker
+      - WORKER_ID=worker-1
+      - BATCH_SIZE=5
+      - PORT=3000
+    ports:
+      - "3001:3000"
+    volumes:
+      - kra-data:/app/data
+      - /tmp/downloads:/tmp/downloads
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  password-checker-2:
+    build: .
+    container_name: password-checker-2
+    environment:
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - AUTOMATION_TYPE=password-checker
+      - WORKER_ID=worker-2
+      - BATCH_SIZE=5
+      - PORT=3000
+    ports:
+      - "3002:3000"
+    volumes:
+      - kra-data:/app/data
+      - /tmp/downloads:/tmp/downloads
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # PIN checker worker container
+  pin-checker-1:
+    build: .
+    container_name: pin-checker-1
+    environment:
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - AUTOMATION_TYPE=pin-checker
+      - WORKER_ID=worker-1
+      - BATCH_SIZE=5
+      - PORT=3000
+    ports:
+      - "3003:3000"
+    volumes:
+      - kra-data:/app/data
+      - /tmp/downloads:/tmp/downloads
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Manufacturer details worker container
+  manufacturer-details-1:
+    build: .
+    container_name: manufacturer-details-1
+    environment:
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - AUTOMATION_TYPE=manufacturer-details
+      - WORKER_ID=worker-1
+      - BATCH_SIZE=5
+      - PORT=3000
+    ports:
+      - "3004:3000"
+    volumes:
+      - kra-data:/app/data
+      - /tmp/downloads:/tmp/downloads
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  kra-data:

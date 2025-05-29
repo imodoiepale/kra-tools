@@ -4,16 +4,18 @@ import React, { useEffect, useState } from 'react'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { supabase } from '@/lib/supabase'
 import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogClose } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Trash2, Download, RefreshCw, ArrowUpDown, Trash2Icon, Filter, Eye, EyeOff } from 'lucide-react'
+import { ArrowUpDown, Trash2, Download, RefreshCw, Filter, Eye, EyeOff, Calendar } from 'lucide-react'
 import ExcelJS from 'exceljs'
-import { ClientCategoryFilter } from "@/components/ClientCategoryFilter"
+import { ClientCategoryFilter } from "./ClientCategoryFilter"
 
 interface PinCheckerDetail {
     id: number;
     company_name: string;
+    kra_pin: string;
+    pin_status: string;
+    itax_status: string;
     income_tax_company_status: string;
     income_tax_company_effective_from: string;
     income_tax_company_effective_to: string;
@@ -32,6 +34,9 @@ interface PinCheckerDetail {
     turnover_tax_status: string;
     turnover_tax_effective_from: string;
     turnover_tax_effective_to: string;
+    etims_registration: string;
+    tims_registration: string;
+    vat_compliance: string;
     error_message?: string;
     last_checked_at: string;
 }
@@ -39,8 +44,32 @@ interface PinCheckerDetail {
 type SortField = keyof PinCheckerDetail | 'last_checked_date' | 'last_checked_time';
 type SortOrder = 'asc' | 'desc';
 
+const TAX_TYPES = [
+    { id: 'income_tax_company', label: 'Income Tax Company' },
+    { id: 'vat', label: 'VAT' },
+    { id: 'paye', label: 'PAYE' },
+    { id: 'rent_income_mri', label: 'Rent Income (MRI)' },
+    { id: 'resident_individual', label: 'Resident Individual' },
+    { id: 'turnover_tax', label: 'Turnover Tax' }
+];
+
+const COMPLIANCE_TYPES = [
+    { id: 'etims_registration', label: 'eTIMS Registration' },
+    { id: 'tims_registration', label: 'TIMS Registration' },
+    { id: 'vat_compliance', label: 'VAT Compliance' }
+];
+
+// Fields for the initial columns in the header that display stats
+const initialStatsDisplayFields = [
+    { key: 'company_name', label: 'Company Name' },
+    { key: 'kra_pin', label: 'KRA PIN' },
+    { key: 'pin_status', label: 'PIN Status', color: 'bg-olive-100' },
+    { key: 'itax_status', label: 'iTax Status', color: 'bg-blue-100' }
+];
+
 export function PinCheckerDetailsReports() {
     const [details, setDetails] = useState<PinCheckerDetail[]>([])
+    const [companies, setCompanies] = useState<any[]>([]);
     const [editingDetail, setEditingDetail] = useState<PinCheckerDetail | null>(null)
     const [sortField, setSortField] = useState<SortField>('company_name')
     const [sortOrder, setSortOrder] = useState<SortOrder>('asc')
@@ -48,10 +77,20 @@ export function PinCheckerDetailsReports() {
     const [isCategoryFilterOpen, setIsCategoryFilterOpen] = useState(false)
     const [categoryFilters, setCategoryFilters] = useState({})
     const [showStatsRows, setShowStatsRows] = useState(true)
+    const [initialized, setInitialized] = useState(false);
+    const [showDateColumns, setShowDateColumns] = useState(false);
 
     useEffect(() => {
-        fetchReports()
-    }, [])
+        fetchReports();
+        fetchCompanies();
+
+        if (!initialized && Object.keys(categoryFilters).length === 0) {
+            setCategoryFilters({
+                'acc': { 'all': true }
+            });
+            setInitialized(true);
+        }
+    }, [initialized]);
 
     const fetchReports = async () => {
         const { data, error } = await supabase
@@ -65,6 +104,198 @@ export function PinCheckerDetailsReports() {
             setDetails(data || [])
         }
     }
+
+    const fetchCompanies = async () => {
+        const { data, error } = await supabase
+            .from('acc_portal_company_duplicate')
+            .select(`
+                id,
+                company_name,
+                kra_pin,
+                imm_client_effective_from,
+                imm_client_effective_to,
+                acc_client_effective_from,
+                acc_client_effective_to,
+                sheria_client_effective_from,
+                sheria_client_effective_to,
+                audit_client_effective_from,
+                audit_client_effective_to
+            `);
+
+        if (error) {
+            console.error('Error fetching companies:', error);
+        } else {
+            setCompanies(data || []);
+        }
+    };
+
+    const isClientTypeActive = (fromDate, toDate) => {
+        if (!fromDate || !toDate) return false;
+
+        const currentDate = new Date().toISOString().split('T')[0];
+
+        const parseDate = (dateStr) => {
+            if (dateStr.includes('/')) {
+                const [day, month, year] = dateStr.split('/').map(Number);
+                return new Date(year, month - 1, day);
+            } else {
+                return new Date(dateStr);
+            }
+        };
+
+        const from = parseDate(fromDate);
+        const to = parseDate(toDate);
+        const current = new Date(currentDate);
+
+        return from <= current && current <= to;
+    };
+
+    const joinedDetails = React.useMemo(() => {
+        return details.map(detail => {
+            const matchingCompany = companies.find(
+                company => company.company_name === detail.company_name
+            );
+
+            return {
+                ...detail,
+                companyData: matchingCompany || null,
+                pinStatus: matchingCompany && matchingCompany.kra_pin ? 'PIN available' : 'Missing PIN'
+            };
+        });
+    }, [details, companies]);
+
+
+    const isDetailActiveByTaxStatus = (detail) => {
+        const activeStatuses = ['Registered', 'Active'];
+
+        return [
+            detail.income_tax_company_status,
+            detail.vat_status,
+            detail.paye_status,
+            detail.rent_income_mri_status,
+            detail.resident_individual_status,
+            detail.turnover_tax_status
+        ].some(status =>
+            status && activeStatuses.includes(status)
+        );
+    };
+
+    const filteredDetails = React.useMemo(() => {
+        if (Object.keys(categoryFilters).length === 0) {
+            return joinedDetails.filter(detail =>
+                searchTerm === '' ||
+                Object.entries(detail).some(([key, value]) => {
+                    if (value === null || value === undefined || key === 'companyData') {
+                        return false;
+                    }
+                    return value.toString().toLowerCase().includes(searchTerm.toLowerCase());
+                })
+            );
+        }
+
+        return joinedDetails.filter(detail => {
+            const matchesSearch = searchTerm === '' ||
+                Object.entries(detail).some(([key, value]) => {
+                    if (value === null || value === undefined || key === 'companyData') {
+                        return false;
+                    }
+                    return value.toString().toLowerCase().includes(searchTerm.toLowerCase());
+                });
+
+            if (!matchesSearch) return false;
+
+            const company = detail.companyData;
+            if (!company) return false;
+
+            const hasActiveTaxObligations = isDetailActiveByTaxStatus(detail);
+            const status = hasActiveTaxObligations ? 'active' : 'inactive';
+
+            for (const [category, statusFilters] of Object.entries(categoryFilters)) {
+                if (!Object.values(statusFilters).some(isSelected => isSelected)) continue;
+
+                if (category === 'all') {
+                    const anyClientTypeActive = ['acc', 'imm', 'sheria', 'audit'].some(cat =>
+                        isClientTypeActive(
+                            company[`${cat}_client_effective_from`],
+                            company[`${cat}_client_effective_to`]
+                        )
+                    );
+
+                    if (!anyClientTypeActive) continue;
+                } else {
+                    const isClientActive = isClientTypeActive(
+                        company[`${category}_client_effective_from`],
+                        company[`${category}_client_effective_to`]
+                    );
+
+                    if (!isClientActive) continue;
+                }
+
+                if (statusFilters['all'] || statusFilters[status]) {
+                    return true;
+                }
+            }
+
+            return false;
+        });
+    }, [joinedDetails, categoryFilters, searchTerm]);
+
+    const calculateCategoryCounts = () => {
+        const counts = {
+            'all': { 'all': 0, 'active': 0, 'inactive': 0 },
+            'acc': { 'all': 0, 'active': 0, 'inactive': 0 },
+            'imm': { 'all': 0, 'active': 0, 'inactive': 0 },
+            'sheria': { 'all': 0, 'active': 0, 'inactive': 0 },
+            'audit': { 'all': 0, 'active': 0, 'inactive': 0 },
+        };
+
+        const searchFilteredDetails = joinedDetails.filter(detail =>
+            searchTerm === '' ||
+            Object.entries(detail).some(([key, value]) => {
+                if (value === null || value === undefined || key === 'companyData') {
+                    return false;
+                }
+                return value.toString().toLowerCase().includes(searchTerm.toLowerCase());
+            })
+        );
+
+        counts['all']['all'] = searchFilteredDetails.length;
+
+        searchFilteredDetails.forEach(detail => {
+            const company = detail.companyData;
+
+            if (!company) {
+                counts['all']['inactive']++;
+                return;
+            }
+
+            const hasActiveTaxObligations = isDetailActiveByTaxStatus(detail);
+
+            const categories = ['acc', 'imm', 'sheria', 'audit'];
+            let hasAnyActiveClientType = false;
+
+            categories.forEach(category => {
+                const isActive = isClientTypeActive(
+                    company[`${category}_client_effective_from`],
+                    company[`${category}_client_effective_to`]
+                );
+
+                if (isActive) {
+                    hasAnyActiveClientType = true;
+                    counts[category]['all']++;
+                    counts[category][hasActiveTaxObligations ? 'active' : 'inactive']++;
+                }
+            });
+
+            if (hasAnyActiveClientType) {
+                counts['all'][hasActiveTaxObligations ? 'active' : 'inactive']++;
+            }
+        });
+
+        return counts;
+    };
+
+    const categoryCounts = calculateCategoryCounts();
 
     const handleEdit = (detail: PinCheckerDetail) => {
         setEditingDetail(detail)
@@ -97,37 +328,43 @@ export function PinCheckerDetailsReports() {
         }
     }
 
-    const handleDeleteAll = async () => {
-        const { error } = await supabase
-            .from('PinCheckerDetails')
-            .delete()
-            .neq('id', 0)  // This will delete all rows
-
-        if (error) {
-            console.error('Error deleting all details:', error)
-        } else {
-            setDetails([])
-        }
-    }
-
     const handleDownloadExcel = async () => {
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet('PIN Checker Details');
 
-        // Add headers
-        worksheet.addRow([
-            'Index',
-            'Company Name',
-            'Income Tax Company Status', 'Income Tax Company From', 'Income Tax Company To',
-            'VAT Status', 'VAT From', 'VAT To',
-            'PAYE Status', 'PAYE From', 'PAYE To',
-            'Rent Income (MRI) Status', 'Rent Income (MRI) From', 'Rent Income (MRI) To',
-            'Resident Individual Status', 'Resident Individual From', 'Resident Individual To',
-            'Turnover Tax Status', 'Turnover Tax From', 'Turnover Tax To',
-            'Error Message', 'Last Checked At'
-        ]);
+        // Helper function to return 'N/A' for null, undefined, empty, or 'Unknown' for VAT Compliance
+        const getValueForExport = (value: any, isVatCompliance: boolean = false) => {
+            if (value === null || value === undefined || String(value).trim() === '') {
+                return 'N/A';
+            }
+            if (isVatCompliance && String(value).toLowerCase().trim() === 'unknown') {
+                return 'N/A';
+            }
+            return String(value);
+        };
 
-        // Style header row
+        // Add headers
+        const headers = [
+            'Index',
+            'ID',
+            'Company Name',
+            'KRA PIN',
+            'PIN Status',
+            'iTax Status'
+        ];
+
+        TAX_TYPES.forEach(taxType => {
+            headers.push(`${taxType.label} Status`, `${taxType.label} From`, `${taxType.label} To`);
+        });
+
+        COMPLIANCE_TYPES.forEach(compType => {
+            headers.push(`${compType.label}`);
+        });
+
+        headers.push('Error Message', 'Last Checked Date', 'Last Checked Time');
+
+        worksheet.addRow(headers);
+
         worksheet.getRow(1).font = { bold: true };
         worksheet.getRow(1).fill = {
             type: 'pattern',
@@ -135,68 +372,97 @@ export function PinCheckerDetailsReports() {
             fgColor: { argb: 'FFFFFF00' }
         };
 
-        // Add data and apply styles
-        details.forEach((detail, index) => {
-            const row = worksheet.addRow([
+        sortedDetails.forEach((detail, index) => {
+            const rowData = [
                 index + 1,
+                detail.id,
                 detail.company_name,
-                detail.income_tax_company_status, detail.income_tax_company_effective_from, detail.income_tax_company_effective_to,
-                detail.vat_status, detail.vat_effective_from, detail.vat_effective_to,
-                detail.paye_status, detail.paye_effective_from, detail.paye_effective_to,
-                detail.rent_income_mri_status, detail.rent_income_mri_effective_from, detail.rent_income_mri_effective_to,
-                detail.resident_individual_status, detail.resident_individual_effective_from, detail.resident_individual_effective_to,
-                detail.turnover_tax_status, detail.turnover_tax_effective_from, detail.turnover_tax_effective_to,
-                detail.error_message,
-                detail.last_checked_at
-            ]);
+                detail.companyData?.kra_pin || detail.kra_pin || 'Missing PIN',
+                getValueForExport(detail.pin_status),
+                getValueForExport(detail.itax_status)
+            ];
 
-            // Make indexing bold and centered
+            TAX_TYPES.forEach(taxType => {
+                rowData.push(
+                    getValueForExport(detail[`${taxType.id}_status`]),
+                    getValueForExport(detail[`${taxType.id}_effective_from`]),
+                    getValueForExport(detail[`${taxType.id}_effective_to`])
+                );
+            });
+
+            COMPLIANCE_TYPES.forEach(compType => {
+                const status = detail[compType.id];
+                rowData.push(getValueForExport(status, compType.id === 'vat_compliance'));
+            });
+
+            rowData.push(
+                detail.error_message || '', // Ensure blank if null/undefined/empty
+                formatDate(detail.last_checked_at),
+                new Date(detail.last_checked_at).toLocaleTimeString()
+            );
+
+            const row = worksheet.addRow(rowData);
+
             const indexCell = row.getCell(1);
             indexCell.font = { bold: true };
             indexCell.alignment = { vertical: 'middle', horizontal: 'center' };
 
-            // Apply background colors
             const colors = {
-                income_tax_company: 'FFE6F2FF',
-                vat: 'FFE6FFE6',
-                paye: 'FFFFF2E6',
-                rent_income: 'FFF2E6FF',
-                resident_individual: 'FFFFE6F2'
+                income_tax_company: 'FFE6F2FF', // Light Blue
+                vat: 'FFE6FFE6', // Light Green
+                paye: 'FFFFF2E6', // Light Orange
+                rent_income_mri: 'FFF2E6FF', // Light Purple
+                resident_individual: 'FFFFE6F2', // Light Pink
+                turnover_tax: 'FFFFE6CC', // Light Gold
+                etims_registration: 'FFE6FFFF', // Light Cyan
+                tims_registration: 'FFCCFFCC', // Lighter Green
+                vat_compliance: 'FFFFCCFF', // Light Magenta
+                pin_status: 'FFD8E4BC', // Light olive green
+                itax_status: 'FFB8CCE4'  // Light blue
             };
 
-            ['income_tax_company', 'vat', 'paye', 'rent_income', 'resident_individual'].forEach((type, typeIndex) => {
+            // Apply colors for PIN Status and iTax Status columns
+            const pinStatusCell = row.getCell(5);
+            const itaxStatusCell = row.getCell(6);
+
+            pinStatusCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: colors.pin_status } };
+            itaxStatusCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: colors.itax_status } };
+
+            // Apply colors for tax type columns
+            TAX_TYPES.forEach((taxType, typeIndex) => {
                 for (let i = 0; i < 3; i++) {
-                    const cell = row.getCell(typeIndex * 3 + 3 + i);
+                    const cellIndex = 6 + (typeIndex * 3) + i + 1;
+                    const cell = row.getCell(cellIndex);
                     const status = cell.value?.toString().toLowerCase();
-                    if (!status) {
-                        cell.fill = {
-                            type: 'pattern',
-                            pattern: 'solid',
-                            fgColor: { argb: 'FFFFCCCB' }
-                        };
-                    } else if (status === 'no obligation') {
-                        cell.fill = {
-                            type: 'pattern',
-                            pattern: 'solid',
-                            fgColor: { argb: 'FFFFCCCB' }
-                        };
+                    let cellColor = colors[taxType.id];
+
+                    if (!status || status === 'no obligation' || status === 'dormant' || status === 'inactive' || status === 'not compliant' || status === 'n/a') {
+                        cellColor = 'FFFFCCCB'; // Light Red for 'Missing/No Obligation/Dormant/Inactive/N/A'
                     } else if (status === 'cancelled') {
-                        cell.fill = {
-                            type: 'pattern',
-                            pattern: 'solid',
-                            fgColor: { argb: 'FFFFFF00' }
-                        };
-                    } else {
-                        cell.fill = {
-                            type: 'pattern',
-                            pattern: 'solid',
-                            fgColor: { argb: colors[type] }
-                        };
+                        cellColor = 'FFFFFF00'; // Yellow for 'Cancelled'
+                    } else if (['registered', 'active', 'compliant', 'ipage updated'].includes(status)) {
+                        cellColor = 'FFE6FFE6'; // Light Green for 'Registered/Active/Compliant/iPage Updated'
                     }
+
+                    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: cellColor } };
                 }
             });
 
-            // Add borders
+            // Apply colors for compliance columns
+            COMPLIANCE_TYPES.forEach((compType, compIndex) => {
+                const cellIndex = 6 + (TAX_TYPES.length * 3) + compIndex + 1;
+                const cell = row.getCell(cellIndex);
+                const status = cell.value?.toString().toLowerCase();
+                let cellColor = colors[compType.id];
+
+                if (!status || status === 'inactive' || status === 'not compliant' || status === 'n/a') {
+                    cellColor = 'FFFFCCCB'; // Light Red for 'Inactive/Not Compliant/N/A'
+                } else if (status === 'active' || status === 'compliant') {
+                    cellColor = 'FFE6FFE6'; // Light Green for 'Active/Compliant'
+                }
+                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: cellColor } };
+            });
+
             row.eachCell({ includeEmpty: true }, cell => {
                 cell.border = {
                     top: { style: 'thin' },
@@ -207,7 +473,6 @@ export function PinCheckerDetailsReports() {
             });
         });
 
-        // Auto-fit columns
         worksheet.columns.forEach(column => {
             let maxLength = 0;
             column.eachCell({ includeEmpty: true }, cell => {
@@ -219,32 +484,44 @@ export function PinCheckerDetailsReports() {
             column.width = maxLength < 10 ? 10 : maxLength;
         });
 
-        // Generate Excel file
         const buffer = await workbook.xlsx.writeBuffer();
         const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
         const link = document.createElement('a');
         link.href = window.URL.createObjectURL(blob);
-        link.download = 'pin_checker_details.xlsx';
+        const currentDate = new Date().toLocaleDateString('en-GB').replace(/\//g, '.');
+
+        // --- Start of the fix: Define clientCategory based on categoryFilters ---
+        let clientCategoryString = 'ALL'; // Default to 'ALL' if no specific category is selected or filter object is empty
+
+        // Find the first active category filter to use in the filename
+        const categories = ['all', 'acc', 'imm', 'sheria', 'audit'];
+        for (const cat of categories) {
+            if (categoryFilters[cat] && Object.values(categoryFilters[cat]).some(val => val === true)) {
+                clientCategoryString = cat;
+                // If 'all' is explicitly selected, prioritize it for the filename, then break
+                if (cat === 'all') break;
+            }
+        }
+        const clientCategory = clientCategoryString.toUpperCase();
+        // --- End of the fix ---
+
+        link.download = `PIN CHECKER DETAILS - ${clientCategory} - ${currentDate}.xlsx`;
         link.click();
     }
 
-    const getCellColor = (obligationType: string) => {
-        switch (obligationType) {
-            case 'income_tax_company':
-                return 'bg-blue-100';
-            case 'vat':
-                return 'bg-green-100';
-            case 'paye':
-                return 'bg-yellow-100';
-            case 'rent_income_mri':
-                return 'bg-purple-100';
-            case 'resident_individual':
-                return 'bg-pink-100';
-            case 'turnover_tax':
-                return 'bg-orange-100';
-            default:
-                return '';
-        }
+    const getCellColor = (type: string) => {
+        const colorMap = {
+            'income_tax_company': 'bg-blue-100',
+            'vat': 'bg-green-100',
+            'paye': 'bg-yellow-100',
+            'rent_income_mri': 'bg-purple-100',
+            'resident_individual': 'bg-pink-100',
+            'turnover_tax': 'bg-orange-100',
+            'etims_registration': 'bg-cyan-100',
+            'tims_registration': 'bg-lime-100',
+            'vat_compliance': 'bg-fuchsia-100'
+        };
+        return colorMap[type] || '';
     }
 
     const handleSort = (field: SortField) => {
@@ -258,188 +535,116 @@ export function PinCheckerDetailsReports() {
 
     const formatDate = (dateString: string) => {
         if (!dateString) return '';
-        
-        // Try parsing the date
         const date = new Date(dateString);
-        
-        // Check if the date is valid
         if (isNaN(date.getTime())) {
-            // If parsing fails, try to handle common formats
             const parts = dateString.split(/[-/.]/);
             if (parts.length === 3) {
-                // Assume yyyy-mm-dd, dd-mm-yyyy, or mm-dd-yyyy
                 const [a, b, c] = parts;
                 if (a.length === 4) {
-                    // yyyy-mm-dd
-                    date.setFullYear(parseInt(a), parseInt(b) - 1, parseInt(c));
+                    return `${c}.${b}.${a}`; // yyyy-mm-dd to dd.mm.yyyy
                 } else if (c.length === 4) {
-                    // dd-mm-yyyy or mm-dd-yyyy
-                    date.setFullYear(parseInt(c), parseInt(b) - 1, parseInt(a));
+                    return `${a}.${b}.${c}`; // dd-mm-yyyy or mm-dd-yyyy to dd.mm.yyyy
                 }
-            } else {
-                // If we can't parse it, return the original string
-                return dateString;
             }
+            return dateString;
         }
-        
-        // Format the date
         const day = date.getDate().toString().padStart(2, '0');
-        // const month = date.toLocaleString('en-GB', { month: 'short' });
         const month = (date.getMonth() + 1).toString().padStart(2, '0');
         const year = date.getFullYear();
-        
         return `${day}.${month}.${year}`;
     }
-
-    // Filter details based on search term and category filters
-    const filteredDetails = React.useMemo(() => {
-        return details.filter(detail => {
-            // Apply search filter
-            const matchesSearch = searchTerm === '' || 
-                Object.entries(detail).some(([key, value]) => {
-                    if (value === null || value === undefined) {
-                        return false;
-                    }
-                    return value.toString().toLowerCase().includes(searchTerm.toLowerCase());
-                });
-
-            if (!matchesSearch) return false;
-            
-            // Apply category filters
-            if (Object.keys(categoryFilters).length > 0) {
-                // Check if any category filter is active
-                const hasActiveFilters = Object.values(categoryFilters).some(categoryStatus => 
-                    Object.values(categoryStatus as Record<string, boolean>).some(isSelected => isSelected)
-                );
-                
-                if (hasActiveFilters) {
-                    // Get the detail's category and status
-                    const category = detail.category || 'all';
-                    const status = detail.status === 'active' ? 'active' : 'inactive';
-                    
-                    // Check if this category has any filters
-                    const categoryFilter = categoryFilters[category] as Record<string, boolean> | undefined;
-                    if (!categoryFilter) {
-                        // Check if 'all' category has this status selected
-                        const allCategoryFilter = categoryFilters['all'] as Record<string, boolean> | undefined;
-                        return allCategoryFilter?.[status] || allCategoryFilter?.['all'];
-                    }
-                    
-                    // Check if this specific status is selected for this category
-                    return categoryFilter[status] || categoryFilter['all'];
-                }
-            }
-            
-            return true;
-        });
-    }, [details, searchTerm, categoryFilters]);
 
     const sortedDetails = React.useMemo(() => {
         return [...filteredDetails].sort((a, b) => {
             let aValue: any = a[sortField as keyof PinCheckerDetail];
             let bValue: any = b[sortField as keyof PinCheckerDetail];
 
-            // Handle special cases for last_checked_date and last_checked_time
             if (sortField === 'last_checked_date') {
                 aValue = new Date(a.last_checked_at).toLocaleDateString();
                 bValue = new Date(b.last_checked_at).toLocaleDateString();
             } else if (sortField === 'last_checked_time') {
                 aValue = new Date(a.last_checked_at).toLocaleTimeString();
                 bValue = new Date(b.last_checked_at).toLocaleTimeString();
-            } else if (sortField.endsWith('_status')) {
-                // For status fields, use a custom sorting order
-                const statusOrder = ['Registered', 'Active', 'Suspended', 'Cancelled', 'No Obligation'];
-                aValue = statusOrder.indexOf(aValue || 'No Obligation');
-                bValue = statusOrder.indexOf(bValue || 'No Obligation');
+            } else if (sortField.endsWith('_status') || COMPLIANCE_TYPES.some(ct => ct.id === sortField)) { // Check for _status or direct compliance fields
+                // Custom sorting order for all status fields
+                const statusOrder = [
+                    'Registered', 'Active', 'Compliant', 'iPage Updated', // Positive statuses first
+                    'Suspended', // Neutral/Warning
+                    'Cancelled', 'Dormant', 'Inactive', 'Not Compliant', 'No Obligation', // Negative statuses last
+                    'Not Available', '' // Empty/Unknown at the very end
+                ];
+                aValue = statusOrder.indexOf(aValue || '');
+                bValue = statusOrder.indexOf(bValue || '');
             } else if (sortField.endsWith('_from') || sortField.endsWith('_to')) {
-                // For date fields, convert to Date objects for comparison
                 aValue = aValue ? new Date(aValue) : new Date(0);
                 bValue = bValue ? new Date(bValue) : new Date(0);
             }
 
-            // Perform the comparison
             if (aValue < bValue) return sortOrder === 'asc' ? -1 : 1;
             if (aValue > bValue) return sortOrder === 'asc' ? 1 : -1;
             return 0;
         });
     }, [filteredDetails, sortField, sortOrder]);
 
+    // Define all fields for which statistics are calculated
+    const allStatsFields = React.useMemo(() => [
+        'company_name',
+        'kra_pin',
+        'pin_status',
+        'itax_status',
+        ...TAX_TYPES.flatMap(taxType => [
+            `${taxType.id}_status`,
+            `${taxType.id}_effective_from`,
+            `${taxType.id}_effective_to`
+        ]),
+        ...COMPLIANCE_TYPES.map(compType => compType.id)
+    ], []);
 
-    // Calculate statistics for complete and missing entries
     const calculateStats = () => {
         const stats = {
             complete: {},
             missing: {}
         };
 
-        // Define all fields to check for completeness, including sub-columns
-        const fieldsToCheck = [
-            'company_name',
-            // Income Tax Company fields
-            'income_tax_company_status',
-            'income_tax_company_effective_from',
-            'income_tax_company_effective_to',
-            // VAT fields
-            'vat_status',
-            'vat_effective_from',
-            'vat_effective_to',
-            // PAYE fields
-            'paye_status',
-            'paye_effective_from',
-            'paye_effective_to',
-            // Rent Income (MRI) fields
-            'rent_income_mri_status',
-            'rent_income_mri_effective_from',
-            'rent_income_mri_effective_to',
-            // Resident Individual fields
-            'resident_individual_status',
-            'resident_individual_effective_from',
-            'resident_individual_effective_to',
-            // Turnover Tax fields
-            'turnover_tax_status',
-            'turnover_tax_effective_from',
-            'turnover_tax_effective_to'
-        ];
-
         // Initialize stats for each field
-        fieldsToCheck.forEach(field => {
+        allStatsFields.forEach(field => {
             stats.complete[field] = 0;
             stats.missing[field] = 0;
         });
 
-        // Calculate stats for each field individually
         sortedDetails.forEach(detail => {
-            fieldsToCheck.forEach(field => {
+            allStatsFields.forEach(field => {
+                let isComplete = false;
                 const value = detail[field as keyof PinCheckerDetail];
-                // For status fields, 'No Obligation' is considered missing
-                if (field.endsWith('_status')) {
-                    if (value && 
-                        value.toString().trim() !== '' && 
-                        value.toString().toLowerCase() !== 'no obligation') {
-                        stats.complete[field]++;
-                    } else {
-                        stats.missing[field]++;
-                    }
-                } 
-                // For date fields
-                else if (field.endsWith('_from') || field.endsWith('_to')) {
-                    if (value && value.toString().trim() !== '') {
-                        stats.complete[field]++;
-                    } else {
-                        stats.missing[field]++;
-                    }
+                const lowerValue = (value || '').toString().toLowerCase().trim();
+
+                if (field === 'kra_pin') {
+                    // KRA PIN is complete if companyData has it
+                    isComplete = detail.pinStatus === 'PIN available';
+                } else if (field === 'pin_status' || field === 'itax_status') {
+                    // PIN Status/iTax Status is complete if 'active' or 'ipage updated'
+                    isComplete = ['active', 'ipage updated'].includes(lowerValue);
+                } else if (COMPLIANCE_TYPES.some(ct => ct.id === field)) {
+                    // Compliance fields are complete if 'active' or 'compliant'
+                    isComplete = ['active', 'compliant'].includes(lowerValue);
+                } else if (TAX_TYPES.some(tt => `${tt.id}_status` === field)) {
+                    // Tax obligation statuses are complete if 'registered' or 'active'
+                    isComplete = ['registered', 'active'].includes(lowerValue);
+                } else if (field.endsWith('_from') || field.endsWith('_to')) {
+                    // Date fields are complete if they have a non-empty value
+                    isComplete = !!value;
+                } else if (field === 'company_name') {
+                    // Company name is complete if it has a non-empty value
+                    isComplete = !!value;
                 }
-                // For other fields
-                else {
-                    if (value && value.toString().trim() !== '') {
-                        stats.complete[field]++;
-                    } else {
-                        stats.missing[field]++;
-                    }
+
+                if (isComplete) {
+                    stats.complete[field]++;
+                } else {
+                    stats.missing[field]++;
                 }
             });
         });
-
         return stats;
     };
 
@@ -452,11 +657,88 @@ export function PinCheckerDetailsReports() {
         </Button>
     );
 
+    const renderStatusCell = (detail: any, typeId: string) => {
+        let statusValue: string | undefined;
+
+        // Determine how to get the status value based on the typeId
+        if (typeId === 'pin_status' || typeId === 'itax_status' || COMPLIANCE_TYPES.some(ct => ct.id === typeId)) {
+            // These are direct fields on the detail object
+            statusValue = detail[typeId];
+        } else {
+            // Tax types use the '_status' suffix
+            statusValue = detail[`${typeId}_status`];
+        }
+
+        const lowerStatus = (statusValue || '').toLowerCase(); // Convert to lowercase for easier comparison, handle null/undefined
+
+        // Specific handling for "Unknown" in VAT Compliance
+        if (typeId === 'vat_compliance' && lowerStatus === 'unknown') {
+            return <span className="font-bold text-red-600 px-1 py-1 rounded-full text-xs font-semibold whitespace-nowrap">N/A</span>;
+        }
+
+        // Handle generic "Not Available" if statusValue is null, undefined, or empty after initial retrieval
+        if (!statusValue || lowerStatus.trim() === '') {
+            return <span className="font-bold text-gray-600 whitespace-nowrap">Not Available</span>;
+        }
+
+        // Apply specific styling based on status content
+        if (lowerStatus === 'cancelled' || lowerStatus === 'ipage updated') {
+            return <span className="bg-amber-500 text-amber-800 px-1 py-1 rounded-full text-xs font-semibold whitespace-nowrap">{statusValue}</span>;
+        }
+        if (lowerStatus === 'dormant') {
+            return <span className="bg-red-500 text-red-800 px-1 py-1 rounded-full text-xs font-semibold whitespace-nowrap">{statusValue}</span>;
+        }
+        if (['registered', 'active', 'compliant', 'ipage updated'].includes(lowerStatus)) {
+            return <span className="bg-green-400 text-green-800 px-1 py-1 rounded-full text-xs font-semibold whitespace-nowrap">{statusValue}</span>;
+        }
+        if (['inactive', 'not compliant', 'no obligation', 'ipage not updated'].includes(lowerStatus)) {
+            return <span className="bg-red-400 text-red-800 px-1 py-1 rounded-full text-xs font-semibold whitespace-nowrap">{statusValue}</span>;
+        }
+
+        // Default return for statuses not covered by specific rules (e.g., 'Suspended' if not styled)
+        return statusValue;
+    };
 
     return (
         <div className="space-y-4">
             <div className="flex justify-between items-center">
-                <h3 className="text-lg font-medium">PIN Checker Details Reports</h3>
+                <div className="flex space-x-2">
+                    <Input
+                        placeholder="Search details..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="max-w-sm"
+                    />
+                    <Button variant="outline" onClick={() => setIsCategoryFilterOpen(true)} size="sm">
+                        <Filter className="h-4 w-4 mr-2" />
+                        Categories
+                    </Button>
+                    <Button
+                        variant="outline"
+                        onClick={() => setShowStatsRows(!showStatsRows)}
+                        size="sm"
+                    >
+                        {showStatsRows ? <EyeOff className="h-4 w-4 mr-2" /> : <Eye className="h-4 w-4 mr-2" />}
+                        {showStatsRows ? 'Hide Stats' : 'Show Stats'}
+                    </Button>
+                    <Button
+                        variant="outline"
+                        onClick={() => setShowDateColumns(!showDateColumns)}
+                        size="sm"
+                    >
+                        <Calendar className="h-4 w-4 mr-2" />
+                        {showDateColumns ? 'Hide Dates' : 'Show Dates'}
+                    </Button>
+                </div>
+
+                <ClientCategoryFilter
+                    isOpen={isCategoryFilterOpen}
+                    onClose={() => setIsCategoryFilterOpen(false)}
+                    onApplyFilters={(filters) => setCategoryFilters(filters)}
+                    onClearFilters={() => setCategoryFilters({})}
+                    selectedFilters={categoryFilters}
+                    counts={categoryCounts}
+                />
                 <div className="space-x-2">
                     <Button variant="outline" size="sm" onClick={fetchReports}>
                         <RefreshCw className="h-4 w-4 mr-2" />
@@ -466,296 +748,220 @@ export function PinCheckerDetailsReports() {
                         <Download className="h-4 w-4 mr-2" />
                         Download Excel
                     </Button>
-                    <Button variant="destructive" size="sm" onClick={handleDeleteAll}>Delete All</Button>
                 </div>
             </div>
-            <div className="flex space-x-2">
-                <Input
-                    placeholder="Search details..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="max-w-sm"
-                />
-                <Button variant="outline" onClick={() => setIsCategoryFilterOpen(true)} size="sm">
-                    <Filter className="h-4 w-4 mr-2" />
-                    Categories
-                </Button>
-                <Button 
-                    variant="outline" 
-                    onClick={() => setShowStatsRows(!showStatsRows)} 
-                    size="sm"
-                >
-                    {showStatsRows ? <EyeOff className="h-4 w-4 mr-2" /> : <Eye className="h-4 w-4 mr-2" />}
-                    {showStatsRows ? 'Hide Stats' : 'Show Stats'}
-                </Button>
-            </div>
-            
-            <ClientCategoryFilter 
-                isOpen={isCategoryFilterOpen} 
-                onClose={() => setIsCategoryFilterOpen(false)} 
-                onApplyFilters={(filters) => setCategoryFilters(filters)}
-                onClearFilters={() => setCategoryFilters({})}
-                selectedFilters={categoryFilters}
-            />
+
             <div className="rounded-md border">
-                <div className="overflow-x-auto">
-                    <div className="max-h-[calc(100vh-300px)] overflow-y-auto">
+                <div className="overflow-x-auto" style={{
+                    transform: 'scale(0.9)',
+                    transformOrigin: 'top left',
+                    width: '111%',
+                    height: '111%'
+                }}>
+                    <div className="max-h-[calc(100vh-200px)] overflow-y-auto">
                         <Table className="text-xs pb-2">
                             <TableHeader>
                                 <TableRow className="h-8">
-                                    <TableHead className="sticky top-0 bg-white border-r border-black border-b font-bold text-black text-center">Index</TableHead>
+                                    <TableHead className="sticky top-0 bg-white border-r border-black border-b font-bold text-black text-center w-16" style={{ minWidth: '90px' }}>IDX | ID</TableHead>
                                     <TableHead className="sticky top-0 bg-white border-r border-black border-b font-bold text-black">
                                         <SortableHeader field="company_name">Company Name</SortableHeader>
                                     </TableHead>
-                                    {['Income Tax Company', 'VAT', 'PAYE', 'Rent Income (MRI)', 'Resident Individual', 'Turnover Tax'].map((header, index) => (
-                                        <TableHead key={index} className={`sticky top-0 ${getCellColor(header.toLowerCase().replace(' ', '_'))} border-r border-black border-b text-center font-bold text-black`} colSpan={3}>{header}</TableHead>
+                                    <TableHead className="sticky top-0 bg-white border-r border-black border-b font-bold text-black">
+                                        <SortableHeader field="kra_pin">KRA PIN</SortableHeader>
+                                    </TableHead>
+
+                                    <TableHead className="sticky top-0 bg-olive-200 text-center border-r border-black border-b font-bold text-black">
+                                        PIN Status
+                                    </TableHead>
+
+                                    <TableHead className="sticky top-0 bg-blue-200 text-center border-r border-black border-b font-bold text-black">
+                                        iTax Status
+                                    </TableHead>
+
+                                    {TAX_TYPES.map(taxType => (
+                                        <TableHead
+                                            key={taxType.id}
+                                            className={`sticky top-0 ${getCellColor(taxType.id)} border-r border-black border-b text-center font-bold text-black`}
+                                            colSpan={showDateColumns ? 3 : 1}
+                                        >
+                                            {taxType.label}
+                                        </TableHead>
                                     ))}
+
+                                    {COMPLIANCE_TYPES.map(compType => (
+                                        <TableHead
+                                            key={compType.id}
+                                            className={`sticky top-0 ${getCellColor(compType.id)} border-r border-black border-b text-center font-bold text-black`}
+                                        >
+                                            {compType.label}
+                                        </TableHead>
+                                    ))}
+
                                     <TableHead className="sticky top-0 bg-white border-r border-black border-b font-bold text-black text-center" colSpan={2}>Last Checked</TableHead>
                                     <TableHead className="sticky top-0 bg-white border-b font-bold text-black text-center">Actions</TableHead>
                                 </TableRow>
+
                                 {showStatsRows && (
                                     <>
+                                        {/* Complete Stats Row */}
                                         <TableRow className="h-6 bg-blue-50">
                                             <TableCell className="text-center text-[10px] font-bold border-r border-black">Complete</TableCell>
-                                            <TableCell className="text-center text-[10px] border-r border-black">
-                                                <span className={stats.complete.company_name === sortedDetails.length ? 'text-green-600 font-bold' : ''}>
-                                                    {stats.complete.company_name}
-                                                </span>
-                                            </TableCell>
-                                            
-                                            {/* Income Tax Company */}
-                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('income_tax_company')}`}>
-                                                <span className={stats.complete.income_tax_company_status === sortedDetails.length ? 'text-green-600 font-bold' : ''}>
-                                                    {stats.complete.income_tax_company_status}
-                                                </span>
-                                            </TableCell>
-                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('income_tax_company')}`}>
-                                                <span className={stats.complete.income_tax_company_effective_from === sortedDetails.length ? 'text-green-600 font-bold' : ''}>
-                                                    {stats.complete.income_tax_company_effective_from}
-                                                </span>
-                                            </TableCell>
-                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('income_tax_company')}`}>
-                                                <span className={stats.complete.income_tax_company_effective_to === sortedDetails.length ? 'text-green-600 font-bold' : ''}>
-                                                    {stats.complete.income_tax_company_effective_to}
-                                                </span>
-                                            </TableCell>
-                                            
-                                            {/* VAT */}
-                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('vat')}`}>
-                                                <span className={stats.complete.vat_status === sortedDetails.length ? 'text-green-600 font-bold' : ''}>
-                                                    {stats.complete.vat_status}
-                                                </span>
-                                            </TableCell>
-                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('vat')}`}>
-                                                <span className={stats.complete.vat_effective_from === sortedDetails.length ? 'text-green-600 font-bold' : ''}>
-                                                    {stats.complete.vat_effective_from}
-                                                </span>
-                                            </TableCell>
-                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('vat')}`}>
-                                                <span className={stats.complete.vat_effective_to === sortedDetails.length ? 'text-green-600 font-bold' : ''}>
-                                                    {stats.complete.vat_effective_to}
-                                                </span>
-                                            </TableCell>
-                                            
-                                            {/* PAYE */}
-                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('paye')}`}>
-                                                <span className={stats.complete.paye_status === sortedDetails.length ? 'text-green-600 font-bold' : ''}>
-                                                    {stats.complete.paye_status}
-                                                </span>
-                                            </TableCell>
-                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('paye')}`}>
-                                                <span className={stats.complete.paye_effective_from === sortedDetails.length ? 'text-green-600 font-bold' : ''}>
-                                                    {stats.complete.paye_effective_from}
-                                                </span>
-                                            </TableCell>
-                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('paye')}`}>
-                                                <span className={stats.complete.paye_effective_to === sortedDetails.length ? 'text-green-600 font-bold' : ''}>
-                                                    {stats.complete.paye_effective_to}
-                                                </span>
-                                            </TableCell>
-                                            
-                                            {/* Rent Income (MRI) */}
-                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('rent_income_mri')}`}>
-                                                <span className={stats.complete.rent_income_mri_status === sortedDetails.length ? 'text-green-600 font-bold' : ''}>
-                                                    {stats.complete.rent_income_mri_status}
-                                                </span>
-                                            </TableCell>
-                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('rent_income_mri')}`}>
-                                                <span className={stats.complete.rent_income_mri_effective_from === sortedDetails.length ? 'text-green-600 font-bold' : ''}>
-                                                    {stats.complete.rent_income_mri_effective_from}
-                                                </span>
-                                            </TableCell>
-                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('rent_income_mri')}`}>
-                                                <span className={stats.complete.rent_income_mri_effective_to === sortedDetails.length ? 'text-green-600 font-bold' : ''}>
-                                                    {stats.complete.rent_income_mri_effective_to}
-                                                </span>
-                                            </TableCell>
-                                            
-                                            {/* Resident Individual */}
-                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('resident_individual')}`}>
-                                                <span className={stats.complete.resident_individual_status === sortedDetails.length ? 'text-green-600 font-bold' : ''}>
-                                                    {stats.complete.resident_individual_status}
-                                                </span>
-                                            </TableCell>
-                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('resident_individual')}`}>
-                                                <span className={stats.complete.resident_individual_effective_from === sortedDetails.length ? 'text-green-600 font-bold' : ''}>
-                                                    {stats.complete.resident_individual_effective_from}
-                                                </span>
-                                            </TableCell>
-                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('resident_individual')}`}>
-                                                <span className={stats.complete.resident_individual_effective_to === sortedDetails.length ? 'text-green-600 font-bold' : ''}>
-                                                    {stats.complete.resident_individual_effective_to}
-                                                </span>
-                                            </TableCell>
-                                            
-                                            {/* Turnover Tax */}
-                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('turnover_tax')}`}>
-                                                <span className={stats.complete.turnover_tax_status === sortedDetails.length ? 'text-green-600 font-bold' : ''}>
-                                                    {stats.complete.turnover_tax_status}
-                                                </span>
-                                            </TableCell>
-                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('turnover_tax')}`}>
-                                                <span className={stats.complete.turnover_tax_effective_from === sortedDetails.length ? 'text-green-600 font-bold' : ''}>
-                                                    {stats.complete.turnover_tax_effective_from}
-                                                </span>
-                                            </TableCell>
-                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('turnover_tax')}`}>
-                                                <span className={stats.complete.turnover_tax_effective_to === sortedDetails.length ? 'text-green-600 font-bold' : ''}>
-                                                    {stats.complete.turnover_tax_effective_to}
-                                                </span>
-                                            </TableCell>
-                                            
+
+                                            {initialStatsDisplayFields.map(field => (
+                                                <TableCell key={field.key} className={`text-center text-[10px] border-r border-black ${field.color || ''}`}>
+                                                    <span className={stats.complete[field.key] === sortedDetails.length ? 'text-green-600 font-bold' : ''}>
+                                                        {stats.complete[field.key]}
+                                                    </span>
+                                                </TableCell>
+                                            ))}
+
+                                            {TAX_TYPES.flatMap(taxType => {
+                                                const cells = [
+                                                    <TableCell
+                                                        key={`${taxType.id}-status-complete`}
+                                                        className={`text-center text-[10px] border-r border-black ${getCellColor(taxType.id)}`}
+                                                    >
+                                                        <span className={stats.complete[`${taxType.id}_status`] === sortedDetails.length ? 'text-green-600 font-bold' : ''}>
+                                                            {stats.complete[`${taxType.id}_status`]}
+                                                        </span>
+                                                    </TableCell>
+                                                ];
+                                                if (showDateColumns) {
+                                                    cells.push(
+                                                        <TableCell key={`${taxType.id}-from-complete`} className={`text-center text-[10px] border-r border-black ${getCellColor(taxType.id)}`}>
+                                                            <span className={stats.complete[`${taxType.id}_effective_from`] === sortedDetails.length ? 'text-green-600 font-bold' : ''}>
+                                                                {stats.complete[`${taxType.id}_effective_from`]}
+                                                            </span>
+                                                        </TableCell>,
+                                                        <TableCell key={`${taxType.id}-to-complete`} className={`text-center text-[10px] border-r border-black ${getCellColor(taxType.id)}`}>
+                                                            <span className={stats.complete[`${taxType.id}_effective_to`] === sortedDetails.length ? 'text-green-600 font-bold' : ''}>
+                                                                {stats.complete[`${taxType.id}_effective_to`]}
+                                                            </span>
+                                                        </TableCell>
+                                                    );
+                                                }
+                                                return cells;
+                                            })}
+
+                                            {COMPLIANCE_TYPES.map(compType => {
+                                                const fieldName = compType.id;
+                                                return (
+                                                    <TableCell
+                                                        key={`${compType.id}-complete`}
+                                                        className={`text-center text-[10px] border-r border-black ${getCellColor(compType.id)}`}
+                                                    >
+                                                        <span className={stats.complete[fieldName] === sortedDetails.length ? 'text-green-600 font-bold' : ''}>
+                                                            {stats.complete[fieldName]}
+                                                        </span>
+                                                    </TableCell>
+                                                );
+                                            })}
+
                                             <TableCell colSpan={2} className="border-r border-black"></TableCell>
                                             <TableCell></TableCell>
                                         </TableRow>
+
+                                        {/* Missing Stats Row */}
                                         <TableRow className="h-6 bg-red-50">
                                             <TableCell className="text-center text-[10px] font-bold border-r border-black">Missing</TableCell>
-                                            <TableCell className="text-center text-[10px] border-r border-black">
-                                                <span className={stats.missing.company_name > 0 ? 'text-red-600 font-bold' : ''}>
-                                                    {stats.missing.company_name}
-                                                </span>
-                                            </TableCell>
-                                            
-                                            {/* Income Tax Company */}
-                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('income_tax_company')}`}>
-                                                <span className={stats.missing.income_tax_company_status > 0 ? 'text-red-600 font-bold' : ''}>
-                                                    {stats.missing.income_tax_company_status}
-                                                </span>
-                                            </TableCell>
-                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('income_tax_company')}`}>
-                                                <span className={stats.missing.income_tax_company_effective_from > 0 ? 'text-red-600 font-bold' : ''}>
-                                                    {stats.missing.income_tax_company_effective_from}
-                                                </span>
-                                            </TableCell>
-                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('income_tax_company')}`}>
-                                                <span className={stats.missing.income_tax_company_effective_to > 0 ? 'text-red-600 font-bold' : ''}>
-                                                    {stats.missing.income_tax_company_effective_to}
-                                                </span>
-                                            </TableCell>
-                                            
-                                            {/* VAT */}
-                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('vat')}`}>
-                                                <span className={stats.missing.vat_status > 0 ? 'text-red-600 font-bold' : ''}>
-                                                    {stats.missing.vat_status}
-                                                </span>
-                                            </TableCell>
-                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('vat')}`}>
-                                                <span className={stats.missing.vat_effective_from > 0 ? 'text-red-600 font-bold' : ''}>
-                                                    {stats.missing.vat_effective_from}
-                                                </span>
-                                            </TableCell>
-                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('vat')}`}>
-                                                <span className={stats.missing.vat_effective_to > 0 ? 'text-red-600 font-bold' : ''}>
-                                                    {stats.missing.vat_effective_to}
-                                                </span>
-                                            </TableCell>
-                                            
-                                            {/* PAYE */}
-                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('paye')}`}>
-                                                <span className={stats.missing.paye_status > 0 ? 'text-red-600 font-bold' : ''}>
-                                                    {stats.missing.paye_status}
-                                                </span>
-                                            </TableCell>
-                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('paye')}`}>
-                                                <span className={stats.missing.paye_effective_from > 0 ? 'text-red-600 font-bold' : ''}>
-                                                    {stats.missing.paye_effective_from}
-                                                </span>
-                                            </TableCell>
-                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('paye')}`}>
-                                                <span className={stats.missing.paye_effective_to > 0 ? 'text-red-600 font-bold' : ''}>
-                                                    {stats.missing.paye_effective_to}
-                                                </span>
-                                            </TableCell>
-                                            
-                                            {/* Rent Income (MRI) */}
-                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('rent_income_mri')}`}>
-                                                <span className={stats.missing.rent_income_mri_status > 0 ? 'text-red-600 font-bold' : ''}>
-                                                    {stats.missing.rent_income_mri_status}
-                                                </span>
-                                            </TableCell>
-                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('rent_income_mri')}`}>
-                                                <span className={stats.missing.rent_income_mri_effective_from > 0 ? 'text-red-600 font-bold' : ''}>
-                                                    {stats.missing.rent_income_mri_effective_from}
-                                                </span>
-                                            </TableCell>
-                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('rent_income_mri')}`}>
-                                                <span className={stats.missing.rent_income_mri_effective_to > 0 ? 'text-red-600 font-bold' : ''}>
-                                                    {stats.missing.rent_income_mri_effective_to}
-                                                </span>
-                                            </TableCell>
-                                            
-                                            {/* Resident Individual */}
-                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('resident_individual')}`}>
-                                                <span className={stats.missing.resident_individual_status > 0 ? 'text-red-600 font-bold' : ''}>
-                                                    {stats.missing.resident_individual_status}
-                                                </span>
-                                            </TableCell>
-                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('resident_individual')}`}>
-                                                <span className={stats.missing.resident_individual_effective_from > 0 ? 'text-red-600 font-bold' : ''}>
-                                                    {stats.missing.resident_individual_effective_from}
-                                                </span>
-                                            </TableCell>
-                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('resident_individual')}`}>
-                                                <span className={stats.missing.resident_individual_effective_to > 0 ? 'text-red-600 font-bold' : ''}>
-                                                    {stats.missing.resident_individual_effective_to}
-                                                </span>
-                                            </TableCell>
-                                            
-                                            {/* Turnover Tax */}
-                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('turnover_tax')}`}>
-                                                <span className={stats.missing.turnover_tax_status > 0 ? 'text-red-600 font-bold' : ''}>
-                                                    {stats.missing.turnover_tax_status}
-                                                </span>
-                                            </TableCell>
-                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('turnover_tax')}`}>
-                                                <span className={stats.missing.turnover_tax_effective_from > 0 ? 'text-red-600 font-bold' : ''}>
-                                                    {stats.missing.turnover_tax_effective_from}
-                                                </span>
-                                            </TableCell>
-                                            <TableCell className={`text-center text-[10px] border-r border-black ${getCellColor('turnover_tax')}`}>
-                                                <span className={stats.missing.turnover_tax_effective_to > 0 ? 'text-red-600 font-bold' : ''}>
-                                                    {stats.missing.turnover_tax_effective_to}
-                                                </span>
-                                            </TableCell>
-                                            
+
+                                            {initialStatsDisplayFields.map(field => (
+                                                <TableCell key={field.key} className={`text-center text-[10px] border-r border-black ${field.color || ''}`}>
+                                                    <span className={stats.missing[field.key] > 0 ? 'text-red-600 font-bold' : ''}>
+                                                        {stats.missing[field.key]}
+                                                    </span>
+                                                </TableCell>
+                                            ))}
+
+                                            {TAX_TYPES.flatMap(taxType => {
+                                                const cells = [
+                                                    <TableCell
+                                                        key={`${taxType.id}-status-missing`}
+                                                        className={`text-center text-[10px] border-r border-black ${getCellColor(taxType.id)}`}
+                                                    >
+                                                        <span className={stats.missing[`${taxType.id}_status`] > 0 ? 'text-red-600 font-bold' : ''}>
+                                                            {stats.missing[`${taxType.id}_status`]}
+                                                        </span>
+                                                    </TableCell>
+                                                ];
+                                                if (showDateColumns) {
+                                                    cells.push(
+                                                        <TableCell key={`${taxType.id}-from-missing`} className={`text-center text-[10px] border-r border-black ${getCellColor(taxType.id)}`}>
+                                                            <span className={stats.missing[`${taxType.id}_effective_from`] > 0 ? 'text-red-600 font-bold' : ''}>
+                                                                {stats.missing[`${taxType.id}_effective_from`]}
+                                                            </span>
+                                                        </TableCell>,
+                                                        <TableCell key={`${taxType.id}-to-missing`} className={`text-center text-[10px] border-r border-black ${getCellColor(taxType.id)}`}>
+                                                            <span className={stats.missing[`${taxType.id}_effective_to`] > 0 ? 'text-red-600 font-bold' : ''}>
+                                                                {stats.missing[`${taxType.id}_effective_to`]}
+                                                            </span>
+                                                        </TableCell>
+                                                    );
+                                                }
+                                                return cells;
+                                            })}
+
+                                            {COMPLIANCE_TYPES.map(compType => {
+                                                const fieldName = compType.id;
+                                                return (
+                                                    <TableCell
+                                                        key={`${compType.id}-missing`}
+                                                        className={`text-center text-[10px] border-r border-black ${getCellColor(compType.id)}`}
+                                                    >
+                                                        <span className={stats.missing[fieldName] > 0 ? 'text-red-600 font-bold' : ''}>
+                                                            {stats.missing[fieldName]}
+                                                        </span>
+                                                    </TableCell>
+                                                );
+                                            })}
+
                                             <TableCell colSpan={2} className="border-r border-black"></TableCell>
                                             <TableCell></TableCell>
                                         </TableRow>
                                     </>
                                 )}
+
                                 <TableRow className="h-8">
                                     <TableHead className="sticky top-8 bg-white border-r border-black border-b"></TableHead>
                                     <TableHead className="sticky top-8 bg-white border-r border-black border-b"></TableHead>
-                                    {['Income Tax Company', 'VAT', 'PAYE', 'Rent Income (MRI)', 'Resident Individual', 'Turnover Tax'].flatMap((header) => (
-                                        ['Status', 'From', 'To'].map((subHeader, index) => {
-                                            const field = `${header.toLowerCase().replace(' ', '_')}_${subHeader.toLowerCase()}` as SortField;
-                                            return (
-                                                <TableHead key={`${header}-${subHeader}`} className={`sticky top-8 ${getCellColor(header.toLowerCase().replace(' ', '_'))} border-r border-black border-b text-black text-center`}>
-                                                    <SortableHeader field={field}>{subHeader}</SortableHeader>
+                                    <TableHead className="sticky top-8 bg-white border-r border-black border-b"></TableHead>
+                                    <TableHead className="sticky top-8 bg-white border-r border-black border-b"></TableHead>
+                                    <TableHead className="sticky top-8 bg-white border-r border-black border-b"></TableHead>
+
+                                    {TAX_TYPES.flatMap(taxType => {
+                                        const headers = [
+                                            <TableHead
+                                                key={`${taxType.id}-status`}
+                                                className={`sticky top-8 ${getCellColor(taxType.id)} border-r border-black border-b text-black text-center`}
+                                            >
+                                                <SortableHeader field={`${taxType.id}_status` as SortField}>Status</SortableHeader>
+                                            </TableHead>
+                                        ];
+                                        if (showDateColumns) {
+                                            headers.push(
+                                                <TableHead key={`${taxType.id}-from`} className={`sticky top-8 ${getCellColor(taxType.id)} border-r border-black border-b text-black text-center`}>
+                                                    <SortableHeader field={`${taxType.id}_effective_from` as SortField}>From</SortableHeader>
+                                                </TableHead>,
+                                                <TableHead key={`${taxType.id}-to`} className={`sticky top-8 ${getCellColor(taxType.id)} border-r border-black border-b text-black text-center`}>
+                                                    <SortableHeader field={`${taxType.id}_effective_to` as SortField}>To</SortableHeader>
                                                 </TableHead>
                                             );
-                                        })
-                                    ))}
+                                        }
+                                        return headers;
+                                    })}
+
+                                    {COMPLIANCE_TYPES.map(compType => {
+                                        const field = compType.id as SortField; // Direct field name for sorting
+                                        return (
+                                            <TableHead
+                                                key={`${compType.id}-status`}
+                                                className={`sticky top-8 ${getCellColor(compType.id)} border-r border-black border-b text-black text-center`}
+                                            >
+                                                <SortableHeader field={field}>Status</SortableHeader>
+                                            </TableHead>
+                                        );
+                                    })}
+
                                     <TableHead className="sticky top-8 bg-white border-r border-black border-b">
                                         <SortableHeader field="last_checked_date">Date</SortableHeader>
                                     </TableHead>
@@ -769,70 +975,85 @@ export function PinCheckerDetailsReports() {
                             <TableBody>
                                 {sortedDetails.map((detail, index) => (
                                     <TableRow key={detail.id} className="h-6">
-                                        <TableCell className="border-r border-black font-bold text-black text-center">{index + 1}</TableCell>
-                                        <TableCell className="border-r border-black">{detail.company_name}</TableCell>
+                                        <TableCell className="border-r border-b border-black font-bold text-black text-center">{index + 1} | {detail.id}</TableCell>
+                                        <TableCell className="border-r border-b border-black">{detail.company_name}</TableCell>
+                                        <TableCell className="border-r border-b border-black">
+                                            {detail.pinStatus === 'Missing PIN' ? (
+                                                <span className="text-red-600 font-semibold">Missing PIN</span>
+                                            ) : (
+                                                <span>{detail.companyData?.kra_pin || detail.kra_pin}</span>
+                                            )}
+                                        </TableCell>
 
-                                        {['income_tax_company', 'vat', 'paye', 'rent_income_mri', 'resident_individual', 'turnover_tax'].map((type) => (
-                                            <React.Fragment key={type}>
-                                                <TableCell className={`${getCellColor(type)} border-l border-r border-black ${!detail[`${type}_status` as keyof PinCheckerDetail] || detail[`${type}_status` as keyof PinCheckerDetail]?.toLowerCase() === 'no obligation' ? 'font-bold text-red-600 bg-red-100' : ''} text-center`}>
-                                                    {!detail[`${type}_status` as keyof PinCheckerDetail] ? (
-                                                        <span className="font-bold text-red-600">No Obligation</span>
-                                                    ) : detail[`${type}_status` as keyof PinCheckerDetail]?.toLowerCase() === 'cancelled' ? (
-                                                        <span className="bg-amber-500 text-amber-800 px-1 py-1 rounded-full text-xs font-semibold">
-                                                            {detail[`${type}_status` as keyof PinCheckerDetail]}
-                                                        </span>
-                                                    ) : detail[`${type}_status` as keyof PinCheckerDetail]?.toLowerCase() === 'registered' ? (
-                                                        <span className="bg-green-400 text-green-800 px-1 py-1 rounded-full text-xs font-semibold">
-                                                            {detail[`${type}_status` as keyof PinCheckerDetail]}
-                                                        </span>
-                                                    ) : (
-                                                        detail[`${type}_status` as keyof PinCheckerDetail]
-                                                    )}
+                                        <TableCell className="border-r border-b border-black bg-olive-100 text-center">
+                                            {renderStatusCell(detail, 'pin_status')}
+                                        </TableCell>
+
+                                        <TableCell className="border-r border-b border-black bg-blue-100 text-center">
+                                            {renderStatusCell(detail, 'itax_status')}
+                                        </TableCell>
+
+                                        {TAX_TYPES.flatMap(taxType => {
+                                            const cells = [
+                                                <TableCell
+                                                    key={`${taxType.id}-status-${detail.id}`}
+                                                    className={`${getCellColor(taxType.id)} border-l border-r border-b border-black text-center`}
+                                                >
+                                                    {renderStatusCell(detail, taxType.id)}
                                                 </TableCell>
-                                                <TableCell className={`${getCellColor(type)} border-r border-black text-center ${!detail[`${type}_effective_from` as keyof PinCheckerDetail] ? 'font-bold text-red-600 bg-red-100' : ''}`}>
-                                                    {detail[`${type}_effective_from` as keyof PinCheckerDetail] ? formatDate(detail[`${type}_effective_from` as keyof PinCheckerDetail] as string) : <span className="font-bold text-red-600">No Obligation</span>}
-                                                </TableCell>
-                                                <TableCell className={`${getCellColor(type)} border-r border-black text-center ${!detail[`${type}_effective_to` as keyof PinCheckerDetail] ? 'font-bold text-red-600 bg-red-100' : ''}`}>
-                                                    {detail[`${type}_effective_to` as keyof PinCheckerDetail] ? formatDate(detail[`${type}_effective_to` as keyof PinCheckerDetail] as string) : <span className="font-bold text-red-600">No Obligation</span>}
-                                                </TableCell>
-                                            </React.Fragment>
+                                            ];
+                                            if (showDateColumns) {
+                                                cells.push(
+                                                    <TableCell
+                                                        key={`${taxType.id}-from-${detail.id}`}
+                                                        className={`${getCellColor(taxType.id)} border-r border-b border-black text-center 
+                                                            ${!detail[`${taxType.id}_effective_from`] ? 'font-bold text-red-600 bg-red-100' : ''}`}
+                                                    >
+                                                        {detail[`${taxType.id}_effective_from`]
+                                                            ? formatDate(detail[`${taxType.id}_effective_from` as keyof PinCheckerDetail] as string)
+                                                            : <span className="font-bold text-red-600">No Obligation</span>}
+                                                    </TableCell>,
+                                                    <TableCell
+                                                        key={`${taxType.id}-to-${detail.id}`}
+                                                        className={`${getCellColor(taxType.id)} border-r border-b border-black text-center 
+                                                            ${!detail[`${taxType.id}_effective_to`] ? 'font-bold text-red-600 bg-red-100' : ''}`}
+                                                    >
+                                                        {detail[`${taxType.id}_effective_to`]
+                                                            ? formatDate(detail[`${taxType.id}_effective_to` as keyof PinCheckerDetail] as string)
+                                                            : <span className="font-bold text-red-600">No Obligation</span>}
+                                                    </TableCell>
+                                                );
+                                            }
+                                            return cells;
+                                        })}
+
+                                        {COMPLIANCE_TYPES.map(compType => (
+                                            <TableCell
+                                                key={compType.id}
+                                                className={`${getCellColor(compType.id)} border-r border-b border-black text-center`}
+                                            >
+                                                {renderStatusCell(detail, compType.id)}
+                                            </TableCell>
                                         ))}
 
-                                        <TableCell className="border-r border-black text-center">
+                                        <TableCell className="border-r border-b border-black text-center">
                                             {formatDate(detail.last_checked_at)}
                                         </TableCell>
-                                        <TableCell className="border-r border-black text-center">
+                                        <TableCell className="border-r border-b border-black text-center">
                                             {new Date(detail.last_checked_at).toLocaleTimeString()}
                                         </TableCell>
 
+                                        {/* This cell already has 'border-black' which covers all sides, including bottom */}
                                         <TableCell className="border-black">
                                             <div className="flex space-x-2">
                                                 <Dialog>
                                                     <DialogTrigger asChild>
-                                                        <Button variant="outline" size="sm" onClick={() => handleEdit(detail)}>Edit</Button>
+                                                        <Button variant="outline" size="sm" onClick={() => handleEdit(detail)}>
+                                                            View
+                                                        </Button>
                                                     </DialogTrigger>
-                                                    <DialogContent className="sm:max-w-[425px]">
-                                                        <DialogHeader>
-                                                            <DialogTitle>Edit PIN Checker Detail</DialogTitle>
-                                                        </DialogHeader>
-                                                        <div className="grid gap-4 py-4">
-                                                            {editingDetail && Object.entries(editingDetail).map(([key, value]) => (
-                                                                <div key={key} className="grid grid-cols-4 items-center gap-4">
-                                                                    <Label htmlFor={key} className="text-right">
-                                                                        {key.replace(/_/g, ' ').charAt(0).toUpperCase() + key.replace(/_/g, ' ').slice(1)}
-                                                                    </Label>
-                                                                    <Input id={key} value={value} onChange={(e) => setEditingDetail({ ...editingDetail, [key]: e.target.value })} />
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                        <DialogClose asChild>
-                                                            <Button onClick={() => handleSave(editingDetail!)}>Save</Button>
-                                                        </DialogClose>
-                                                    </DialogContent>
+                                                    {/* ... (DialogContent for editing detail) */}
                                                 </Dialog>
-                                                <Button variant="destructive" size="sm" onClick={() => handleDelete(detail.id)}>
-                                                    <Trash2Icon className="h-3 w-3" />
-                                                </Button>
                                             </div>
                                         </TableCell>
                                     </TableRow>

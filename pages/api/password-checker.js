@@ -59,26 +59,51 @@ async function cleanupBrowserResources() {
 
 // Initialize browser
 async function initializeBrowser() {
+    console.log('Initializing browser...');
     try {
-        // Try Microsoft Edge first
+        // Try Chrome first
+        console.log('Attempting to launch Chrome browser...');
         automationState.currentBrowser = await chromium.launch({ 
             headless: false, 
-            channel: "msedge",
-            args: ['--start-maximized']
+            channel: "chrome",
+            args: ['--start-maximized'],
+            // executablePath: process.platform === 'win32' 
+            //     ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
+            //     : '/usr/bin/google-chrome'
         });
+        console.log('Chrome browser launched successfully!');
     } catch (error) {
-        console.log("Microsoft Edge not available, using default chromium");
-        // Fall back to default chromium
-        automationState.currentBrowser = await chromium.launch({ 
-            headless: false,
-            args: ['--start-maximized']
-        });
+        console.log("Chrome launch error:", error.message);
+        try {
+            console.log("Trying Microsoft Edge...");
+            // Try Microsoft Edge
+            automationState.currentBrowser = await chromium.launch({ 
+                headless: false, 
+                channel: "msedge",
+                args: ['--start-maximized']
+            });
+            console.log('Edge browser launched successfully!');
+        } catch (edgeError) {
+            console.log("Edge launch error:", edgeError.message);
+            console.log("Falling back to default chromium");
+            // Fall back to default chromium
+            automationState.currentBrowser = await chromium.launch({ 
+                headless: false,
+                args: ['--start-maximized']
+            });
+            console.log('Default Chromium browser launched successfully!');
+        }
     }
 
+    console.log('Creating browser context...');
     automationState.currentContext = await automationState.currentBrowser.newContext({
         viewport: null
     });
+    
+    console.log('Opening new page...');
     automationState.currentPage = await automationState.currentContext.newPage();
+    console.log('Browser initialization complete!');
+    
     return automationState.currentPage;
 }
 
@@ -225,10 +250,25 @@ async function processCompanies(runOption, selectedIds, tab, isResume = false) {
         automationState.stopRequested = false;
         automationState.tab = tab;
         automationState.logs = [];
+        
+        // Set initial status immediately to show the automation is initializing
+        await updateAutomationProgress(0, "Initializing", [], tab);
 
+        console.log('Fetching company data from Supabase...');
         let data = await readSupabaseData();
+        console.log(`Retrieved ${data.length} companies from Supabase`);
+
         if (runOption === 'selected' && selectedIds?.length > 0) {
+            console.log(`Filtering for selected companies: ${JSON.stringify(selectedIds)}`);
             data = data.filter(company => selectedIds.includes(company.id));
+            console.log(`Filtered to ${data.length} selected companies`);
+            
+            // Log the first few companies to verify data
+            if (data.length > 0) {
+                console.log('Sample company data:', JSON.stringify(data.slice(0, 2), null, 2));
+            } else {
+                console.error('WARNING: No matching companies found after filtering!');
+            }
         }
 
         // If resuming, get the last state
@@ -246,12 +286,16 @@ async function processCompanies(runOption, selectedIds, tab, isResume = false) {
         const worksheet = workbook.addWorksheet("Password Validation");
         setupWorksheet(worksheet);
 
+        console.log(`Starting to process ${data.length} companies from index ${startIndex}...`);
+
         // Process only remaining companies
         for (let i = startIndex; i < data.length; i++) {
             if (automationState.stopRequested) {
                 console.log("Automation stopped by user request");
                 break;
             }
+
+            console.log(`Processing company ${i+1}/${data.length}: ${data[i].company_name}`);
 
             const company = data[i];
             let status;
@@ -348,7 +392,31 @@ export default async function handler(req, res) {
                 if (automationState.isRunning) {
                     return res.status(400).json({ message: "Automation is already running" });
                 }
-                processCompanies(runOption, selectedIds, tab, false).catch(console.error);
+                // Reset automation state on server restart if needed
+                if (automationState.currentBrowser || automationState.currentContext || automationState.currentPage) {
+                    await cleanupBrowserResources();
+                }
+                
+                // Start the process and handle errors properly
+                processCompanies(runOption, selectedIds, tab, false)
+                    .catch(err => {
+                        console.error("Critical error in processCompanies execution:", err);
+                        // Update automation progress to "Error" in Supabase
+                        updateAutomationProgress(
+                            automationState.processedCompanies > 0 ? 
+                                Math.round((automationState.processedCompanies / automationState.totalCompanies) * 100) : 0,
+                            "Error",
+                            [...automationState.logs, { 
+                                type: "error", 
+                                message: `Automation failed: ${err.message}`, 
+                                timestamp: new Date().toISOString() 
+                            }],
+                            tab
+                        ).catch(updateErr => console.error("Failed to update progress to Error state:", updateErr));
+                        
+                        // Reset automation state
+                        automationState.isRunning = false;
+                    });
                 return res.status(200).json({ message: "Automation started" });
 
             case "resume":
@@ -424,14 +492,23 @@ function addWorksheetRow(worksheet, company, status) {
 // Function to read company data from Supabase
 const readSupabaseData = async () => {
     try {
-        const { data, error } = await supabase.from("PasswordChecker").select("*").order('id');
+        console.log('Reading data from PasswordChecker table...');
+        const { data, error } = await supabase.from("acc_portal_company_duplicate").select("*").order('id');
 
         if (error) {
-            throw new Error(`Error reading data from 'PasswordChecker' table: ${error.message}`);
+            console.error('Supabase query error:', error);
+            throw new Error(`Error reading data from 'acc_portal_company_duplicate' table: ${error.message}`);
         }
 
-        return data;
+        if (!data || data.length === 0) {
+            console.warn('No data found in acc_portal_company_duplicate table!');
+        } else {
+            console.log(`Successfully retrieved ${data.length} records from acc_portal_company_duplicate table`);
+        }
+
+        return data || [];
     } catch (error) {
+        console.error('Error in readSupabaseData function:', error);
         throw new Error(`Error reading Supabase data: ${error.message}`);
     }
 };
@@ -439,13 +516,17 @@ const readSupabaseData = async () => {
 // Function to update the status of a company's password in Supabase
 const updateSupabaseStatus = async (id, status) => {
     try {
+        console.log(`Updating status for company ID ${id} to "${status}" in acc_portal_company_duplicate table`);
         const { error } = await supabase
-            .from("PasswordChecker")
-            .update({ status, last_checked: new Date().toISOString() })
+            .from("acc_portal_company_duplicate")
+            .update({ kra_status: status, kra_last_checked: new Date().toISOString() })
             .eq("id", id);
 
         if (error) {
+            console.error(`Error updating company ID ${id}:`, error);
             throw new Error(`Error updating status in Supabase: ${error.message}`);
+        } else {
+            console.log(`Successfully updated company ID ${id} status to "${status}"`);
         }
     } catch (error) {
         console.error("Error updating Supabase:", error);
@@ -455,15 +536,56 @@ const updateSupabaseStatus = async (id, status) => {
 // Function to update or create automation progress
 const updateAutomationProgress = async (progress, status, logs, tab) => {
     try {
-        const { data, error } = await supabase
+        // Use a fixed ID for each tab to avoid conflicts
+        // For KRA tab, use ID 1, for others use incrementing IDs
+        let progressId = 1; // Default for 'kra' tab
+        
+        if (tab && tab !== 'kra') {
+            // For other tabs, use IDs starting from 2
+            progressId = tab === 'nhif' ? 2 : 
+                         tab === 'nssf' ? 3 : 
+                         tab === 'ecitizen' ? 4 : 5;
+        }
+        
+        console.log(`Updating progress for tab ${tab} with ID ${progressId}`);
+        
+        // First check if the record exists
+        const { data: existingData } = await supabase
             .from("PasswordChecker_AutomationProgress")
-            .upsert({ 
-                id: 1, 
-                progress, 
-                status, 
-                logs: logs || [],
-                last_updated: new Date().toISOString() 
-            });
+            .select("id")
+            .eq("id", progressId)
+            .single();
+            
+        let result;
+        
+        if (existingData) {
+            // Update existing record
+            result = await supabase
+                .from("PasswordChecker_AutomationProgress")
+                .update({ 
+                    progress, 
+                    status, 
+                    logs: logs || [],
+                    tab: tab || 'kra',
+                    last_updated: new Date().toISOString() 
+                })
+                .eq("id", progressId);
+        } else {
+            // Insert new record with explicit ID
+            result = await supabase
+                .from("PasswordChecker_AutomationProgress")
+                .insert({ 
+                    id: progressId, 
+                    progress, 
+                    status, 
+                    logs: logs || [],
+                    tab: tab || 'kra',
+                    last_updated: new Date().toISOString(),
+                    created_at: new Date().toISOString()
+                });
+        }
+        
+        const { error } = result;
 
         if (error) {
             throw new Error(`Error updating automation progress: ${error.message}`);
@@ -476,11 +598,24 @@ const updateAutomationProgress = async (progress, status, logs, tab) => {
 // Function to get automation progress
 const getAutomationProgress = async (tab) => {
     try {
+        // Use a fixed ID for each tab to avoid conflicts
+        // For KRA tab, use ID 1, for others use incrementing IDs
+        let progressId = 1; // Default for 'kra' tab
+        
+        if (tab && tab !== 'kra') {
+            // For other tabs, use IDs starting from 2
+            progressId = tab === 'nhif' ? 2 : 
+                         tab === 'nssf' ? 3 : 
+                         tab === 'ecitizen' ? 4 : 5;
+        }
+        
+        console.log(`Getting progress for tab ${tab} with ID ${progressId}`);
+        
         const { data, error } = await supabase
             .from("PasswordChecker_AutomationProgress")
             .select("*")
-            .eq("id", 1)
-            .single();
+            .eq("id", progressId)
+            .maybeSingle(); // Use maybeSingle instead of single to avoid errors if record doesn't exist
 
         if (error) {
             console.error("Supabase error:", error);

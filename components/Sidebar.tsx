@@ -44,17 +44,17 @@ const navItems = [
     category: "Main",
     available: true,
   },
-  {
-    href: "/password-manager",
-    icon: Lock,
-    label: "Password Manager",
-    category: "Main",
-    available: true,
-  },
+  // {
+  //   href: "/password-manager",
+  //   icon: Lock,
+  //   label: "Password Manager",
+  //   category: "Main",
+  //   available: true,
+  // },
   {
     href: "/pass-checker+pass-manager",
     icon: Lock,
-    label: "Both",
+    label: "Password Checker",
     category: "Main",
     available: true,
   },
@@ -70,7 +70,14 @@ const navItems = [
   {
     href: "/checklist",
     icon: BarChart2,
-    label: "Checklist",
+    label: " All Taxes Checklist",
+    category: "Accounting Cycles",
+    available: true,
+  },
+  {
+    href: "/file-management",
+    icon: BarChart2,
+    label: "File Management",
     category: "Accounting Cycles",
     available: true,
   },
@@ -139,13 +146,13 @@ const navItems = [
   },
 
   // One-off Tools
-  {
-    href: "/password-checker",
-    icon: Key,
-    label: "Password Checker",
-    category: "One-off Tools",
-    available: true,
-  },
+  // {
+  //   href: "/password-checker",
+  //   icon: Key,
+  //   label: "Password Checker",
+  //   category: "One-off Tools",
+  //   available: true,
+  // }, 
   {
     href: "/manufacturers-details",
     icon: Factory,

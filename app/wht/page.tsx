@@ -15,7 +15,7 @@ export default function WHVATExtractor() {
         <div className="p-4 w-full mb-4">
             <Card>
                 <CardHeader>
-                    <CardTitle>Withholding VAT/Tax Extractor</CardTitle>
+                    <CardTitle>Withholding VAT Customers</CardTitle>
                     <CardDescription>Extract and manage Withholding VAT/Tax certificates for companies</CardDescription>
                 </CardHeader>
                 <CardContent>
