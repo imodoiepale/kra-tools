@@ -28,6 +28,8 @@ interface CacheEntry {
 const taxDataCache = new Map<number, CacheEntry>();
 const CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
 const LOCALSTORAGE_KEY = "companyTaxCache";
+// Add cache version to detect schema changes
+const CACHE_VERSION = "1.0";
 
 // Initialize cache from localStorage
 const initCacheFromStorage = () => {
@@ -35,7 +37,15 @@ const initCacheFromStorage = () => {
     const cachedData = localStorage.getItem(LOCALSTORAGE_KEY);
     if (cachedData) {
       const parsedData = JSON.parse(cachedData);
-      Object.entries(parsedData).forEach(([companyId, entry]) => {
+      
+      // Check cache version before using stored data
+      if (parsedData.version !== CACHE_VERSION) {
+        console.log("Cache version mismatch, clearing cache");
+        localStorage.removeItem(LOCALSTORAGE_KEY);
+        return;
+      }
+      
+      Object.entries(parsedData.data || {}).forEach(([companyId, entry]) => {
         // Only load if data is complete and not expired
         if (entry.complete && Date.now() - entry.timestamp < CACHE_TTL) {
           taxDataCache.set(Number(companyId), {
@@ -48,6 +58,8 @@ const initCacheFromStorage = () => {
     }
   } catch (error) {
     console.error("Error loading cache from localStorage:", error);
+    // Clear cache on error to prevent using corrupted data
+    localStorage.removeItem(LOCALSTORAGE_KEY);
   }
 };
 
@@ -62,7 +74,13 @@ const saveCacheToStorage = () => {
         cacheToSave[companyId] = entryToSave;
       }
     });
-    localStorage.setItem(LOCALSTORAGE_KEY, JSON.stringify(cacheToSave));
+    
+    // Store with version information
+    localStorage.setItem(LOCALSTORAGE_KEY, JSON.stringify({
+      version: CACHE_VERSION,
+      data: cacheToSave,
+      lastUpdated: Date.now()
+    }));
   } catch (error) {
     console.error("Error saving cache to localStorage:", error);
   }
@@ -155,8 +173,17 @@ const createEmptyYearData = (year: string): TaxEntry[] => {
 };
 
 // Progressive data loading function - returns immediate results and loads full data in background
-const fetchCompanyTaxData = async (companyId: number, queryClient: any) => {
+const fetchCompanyTaxData = async (companyId: number, queryClient: any, availableCompanies: any[] = []) => {
   console.time(`fetchCompanyTaxData:${companyId}`);
+
+  // Check if company ID exists in available companies
+  if (availableCompanies.length > 0 && !availableCompanies.some(c => c.id === companyId)) {
+    console.warn(`Company ID ${companyId} no longer exists in database`);
+    // Clear cache for this company to prevent using stale data
+    taxDataCache.delete(companyId);
+    console.timeEnd(`fetchCompanyTaxData:${companyId}`);
+    return Promise.reject(new Error("Company ID no longer exists"));
+  }
 
   // Check if we have a valid complete entry in cache
   const cachedEntry = taxDataCache.get(companyId);
@@ -456,6 +483,9 @@ export const useCompanyTaxReports = () => {
   // Track initial load completion
   const [initialLoadComplete, setInitialLoadComplete] = useState(false);
   const prefetchedCompanies = useRef(new Set<number>());
+  
+  // Track company ID changes
+  const previousCompaniesRef = useRef<any[]>([]);
 
   // Companies query without pagination
   const {
@@ -468,18 +498,68 @@ export const useCompanyTaxReports = () => {
     staleTime: 5 * 60 * 1000,
   });
 
-  // Company tax data query with seamless loading
-  const { data: reportData = {}, isLoading: isLoadingTaxData } = useQuery({
+  // Detect company ID changes and handle accordingly
+  useEffect(() => {
+    if (!companies || companies.length === 0 || !previousCompaniesRef.current.length) {
+      previousCompaniesRef.current = [...(companies || [])];
+      return;
+    }
+
+    const currentIds = companies.map(c => c.id);
+    const previousIds = previousCompaniesRef.current.map(c => c.id);
+    
+    // Check for changes
+    const added = currentIds.filter(id => !previousIds.includes(id));
+    const removed = previousIds.filter(id => !currentIds.includes(id));
+    
+    if (added.length > 0 || removed.length > 0) {
+      console.warn("Company IDs changed:", { added, removed });
+      
+      // If currently selected company is no longer available, reset selection
+      if (selectedCompany && !currentIds.includes(selectedCompany)) {
+        console.warn(`Selected company ${selectedCompany} is no longer available`);
+        setSelectedCompany(null);
+        
+        // Clear cache for removed companies
+        removed.forEach(id => {
+          taxDataCache.delete(id);
+        });
+        
+        // Save updated cache
+        saveCacheToStorage();
+      }
+    }
+    
+    // Update reference
+    previousCompaniesRef.current = [...(companies || [])];
+  }, [companies, selectedCompany]);
+
+  // Company tax data query with seamless loading and error handling
+  const { data: reportData = {}, isLoading: isLoadingTaxData, error: taxDataError } = useQuery({
     queryKey: ["companyTaxData", selectedCompany],
     queryFn: () =>
       selectedCompany
-        ? fetchCompanyTaxData(selectedCompany, queryClient)
+        ? fetchCompanyTaxData(selectedCompany, queryClient, companies)
         : Promise.resolve({}),
     enabled: !!selectedCompany && initialLoadComplete,
     staleTime: 30 * 60 * 1000, // 30 minutes
     keepPreviousData: true, // Keep previous data while loading new data
     refetchOnMount: false,
     refetchOnWindowFocus: false,
+    retry: (failureCount, error) => {
+      // Don't retry if company ID doesn't exist
+      if (error?.message === "Company ID no longer exists") {
+        return false;
+      }
+      return failureCount < 2; // Retry other errors up to 2 times
+    },
+    onError: (error) => {
+      console.error("Error fetching tax data:", error);
+      // If error is due to company ID not existing, reset selection
+      if (error?.message === "Company ID no longer exists") {
+        setSelectedCompany(null);
+      }
+    }
   });
 
   // Prefetch first few companies when company list loads
@@ -578,7 +658,10 @@ export const useCompanyTaxReports = () => {
     taxDataCache.clear();
     localStorage.removeItem(LOCALSTORAGE_KEY);
     console.log("Cache cleared");
-  }, []);
+    
+    // Force refetch companies to get fresh IDs
+    queryClient.invalidateQueries(["companies"]);
+  }, [queryClient]);
 
   const [viewMode, setViewMode] = useState<"table" | "overall">("table");
   const [startDate, setStartDate] = useState("2015-01");
@@ -630,12 +713,29 @@ export const useCompanyTaxReports = () => {
 
     // Set up periodic cache save
     const saveInterval = setInterval(saveCacheToStorage, 60000); // Save every minute
+    
+    // Set up periodic cache validation (every 15 minutes)
+    const validateInterval = setInterval(() => {
+      // Check if any company IDs in cache no longer exist in the database
+      if (companies && companies.length > 0) {
+        const currentIds = new Set(companies.map(c => c.id));
+        const cachedIds = Array.from(taxDataCache.keys());
+        
+        const invalidIds = cachedIds.filter(id => !currentIds.has(id));
+        if (invalidIds.length > 0) {
+          console.warn(`Removing ${invalidIds.length} invalid company IDs from cache`);
+          invalidIds.forEach(id => taxDataCache.delete(id));
+          saveCacheToStorage();
+        }
+      }
+    }, 15 * 60 * 1000);
 
     return () => {
       clearInterval(saveInterval);
+      clearInterval(validateInterval);
       saveCacheToStorage(); // Save on unmount
     };
-  }, []);
+  }, [companies]);
 
   return {
     companies,

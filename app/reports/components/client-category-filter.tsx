@@ -31,6 +31,7 @@ export function ClientCategoryFilter({ isOpen, onClose, onApplyFilters, onClearF
     setLocalFilters(selectedFilters);
   }, [selectedFilters, isOpen]);
 
+
   const handleCheckboxChange = (category: string, status: string) => {
     setLocalFilters((prev: any) => {
       // Initialize the category if it doesn't exist
