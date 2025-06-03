@@ -404,10 +404,10 @@ export function ManufacturersDetailsReports() {
           onChange={(e) => setSearchTerm(e.target.value)}
           className="max-w-sm"
         />
-        <Button variant="outline" onClick={() => setIsCategoryFilterOpen(true)} size="sm">
+        {/* <Button variant="outline" onClick={() => setIsCategoryFilterOpen(true)} size="sm">
           <Filter className="h-4 w-4 mr-2" />
           Categories
-        </Button>
+        </Button> */}
         <Button
           variant="outline"
           onClick={() => setShowStatsRows(!showStatsRows)}
@@ -432,12 +432,12 @@ export function ManufacturersDetailsReports() {
             <Table className="text-[11px] text-black border-collapse w-full">
               <TableHeader className="bg-gray-50">
                 <TableRow className="border-b border-gray-200">
-                  <TableHead className="sticky top-0 bg-white text-center text-[12px] text-black font-bold border border-gray-200 py-2 px-3">Index</TableHead>
+                  <TableHead className="sticky top-0 bg-white text-center text-[12px] text-black font-bold border border-gray-200 py-2 px-3">IDX | ID</TableHead>
                   {Object.entries(visibleColumns).map(([column, config]) => (
                     config.visible && (
                       <TableHead key={column} className="sticky top-0 bg-white border border-gray-200 ">
-                        <Button 
-                          variant="ghost" 
+                        <Button
+                          variant="ghost"
                           onClick={() => requestSort(column)}
                           className="h-8 p-0 text-[12px] text-black font-bold capitalize py-2 px-3"
                         >
@@ -489,8 +489,13 @@ export function ManufacturersDetailsReports() {
               <TableBody>
                 {paginatedManufacturers.map((manufacturer, index) => (
                   <TableRow key={manufacturer.id} className={`h-8 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-gray-100`}>
-                    <TableCell className="font-bold border border-gray-200">{index + 1}</TableCell>
-                    {Object.entries(visibleColumns).map(([column, config]) => (
+                    <TableCell className="text-center font-bold border border-r">
+                      <div className="grid grid-cols-3 gap-1">
+                        <span>{index + 1}</span>
+                        <span>|</span>
+                        <span>{manufacturer.id}</span>
+                      </div>
+                    </TableCell> {Object.entries(visibleColumns).map(([column, config]) => (
                       config.visible && (
                         <TableCell key={column} className={`border border-gray-200 py-2 px-3 ${column === 'pin_no' ? 'text-left whitespace-nowrap font-bold' : ''}`}>
                           {manufacturer[column] ? (

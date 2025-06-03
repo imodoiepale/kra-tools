@@ -684,7 +684,7 @@ export function ManufacturersDetailsReports() {
 
       <div className="rounded-md border flex-1 flex flex-col relative min-h-[200px]">
         <div className="overflow-x-auto">
-          <div className="max-h-[calc(100vh-550px)] overflow-y-auto">
+          <div className="max-h-[calc(100vh-450px)] overflow-y-auto">
             <Table className="text-[11px] text-black border-collapse w-full">
               <TableHeader className="bg-gray-50">
                 <TableRow className="border-b border-gray-200">

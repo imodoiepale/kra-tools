@@ -117,7 +117,7 @@ export function ManufacturersDetailsRunning({
                         event: '*',
                         schema: 'public',
                         table: 'webhook_results',
-                        filter: 'type=eq.suppliers'
+                        filter: 'type=eq.suppliers_and_customers'
                     },
                     (payload) => {
                         if (payload.new) {
@@ -210,10 +210,10 @@ export function ManufacturersDetailsRunning({
 
     return (
         <div className="space-y-4">
-            <h3 className="text-lg font-medium">Suppliers Details Check in Progress</h3>
+            <h3 className="text-lg font-medium">Suppliers & Customers Details Check in Progress</h3>
             <Progress value={percentComplete} className="w-full" />
             <p className="text-sm text-gray-500">
-                {progress} out of {totalCompanies} suppliers checked ({percentComplete.toFixed(1)}%)
+                {progress} out of {totalCompanies} suppliers & customers checked ({percentComplete.toFixed(1)}%)
             </p>
 
             {/* Summary Table */}
@@ -242,7 +242,7 @@ export function ManufacturersDetailsRunning({
             <div className="overflow-x-auto">
                 <div className="overflow-y-auto max-h-[calc(100vh-300px)]">
                     <Table>
-                        <TableCaption>Suppliers Details Check Results</TableCaption>
+                        <TableCaption>Suppliers & Customers Details Check Results</TableCaption>
                         <TableHeader>
                             <TableRow>
                                 <TableHead className="sticky top-0 bg-white">

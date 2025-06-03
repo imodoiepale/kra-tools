@@ -23,7 +23,7 @@ interface Manufacturer {
     id: number;
     manufacturer_name: string;
     pin_no: string;
-    last_checked_at: string | null;
+    last_checked: string | null;
 }
 
 interface ManufacturersDetailsRunningProps {
@@ -166,7 +166,7 @@ export default function ManufacturersDetailsSuppliers() {
                             <Card>
                                 <CardHeader>
                                     <CardTitle>Start Manufacturers Details Check</CardTitle>
-                                    <CardDescription>Begin the manufacturers details extraction process for all supplier pins.</CardDescription>
+                                    <CardDescription>Begin the manufacturers details extraction process for all supplier and customer pins.</CardDescription>
                                 </CardHeader>
                                 <CardContent>
                                     <div className="space-y-4">
@@ -178,8 +178,8 @@ export default function ManufacturersDetailsSuppliers() {
                                                         <SelectValue placeholder="Select run option" />
                                                     </SelectTrigger>
                                                     <SelectContent>
-                                                        <SelectItem value="all">All Supplier Pins</SelectItem>
-                                                        <SelectItem value="selected">Selected Supplier Pin</SelectItem>
+                                                        <SelectItem value="all">All Pins</SelectItem>
+                                                        <SelectItem value="selected">Selected Pin</SelectItem>
                                                         <SelectItem value="missing">Selected Missing</SelectItem>
                                                     </SelectContent>
                                                 </Select>
@@ -188,12 +188,12 @@ export default function ManufacturersDetailsSuppliers() {
                                             <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
                                                 <DialogTrigger asChild>
                                                     <Button size="sm">
-                                                        Process New Supplier PIN
+                                                        Process New Supplier / Customer PINs
                                                     </Button>
                                                 </DialogTrigger>
                                                 <DialogContent className="sm:max-w-md">
                                                     <DialogHeader>
-                                                        <DialogTitle>Process New Supplier PINs</DialogTitle>
+                                                        <DialogTitle>Process New Supplier / Customer PINs</DialogTitle>
                                                         <DialogDescription>
                                                             Enter multiple PINs (one per line) to process them in batch.
                                                         </DialogDescription>
@@ -259,7 +259,7 @@ export default function ManufacturersDetailsSuppliers() {
                                         <div className="relative">
                                             <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
                                             <Input
-                                                placeholder="Search by PIN or supplier name..."
+                                                placeholder="Search by PIN or supplier / customer name..."
                                                 value={searchTerm}
                                                 onChange={(e) => setSearchTerm(e.target.value)}
                                                 className="pl-8"
@@ -333,7 +333,7 @@ export default function ManufacturersDetailsSuppliers() {
                                                         transition={{ duration: 0.3 }}
                                                     >
                                                         <div className="mb-4">
-                                                            <h3 className="text-lg font-semibold mb-2">Selected Supplier Pin</h3>
+                                                            <h3 className="text-lg font-semibold mb-2">Selected Pin</h3>
                                                             <div className="max-h-[580px] overflow-y-auto">
                                                                 <Table>
                                                                     <TableHeader>
