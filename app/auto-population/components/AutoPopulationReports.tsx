@@ -11,12 +11,12 @@ import { ArrowUpDown, Download, MoreHorizontal, Play, RefreshCw, Filter, Eye, Ey
 import * as ExcelJS from 'exceljs';
 import { supabase } from '@/lib/supabase';
 import { Checkbox } from '../../../components/ui/checkbox';
-import { ClientCategoryFilter } from '@/components/ClientCategoryFilter';
+import ClientCategoryFilter from '@/components/ClientCategoryFilter-updated-ui';
 import { FileUploadModal } from './FileUploadModal';
 
 export function AutoPopulationReports() {
     const [reports, setReports] = useState([]);
-    const [passwordCheckerCompanies, setPasswordCheckerCompanies] = useState([]);
+    const [portalCompanies, setPortalCompanies] = useState([]);
     const [selectedCompany, setSelectedCompany] = useState(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [sortColumn, setSortColumn] = useState('');
@@ -33,27 +33,87 @@ export function AutoPopulationReports() {
     const [downloadFile, setDownloadFile] = useState(null);
     const [isDownloadDialogOpen, setIsDownloadDialogOpen] = useState(false);
     const [isCategoryFilterOpen, setIsCategoryFilterOpen] = useState(false);
-    const [categoryFilters, setCategoryFilters] = useState({});
+    const [categoryFilters, setCategoryFilters] = useState({
+        categories: {
+            'All Categories': false,
+            'Acc': true,
+            'Imm': false,
+            'Sheria': false,
+            'Audit': false
+        },
+        categorySettings: {
+            'Acc': {
+                clientStatus: {
+                    All: false,
+                    Active: true,
+                    Inactive: false
+                },
+                sectionStatus: {
+                    All: false,
+                    Active: true,
+                    Inactive: false,
+                    Missing: false
+                }
+            }
+        }
+    });
     const [showStatsRows, setShowStatsRows] = useState(true);
     const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
     const [uploadCompany, setUploadCompany] = useState(null);
 
     useEffect(() => {
         fetchReports();
-        fetchPasswordCheckerCompanies();
+        fetchCompaniesFromPortal();
     }, []);
 
-    const fetchPasswordCheckerCompanies = async () => {
+    const fetchCompaniesFromPortal = async () => {
         try {
             const { data, error } = await supabase
-                .from('PasswordChecker')
-                .select('id, company_name')
+                .from('acc_portal_company_duplicate')
+                .select('*')
                 .order('company_name', { ascending: true });
 
             if (error) throw error;
-            setPasswordCheckerCompanies(data || []);
+            
+            // Process companies to include category information
+            const processedCompanies = data.map(company => {
+                // Helper function to determine if a company belongs to a category and its status
+                const getCategoryStatus = (category) => {
+                    const categoryId = category.toLowerCase();
+                    const fromDate = company[`${categoryId}_client_effective_from`];
+                    const toDate = company[`${categoryId}_client_effective_to`];
+
+                    if (!fromDate || !toDate) return 'inactive';
+
+                    const today = new Date();
+                    const from = new Date(fromDate.split('/').reverse().join('-'));
+                    const to = new Date(toDate.split('/').reverse().join('-'));
+
+                    return today >= from && today <= to ? 'active' : 'inactive';
+                };
+
+                // Get all categories this company belongs to
+                const companyCategories = ['Acc', 'Imm', 'Sheria', 'Audit'].filter(cat => {
+                    const categoryId = cat.toLowerCase();
+                    const fromDate = company[`${categoryId}_client_effective_from`];
+                    const toDate = company[`${categoryId}_client_effective_to`];
+                    return fromDate && toDate; // Company belongs if it has dates set
+                });
+
+                return {
+                    ...company,
+                    categories: companyCategories,
+                    // Add status for each category
+                    acc_client_status: getCategoryStatus('Acc'),
+                    imm_client_status: getCategoryStatus('Imm'),
+                    sheria_client_status: getCategoryStatus('Sheria'),
+                    audit_client_status: getCategoryStatus('Audit'),
+                };
+            });
+
+            setPortalCompanies(processedCompanies);
         } catch (error) {
-            console.error('Error fetching PasswordChecker companies:', error);
+            console.error('Error fetching portal companies:', error);
         }
     };
 
@@ -127,22 +187,92 @@ export function AutoPopulationReports() {
     };
 
     const getMergedAndSortedReports = () => {
-        // Get all company names from Autopopulate
-        const autopopulateCompanies = new Set(reports.map(r => r.companyName.toLowerCase()));
+        // Start with companies from acc_portal_company_duplicate
+        const filteredPortalCompanies = portalCompanies.filter(company => {
+            // Apply category filters first
+            if (Object.keys(categoryFilters.categories || {}).length > 0) {
+                const selectedCategories = Object.entries(categoryFilters.categories || {})
+                    .filter(([category, isSelected]) => category && category !== 'All Categories' && isSelected)
+                    .map(([category]) => category);
 
-        // Create entries for companies that are in PasswordChecker but not in Autopopulate
-        const missingCompanies = passwordCheckerCompanies
-            .filter(pc => !autopopulateCompanies.has(pc.company_name.toLowerCase()))
-            .map(pc => ({
-                id: `pc_${pc.id}`,
-                companyName: pc.company_name,
-                lastUpdated: null,
-                extractions: {},
-                isMissing: true
-            }));
+                // If no categories selected or All Categories is selected, include all
+                if (selectedCategories.length > 0 && !categoryFilters.categories?.['All Categories']) {
+                    const matchesCategory = selectedCategories.some(category => {
+                        // Check if company belongs to this category
+                        if (!company.categories?.includes(category)) {
+                            return false;
+                        }
 
-        // Combine and sort all reports
-        const allReports = [...reports, ...missingCompanies].sort((a, b) => {
+                        // Get current status for this category
+                        const categoryId = category.toLowerCase();
+                        const currentStatus = company[`${categoryId}_client_status`] || 'inactive';
+
+                        // Get selected statuses from filter
+                        const categorySettings = categoryFilters.categorySettings?.[category];
+                        if (!categorySettings?.clientStatus) {
+                            return true;
+                        }
+
+                        const selectedClientStatuses = Object.entries(categorySettings.clientStatus)
+                            .filter(([_, isSelected]) => isSelected)
+                            .map(([status]) => status.toLowerCase());
+
+                        // If All is selected or no statuses selected, include all
+                        if (selectedClientStatuses.includes('all') || selectedClientStatuses.length === 0) {
+                            return true;
+                        }
+
+                        // Check if current status matches selected filters
+                        return selectedClientStatuses.includes(currentStatus);
+                    });
+
+                    if (!matchesCategory) {
+                        return false;
+                    }
+                }
+            }
+
+            // Apply search filter
+            return company.company_name.toLowerCase().includes(searchTerm.toLowerCase());
+        });
+
+        // Map portal companies to reports, including those without reports
+        const mappedReports = filteredPortalCompanies.map(portalCompany => {
+            // Find matching report if exists
+            const matchingReport = reports.find(report => 
+                report.companyName.toLowerCase() === portalCompany.company_name.toLowerCase()
+            );
+            
+            if (matchingReport) {
+                // Return report with category information
+                return {
+                    ...matchingReport,
+                    id: portalCompany.id, // Add portal ID
+                    categories: portalCompany.categories || [],
+                    acc_client_status: portalCompany.acc_client_status || 'inactive',
+                    imm_client_status: portalCompany.imm_client_status || 'inactive',
+                    sheria_client_status: portalCompany.sheria_client_status || 'inactive',
+                    audit_client_status: portalCompany.audit_client_status || 'inactive',
+                };
+            } else {
+                // Create placeholder for company without report
+                return {
+                    id: portalCompany.id, // Add portal ID
+                    companyName: portalCompany.company_name,
+                    lastUpdated: null,
+                    extractions: [],
+                    isMissing: true,
+                    categories: portalCompany.categories || [],
+                    acc_client_status: portalCompany.acc_client_status || 'inactive',
+                    imm_client_status: portalCompany.imm_client_status || 'inactive',
+                    sheria_client_status: portalCompany.sheria_client_status || 'inactive',
+                    audit_client_status: portalCompany.audit_client_status || 'inactive',
+                };
+            }
+        });
+
+        // Sort reports
+        const allReports = mappedReports.sort((a, b) => {
             // First sort by whether they have any extractions
             const aHasExtractions = getMostRecentExtraction(a) !== null;
             const bHasExtractions = getMostRecentExtraction(b) !== null;
@@ -163,29 +293,44 @@ export function AutoPopulationReports() {
             report.companyName.toLowerCase().includes(searchTerm.toLowerCase())
         );
         
-        // Apply category filters
-        if (Object.keys(categoryFilters).length > 0) {
-            // Check if any category filter is active
-            const hasActiveFilters = Object.values(categoryFilters).some(categoryStatus => 
-                Object.values(categoryStatus as Record<string, boolean>).some(isSelected => isSelected)
-            );
-            
-            if (hasActiveFilters) {
+        // Apply category filters using the manufacturer's logic
+        if (Object.keys(categoryFilters.categories || {}).length > 0) {
+            const selectedCategories = Object.entries(categoryFilters.categories || {})
+                .filter(([category, isSelected]) => category && category !== 'All Categories' && isSelected)
+                .map(([category]) => category);
+
+            // If no categories selected or All Categories is selected, include all
+            if (selectedCategories.length > 0 && !categoryFilters.categories?.['All Categories']) {
                 filteredReports = filteredReports.filter(report => {
-                    // Get the report's category and status
-                    const category = report.category || 'all';
-                    const status = report.status === 'active' ? 'active' : 'inactive';
-                    
-                    // Check if this category has any filters
-                    const categoryFilter = categoryFilters[category] as Record<string, boolean> | undefined;
-                    if (!categoryFilter) {
-                        // Check if 'all' category has this status selected
-                        const allCategoryFilter = categoryFilters['all'] as Record<string, boolean> | undefined;
-                        return allCategoryFilter?.[status] || allCategoryFilter?.['all'];
-                    }
-                    
-                    // Check if this specific status is selected for this category
-                    return categoryFilter[status] || categoryFilter['all'];
+                    return selectedCategories.some(category => {
+                        const categoryId = category.toLowerCase();
+                        
+                        // Check if company belongs to this category
+                        if (!report.categories?.includes(category)) {
+                            return false;
+                        }
+
+                        // Get current status for this category
+                        const currentStatus = report[`${categoryId}_client_status`] || 'inactive';
+
+                        // Get selected statuses from filter
+                        const categorySettings = categoryFilters.categorySettings?.[category];
+                        if (!categorySettings?.clientStatus) {
+                            return true;
+                        }
+
+                        const selectedClientStatuses = Object.entries(categorySettings.clientStatus)
+                            .filter(([_, isSelected]) => isSelected)
+                            .map(([status]) => status.toLowerCase());
+
+                        // If All is selected or no statuses selected, include all
+                        if (selectedClientStatuses.includes('all') || selectedClientStatuses.length === 0) {
+                            return true;
+                        }
+
+                        // Check if current status matches selected filters
+                        return selectedClientStatuses.includes(currentStatus);
+                    });
                 });
             }
         }
@@ -366,6 +511,17 @@ export function AutoPopulationReports() {
 
     const stats = calculateStats();
 
+    const handleApplyFilters = (newFilters) => {
+        setCategoryFilters(newFilters);
+    };
+
+    const handleClearFilters = () => {
+        setCategoryFilters({
+            categories: {},
+            categorySettings: {}
+        });
+    };
+
     const renderFileButton = (file, detailed = false, report = null) => {
         if (!file) {
             return (
@@ -425,7 +581,7 @@ export function AutoPopulationReports() {
                         <div className="flex space-x-2">
                             <Button variant="outline" size="sm" onClick={() => setIsCategoryFilterOpen(true)}>
                                 <Filter className="mr-1 h-4 w-4" />
-                                Categories Filters
+                                Categories
                             </Button>
                             <Button 
                                 variant="outline" 
@@ -478,11 +634,12 @@ export function AutoPopulationReports() {
                     </div>
                 </div>
                 <ClientCategoryFilter 
-                    isOpen={isCategoryFilterOpen} 
-                    onClose={() => setIsCategoryFilterOpen(false)} 
-                    onApplyFilters={(filters) => setCategoryFilters(filters)}
-                    onClearFilters={() => setCategoryFilters({})}
-                    selectedFilters={categoryFilters}
+                    open={isCategoryFilterOpen} 
+                    onOpenChange={setIsCategoryFilterOpen} 
+                    onFilterChange={handleApplyFilters}
+                    showSectionName=""
+                    initialFilters={categoryFilters}
+                    showSectionStatus={false}
                 />
                 <div className="border rounded-md mb-2">
                     <ScrollArea className="h-[60vh]">
@@ -496,7 +653,7 @@ export function AutoPopulationReports() {
                                         />
                                     </TableHead>
                                     {[
-                                        { key: 'index', label: 'Index', alwaysVisible: true },
+                                         { key: 'index', label: 'IDX | ID', alwaysVisible: true },
                                         { key: 'company_name', label: 'Company Name', center: false },
                                         { key: 'last_updated', label: 'Last Updated', center: false },
                                         { key: 'vat3', label: 'VAT3 - Template', center: true },
@@ -597,149 +754,191 @@ export function AutoPopulationReports() {
                                     <TableRow
                                         key={report.id}
                                         className={`${index % 2 === 0 ? 'bg-gray-100' : 'bg-white'} ${report.isMissing ? 'bg-red-100' : ''
-                                            }`}
-                                    >
-                                        <TableCell className="border-r border-gray-300">
-                                            <Checkbox
-                                                checked={selectedReports.includes(report.id)}
-                                                onCheckedChange={() => toggleSelectReport(report.id)}
-                                            />
-                                        </TableCell>
-                                        <TableCell className="border-r border-gray-300 text-xs">{index + 1}</TableCell>
-                                        {visibleColumns.company_name && <TableCell className="border-r border-gray-300 text-xs">{report.companyName}</TableCell>}
-                                        {visibleColumns.last_updated && <TableCell className="border-r border-gray-300 text-xs">{new Date(report.lastUpdated).toLocaleString()}</TableCell>}
-                                        {visibleColumns.vat3 && (
-                                            <TableCell className="text-center border-r border-gray-300">
-                                                {renderFileButton(findFile(getMostRecentExtraction(report)?.files, 'vat3'), false, report)}
-                                            </TableCell>
-                                        )}
-                                        {visibleColumns.sec_b_with_vat && (
-                                            <TableCell className="text-center border-r border-gray-300">
-                                                {renderFileButton(findFile(getMostRecentExtraction(report)?.files, 'sec_b_with_vat'), false, report)}
-                                            </TableCell>
-                                        )}
-                                        {visibleColumns.sec_b_without_vat && (
-                                            <TableCell className="text-center border-r border-gray-300">
-                                                {renderFileButton(findFile(getMostRecentExtraction(report)?.files, 'sec_b_without_vat'), false, report)}
-                                            </TableCell>
-                                        )}
-                                        {visibleColumns.sec_f && (
-                                            <TableCell className="text-center border-r border-gray-300">
-                                                {renderFileButton(findFile(getMostRecentExtraction(report)?.files, 'sec_f'), false, report)}
-                                            </TableCell>
-                                        )}
-                                    </TableRow>
-                                ))}
-                                <TableRow key="spacer-row" className="h-4" />
-                            </TableBody>
-                        </Table>
-                    </ScrollArea>
-                </div>
-            </TabsContent>
-            <TabsContent value="detailed">
-                <div className="flex gap-2">
-                    {/* Sidebar */}
-                    <div className="w-[200px] border rounded-lg shadow-sm overflow-y-auto max-h-[calc(100vh-200px)]">
-                        <div className="sticky top-0 bg-white p-1 border-b">
-                            <Input
-                                placeholder="Search..."
-                                value={searchTerm}
-                                onChange={(e) => setSearchTerm(e.target.value)}
-                                className="w-full text-xs"
-                            />
-                        </div>
-                        <div className="divide-y">
-                            {reports.map((report, index) => (
-                                <div
-                                    key={report.id}
-                                    className={`p-2 cursor-pointer transition-colors duration-200 text-xs ${
-                                        selectedCompany?.id === report.id
-                                            ? 'bg-gray-500 text-white font-bold'
-                                            : report.isMissing
-                                                ? 'bg-red-100 hover:bg-red-200'
-                                                : 'hover:bg-gray-100'
-                                    }`}
-                                    onClick={() => setSelectedCompany(report)}
+                                        }`}
                                 >
-                                    <div className="font-medium">{report.companyName}</div>
-                                    {report.lastUpdated && (
-                                        <div className="text-[10px] mt-0.5 opacity-75">
-                                            {new Date(report.lastUpdated).toLocaleString()}
+                                    <TableCell className="border-r border-gray-300">
+                                        <Checkbox
+                                            checked={selectedReports.includes(report.id)}
+                                            onCheckedChange={() => toggleSelectReport(report.id)}
+                                        />
+                                    </TableCell>
+                                    <TableCell className="border-r border-gray-300 text-xs" key="index" alwaysVisible>
+                                        <div className="grid grid-cols-3">
+                                            <span>{index + 1}</span>
+                                            <span>|</span>
+                                            <span>{report.id}</span>
+                                        </div>
+                                    </TableCell>
+                                    {visibleColumns.company_name && <TableCell className="border-r border-gray-300 text-xs">{report.companyName}</TableCell>}
+                                    {visibleColumns.last_updated && <TableCell className="border-r border-gray-300 text-xs">{report.lastUpdated ? new Date(report.lastUpdated).toLocaleString() : 'Missing'}</TableCell>}
+                                    {visibleColumns.vat3 && (
+                                        <TableCell className="text-center border-r border-gray-300">
+                                            {renderFileButton(findFile(getMostRecentExtraction(report)?.files, 'vat3'), false, report)}
+                                        </TableCell>
+                                    )}
+                                    {visibleColumns.sec_b_with_vat && (
+                                        <TableCell className="text-center border-r border-gray-300">
+                                            {renderFileButton(findFile(getMostRecentExtraction(report)?.files, 'sec_b_with_vat'), false, report)}
+                                        </TableCell>
+                                    )}
+                                    {visibleColumns.sec_b_without_vat && (
+                                        <TableCell className="text-center border-r border-gray-300">
+                                            {renderFileButton(findFile(getMostRecentExtraction(report)?.files, 'sec_b_without_vat'), false, report)}
+                                        </TableCell>
+                                    )}
+                                    {visibleColumns.sec_f && (
+                                        <TableCell className="text-center border-r border-gray-300">
+                                            {renderFileButton(findFile(getMostRecentExtraction(report)?.files, 'sec_f'), false, report)}
+                                        </TableCell>
+                                    )}
+                                </TableRow>
+                            ))}
+                            <TableRow key="spacer-row" className="h-4" />
+                        </TableBody>
+                    </Table>
+                </ScrollArea>
+            </div>
+        </TabsContent>
+        <TabsContent value="detailed">
+            <div className="flex gap-2">
+                {/* Sidebar */}
+                <div className="w-[200px] border rounded-lg shadow-sm overflow-y-auto max-h-[calc(100vh-200px)]">
+                    <div className="sticky top-0 bg-white p-1 border-b">
+                        <Input
+                            placeholder="Search..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className="w-full text-xs"
+                        />
+                    </div>
+                    <div className="divide-y">
+                        {filteredReports.map((report, index) => (
+                            <div
+                                key={report.id}
+                                className={`p-2 cursor-pointer transition-colors duration-200 text-xs ${
+                                    selectedCompany?.id === report.id
+                                        ? 'bg-gray-500 text-white font-bold'
+                                        : report.isMissing
+                                            ? 'bg-red-100 hover:bg-red-200'
+                                            : 'hover:bg-gray-100'
+                                }`}
+                                onClick={() => setSelectedCompany(report)}
+                            >
+                                <div className="font-medium">{report.companyName}</div>
+                                {report.lastUpdated && (
+                                    <div className="text-[10px] mt-0.5 opacity-75">
+                                        {new Date(report.lastUpdated).toLocaleString()}
+                                    </div>
+                                )}
+                                {/* Display category badges */}
+                                {report.categories && report.categories.length > 0 && (
+                                    <div className="flex flex-wrap gap-1 mt-1">
+                                        {report.categories.map(category => (
+                                            <span 
+                                                key={category}
+                                                className={`text-[8px] px-1 py-0.5 rounded ${
+                                                    report[`${category.toLowerCase()}_client_status`] === 'active' 
+                                                        ? 'bg-green-200 text-green-800' 
+                                                        : 'bg-red-200 text-red-800'
+                                                }`}
+                                            >
+                                                {category}
+                                            </span>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Main Content */}
+                <div className="flex-1 min-w-0">
+                    {selectedCompany && (
+                        <Card className="shadow-lg">
+                            <CardHeader className="bg-gradient-to-r from-blue-500 to-purple-500 text-white">
+                                <CardTitle className="text-xl">
+                                    {selectedCompany.companyName}
+                                    {/* Display category information in header */}
+                                    {selectedCompany.categories && selectedCompany.categories.length > 0 && (
+                                        <div className="flex flex-wrap gap-2 mt-2">
+                                            {selectedCompany.categories.map(category => (
+                                                <span 
+                                                    key={category}
+                                                    className={`text-sm px-2 py-1 rounded ${
+                                                        selectedCompany[`${category.toLowerCase()}_client_status`] === 'active' 
+                                                            ? 'bg-green-200 text-green-800' 
+                                                            : 'bg-red-200 text-red-800'
+                                                    }`}
+                                                >
+                                                    {category} ({selectedCompany[`${category.toLowerCase()}_client_status`]})
+                                                </span>
+                                            ))}
                                         </div>
                                     )}
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* Main Content */}
-                    <div className="flex-1 min-w-0">
-                        {selectedCompany && (
-                            <Card className="shadow-lg">
-                                <CardHeader className="bg-gradient-to-r from-blue-500 to-purple-500 text-white">
-                                    <CardTitle className="text-xl">{selectedCompany.companyName}</CardTitle>
-                                </CardHeader>
-                                <CardContent className="space-y-6">
-                                    <ScrollArea className="h-[600px]">
-                                        <div className="space-y-4">
-                                            <Table>
-                                                <TableHeader>
-                                                    <TableRow className="bg-gray-100">
-                                                        <TableHead className="text-xs text-center border-r border-gray-300">Index</TableHead>
-                                                        <TableHead className="text-xs border-r border-gray-300">Month</TableHead>
-                                                        <TableHead className="text-xs border-r border-gray-300">Last Updated</TableHead>
-                                                        <TableHead className="text-xs text-center border-r border-gray-300">VAT3 - Template</TableHead>
-                                                        <TableHead className="text-xs text-center border-r border-gray-300">Sec B - Sales 16%</TableHead>
-                                                        <TableHead className="text-xs text-center border-r border-gray-300">Sec B - Sales 0%</TableHead>
-                                                        <TableHead className="text-xs text-center border-r border-gray-300">Sec F - Purchase</TableHead>
-                                                    </TableRow>
-                                                </TableHeader>
-                                                <TableBody>
-                                                    {selectedCompany.extractions
-                                                        .sort((a, b) => new Date(b.monthYear) - new Date(a.monthYear))
-                                                        .map((extraction, index) => (
-                                                            <TableRow key={index} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                                                                <TableCell className="text-xs p-1 text-center border-r border-gray-300">{index + 1}</TableCell>
-                                                                <TableCell className="text-xs p-1 whitespace-nowrap border-r border-gray-300">{extraction.monthYear}</TableCell>
-                                                                <TableCell className="text-xs p-1 whitespace-nowrap border-r border-gray-300">
-                                                                    {extraction.extractionDate ? (
-                                                                        new Date(extraction.extractionDate).toLocaleString()
-                                                                    ) : (
-                                                                        <span className="text-red-500">Missing</span>
-                                                                    )}
-                                                                </TableCell>
-                                                                <TableCell className="text-xs p-1 text-center border-r border-gray-300">{renderFileButton(findFile(extraction.files, 'vat3'), true, selectedCompany)}</TableCell>
-                                                                <TableCell className="text-xs p-1 text-center border-r border-gray-300">{renderFileButton(findFile(extraction.files, 'sec_b_with_vat'), true, selectedCompany)}</TableCell>
-                                                                <TableCell className="text-xs p-1 text-center border-r border-gray-300">{renderFileButton(findFile(extraction.files, 'sec_b_without_vat'), true, selectedCompany)}</TableCell>
-                                                                <TableCell className="text-xs p-1 text-center border-r border-gray-300">{renderFileButton(findFile(extraction.files, 'sec_f'), true, selectedCompany)}</TableCell>
-                                                            </TableRow>
-                                                        ))}
-                                                    {/* Add a spacer row at the bottom to ensure visibility of all items */}
-                                                    <TableRow key="detailed-spacer-row" className="h-10"></TableRow>
-                                                </TableBody>
-                                            </Table>
-                                        </div>
-                                    </ScrollArea>
-                                </CardContent>
-                            </Card>
-                        )}
-                    </div>
+                                </CardTitle>
+                            </CardHeader>
+                            <CardContent className="space-y-6">
+                                <ScrollArea className="h-[600px]">
+                                    <div className="space-y-4">
+                                        <Table>
+                                            <TableHeader>
+                                                <TableRow className="bg-gray-100">
+                                                    <TableHead className="text-xs text-center border-r border-gray-300">Index</TableHead>
+                                                    <TableHead className="text-xs border-r border-gray-300">Month</TableHead>
+                                                    <TableHead className="text-xs border-r border-gray-300">Last Updated</TableHead>
+                                                    <TableHead className="text-xs text-center border-r border-gray-300">VAT3 - Template</TableHead>
+                                                    <TableHead className="text-xs text-center border-r border-gray-300">Sec B - Sales 16%</TableHead>
+                                                    <TableHead className="text-xs text-center border-r border-gray-300">Sec B - Sales 0%</TableHead>
+                                                    <TableHead className="text-xs text-center border-r border-gray-300">Sec F - Purchase</TableHead>
+                                                </TableRow>
+                                            </TableHeader>
+                                            <TableBody>
+                                                {selectedCompany.extractions
+                                                    .sort((a, b) => new Date(b.monthYear) - new Date(a.monthYear))
+                                                    .map((extraction, index) => (
+                                                        <TableRow key={index} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                                                            <TableCell className="text-xs p-1 text-center border-r border-gray-300">{index + 1}</TableCell>
+                                                            <TableCell className="text-xs p-1 whitespace-nowrap border-r border-gray-300">{extraction.monthYear}</TableCell>
+                                                            <TableCell className="text-xs p-1 whitespace-nowrap border-r border-gray-300">
+                                                                {extraction.extractionDate ? (
+                                                                    new Date(extraction.extractionDate).toLocaleString()
+                                                                ) : (
+                                                                    <span className="text-red-500">Missing</span>
+                                                                )}
+                                                            </TableCell>
+                                                            <TableCell className="text-xs p-1 text-center border-r border-gray-300">{renderFileButton(findFile(extraction.files, 'vat3'), true, selectedCompany)}</TableCell>
+                                                            <TableCell className="text-xs p-1 text-center border-r border-gray-300">{renderFileButton(findFile(extraction.files, 'sec_b_with_vat'), true, selectedCompany)}</TableCell>
+                                                            <TableCell className="text-xs p-1 text-center border-r border-gray-300">{renderFileButton(findFile(extraction.files, 'sec_b_without_vat'), true, selectedCompany)}</TableCell>
+                                                            <TableCell className="text-xs p-1 text-center border-r border-gray-300">{renderFileButton(findFile(extraction.files, 'sec_f'), true, selectedCompany)}</TableCell>
+                                                        </TableRow>
+                                                    ))}
+                                                {/* Add a spacer row at the bottom to ensure visibility of all items */}
+                                                <TableRow key="detailed-spacer-row" className="h-10"></TableRow>
+                                            </TableBody>
+                                        </Table>
+                                    </div>
+                                </ScrollArea>
+                            </CardContent>
+                        </Card>
+                    )}
                 </div>
-            </TabsContent>
-            
-            {/* File Upload Modal */}
-            {uploadCompany && (
-                <FileUploadModal
-                    isOpen={isUploadModalOpen}
-                    onClose={() => {
-                        setIsUploadModalOpen(false);
-                        setUploadCompany(null);
-                    }}
-                    companyName={uploadCompany.companyName}
-                    companyId={uploadCompany.id}
-                    onUploadComplete={fetchReports}
-                />
-            )}
-        </Tabs>
-    );
+            </div>
+        </TabsContent>
+        
+        {/* File Upload Modal */}
+        {uploadCompany && (
+            <FileUploadModal
+                isOpen={isUploadModalOpen}
+                onClose={() => {
+                    setIsUploadModalOpen(false);
+                    setUploadCompany(null);
+                }}
+                companyName={uploadCompany.companyName}
+                companyId={uploadCompany.id}
+                onUploadComplete={fetchReports}
+            />
+        )}
+    </Tabs>
+);
 }
