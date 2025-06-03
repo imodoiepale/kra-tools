@@ -16,6 +16,7 @@ import ClientCategoryFilter from '@/components/ClientCategoryFilter-updated-ui';
 import { Spinner } from '@/components/Spinner';
 import { formatDateTime, getStatusColorClass } from '../lib/format.utils';
 import { Button } from '@/components/ui/button';
+import toast from 'react-hot-toast';
 
 interface Manufacturer {
   id: number
@@ -41,12 +42,6 @@ interface Manufacturer {
   // KEBS
   kebs_id: string
   kebs_password: string
-  categories: string[]
-  status: string
-  acc_client_status: string
-  imm_client_status: string
-  sheria_client_status: string
-  audit_client_status: string
   acc_client_effective_from: string
   acc_client_effective_to: string
   imm_client_effective_from: string
@@ -56,6 +51,7 @@ interface Manufacturer {
   audit_client_effective_from: string
   audit_client_effective_to: string
 }
+
 const columnGroups = {
   companyDetails: [
     { key: 'company_name', label: 'Company Name' },
@@ -156,7 +152,6 @@ export default function PasswordCheckerReports() {
     return 'inactive';
   }
 
-
   const fetchReports = async () => {
     setIsLoading(true);
     try {
@@ -170,8 +165,6 @@ export default function PasswordCheckerReports() {
         console.error('Error fetching companies:', companiesError);
         return;
       }
-
-
 
       // Map company data
       const mappedData = companiesData.map(company => {
@@ -241,13 +234,6 @@ export default function PasswordCheckerReports() {
           sheria_client_effective_to: company.sheria_client_effective_to || null,
           audit_client_effective_from: company.audit_client_effective_from || null,
           audit_client_effective_to: company.audit_client_effective_to || null,
-          // Map client statuses
-          acc_client_status: company.acc_client_status || 'inactive',
-          imm_client_status: company.imm_client_status || 'inactive',
-          sheria_client_status: company.sheria_client_status || 'inactive',
-          audit_client_status: company.audit_client_status || 'inactive',
-          categories: companyCategories,
-          status: company.status || null
         };
       });
 
@@ -319,10 +305,10 @@ export default function PasswordCheckerReports() {
       });
     });
   };
-
   const handleSave = async (updatedManufacturer: Manufacturer) => {
     try {
-      const { id, ...updateData } = updatedManufacturer;
+      console.log("Attempting to update manufacturer:", updatedManufacturer);
+      const { id, status, effective_from, effective_to, ...updateData } = updatedManufacturer;
 
       const { error } = await supabase
         .from('acc_portal_company_duplicate')
@@ -331,10 +317,28 @@ export default function PasswordCheckerReports() {
 
       if (error) throw error;
 
+      console.log("Manufacturer updated successfully:", updatedManufacturer);
+      toast("Manufacturer updated successfully:", {
+        description: `${updatedManufacturer.company_name} details have been updated.`,
+        variant: "default",
+      });
+      // Show success toast notification
+      toast({
+        title: "Successfully updated",
+        description: `${updatedManufacturer.company_name} details have been updated.`,
+        variant: "default",
+      });
       setManufacturers(manufacturers.map(m => m.id === updatedManufacturer.id ? updatedManufacturer : m));
       setEditingManufacturer(null);
     } catch (error) {
       console.error('Error updating manufacturer:', error);
+
+      // Show error toast notification
+      toast({
+        title: "Update failed",
+        description: "There was an error updating the manufacturer details.",
+        variant: "destructive",
+      });
     }
   };
 
@@ -864,6 +868,7 @@ export default function PasswordCheckerReports() {
                                             onChange={(e) => setEditingManufacturer(prev => ({ ...prev, [column.key]: e.target.value }))}
                                             className="col-span-3 text-sm border-gray-300 focus:ring-blue-500 focus:border-blue-500"
                                             placeholder={`Enter ${column.label.toLowerCase()}`}
+                                            disabled={column.key.endsWith('_status') || column.key.endsWith('_last_checked')}
                                           />
                                         </div>
                                       ))}

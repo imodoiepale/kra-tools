@@ -16,8 +16,8 @@ import { ManufacturersDetailsReports } from './components/ManufacturersDetailsRe
 interface Manufacturer {
     id: number;
     company_name: string;
-    kra_pin: string;
-    last_checked_at: string | null;
+    kra_pin: string;    
+    last_checked: string | null;
 }
 
 export default function ManufacturersDetailsCompanies() {
@@ -27,6 +27,8 @@ export default function ManufacturersDetailsCompanies() {
     const [manufacturers, setManufacturers] = useState<Manufacturer[]>([])
     const [selectedManufacturers, setSelectedManufacturers] = useState<number[]>([])
     const [runOption, setRunOption] = useState<'all' | 'selected'>('all')
+    const [kraResults, setKraResults] = useState<any[]>([])
+    const [kraSummary, setKraSummary] = useState<any>(null)
 
     useEffect(() => {
         fetchManufacturers()
@@ -53,28 +55,32 @@ export default function ManufacturersDetailsCompanies() {
         setIsChecking(true)
         setShouldStop(false)
         try {
-            const response = await fetch('/api/manufacturers-details', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    stop: shouldStop,
-                    runOption,
-                    selectedIds: runOption === 'selected' ? selectedManufacturers : []
-                })
+            // Get the KRA PINs based on the run option
+            const selectedCompanies = runOption === 'selected' 
+                ? manufacturers.filter(m => selectedManufacturers.includes(m.id))
+                : manufacturers;
+            
+            const kraPins = selectedCompanies.map(company => company.kra_pin);
+            
+            // Import the kraService and use it to fetch manufacturer details
+            const { kraService } = await import('../services/kra-service');
+            const result = await kraService.startManufacturerDetailsCheck({
+                kraPins,
+                type: 'company'
             });
-
-            if (!response.ok) throw new Error('API request failed')
-
-            const data = await response.json()
-            console.log('Manufacturers details check completed:', data)
-            setActiveTab("running")
+            
+            console.log('Manufacturers details check completed:', result);
+            
+            // Set the results and summary for the running tab
+            if (result.results) setKraResults(result.results);
+            if (result.summary) setKraSummary(result.summary);
+            
+            setActiveTab("running");
         } catch (error) {
-            console.error('Error starting manufacturers details check:', error)
-            alert('Failed to start manufacturers details check. Please try again.')
+            console.error('Error starting manufacturers details check:', error);
+            alert('Failed to start manufacturers details check. Please try again.');
         } finally {
-            setIsChecking(false)
+            setIsChecking(false);
         }
     }
 
@@ -130,7 +136,7 @@ export default function ManufacturersDetailsCompanies() {
                                                 animate={{ width: selectedManufacturers.length > 0 ? "50%" : "100%" }}
                                                 transition={{ duration: 0.3 }}
                                             >
-                                                <div className="h-[500px] overflow-y-auto">
+                                                <div className="h-[470px] overflow-y-auto">
                                                     <Table>
                                                         <TableHeader>
                                                             <TableRow>
@@ -167,7 +173,7 @@ export default function ManufacturersDetailsCompanies() {
                                                 >
                                                     <div className="mb-4">
                                                         <h3 className="text-lg font-semibold mb-2">Selected Companies</h3>
-                                                        <div className="h-[500px] overflow-auto">
+                                                        <div className="h-[430px] overflow-auto">
                                                             <Table>
                                                                 <TableHeader>
                                                                     <TableRow>

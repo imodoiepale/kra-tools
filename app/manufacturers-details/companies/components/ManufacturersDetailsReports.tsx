@@ -15,6 +15,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuCheckboxItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import ClientCategoryFilter from '@/components/ClientCategoryFilter-updated-ui';
 import { Spinner } from '@/components/Spinner';
+import { formatDateTime } from '@/app/lib/format.utils';
 
 interface Manufacturer {
   id: number
@@ -32,6 +33,7 @@ interface Manufacturer {
   desc_addr: string
   categories: string[]
   status: string
+  last_checked: string
   acc_client_status: string
   imm_client_status: string
   sheria_client_status: string
@@ -55,7 +57,7 @@ export function ManufacturersDetailsReports() {
   const [visibleColumns, setVisibleColumns] = useState({
     company_name: true,
     kra_pin: true,
-    manufacturer_name: false,
+    // manufacturer_name: false,
     itax_mobile_number: true,
     itax_main_email_address: true,
     itax_business_reg_cert_no: true,
@@ -64,7 +66,8 @@ export function ManufacturersDetailsReports() {
     itax_postal_code: true,
     itax_po_box: true,
     itax_town: true,
-    desc_addr: false,
+    desc_addr: false,    
+    last_checked: true,
   })
   const [sortConfig, setSortConfig] = useState({ key: 'company_name', direction: 'ascending' })
   const [isCategoryFilterOpen, setIsCategoryFilterOpen] = useState(false)
@@ -186,6 +189,7 @@ export function ManufacturersDetailsReports() {
           itax_po_box: manufacturerDetails.itax_po_box || null,
           itax_town: manufacturerDetails.itax_town || null,
           desc_addr: manufacturerDetails.itax_desc_addr || null,
+          last_checked: manufacturerDetails.last_checked || null,
           // Map effective dates and statuses from company data
           acc_client_effective_from: company.acc_client_effective_from || null,
           acc_client_effective_to: company.acc_client_effective_to || null,
@@ -765,7 +769,9 @@ export function ManufacturersDetailsReports() {
                         isVisible && (
                           <TableCell key={column} className={`${column === 'company_name' ? 'text-left whitespace-nowrap font-bold border border-r' : 'text-center border border-r'}`}>
                             {manufacturer[column] ? (
-                              column === 'manufacturer_name' ? manufacturer[column].toUpperCase() : manufacturer[column]
+                              column === 'manufacturer_name' ? manufacturer[column].toUpperCase() : 
+                              column === 'last_checked' ? formatDateTime(manufacturer[column]) : 
+                              manufacturer[column]
                             ) : (
                               <span className="font-bold text-red-500">Missing</span>
                             )}
