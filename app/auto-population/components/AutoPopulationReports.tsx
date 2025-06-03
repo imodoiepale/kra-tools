@@ -804,6 +804,12 @@ export function AutoPopulationReports() {
                 {/* Sidebar */}
                 <div className="w-[200px] border rounded-lg shadow-sm overflow-y-auto max-h-[calc(100vh-200px)]">
                     <div className="sticky top-0 bg-white p-1 border-b">
+                        <div className="flex items-center justify-between mb-1">
+                            <span className="text-xs font-medium">Companies</span>
+                            <span className="inline-flex items-center justify-center px-2 py-1 text-xs font-bold leading-none text-white bg-blue-600 rounded">
+                                {filteredReports.length}
+                            </span>
+                        </div>
                         <Input
                             placeholder="Search..."
                             value={searchTerm}
@@ -824,7 +830,10 @@ export function AutoPopulationReports() {
                                 }`}
                                 onClick={() => setSelectedCompany(report)}
                             >
-                                <div className="font-medium">{report.companyName}</div>
+                                <div className="font-medium">
+                                    <span className="text-[10px] text-gray-500 mr-1">#{report.id}</span>
+                                    {report.companyName}
+                                </div>
                                 {report.lastUpdated && (
                                     <div className="text-[10px] mt-0.5 opacity-75">
                                         {new Date(report.lastUpdated).toLocaleString()}
