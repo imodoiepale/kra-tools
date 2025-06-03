@@ -30,40 +30,18 @@ export function AutoLedgerStart({ onStart, onStop }) {
 
     const fetchCompanies = async () => {
         try {
-            const [mainListResponse, passwordCheckerResponse] = await Promise.all([
-                supabase
-                    .from('companyMainList')
-                    .select('id, company_name, kra_pin, kra_password, status')
-                    .eq('status', 'active')
-                    .order('id', { ascending: true }),
-                supabase
-                    .from('PasswordChecker')
-                    .select('company_name, kra_pin, kra_password, status')
-            ]);
-
-            if (mainListResponse.error) {
-                console.error('Error fetching from companyMainList:', mainListResponse.error);
+            const { data, error } = await supabase
+                .from('acc_portal_company_duplicate')
+                .select('id, company_name, kra_pin, kra_password, kra_status')
+                .eq('kra_status', 'active')
+                .order('id', { ascending: true });
+            if (error) {
+                console.error('Error fetching from acc_portal_company_duplicate:', error);
                 return;
             }
-
-            if (passwordCheckerResponse.error) {
-                console.error('Error fetching from PasswordChecker:', passwordCheckerResponse.error);
-                return;
-            }
-
-            const mergedData = mainListResponse.data.map(mainCompany => {
-                const passwordMatch = passwordCheckerResponse.data?.find(
-                    pc => pc.company_name === mainCompany.company_name
-                );
-                return {
-                    ...mainCompany,
-                    kra_password: passwordMatch?.kra_password || mainCompany.kra_password
-                };
-            });
-
-            setCompanies(mergedData as Company[] || []);
+            setCompanies(data as Company[]);
         } catch (error) {
-            console.error('Error fetching and merging company data:', error);
+            console.error('Error fetching companies:', error);
         }
     };
     const handleStartCheck = async () => {
@@ -217,8 +195,6 @@ export function AutoLedgerStart({ onStart, onStop }) {
                                                     <TableHead className="sticky top-0 bg-white">#</TableHead>
                                                     <TableHead className="sticky top-0 bg-white">Company Name</TableHead>
                                                     <TableHead className="sticky top-0 bg-white">KRA PIN</TableHead>
-                                            <TableHead className="sticky top-0 bg-white">KRA Password</TableHead>
-                                            <TableHead className="sticky top-0 bg-white">Status</TableHead>
                                                 </TableRow>
                                             </TableHeader>
                                             <TableBody>
@@ -227,8 +203,6 @@ export function AutoLedgerStart({ onStart, onStop }) {
                                                         <TableCell>{index + 1}</TableCell>
                                                         <TableCell>{company.company_name}</TableCell>
                                                         <TableCell>{company.kra_pin}</TableCell>
-                                                <TableCell>{company.kra_password}</TableCell>
-                                                <TableCell>{company.status}</TableCell>
                                                     </TableRow>
                                                 ))}
                                             </TableBody>

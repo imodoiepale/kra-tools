@@ -37,7 +37,7 @@ export function PentasoftExtractionStart({ onStart }: PentasoftExtractionStartPr
     const fetchCompanies = async () => {
         try {
             const { data, error } = await supabase
-                .from('pentasoft_extractions')
+                .from('acc_portal_company_duplicate')
                 .select('id, company_name')
                 .order('id');
 

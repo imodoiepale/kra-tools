@@ -58,7 +58,7 @@ export function AutoPopulationStart({ onStart }: AutoPopulationStartProps) {
     const fetchCompanies = async () => {
         try {
             const { data, error } = await supabase
-                .from('PasswordChecker')
+                .from('acc_portal_company_duplicate')
                 .select('*')
                 .order('company_name');
 
