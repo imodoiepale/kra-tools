@@ -13,7 +13,7 @@ interface KraServiceParams {
 export const kraService = {
     fetchManufacturerDetails: async ({ kraPins, type }: KraServiceParams): Promise<KraResponse[]> => {
         const requests = kraPins.map(kra_pin => {
-            const url = `https://primary-production-079f.up.railway.app/webhook-test/manufucturerDetails?kra_pin=${encodeURIComponent(kra_pin)}&type=${type}`;
+            const url = `https://primary-production-079f.up.railway.app/webhook/manufucturerDetails?kra_pin=${encodeURIComponent(kra_pin)}&type=${type}`;
             
             return fetch(url)
                 .then(res => res.json())

@@ -113,7 +113,6 @@ export function ManufacturersDetailsReports() {
     return 'inactive';
   }
 
-
   const fetchReports = async () => {
     setIsLoading(true);
     try {

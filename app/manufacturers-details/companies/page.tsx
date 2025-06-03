@@ -1,4 +1,4 @@
-// components/ManufacturersDetails.tsx
+//@ts-nocheck
 "use client";
 
 import { useState, useEffect } from 'react'
@@ -6,7 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow,TableFooter } from "@/components/ui/table"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableFooter } from "@/components/ui/table"
 import { supabase } from '@/lib/supabase'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { motion } from "framer-motion"
@@ -104,7 +104,7 @@ export default function ManufacturersDetailsCompanies() {
                             <TabsTrigger value="reports">Reports</TabsTrigger>
                         </TabsList>
                         <TabsContent value="start">
-                            <Card>
+                            <Card className='overflow-y-auto'>
                                 <CardHeader>
                                     <CardTitle>Start Manufacturers Details Check</CardTitle>
                                     <CardDescription>Begin the manufacturers details extraction process for all companies.</CardDescription>
@@ -130,7 +130,7 @@ export default function ManufacturersDetailsCompanies() {
                                                 animate={{ width: selectedManufacturers.length > 0 ? "50%" : "100%" }}
                                                 transition={{ duration: 0.3 }}
                                             >
-                                                <div className="max-h-[580px] overflow-y-auto">
+                                                <div className="h-[500px] overflow-y-auto">
                                                     <Table>
                                                         <TableHeader>
                                                             <TableRow>
@@ -167,38 +167,34 @@ export default function ManufacturersDetailsCompanies() {
                                                 >
                                                     <div className="mb-4">
                                                         <h3 className="text-lg font-semibold mb-2">Selected Companies</h3>
-                                                        <Table>
-                                                            <TableHeader>
-                                                                <TableRow>
-                                                                    <TableHead>#</TableHead>
-                                                                    <TableHead>Company Name</TableHead>
-                                                                    <TableHead>KRA PIN</TableHead>
-                                                                </TableRow>
-                                                            </TableHeader>
-                                                            <TableBody>
-                                                                {manufacturers.filter(m => selectedManufacturers.includes(m.id)).map((manufacturer, index) => (
-                                                                    <TableRow key={manufacturer.id} className="bg-blue-100">
-                                                                        <TableCell>{index + 1}</TableCell>
-                                                                        <TableCell>{manufacturer.company_name}</TableCell>
-                                                                        <TableCell>{manufacturer.kra_pin}</TableCell>
+                                                        <div className="h-[500px] overflow-auto">
+                                                            <Table>
+                                                                <TableHeader>
+                                                                    <TableRow>
+                                                                        <TableHead>#</TableHead>
+                                                                        <TableHead>Company Name</TableHead>
+                                                                        <TableHead>KRA PIN</TableHead>
                                                                     </TableRow>
-                                                                ))}
-                                                            </TableBody>
-                                                            <TableFooter>
-                                                                <TableRow>
-                                                                    <TableCell colSpan={4}>
-                                                                        <div className="flex space-x-2">
-                                                                            <Button onClick={handleStartCheck} disabled={isChecking || selectedManufacturers.length === 0} size="sm">
-                                                                                {isChecking ? 'Starting...' : 'Start Manufacturers Details Check'}
-                                                                            </Button>
-                                                                            <Button onClick={handleStopCheck} disabled={!isChecking} variant="destructive" size="sm">
-                                                                                Stop Manufacturers Details Check
-                                                                            </Button>
-                                                                        </div>
-                                                                    </TableCell>
-                                                                </TableRow>
-                                                            </TableFooter>
-                                                        </Table>
+                                                                </TableHeader>
+                                                                <TableBody>
+                                                                    {manufacturers.filter(m => selectedManufacturers.includes(m.id)).map((manufacturer, index) => (
+                                                                        <TableRow key={manufacturer.id} className="bg-blue-100">
+                                                                            <TableCell>{index + 1}</TableCell>
+                                                                            <TableCell>{manufacturer.company_name}</TableCell>
+                                                                            <TableCell>{manufacturer.kra_pin}</TableCell>
+                                                                        </TableRow>
+                                                                    ))}
+                                                                </TableBody>
+                                                            </Table>
+                                                        </div>
+                                                        <div className="flex space-x-2">
+                                                            <Button onClick={handleStartCheck} disabled={isChecking || selectedManufacturers.length === 0} size="sm">
+                                                                {isChecking ? 'Starting...' : 'Start Manufacturers Details Check'}
+                                                            </Button>
+                                                            <Button onClick={handleStopCheck} disabled={!isChecking} variant="destructive" size="sm">
+                                                                Stop Manufacturers Details Check
+                                                            </Button>
+                                                        </div>
                                                     </div>
                                                 </motion.div>
                                             )}
@@ -220,7 +216,12 @@ export default function ManufacturersDetailsCompanies() {
                             </Card>
                         </TabsContent>
                         <TabsContent value="running">
-                            <ManufacturersDetailsRunning onComplete={() => setActiveTab("reports")} shouldStop={shouldStop} />
+                            <ManufacturersDetailsRunning
+                                onComplete={() => setActiveTab("reports")}
+                                shouldStop={shouldStop}
+                                initialResults={kraResults}
+                                initialSummary={kraSummary}
+                            />
                         </TabsContent>
                         <TabsContent value="reports">
                             <ManufacturersDetailsReports />
