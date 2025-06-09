@@ -93,6 +93,45 @@ export function ColumnSelector({
 
   const availableColumns = getAvailableColumns()
 
+  const categorizeVatColumn = (columnPath: string) => {
+    if (columnPath.startsWith('section_o_')) {
+      const field = columnPath.replace('section_o_', '')
+      if (field.includes('_description')) return { category: 'description', section: 'O', importance: 'low' }
+      if (field.includes('output_vat_13')) return { category: 'key_metric', section: 'O', importance: 'high' }
+      if (field.includes('input_vat_14')) return { category: 'key_metric', section: 'O', importance: 'high' }
+      if (field.includes('net_vat_28')) return { category: 'key_metric', section: 'O', importance: 'high' }
+      return { category: 'tax_calculation', section: 'O', importance: 'medium' }
+    }
+
+    if (columnPath.startsWith('section_b2_')) {
+      if (columnPath.includes('total_')) return { category: 'total', section: 'B2', importance: 'high' }
+      if (columnPath.includes('registered_')) return { category: 'registered', section: 'B2', importance: 'medium' }
+      if (columnPath.includes('non_registered_')) return { category: 'non_registered', section: 'B2', importance: 'medium' }
+      return { category: 'sales_breakdown', section: 'B2', importance: 'medium' }
+    }
+
+    if (columnPath.startsWith('section_f2_')) {
+      if (columnPath.includes('total_')) return { category: 'total', section: 'F2', importance: 'high' }
+      if (columnPath.includes('local_')) return { category: 'local', section: 'F2', importance: 'medium' }
+      if (columnPath.includes('import_')) return { category: 'import', section: 'F2', importance: 'medium' }
+      return { category: 'purchase_breakdown', section: 'F2', importance: 'medium' }
+    }
+
+    if (columnPath.startsWith('section_m_')) {
+      if (columnPath.includes('total_')) return { category: 'total', section: 'M', importance: 'high' }
+      if (columnPath.includes('rate_')) return { category: 'rate_breakdown', section: 'M', importance: 'medium' }
+      return { category: 'sales_summary', section: 'M', importance: 'medium' }
+    }
+
+    if (columnPath.startsWith('section_n_')) {
+      if (columnPath.includes('total_')) return { category: 'total', section: 'N', importance: 'high' }
+      if (columnPath.includes('rate_')) return { category: 'rate_breakdown', section: 'N', importance: 'medium' }
+      return { category: 'purchase_summary', section: 'N', importance: 'medium' }
+    }
+
+    return { category: 'other', section: 'Other', importance: 'medium' }
+  }
+
   // Filter columns based on search term
   const filteredColumns = availableColumns.filter(
     (col) =>
@@ -101,7 +140,7 @@ export function ColumnSelector({
   )
 
   // Group columns by source and category
-  const groupedColumns = selectedDataSources.reduce((acc: any, source) => {
+  const enhancedGroupedColumns = selectedDataSources.reduce((acc: any, source) => {
     const sourceColumns = filteredColumns.filter((col) => col.sourceId === source.id)
 
     if (sourceColumns.length === 0) return acc
@@ -110,20 +149,46 @@ export function ColumnSelector({
       source,
       regular: sourceColumns.filter((col) => col.category === "regular"),
       nested: {},
+      vatSections: {}  // Add VAT sections grouping
     }
 
-    // Group nested columns by field
+    // Group nested columns by field and VAT section type
     sourceColumns
       .filter((col) => col.category === "nested")
       .forEach((col) => {
-        if (!acc[source.id].nested[col.nestedField]) {
-          acc[source.id].nested[col.nestedField] = []
+        // Check if it's a VAT section column
+        if (col.path.startsWith('section_')) {
+          const vatInfo = categorizeVatColumn(col.path)
+          const sectionKey = `section_${vatInfo.section.toLowerCase()}`
+
+          if (!acc[source.id].vatSections[sectionKey]) {
+            acc[source.id].vatSections[sectionKey] = {
+              sectionName: `Section ${vatInfo.section}`,
+              isOptimized: ['section_o', 'section_b2', 'section_f2', 'section_m', 'section_n'].includes(sectionKey),
+              categories: {}
+            }
+          }
+
+          if (!acc[source.id].vatSections[sectionKey].categories[vatInfo.category]) {
+            acc[source.id].vatSections[sectionKey].categories[vatInfo.category] = []
+          }
+
+          acc[source.id].vatSections[sectionKey].categories[vatInfo.category].push({
+            ...col,
+            vatInfo
+          })
+        } else {
+          // Original nested grouping for non-VAT sections
+          if (!acc[source.id].nested[col.nestedField]) {
+            acc[source.id].nested[col.nestedField] = []
+          }
+          acc[source.id].nested[col.nestedField].push(col)
         }
-        acc[source.id].nested[col.nestedField].push(col)
       })
 
     return acc
   }, {})
+
 
   // Add a column to the report
   const addColumn = (column: any) => {
@@ -228,6 +293,150 @@ export function ColumnSelector({
       </div>
     )
   }
+  // Helper function to format VAT column names for better readability
+  const formatVatColumnName = (columnPath: string): string => {
+    if (columnPath.startsWith('section_o_')) {
+      const field = columnPath.replace('section_o_', '')
+      const fieldMappings: Record<string, string> = {
+        'output_vat_13': 'Output VAT (13)',
+        'input_vat_14': 'Input VAT (14)',
+        'vat_claimable_15': 'VAT Claimable (15)',
+        'input_vat_exempt_16': 'Input VAT Exempt (16)',
+        'input_vat_mixed_17': 'Input VAT Mixed (17)',
+        'non_deductible_18': 'Non-Deductible (18)',
+        'deductible_input_19': 'Deductible Input (19)',
+        'vat_payable_20': 'VAT Payable (20)',
+        'credit_bf_21': 'Credit B/F (21)',
+        'vat_withholding_22': 'VAT Withholding (22)',
+        'refund_claim_23': 'Refund Claim (23)',
+        'total_vat_payable_24': 'Total VAT Payable (24)',
+        'vat_paid_25': 'VAT Paid (25)',
+        'credit_adjustment_26': 'Credit Adjustment (26)',
+        'debit_adjustment_27': 'Debit Adjustment (27)',
+        'net_vat_28': 'Net VAT (28)'
+      }
+      return fieldMappings[field] || field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
+    }
+
+    if (columnPath.startsWith('section_b2_')) {
+      const field = columnPath.replace('section_b2_', '')
+      const fieldMappings: Record<string, string> = {
+        'registered_customers_vat': 'Registered Customers VAT',
+        'registered_customers_taxable': 'Registered Customers Taxable',
+        'non_registered_customers_vat': 'Non-Registered Customers VAT',
+        'non_registered_customers_taxable': 'Non-Registered Customers Taxable',
+        'total_vat': 'Total VAT',
+        'total_taxable': 'Total Taxable'
+      }
+      return fieldMappings[field] || field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
+    }
+
+    if (columnPath.startsWith('section_f2_')) {
+      const field = columnPath.replace('section_f2_', '')
+      const fieldMappings: Record<string, string> = {
+        'local_suppliers_vat': 'Local Suppliers VAT',
+        'local_suppliers_taxable': 'Local Suppliers Taxable',
+        'import_suppliers_vat': 'Import Suppliers VAT',
+        'import_suppliers_taxable': 'Import Suppliers Taxable',
+        'total_vat': 'Total VAT',
+        'total_taxable': 'Total Taxable'
+      }
+      return fieldMappings[field] || field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
+    }
+
+    if (columnPath.startsWith('section_m_') || columnPath.startsWith('section_n_')) {
+      const prefix = columnPath.startsWith('section_m_') ? 'Sales' : 'Purchases'
+      const field = columnPath.replace(/section_[mn]_/, '')
+
+      if (field.startsWith('rate_')) {
+        const ratePart = field.match(/rate_(\d+(?:\.\d+)?)_(.+)/)
+        if (ratePart) {
+          const [, rate, type] = ratePart
+          return `${prefix} Rate ${rate}% ${type === 'amount' ? 'Amount' : 'VAT'}`
+        }
+      }
+
+      if (field === 'total_amount') return `${prefix} Total Amount`
+      if (field === 'total_vat') return `${prefix} Total VAT`
+
+      return field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
+    }
+
+    return columnPath.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
+  }
+
+  // Add quick selection buttons for common VAT analysis
+  const renderVatQuickSelections = () => {
+    const quickSelections = [
+      {
+        name: "Key Tax Metrics",
+        description: "Essential tax calculation fields",
+        columns: [
+          'section_o_output_vat_13',
+          'section_o_input_vat_14',
+          'section_o_net_vat_28',
+          'section_b2_total_vat',
+          'section_f2_total_vat'
+        ]
+      },
+      {
+        name: "Sales Analysis",
+        description: "Complete sales breakdown",
+        columns: [
+          'section_b2_registered_customers_vat',
+          'section_b2_registered_customers_taxable',
+          'section_b2_non_registered_customers_vat',
+          'section_b2_non_registered_customers_taxable',
+          'section_b2_total_vat',
+          'section_b2_total_taxable'
+        ]
+      },
+      {
+        name: "Purchase Analysis",
+        description: "Complete purchase breakdown",
+        columns: [
+          'section_f2_local_suppliers_vat',
+          'section_f2_local_suppliers_taxable',
+          'section_f2_import_suppliers_vat',
+          'section_f2_import_suppliers_taxable',
+          'section_f2_total_vat',
+          'section_f2_total_taxable'
+        ]
+      },
+      {
+        name: "Full Tax Calculation",
+        description: "All Section O tax fields",
+        columns: SECTION_O_FIELDS.map(field => `section_o_${field.key}`)
+      }
+    ]
+
+    return (
+      <div className="space-y-2 mb-4 p-3 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg">
+        <Label className="text-sm font-medium text-blue-800">Quick VAT Analysis Selections</Label>
+        <div className="grid grid-cols-2 gap-2">
+          {quickSelections.map((selection) => (
+            <Button
+              key={selection.name}
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                // Add all columns from this quick selection
+                const columnsToAdd = availableColumns.filter(col =>
+                  selection.columns.some(quickCol => col.path.includes(quickCol))
+                )
+                columnsToAdd.forEach(col => addColumn(col))
+              }}
+              className="h-auto p-2 flex flex-col items-start"
+            >
+              <span className="text-xs font-medium">{selection.name}</span>
+              <span className="text-xs text-muted-foreground">{selection.description}</span>
+            </Button>
+          ))}
+        </div>
+      </div>
+    )
+  }
+  
 
   return (
     <div className="space-y-4">
@@ -252,20 +461,27 @@ export function ColumnSelector({
       {/* Available Columns Browser */}
       <ScrollArea className="h-[300px] border rounded-md">
         <div className="p-3 space-y-2">
-          {Object.entries(groupedColumns).map(([sourceId, data]: [string, any]) => (
+          {Object.entries(enhancedGroupedColumns).map(([sourceId, data]: [string, any]) => (
             <div key={sourceId} className="border rounded-lg">
               <div className="p-2 bg-muted/50">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Badge variant="outline">{data.source.alias}</Badge>
                     <span className="text-xs text-muted-foreground">
-                      {data.regular.length + Object.values(data.nested).flat().length} columns
+                      {data.regular.length + Object.values(data.nested).flat().length +
+                        Object.values(data.vatSections).reduce((sum: number, section: any) =>
+                          sum + Object.values(section.categories).flat().length, 0)} columns
                     </span>
                   </div>
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => addAllFromGroup([...data.regular, ...Object.values(data.nested).flat()])}
+                    onClick={() => addAllFromGroup([
+                      ...data.regular,
+                      ...Object.values(data.nested).flat(),
+                      ...Object.values(data.vatSections).reduce((all: any[], section: any) =>
+                        [...all, ...Object.values(section.categories).flat()], [])
+                    ])}
                     className="h-6 text-xs"
                   >
                     Add All
@@ -276,75 +492,113 @@ export function ColumnSelector({
               <div className="p-2 space-y-2">
                 {/* Regular Columns */}
                 {data.regular.length > 0 && (
-                  <Collapsible
-                    open={expandedGroups.has(`${sourceId}-regular`)}
-                    onOpenChange={() => toggleGroup(`${sourceId}-regular`)}
-                  >
-                    <CollapsibleTrigger className="flex items-center justify-between w-full p-1 rounded hover:bg-muted">
+                  <RegularColumnsSection
+                    columns={data.regular}
+                    sourceId={sourceId}
+                    onAddAll={addAllFromGroup}
+                    onAddColumn={addColumn}
+                    selectedColumns={selectedColumns}
+                  />
+                )}
+
+                {/* VAT Sections */}
+                {Object.entries(data.vatSections).map(([sectionKey, sectionData]: [string, any]) => (
+                  <Collapsible key={sectionKey}>
+                    <CollapsibleTrigger className="flex items-center justify-between w-full p-2 rounded bg-gradient-to-r from-blue-50 to-indigo-50 hover:from-blue-100 hover:to-indigo-100">
                       <div className="flex items-center gap-2">
-                        <ChevronsUpDown className="h-3 w-3" />
-                        <span className="text-sm font-medium">Regular Columns</span>
-                        <Badge variant="secondary" className="text-xs">
-                          {data.regular.length}
-                        </Badge>
+                        <ChevronRight className="h-3 w-3" />
+                        <span className="text-sm font-medium">{sectionData.sectionName}</span>
+                        {sectionData.isOptimized && (
+                          <Badge variant="secondary" className="text-xs bg-green-100 text-green-800">
+                            Optimized
+                          </Badge>
+                        )}
                       </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          addAllFromGroup(data.regular)
-                        }}
-                        className="h-5 text-xs"
-                      >
-                        Add All
-                      </Button>
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="text-xs">
+                          {Object.values(sectionData.categories).flat().length} fields
+                        </Badge>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            addAllFromGroup(Object.values(sectionData.categories).flat())
+                          }}
+                          className="h-5 text-xs"
+                        >
+                          Add All
+                        </Button>
+                      </div>
                     </CollapsibleTrigger>
                     <CollapsibleContent className="mt-1">
-                      <div className="grid grid-cols-1 gap-1 ml-4">
-                        {data.regular.map((column: any) => {
-                          const isSelected = selectedColumns.some(
-                            (c) => c.sourceId === column.sourceId && c.path === column.path,
-                          )
-                          return (
-                            <div
-                              key={column.path}
-                              className={cn(
-                                "flex items-center justify-between p-1 rounded cursor-pointer hover:bg-blue-50",
-                                isSelected && "bg-blue-100",
-                              )}
-                              onClick={() => addColumn(column)}
-                            >
-                              <div className="flex items-center gap-2">
-                                <Check
-                                  className={cn("h-3 w-3", isSelected ? "opacity-100 text-blue-600" : "opacity-0")}
-                                />
-                                <span className="text-sm truncate">{column.path}</span>
-                              </div>
-                              <Badge variant="outline" className="text-xs">
-                                {column.type}
-                              </Badge>
+                      <div className="ml-4 space-y-2">
+                        {Object.entries(sectionData.categories).map(([categoryKey, categoryColumns]: [string, any]) => (
+                          <div key={categoryKey} className="border-l-2 border-blue-200 pl-3">
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-xs font-medium text-blue-800 capitalize">
+                                {categoryKey.replace(/_/g, ' ')}
+                              </span>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => addAllFromGroup(categoryColumns)}
+                                className="h-4 text-xs"
+                              >
+                                Add {categoryColumns.length}
+                              </Button>
                             </div>
-                          )
-                        })}
+                            <div className="grid grid-cols-1 gap-1">
+                              {categoryColumns.map((column: any) => {
+                                const isSelected = selectedColumns.some(
+                                  (c) => c.sourceId === column.sourceId && c.path === column.path,
+                                )
+                                const displayName = formatVatColumnName(column.path)
+
+                                return (
+                                  <div
+                                    key={column.path}
+                                    className={cn(
+                                      "flex items-center justify-between p-1 rounded cursor-pointer hover:bg-blue-50",
+                                      isSelected && "bg-blue-100",
+                                      column.vatInfo?.importance === 'high' && "border-l-2 border-green-400"
+                                    )}
+                                    onClick={() => addColumn(column)}
+                                  >
+                                    <div className="flex items-center gap-2">
+                                      <Check
+                                        className={cn("h-3 w-3", isSelected ? "opacity-100 text-blue-600" : "opacity-0")}
+                                      />
+                                      <span className="text-sm truncate">{displayName}</span>
+                                      {column.vatInfo?.importance === 'high' && (
+                                        <Badge variant="secondary" className="text-xs bg-green-100 text-green-800">
+                                          Key
+                                        </Badge>
+                                      )}
+                                    </div>
+                                    <Badge variant="outline" className="text-xs">
+                                      {column.type}
+                                    </Badge>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     </CollapsibleContent>
                   </Collapsible>
-                )}
+                ))}
 
-                {/* Nested Columns */}
+                {/* Regular Nested Columns (non-VAT sections) */}
                 {Object.entries(data.nested).map(([field, columns]: [string, any]) => (
-                  <Collapsible
-                    key={field}
-                    open={expandedGroups.has(`${sourceId}-${field}`)}
-                    onOpenChange={() => toggleGroup(`${sourceId}-${field}`)}
-                  >
+                  <Collapsible key={field}>
                     <CollapsibleTrigger className="flex items-center justify-between w-full p-1 rounded hover:bg-muted">
                       <div className="flex items-center gap-2">
                         <ChevronsUpDown className="h-3 w-3" />
                         <span className="text-sm font-medium">{field}</span>
                         <Badge variant="secondary" className="text-xs bg-purple-100 text-purple-800">
-                          {columns.length} nested
+                          {columns.length} detailed
                         </Badge>
                       </div>
                       <Button

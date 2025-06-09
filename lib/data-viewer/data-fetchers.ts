@@ -103,6 +103,226 @@ export async function getCompanies(): Promise<Company[]> {
     return []
   }
 }
+// Add these missing functions to lib/data-viewer/data-fetchers.ts
+
+export async function getCompanyById(id: number) {
+  try {
+    const { data, error } = await supabase
+      .from("acc_portal_company_duplicate")
+      .select("*")
+      .eq("id", id)
+      .single()
+
+    if (error) {
+      console.error("Error fetching company:", error)
+      return null
+    }
+
+    return data as Company
+  } catch (error) {
+    console.error("Unexpected error fetching company:", error)
+    return null
+  }
+}
+
+// Enhanced VAT section data fetcher with monthly aggregation
+export async function getVatSectionData(options: {
+  companyIds?: number[]
+  sectionFields: string[]
+  limit?: number
+  offset?: number
+  monthlyAggregation?: boolean
+}) {
+  try {
+    const { companyIds, sectionFields, limit = 100, offset = 0, monthlyAggregation = true } = options
+
+    // Build select clause with only the requested section fields
+    const selectClause = `id, company_id, year, month, ${sectionFields.join(", ")}`
+
+    let query = supabase
+      .from("vat_return_details")
+      .select(selectClause)
+      .order("year", { ascending: false })
+      .order("month", { ascending: false })
+      .range(offset, offset + limit - 1)
+
+    if (companyIds && companyIds.length > 0) {
+      query = query.in("company_id", companyIds)
+    }
+
+    const { data, error } = await query
+
+    if (error) {
+      console.error("Error fetching VAT section data:", error)
+      return []
+    }
+
+    // If monthly aggregation is requested, process the data
+    if (monthlyAggregation && data) {
+      return data.map(record => {
+        const processed = { ...record }
+
+        // Process each section field for monthly aggregation
+        sectionFields.forEach(field => {
+          if (['section_o', 'section_b2', 'section_f2', 'section_m', 'section_n'].includes(field)) {
+            const sectionData = record[field]
+            if (sectionData?.data && Array.isArray(sectionData.data)) {
+              const aggregated = aggregateVatSectionByMonth(sectionData.data, field, {})
+              if (aggregated) {
+                // Merge aggregated fields into the main record
+                Object.assign(processed, aggregated)
+              }
+            }
+          }
+        })
+
+        return processed
+      })
+    }
+
+    return data || []
+  } catch (error) {
+    console.error("Unexpected error fetching VAT section data:", error)
+    return []
+  }
+}
+
+// Helper function to aggregate VAT section data by month
+function aggregateVatSectionByMonth(sectionData: any[], sectionField: string, baseRecord: any): any | null {
+  if (!sectionData || sectionData.length === 0) return null
+
+  const aggregated = { ...baseRecord }
+
+  const parseAmount = (value: any): number => {
+    if (value === null || value === undefined || value === "" || value === "-") return 0
+    const cleanValue = String(value)
+      .replace(/[^\d.-]/g, "")
+      .replace(/,/g, "")
+    const parsed = Number.parseFloat(cleanValue)
+    return Number.isNaN(parsed) ? 0 : parsed
+  }
+
+  // Section O - Tax Calculation aggregation
+  if (sectionField === 'section_o') {
+    const fieldMapping = {
+      13: 'output_vat_13', 14: 'input_vat_14', 15: 'vat_claimable_15',
+      16: 'input_vat_exempt_16', 17: 'input_vat_mixed_17', 18: 'non_deductible_18',
+      19: 'deductible_input_19', 20: 'vat_payable_20', 21: 'credit_bf_21',
+      22: 'vat_withholding_22', 23: 'refund_claim_23', 24: 'total_vat_payable_24',
+      25: 'vat_paid_25', 26: 'credit_adjustment_26', 27: 'debit_adjustment_27',
+      28: 'net_vat_28'
+    }
+
+    sectionData.forEach((row: any) => {
+      const srNo = parseInt(row["Sr.No."] || "0")
+      const amount = parseAmount(row["Amount (Ksh)"])
+
+      if (fieldMapping[srNo as keyof typeof fieldMapping]) {
+        aggregated[`section_o_${fieldMapping[srNo as keyof typeof fieldMapping]}`] = amount
+        aggregated[`section_o_${fieldMapping[srNo as keyof typeof fieldMapping]}_description`] = row["Descriptions"] || ""
+      }
+    })
+  }
+
+  // Section B2 - Sales Totals aggregation
+  else if (sectionField === 'section_b2') {
+    sectionData.forEach((row: any) => {
+      const description = (row["Description"] || "").toLowerCase()
+      const vatAmount = parseAmount(row["Amount of VAT (Ksh)"])
+      const taxableValue = parseAmount(row["Taxable Value (Ksh)"])
+
+      if (description.includes("customers registered for vat")) {
+        aggregated['section_b2_registered_customers_vat'] = vatAmount
+        aggregated['section_b2_registered_customers_taxable'] = taxableValue
+      } else if (description.includes("customers not registered for vat")) {
+        aggregated['section_b2_non_registered_customers_vat'] = vatAmount
+        aggregated['section_b2_non_registered_customers_taxable'] = taxableValue
+      } else if (description.includes("total")) {
+        aggregated['section_b2_total_vat'] = vatAmount
+        aggregated['section_b2_total_taxable'] = taxableValue
+      }
+    })
+  }
+
+  // Section F2 - Purchases Totals aggregation
+  else if (sectionField === 'section_f2') {
+    sectionData.forEach((row: any) => {
+      const description = (row["Description"] || "").toLowerCase()
+      const vatAmount = parseAmount(row["Amount of VAT (Ksh)"])
+      const taxableValue = parseAmount(row["Taxable Value (Ksh)"])
+
+      if (description.includes("suppliers registered for vat") && description.includes("local")) {
+        aggregated['section_f2_local_suppliers_vat'] = vatAmount
+        aggregated['section_f2_local_suppliers_taxable'] = taxableValue
+      } else if (description.includes("suppliers not registered for vat") && description.includes("import")) {
+        aggregated['section_f2_import_suppliers_vat'] = vatAmount
+        aggregated['section_f2_import_suppliers_taxable'] = taxableValue
+      } else if (description.includes("total")) {
+        aggregated['section_f2_total_vat'] = vatAmount
+        aggregated['section_f2_total_taxable'] = taxableValue
+      }
+    })
+  }
+
+  // Section M - Sales Summary by Rate
+  else if (sectionField === 'section_m') {
+    let totalAmount = 0
+    let totalVat = 0
+    const rateBreakdown: Record<string, { amount: number, vat: number }> = {}
+
+    sectionData.forEach((row: any) => {
+      const rate = row["Rate (%)"] || "0"
+      const amount = parseAmount(row["Amount (Excl. VAT) (Ksh)"])
+      const vat = parseAmount(row["Amount of Output VAT (Ksh)"])
+
+      if (!rateBreakdown[rate]) {
+        rateBreakdown[rate] = { amount: 0, vat: 0 }
+      }
+      rateBreakdown[rate].amount += amount
+      rateBreakdown[rate].vat += vat
+      totalAmount += amount
+      totalVat += vat
+
+      // Add rate-specific columns
+      aggregated[`section_m_rate_${rate}_amount`] = rateBreakdown[rate].amount
+      aggregated[`section_m_rate_${rate}_vat`] = rateBreakdown[rate].vat
+    })
+
+    aggregated['section_m_total_amount'] = totalAmount
+    aggregated['section_m_total_vat'] = totalVat
+  }
+
+  // Section N - Purchases Summary by Rate
+  else if (sectionField === 'section_n') {
+    let totalAmount = 0
+    let totalVat = 0
+    const rateBreakdown: Record<string, { amount: number, vat: number }> = {}
+
+    sectionData.forEach((row: any) => {
+      const rate = row["Rate (%)"] || "0"
+      const amount = parseAmount(row["Amount (Excl. VAT) (Ksh)"])
+      const vat = parseAmount(row["Amount of Input VAT (Ksh)"])
+
+      if (!rateBreakdown[rate]) {
+        rateBreakdown[rate] = { amount: 0, vat: 0 }
+      }
+      rateBreakdown[rate].amount += amount
+      rateBreakdown[rate].vat += vat
+      totalAmount += amount
+      totalVat += vat
+
+      // Add rate-specific columns
+      aggregated[`section_n_rate_${rate}_amount`] = rateBreakdown[rate].amount
+      aggregated[`section_n_rate_${rate}_vat`] = rateBreakdown[rate].vat
+    })
+
+    aggregated['section_n_total_amount'] = totalAmount
+    aggregated['section_n_total_vat'] = totalVat
+  }
+
+  return aggregated
+}
+
 
 // Enhanced VAT returns fetcher with date filtering
 export async function getVatReturnDetails(

@@ -551,61 +551,117 @@ export function DataSourceSelector({
                   <div className="space-y-2">
                     <Label>Flatten Nested Fields (Optional)</Label>
                     <p className="text-xs text-muted-foreground">
-                      Select nested JSON fields to flatten into individual columns for analysis
+                      Select VAT sections to include. Optimized sections (O, B2, F2, M, N) show one month per row.
                     </p>
-                    <ScrollArea className="h-[200px] border rounded-md p-2">
+                    <ScrollArea className="h-[250px] border rounded-md p-2">
                       <div className="space-y-3">
-                        {getNestedFields().map((field) => (
-                          <div key={field} className="space-y-2">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center space-x-2">
-                                <Checkbox
-                                  id={`field-${field}`}
-                                  checked={selectedNestedFields.includes(field)}
-                                  onCheckedChange={() => toggleNestedField(field)}
-                                />
-                                <Label htmlFor={`field-${field}`} className="text-sm cursor-pointer font-medium">
-                                  {field}
-                                </Label>
-                              </div>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => previewNestedField(field)}
-                                className="h-6 px-2"
-                              >
-                                <Eye className="h-3 w-3" />
-                              </Button>
-                            </div>
+                        {getNestedFields().map((field) => {
+                          const isOptimized = ['section_o', 'section_b2', 'section_f2', 'section_m', 'section_n'].includes(field)
+                          const tableConfig = availableTables.find((t) => t.id === selectedTableId)
+                          const description = tableConfig?.sectionDescriptions?.[field] || ""
 
-                            {selectedNestedFields.includes(field) && (
-                              <div className="ml-6 p-2 bg-blue-50 rounded text-xs">
-                                <p className="font-medium text-blue-800 mb-1">Will create columns like:</p>
-                                <div className="space-y-1">
-                                  {(() => {
-                                    const tableConfig = availableTables.find((t) => t.id === selectedTableId)
-                                    const sampleData = tableConfig?.sample?.find((s: any) => s[field])
-                                    if (sampleData && sampleData[field]) {
-                                      const fieldData = sampleData[field]
-                                      if (
-                                        fieldData.data &&
-                                        Array.isArray(fieldData.data) &&
-                                        fieldData.data.length > 0
-                                      ) {
-                                        return Object.keys(fieldData.data[0]).map((key) => (
-                                          <div key={key} className="text-blue-700">
-                                            • {field}.{key}
-                                          </div>
-                                        ))
-                                      }
-                                    }
-                                    return <div className="text-blue-700">• {field}.*</div>
-                                  })()}
+                          return (
+                            <div key={field} className="space-y-2">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center space-x-2">
+                                  <Checkbox
+                                    id={`field-${field}`}
+                                    checked={selectedNestedFields.includes(field)}
+                                    onCheckedChange={() => toggleNestedField(field)}
+                                  />
+                                  <Label htmlFor={`field-${field}`} className="text-sm cursor-pointer font-medium flex items-center gap-2">
+                                    {field.replace('_', ' ').toUpperCase()}
+                                    {isOptimized && (
+                                      <Badge variant="secondary" className="text-xs bg-blue-100 text-blue-800">
+                                        Optimized
+                                      </Badge>
+                                    )}
+                                  </Label>
                                 </div>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => previewNestedField(field)}
+                                  className="h-6 px-2"
+                                >
+                                  <Eye className="h-3 w-3" />
+                                </Button>
                               </div>
-                            )}
-                          </div>
-                        ))}
+
+                              {description && (
+                                <div className="ml-6 text-xs text-gray-600 bg-gray-50 p-2 rounded">
+                                  {description}
+                                </div>
+                              )}
+
+                              {selectedNestedFields.includes(field) && (
+                                <div className="ml-6 p-2 bg-blue-50 rounded text-xs">
+                                  <p className="font-medium text-blue-800 mb-1">
+                                    {isOptimized ? "Will create monthly columns:" : "Will create detailed columns:"}
+                                  </p>
+                                  <div className="space-y-1">
+                                    {(() => {
+                                      if (isOptimized) {
+                                        switch (field) {
+                                          case 'section_o':
+                                            return (
+                                              <div className="grid grid-cols-2 gap-1">
+                                                <div className="text-blue-700">• output_vat_13</div>
+                                                <div className="text-blue-700">• input_vat_14</div>
+                                                <div className="text-blue-700">• vat_claimable_15</div>
+                                                <div className="text-blue-700">• net_vat_28</div>
+                                                <div className="text-blue-700 col-span-2">... and 12 more tax fields</div>
+                                              </div>
+                                            )
+                                          case 'section_b2':
+                                            return (
+                                              <div className="grid grid-cols-2 gap-1">
+                                                <div className="text-blue-700">• registered_customers_vat</div>
+                                                <div className="text-blue-700">• registered_customers_taxable</div>
+                                                <div className="text-blue-700">• non_registered_customers_vat</div>
+                                                <div className="text-blue-700">• total_vat</div>
+                                              </div>
+                                            )
+                                          case 'section_f2':
+                                            return (
+                                              <div className="grid grid-cols-2 gap-1">
+                                                <div className="text-blue-700">• local_suppliers_vat</div>
+                                                <div className="text-blue-700">• local_suppliers_taxable</div>
+                                                <div className="text-blue-700">• import_suppliers_vat</div>
+                                                <div className="text-blue-700">• total_vat</div>
+                                              </div>
+                                            )
+                                          case 'section_m':
+                                            return (
+                                              <div className="grid grid-cols-2 gap-1">
+                                                <div className="text-blue-700">• rate_16_amount</div>
+                                                <div className="text-blue-700">• rate_16_vat</div>
+                                                <div className="text-blue-700">• total_amount</div>
+                                                <div className="text-blue-700">• total_vat</div>
+                                              </div>
+                                            )
+                                          case 'section_n':
+                                            return (
+                                              <div className="grid grid-cols-2 gap-1">
+                                                <div className="text-blue-700">• rate_16_amount</div>
+                                                <div className="text-blue-700">• rate_16_vat</div>
+                                                <div className="text-blue-700">• total_amount</div>
+                                                <div className="text-blue-700">• total_vat</div>
+                                              </div>
+                                            )
+                                          default:
+                                            return <div className="text-blue-700">• {field}.*</div>
+                                        }
+                                      } else {
+                                        return <div className="text-blue-700">• {field}.* (detailed transaction data)</div>
+                                      }
+                                    })()}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })}
                       </div>
                     </ScrollArea>
                   </div>

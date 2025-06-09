@@ -270,6 +270,72 @@ export function ReportBuilder() {
         keyField: "id",
         isLarge: false,
       },
+      {
+        id: "vat_returns",
+        name: "VAT Returns",
+        description: "VAT return details with optimized section data (one month per row)",
+        schema: extractTableSchema(vatReturnsSample),
+        sample: vatReturnsSample.slice(0, 3),
+        getData: async (companyFilter?: any, options?: any) => {
+          try {
+            const { includeNestedFields = false, limit = 500, monthlyAggregation = true } = options || {}
+
+            const companyIds =
+              companyFilter?.mode === "selected" && companyFilter.companies?.length > 0
+                ? companyFilter.companies
+                : undefined
+
+            if (includeNestedFields) {
+              const selectedNestedFields = options?.selectedNestedFields || []
+              if (selectedNestedFields.length > 0) {
+                // Use optimized VAT section data fetcher
+                return await getVatSectionDataOptimized({
+                  companyIds,
+                  sectionFields: selectedNestedFields,
+                  limit,
+                  monthlyAggregation
+                })
+              }
+            }
+
+            return await getVatReturnDetailsOptimized({
+              companyIds,
+              limit,
+              includeNestedFields,
+            })
+          } catch (error) {
+            console.error("Error fetching VAT returns data:", error)
+            throw new Error("Failed to fetch VAT returns data")
+          }
+        },
+        keyField: "id",
+        isLarge: true,
+        nestedFields: [
+          "section_b",
+          "section_b2", // Optimized: Sales Totals (one month per row)
+          "section_e",
+          "section_f",
+          "section_f2", // Optimized: Purchases Totals (one month per row)
+          "section_k3",
+          "section_m",  // Optimized: Sales Summary by Rate (one month per row)
+          "section_n",  // Optimized: Purchases Summary by Rate (one month per row)
+          "section_o",  // Optimized: Tax Calculation (one month per row)
+        ],
+        optimizedSections: [
+          "section_o", "section_b2", "section_f2", "section_m", "section_n"
+        ],
+        sectionDescriptions: {
+          "section_o": "Tax Calculation - 16 tax fields (Sr.No. 13-28) as columns",
+          "section_b2": "Sales Totals - Registered/Non-Registered/Total with VAT & Taxable columns",
+          "section_f2": "Purchases Totals - Local/Import/Total with VAT & Taxable columns",
+          "section_m": "Sales Summary - Dynamic rate-based columns with totals",
+          "section_n": "Purchases Summary - Dynamic rate-based columns with totals",
+          "section_b": "Sales Transactions - Detailed transaction-level data",
+          "section_e": "Exempt Sales - Detailed exempt transaction data",
+          "section_f": "Purchase Transactions - Detailed transaction-level data",
+          "section_k3": "Credit Adjustments - Individual adjustment records"
+        }
+      }
     ]
   }
 
@@ -321,7 +387,9 @@ export function ReportBuilder() {
           // If the source has nested fields that need to be flattened
           if (source.flattenFields && source.flattenFields.length > 0) {
             console.log(`Flattening fields for ${source.tableId}:`, source.flattenFields)
-            const flattened = flattenNestedData(data, source.flattenFields, tableConfig.nestedFields || [])
+
+            // Use enhanced VAT section flattening
+            const flattened = flattenVatSectionData(data, source.flattenFields, tableConfig.nestedFields || [])
             console.log(`Flattened to ${flattened.length} records`)
             return flattened
           }
