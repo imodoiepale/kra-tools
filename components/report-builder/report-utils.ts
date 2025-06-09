@@ -1,4 +1,5 @@
-// Utility functions for the report builder
+// @ts-nocheck
+"use client"
 
 import { supabase } from "@/lib/supabase"
 

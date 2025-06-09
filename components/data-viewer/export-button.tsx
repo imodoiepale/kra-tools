@@ -4,7 +4,7 @@ import { useState } from "react"
 import { Download } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import * as XLSX from "xlsx"
-import type { Company, VatReturnDetails, CompanyVatReturnListings } from "@/lib/supabase"
+import type { Company, VatReturnDetails, CompanyVatReturnListings } from "@/lib/data-viewer/supabase"
 
 interface ExportButtonProps {
   data: any[]
