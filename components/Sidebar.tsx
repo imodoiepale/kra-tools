@@ -96,6 +96,13 @@ const navItems = [
     available: false,
   },
   {
+    href: "/filed-vat",
+    icon: FileSignature,
+    label: "Filed VAT Summary",
+    category: "Accounting Cycles",
+    available: true,
+  },
+  {
     href: "/wh-vat",
     icon: FileSignature,
     label: "WH VAT Cycle",
