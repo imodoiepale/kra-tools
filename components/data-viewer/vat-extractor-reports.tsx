@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { getCompanies, getVatReturnDetails } from "@/lib/data-viewer/data-fetchers"
-import type { Company, VatReturnDetails } from "@/lib/supabase"
+import type { Company, VatReturnDetails } from "@/lib/data-viewer/supabase"
 
 export function VatExtractorReports() {
   const [companies, setCompanies] = useState<Company[]>([])

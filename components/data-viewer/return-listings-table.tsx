@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Search, ChevronDown, ChevronRight } from "lucide-react"
 import { ExportButton } from "@/components/data-viewer/export-button"
-import type { Company, CompanyVatReturnListings } from "@/lib/supabase"
+import type { Company, CompanyVatReturnListings } from "@/lib/data-viewer/supabase"
 
 interface ReturnListingsTableProps {
   returnListings: CompanyVatReturnListings[]
@@ -241,8 +241,9 @@ export function ReturnListingsTable({ returnListings, company }: ReturnListingsT
                     {columnHeaders.map((header, index) => (
                       <th
                         key={header}
-                        className={`px-3 py-3 text-left font-medium text-gray-900 ${index === columnHeaders.length - 1 ? "" : "border-r"
-                          }`}
+                        className={`px-3 py-3 text-left font-medium text-gray-900 ${
+                          index === columnHeaders.length - 1 ? "" : "border-r"
+                        }`}
                       >
                         {formatHeaderName(header)}
                       </th>
@@ -256,8 +257,9 @@ export function ReturnListingsTable({ returnListings, company }: ReturnListingsT
                       {columnHeaders.map((header, headerIndex) => (
                         <td
                           key={header}
-                          className={`px-3 py-3 text-gray-900 ${headerIndex === columnHeaders.length - 1 ? "" : "border-r"
-                            }`}
+                          className={`px-3 py-3 text-gray-900 ${
+                            headerIndex === columnHeaders.length - 1 ? "" : "border-r"
+                          }`}
                         >
                           {formatCellValue(record[header], header)}
                         </td>

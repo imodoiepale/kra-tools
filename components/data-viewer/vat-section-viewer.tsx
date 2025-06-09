@@ -8,7 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Filter } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { ExportButton } from "@/components/data-viewer/export-button"
-import type { VatReturnDetails } from "@/lib/supabase"
+import type { VatReturnDetails } from "@/lib/data-viewer/supabase"
 
 interface VatSectionViewerProps {
   companyId: number
@@ -391,8 +391,9 @@ export function VatSectionViewer({ companyId, vatReturns }: VatSectionViewerProp
                 {headers.map((header) => (
                   <th
                     key={header}
-                    className={`px-3 py-2 text-left font-medium text-gray-900 border-b ${header === headers[headers.length - 1] ? "" : "border-r"
-                      }`}
+                    className={`px-3 py-2 text-left font-medium text-gray-900 border-b ${
+                      header === headers[headers.length - 1] ? "" : "border-r"
+                    }`}
                   >
                     {header}
                   </th>

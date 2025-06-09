@@ -22,7 +22,7 @@ import { VatSectionViewer } from "@/components/data-viewer/vat-section-viewer"
 import { ReturnListingsTable } from "@/components/data-viewer/return-listings-table"
 import { ExportButton } from "@/components/data-viewer/export-button"
 import { getCompanyReturnListings } from "@/lib/data-viewer/data-fetchers"
-import type { Company, VatReturnDetails, CompanyVatReturnListings } from "@/lib/supabase"
+import type { Company, VatReturnDetails, CompanyVatReturnListings } from "@/lib/data-viewer/supabase"
 
 interface DataViewerContentProps {
   companies: Company[]
@@ -507,10 +507,11 @@ export function DataViewerContent({ companies, allVatReturns }: DataViewerConten
                 <button
                   key={company.id}
                   onClick={() => setSelectedCompany(company)}
-                  className={`w-full text-left p-3 rounded-lg border transition-colors ${selectedCompany?.id === company.id
-                    ? "bg-blue-50 border-blue-200 shadow-sm"
-                    : "bg-white border-gray-200 hover:bg-gray-50"
-                    }`}
+                  className={`w-full text-left p-3 rounded-lg border transition-colors ${
+                    selectedCompany?.id === company.id
+                      ? "bg-blue-50 border-blue-200 shadow-sm"
+                      : "bg-white border-gray-200 hover:bg-gray-50"
+                  }`}
                 >
                   <div className="font-medium text-sm truncate">{company.company_name}</div>
                   <div className="text-xs text-gray-500 font-mono">{company.kra_pin}</div>
