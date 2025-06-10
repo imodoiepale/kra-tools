@@ -465,9 +465,9 @@ export function VatSectionViewer({ companyId, vatReturns }: VatSectionViewerProp
           />
         </div>
 
-        <div className="overflow-auto border rounded-lg">
+        <div className="overflow-auto border rounded-lg max-h-96">
           <table className="w-full text-sm border-collapse">
-            <thead className="bg-gray-50 sticky top-0">
+            <thead className="bg-gray-50 sticky top-0 z-10">
               <tr>
                 {headers.map((header, index) => (
                   <th key={header.key} className={header.className}>
@@ -483,14 +483,20 @@ export function VatSectionViewer({ companyId, vatReturns }: VatSectionViewerProp
                 <tr key={row.id} className={`border-b ${index % 2 === 0 ? "bg-white" : "bg-blue-50"}`}>
                   <td className="px-2 py-2 text-gray-900 font-medium border-r">{index + 1}</td>
                   <td className="px-2 py-2 text-gray-900 font-medium border-r">{row.period}</td>
-                  {SECTION_O_FIELDS.map((field, fieldIndex) => (
-                    <td
-                      key={field.key}
-                      className={`px-2 py-2 text-gray-900 text-right ${fieldIndex === SECTION_O_FIELDS.length - 1 ? '' : 'border-r'}`}
-                    >
-                      {formatCurrency(row[field.key])}
-                    </td>
-                  ))}
+                  {SECTION_O_FIELDS.map((field, fieldIndex) => {
+                    const value = row[field.key];
+                    return (
+                      <td
+                        key={field.key}
+                        // ADDED: Ternary operator to check if value is negative
+                        className={`px-2 py-2 text-gray-900 text-right whitespace-nowrap 
+                          ${fieldIndex === SECTION_O_FIELDS.length - 1 ? '' : 'border-r'} 
+                          ${value < 0 ? 'text-red-600 font-semibold' : ''}`}
+                      >
+                        {formatCurrency(value)}
+                      </td>
+                    );
+                  })}
                 </tr>
               ))}
             </tbody>
@@ -542,9 +548,9 @@ export function VatSectionViewer({ companyId, vatReturns }: VatSectionViewerProp
           />
         </div>
 
-        <div className="overflow-auto border rounded-lg">
+        <div className="overflow-auto border rounded-lg max-h-96">
           <table className="w-full text-sm border-collapse">
-            <thead className="bg-gray-50 sticky top-0">
+            <thead className="bg-gray-50 sticky top-0 z-10">
               <tr>
                 <th rowSpan={2} className="px-3 py-3 text-left font-medium text-gray-900 border-b border-r">Sr.No.</th>
                 <th rowSpan={2} className="px-3 py-3 text-left font-medium text-gray-900 border-b border-r">Period</th>
@@ -574,14 +580,25 @@ export function VatSectionViewer({ companyId, vatReturns }: VatSectionViewerProp
                 <tr key={row.id} className={`border-b ${index % 2 === 0 ? "bg-white" : "bg-blue-50"}`}>
                   <td className="px-3 py-3 text-gray-900 font-medium border-r">{index + 1}</td>
                   <td className="px-3 py-3 text-gray-900 font-medium border-r">{row.period}</td>
-                  {subHeaders.map((subHeader, subIndex) => (
-                    <td
-                      key={subHeader.key}
-                      className={`px-2 py-3 text-gray-900 text-right ${subIndex === subHeaders.length - 1 ? '' : 'border-r'} ${subIndex >= 4 ? 'font-semibold' : ''}`}
-                    >
-                      {formatCurrency(row[subHeader.key])}
-                    </td>
-                  ))}
+                  {subHeaders.map((subHeader, subIndex) => {
+                    const value = row[subHeader.key];
+                    // This nested ternary handles both conditions: red for negative, or bold for totals.
+                    const dynamicClass = value < 0
+                      ? 'text-red-600 font-semibold'
+                      : (subIndex >= 4 ? 'font-semibold' : '');
+
+                    return (
+                      <td
+                        key={subHeader.key}
+                        // UPDATED: More robust class logic
+                        className={`px-2 py-3 text-gray-900 text-right whitespace-nowrap 
+                          ${subIndex === subHeaders.length - 1 ? '' : 'border-r'} 
+                          ${dynamicClass}`}
+                      >
+                        {formatCurrency(value)}
+                      </td>
+                    );
+                  })}
                 </tr>
               ))}
             </tbody>
@@ -628,9 +645,9 @@ export function VatSectionViewer({ companyId, vatReturns }: VatSectionViewerProp
           />
         </div>
 
-        <div className="overflow-auto border rounded-lg">
+        <div className="overflow-auto border rounded-lg max-h-96">
           <table className="w-full text-sm border-collapse">
-            <thead className="bg-gray-50 sticky top-0">
+            <thead className="bg-gray-50 sticky top-0 z-10">
               <tr>
                 <th rowSpan={2} className="px-3 py-3 text-left font-medium text-gray-900 border-b border-r">Sr.No.</th>
                 <th rowSpan={2} className="px-3 py-3 text-left font-medium text-gray-900 border-b border-r">Period</th>
@@ -669,34 +686,44 @@ export function VatSectionViewer({ companyId, vatReturns }: VatSectionViewerProp
               </tr>
             </thead>
             <tbody>
-              {monthlyData.map((row: any, index: number) => (
+              {monthlyData.map((row, index) => (
                 <tr key={row.id} className={`border-b ${index % 2 === 0 ? "bg-white" : "bg-blue-50"}`}>
-                  <td className="px-3 py-3 text-gray-900 font-medium border-r">{index + 1}</td>
-                  <td className="px-3 py-3 text-gray-900 font-medium border-r">{row.period}</td>
-                  {allRatesM.map((rate, rateIndex) => (
-                    <>
+                  <td className="px-3 py-3 text-gray-900 font-medium border-r whitespace-nowrap">{index + 1}</td>
+                  <td className="px-3 py-3 text-gray-900 font-medium border-r whitespace-nowrap">{row.period}</td>
+                  {allRatesM.map((rate, rateIndex) => {
+                    const amount = row.rates[rate]?.amount || 0;
+                    const vat = row.rates[rate]?.vat || 0;
+                    return (
+                      <>
+                        <td
+                          key={`${rate}-amount`}
+                          // ADDED: Negative check for amount
+                          className={`px-2 py-3 text-gray-900 border-r text-right whitespace-nowrap ${amount < 0 ? 'text-red-600 font-semibold' : ''}`}
+                        >
+                          {formatCurrency(amount)}
+                        </td>
+                        <td
+                          key={`${rate}-vat`}
+                          // ADDED: Negative check for vat
+                          className={`px-2 py-3 text-gray-900 text-right whitespace-nowrap ${rateIndex === allRatesM.length - 1 && totalHeaders.length === 0 ? '' : 'border-r'} ${vat < 0 ? 'text-red-600 font-semibold' : ''}`}
+                        >
+                          {formatCurrency(vat)}
+                        </td>
+                      </>
+                    );
+                  })}
+                  {totalHeaders.map((header, headerIndex) => {
+                    const value = row[header.key];
+                    return (
                       <td
-                        key={`${rate}-amount`}
-                        className={`px-2 py-3 text-gray-900 border-r text-right`}
+                        key={header.key}
+                        // ADDED: Negative check for totals
+                        className={`px-2 py-3 text-gray-900 text-right font-semibold whitespace-nowrap ${headerIndex === totalHeaders.length - 1 ? '' : 'border-r'} ${value < 0 ? 'text-red-600' : ''}`}
                       >
-                        {formatCurrency(row.rates[rate]?.amount || 0)}
+                        {formatCurrency(value)}
                       </td>
-                      <td
-                        key={`${rate}-vat`}
-                        className={`px-2 py-3 text-gray-900 ${rateIndex === allRatesM.length - 1 && totalHeaders.length === 0 ? '' : 'border-r'} text-right`}
-                      >
-                        {formatCurrency(row.rates[rate]?.vat || 0)}
-                      </td>
-                    </>
-                  ))}
-                  {totalHeaders.map((header, headerIndex) => (
-                    <td
-                      key={header.key}
-                      className={`px-2 py-3 text-gray-900 text-right font-semibold ${headerIndex === totalHeaders.length - 1 ? '' : 'border-r'}`}
-                    >
-                      {formatCurrency(row[header.key])}
-                    </td>
-                  ))}
+                    );
+                  })}
                 </tr>
               ))}
             </tbody>
@@ -743,9 +770,9 @@ export function VatSectionViewer({ companyId, vatReturns }: VatSectionViewerProp
           />
         </div>
 
-        <div className="overflow-auto border rounded-lg">
+        <div className="overflow-auto border rounded-lg max-h-96">
           <table className="w-full text-sm border-collapse">
-            <thead className="bg-gray-50 sticky top-0">
+            <thead className="bg-gray-50 sticky top-0 z-10">
               <tr>
                 <th rowSpan={2} className="px-3 py-3 text-left font-medium text-gray-900 border-b border-r">Sr.No.</th>
                 <th rowSpan={2} className="px-3 py-3 text-left font-medium text-gray-900 border-b border-r">Period</th>
@@ -784,34 +811,44 @@ export function VatSectionViewer({ companyId, vatReturns }: VatSectionViewerProp
               </tr>
             </thead>
             <tbody>
-              {monthlyData.map((row: any, index: number) => (
+              {monthlyData.map((row, index) => (
                 <tr key={row.id} className={`border-b ${index % 2 === 0 ? "bg-white" : "bg-blue-50"}`}>
-                  <td className="px-3 py-3 text-gray-900 font-medium border-r">{index + 1}</td>
-                  <td className="px-3 py-3 text-gray-900 font-medium border-r">{row.period}</td>
-                  {allRatesN.map((rate, rateIndex) => (
-                    <>
+                  <td className="px-3 py-3 text-gray-900 font-medium border-r whitespace-nowrap">{index + 1}</td>
+                  <td className="px-3 py-3 text-gray-900 font-medium border-r whitespace-nowrap">{row.period}</td>
+                  {allRatesN.map((rate, rateIndex) => {
+                    const amount = row.rates[rate]?.amount || 0;
+                    const vat = row.rates[rate]?.vat || 0;
+                    return (
+                      <>
+                        <td
+                          key={`${rate}-amount`}
+                          // ADDED: Negative check for amount
+                          className={`px-2 py-3 text-gray-900 border-r text-right whitespace-nowrap ${amount < 0 ? 'text-red-600 font-semibold' : ''}`}
+                        >
+                          {formatCurrency(amount)}
+                        </td>
+                        <td
+                          key={`${rate}-vat`}
+                          // ADDED: Negative check for vat
+                          className={`px-2 py-3 text-gray-900 text-right whitespace-nowrap ${rateIndex === allRatesN.length - 1 && totalHeaders.length === 0 ? '' : 'border-r'} ${vat < 0 ? 'text-red-600 font-semibold' : ''}`}
+                        >
+                          {formatCurrency(vat)}
+                        </td>
+                      </>
+                    );
+                  })}
+                  {totalHeaders.map((header, headerIndex) => {
+                    const value = row[header.key];
+                    return (
                       <td
-                        key={`${rate}-amount`}
-                        className={`px-2 py-3 text-gray-900 border-r text-right`}
+                        key={header.key}
+                        // ADDED: Negative check for totals
+                        className={`px-2 py-3 text-gray-900 text-right font-semibold whitespace-nowrap ${headerIndex === totalHeaders.length - 1 ? '' : 'border-r'} ${value < 0 ? 'text-red-600' : ''}`}
                       >
-                        {formatCurrency(row.rates[rate]?.amount || 0)}
+                        {formatCurrency(value)}
                       </td>
-                      <td
-                        key={`${rate}-vat`}
-                        className={`px-2 py-3 text-gray-900 ${rateIndex === allRatesN.length - 1 && totalHeaders.length === 0 ? '' : 'border-r'} text-right`}
-                      >
-                        {formatCurrency(row.rates[rate]?.vat || 0)}
-                      </td>
-                    </>
-                  ))}
-                  {totalHeaders.map((header, headerIndex) => (
-                    <td
-                      key={header.key}
-                      className={`px-2 py-3 text-gray-900 text-right font-semibold ${headerIndex === totalHeaders.length - 1 ? '' : 'border-r'}`}
-                    >
-                      {formatCurrency(row[header.key])}
-                    </td>
-                  ))}
+                    );
+                  })}
                 </tr>
               ))}
             </tbody>
@@ -863,9 +900,9 @@ export function VatSectionViewer({ companyId, vatReturns }: VatSectionViewerProp
           />
         </div>
 
-        <div className="overflow-auto border rounded-lg">
+        <div className="overflow-auto border rounded-lg max-h-96">
           <table className="w-full text-sm border-collapse">
-            <thead className="bg-gray-50 sticky top-0">
+            <thead className="bg-gray-50 sticky top-0 z-10">
               <tr>
                 <th rowSpan={2} className="px-3 py-3 text-left font-medium text-gray-900 border-b border-r">Sr.No.</th>
                 <th rowSpan={2} className="px-3 py-3 text-left font-medium text-gray-900 border-b border-r">Period</th>
@@ -895,14 +932,25 @@ export function VatSectionViewer({ companyId, vatReturns }: VatSectionViewerProp
                 <tr key={row.id} className={`border-b ${index % 2 === 0 ? "bg-white" : "bg-blue-50"}`}>
                   <td className="px-3 py-3 text-gray-900 font-medium border-r">{index + 1}</td>
                   <td className="px-3 py-3 text-gray-900 font-medium border-r">{row.period}</td>
-                  {subHeaders.map((subHeader, subIndex) => (
-                    <td
-                      key={subHeader.key}
-                      className={`px-2 py-3 text-gray-900 text-right ${subIndex === subHeaders.length - 1 ? '' : 'border-r'} ${subIndex >= 4 ? 'font-semibold' : ''}`}
-                    >
-                      {formatCurrency(row[subHeader.key])}
-                    </td>
-                  ))}
+                  {subHeaders.map((subHeader, subIndex) => {
+                    const value = row[subHeader.key];
+                    // This nested ternary handles both conditions: red for negative, or bold for totals.
+                    const dynamicClass = value < 0
+                      ? 'text-red-600 font-semibold'
+                      : (subIndex >= 4 ? 'font-semibold' : '');
+
+                    return (
+                      <td
+                        key={subHeader.key}
+                        // UPDATED: More robust class logic
+                        className={`px-2 py-3 text-gray-900 text-right whitespace-nowrap 
+                          ${subIndex === subHeaders.length - 1 ? '' : 'border-r'} 
+                          ${dynamicClass}`}
+                      >
+                        {formatCurrency(value)}
+                      </td>
+                    );
+                  })}
                 </tr>
               ))}
             </tbody>
