@@ -1017,16 +1017,22 @@ export function VatSectionViewer({ companyId, vatReturns }: VatSectionViewerProp
                 <tr key={row.id || index} className={`border-b ${index % 2 === 0 ? "bg-white" : "bg-blue-50"}`}>
                   <td className="px-3 py-2 text-gray-900 font-medium border-r">{index + 1}</td>
                   <td className="px-3 py-2 text-gray-900 font-medium border-r">{row._period}</td>
-                  {headers.filter(h => !['srNo', '_period'].includes(h)).map((header, headerIndex) => (
-                    <td
-                      key={header}
-                      className={`px-3 py-2 text-gray-900 ${headerIndex === headers.length - 3 ? '' : 'border-r'}`}
-                    >
-                      {typeof row[header] === "number" && header.toLowerCase().includes("ksh")
-                        ? formatCurrency(row[header])
-                        : row[header] || "-"}
-                    </td>
-                  ))}
+                  {headers.filter(h => !['srNo', '_period'].includes(h)).map((header, headerIndex) => {
+                    const value = row[header];
+                    const isNumber = typeof value === 'number';
+
+                    return (
+                      <td
+                        key={header}
+                        // ADDED: Negative check for numeric values
+                        className={`px-3 py-2 text-gray-900 whitespace-nowrap 
+                          ${headerIndex === headers.length - 3 ? '' : 'border-r'} 
+                          ${isNumber && value < 0 ? 'text-red-600 font-semibold' : ''}`}
+                      >
+                        {isNumber ? formatCurrency(value) : value || "-"}
+                      </td>
+                    );
+                  })}
                 </tr>
               ))}
             </tbody>
