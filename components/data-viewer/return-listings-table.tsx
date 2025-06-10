@@ -172,11 +172,11 @@ export function ReturnListingsTable({ returnListings, company }: ReturnListingsT
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Return Listings</CardTitle>
-          <CardDescription>Data extracted from KRA portal return listings</CardDescription>
+          <CardTitle>Return Summary</CardTitle>
+          <CardDescription>Data extracted from KRA portal Return Summary</CardDescription>
         </CardHeader>
         <CardContent>
-          <p className="text-center text-muted-foreground py-8">No return listings data available</p>
+          <p className="text-center text-muted-foreground py-8">No Return Summary data available</p>
         </CardContent>
       </Card>
     )
@@ -188,9 +188,9 @@ export function ReturnListingsTable({ returnListings, company }: ReturnListingsT
       <Card>
         <CardHeader className="flex flex-row items-center">
           <div className="grid gap-2">
-            <CardTitle>Return Listings Data</CardTitle>
+            <CardTitle>Return Summary Data</CardTitle>
             <CardDescription>
-              Data extracted from KRA portal return listings - Total {allRecords.length} records from{" "}
+              Data extracted from KRA portal return Summary - Total {allRecords.length} records from{" "}
               {returnListings.length} listing{returnListings.length !== 1 ? "s" : ""}
             </CardDescription>
           </div>
@@ -270,58 +270,6 @@ export function ReturnListingsTable({ returnListings, company }: ReturnListingsT
               </table>
             </div>
           )}
-        </CardContent>
-      </Card>
-
-      {/* Raw Listings Summary */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Raw Listings Summary</CardTitle>
-          <CardDescription>Overview of original listing entries</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
-            {returnListings.map((listing, index) => {
-              const isExpanded = expandedRows.has(index)
-              const listingData = listing.listing_data as any
-              let recordCount = 0
-
-              if (listingData?.data && Array.isArray(listingData.data)) {
-                recordCount = listingData.data.length
-              } else if (Array.isArray(listingData)) {
-                recordCount = listingData.length
-              }
-
-              return (
-                <div key={index} className="border rounded-lg">
-                  <button
-                    onClick={() => toggleRow(index)}
-                    className="w-full px-4 py-3 text-left hover:bg-gray-50 transition-colors flex items-center justify-between"
-                  >
-                    <div className="flex items-center gap-3">
-                      {isExpanded ? (
-                        <ChevronDown className="h-4 w-4 text-gray-500" />
-                      ) : (
-                        <ChevronRight className="h-4 w-4 text-gray-500" />
-                      )}
-                      <div>
-                        <div className="font-medium">Listing #{listing.id || index + 1}</div>
-                        <div className="text-sm text-gray-500">Scraped: {formatDate(listing.last_scraped_at)}</div>
-                      </div>
-                    </div>
-                    <Badge variant={recordCount > 0 ? "default" : "secondary"}>{recordCount} records</Badge>
-                  </button>
-                  {isExpanded && (
-                    <div className="px-4 pb-4 border-t bg-gray-50">
-                      <pre className="text-xs overflow-auto max-h-96 whitespace-pre-wrap mt-3 p-3 bg-white rounded border">
-                        {JSON.stringify(listing.listing_data, null, 2)}
-                      </pre>
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-          </div>
         </CardContent>
       </Card>
     </div>

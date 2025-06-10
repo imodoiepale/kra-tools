@@ -332,7 +332,7 @@ export function ExportButton({
           Message: "No return listing data available",
         },
       ])
-      XLSX.utils.book_append_sheet(workbook, emptySheet, "Return Listings")
+      XLSX.utils.book_append_sheet(workbook, emptySheet, "Return Summary")
       return workbook
     }
 
@@ -405,7 +405,7 @@ export function ExportButton({
 
     sheet["!cols"] = colWidths
 
-    XLSX.utils.book_append_sheet(workbook, sheet, "Return Listings Detail")
+    XLSX.utils.book_append_sheet(workbook, sheet, "Return Summary Detail")
     return workbook
   }
 

@@ -434,22 +434,6 @@ export function VatSectionViewer({ companyId, vatReturns }: VatSectionViewerProp
       )
     }
 
-    const headers = [
-      { key: 'srNo', label: 'Sr.No.', className: 'px-2 py-2 text-left font-medium text-gray-900 border-b border-r' },
-      { key: 'period', label: 'Period', className: 'px-2 py-2 text-left font-medium text-gray-900 border-b border-r' },
-      ...SECTION_O_FIELDS.map(field => ({
-        key: field.key,
-        label: `${field.label}`,
-        srNo: `(${field.srNo})`,
-        className: 'px-2 py-2 text-center font-medium text-gray-900 border-b border-r'
-      }))
-    ]
-
-    // Remove border-r from last header
-    if (headers.length > 0) {
-      headers[headers.length - 1].className = headers[headers.length - 1].className.replace(' border-r', '')
-    }
-
     return (
       <div className="space-y-4">
         <div className="flex items-center justify-between">
@@ -468,12 +452,31 @@ export function VatSectionViewer({ companyId, vatReturns }: VatSectionViewerProp
         <div className="overflow-auto border rounded-lg max-h-96">
           <table className="w-full text-sm border-collapse">
             <thead className="bg-gray-50 sticky top-0 z-10">
+              {/* Main Header Row */}
               <tr>
-                {headers.map((header, index) => (
-                  <th key={header.key} className={header.className}>
-                    {header.label}
-                    {header.srNo && <br />}
-                    {header.srNo && <span className="text-xs text-gray-500">{header.srNo}</span>}
+                <th rowSpan={2} className="px-2 py-2 text-left font-medium text-gray-900 border-b border-r">
+                  Sr.No.
+                </th>
+                <th rowSpan={2} className="px-2 py-2 text-left font-medium text-gray-900 border-b border-r">
+                  Period
+                </th>
+                {SECTION_O_FIELDS.map((field, index) => (
+                  <th
+                    key={field.key}
+                    className={`px-2 py-2 text-center font-medium text-gray-900 border-b ${index === SECTION_O_FIELDS.length - 1 ? '' : 'border-r'}`}
+                  >
+                    {field.label}
+                  </th>
+                ))}
+              </tr>
+              {/* Subheader Row with Sr.No. numbers */}
+              <tr>
+                {SECTION_O_FIELDS.map((field, index) => (
+                  <th
+                    key={`${field.key}-srno`}
+                    className={`px-2 py-2 text-center font-medium text-gray-500 text-xs border-b ${index === SECTION_O_FIELDS.length - 1 ? '' : 'border-r'}`}
+                  >
+                    ({field.srNo})
                   </th>
                 ))}
               </tr>
@@ -488,10 +491,9 @@ export function VatSectionViewer({ companyId, vatReturns }: VatSectionViewerProp
                     return (
                       <td
                         key={field.key}
-                        // ADDED: Ternary operator to check if value is negative
                         className={`px-2 py-2 text-gray-900 text-right whitespace-nowrap 
-                          ${fieldIndex === SECTION_O_FIELDS.length - 1 ? '' : 'border-r'} 
-                          ${value < 0 ? 'text-red-600 font-semibold' : ''}`}
+                        ${fieldIndex === SECTION_O_FIELDS.length - 1 ? '' : 'border-r'} 
+                        ${value < 0 ? 'text-red-600 font-semibold' : ''}`}
                       >
                         {formatCurrency(value)}
                       </td>
