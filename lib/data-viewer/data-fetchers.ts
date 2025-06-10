@@ -8,7 +8,7 @@ async function fetchAllPages<T>(
   selectClause: string = "*",
   filters: { [key: string]: any } = {},
   orderBy: { column: string; ascending: boolean }[] = [],
-  pageSize: number = 100000
+  pageSize: number = 10000
 ): Promise<T[]> {
   let allData: T[] = []
   let offset = 0
