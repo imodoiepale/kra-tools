@@ -6,7 +6,8 @@ import { getCompanies, getVatReturnDetails } from "@/lib/data-viewer/data-fetche
 import { DataViewerContent } from "@/components/data-viewer/data-viewer-content"
 
 export default async function DataViewerPage() {
-  const [companies, allVatReturns] = await Promise.all([getCompanies(), getVatReturnDetails()])
+  // const [companies, allVatReturns] = await Promise.all([getCompanies(), getVatReturnDetails()])
+  const companies = await getCompanies()
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -24,7 +25,8 @@ export default async function DataViewerPage() {
       </header>
 
       <div className="flex flex-1">
-        <DataViewerContent companies={companies} allVatReturns={allVatReturns} />
+        <DataViewerContent companies={companies} />
+        {/* <DataViewerContent companies={companies} allVatReturns={allVatReturns} /> */}
       </div>
     </div>
   )

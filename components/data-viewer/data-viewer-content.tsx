@@ -23,13 +23,21 @@ import { ReturnListingsTable } from "@/components/data-viewer/return-listings-ta
 import { ExportButton } from "@/components/data-viewer/export-button"
 import { getCompanyReturnListings } from "@/lib/data-viewer/data-fetchers"
 import type { Company, VatReturnDetails, CompanyVatReturnListings } from "@/lib/data-viewer/supabase"
+import { fetchAllVatReturnsAction } from "./actions"
+
 
 interface DataViewerContentProps {
   companies: Company[]
-  allVatReturns: VatReturnDetails[]
+  // allVatReturns: VatReturnDetails[]
 }
 
-export function DataViewerContent({ companies, allVatReturns }: DataViewerContentProps) {
+export function DataViewerContent({ companies }: DataViewerContentProps) {
+// export function DataViewerContent({ companies, allVatReturns }: DataViewerContentProps) {
+const [allVatReturns, setAllVatReturns] = useState<VatReturnDetails[]>([])
+  const [isDataLoading, setIsDataLoading] = useState(true) // Loading state for the big data
+  const [dataError, setDataError] = useState<string | null>(null)
+
+  
   const [selectedCompany, setSelectedCompany] = useState<Company | null>(null)
   const [companySearch, setCompanySearch] = useState("")
   const [fromYear, setFromYear] = useState<string>("2024")
@@ -64,6 +72,25 @@ export function DataViewerContent({ companies, allVatReturns }: DataViewerConten
     { value: "12", label: "December" },
   ]
 
+  useEffect(() => {
+    const loadAllData = async () => {
+      setIsDataLoading(true)
+      setDataError(null)
+
+      const result = await fetchAllVatReturnsAction()
+
+      if (result.success && result.data) {
+        setAllVatReturns(result.data)
+      } else {
+        console.error("Failed to load all VAT returns:", result.error)
+        setDataError("Could not load the complete dataset. Please try refreshing the page.")
+      }
+      setIsDataLoading(false)
+    }
+
+    loadAllData()
+  }, [])
+
   // Load company-specific data when company or date range changes
   useEffect(() => {
     if (!selectedCompany) return
@@ -96,6 +123,9 @@ export function DataViewerContent({ companies, allVatReturns }: DataViewerConten
 
     loadCompanyData()
   }, [selectedCompany, fromYear, fromMonth, toYear, toMonth, allVatReturns])
+
+
+
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("en-KE", {
