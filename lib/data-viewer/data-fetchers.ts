@@ -8,12 +8,12 @@ async function fetchAllPages<T>(
   selectClause: string = "*",
   filters: { [key: string]: any } = {},
   orderBy: { column: string; ascending: boolean }[] = [],
-  pageSize: number = 1000
+  pageSize: number = 100000
 ): Promise<T[]> {
   let allData: T[] = []
   let offset = 0
   let hasMore = true
-  const maxConcurrentPages = 5 // Limit concurrent requests to avoid overwhelming the database
+  const maxConcurrentPages = 2 // Limit concurrent requests to avoid overwhelming the database
 
   console.log(`Starting to fetch all data from ${tableName}...`)
 
