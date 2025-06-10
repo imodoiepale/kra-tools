@@ -33,8 +33,8 @@ export function VatDataTable({ companies, vatReturns, viewType }: VatDataTablePr
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("en-KE", {
-      style: "currency",
-      currency: "KES",
+      style: "decimal",
+      // currency: "KES",
       minimumFractionDigits: 0,
       maximumFractionDigits: 0,
     }).format(amount)

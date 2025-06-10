@@ -5,6 +5,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import {
@@ -23,21 +31,13 @@ import { ReturnListingsTable } from "@/components/data-viewer/return-listings-ta
 import { ExportButton } from "@/components/data-viewer/export-button"
 import { getCompanyReturnListings } from "@/lib/data-viewer/data-fetchers"
 import type { Company, VatReturnDetails, CompanyVatReturnListings } from "@/lib/data-viewer/supabase"
-import { fetchAllVatReturnsAction } from "./actions"
-
 
 interface DataViewerContentProps {
   companies: Company[]
-  // allVatReturns: VatReturnDetails[]
+  allVatReturns: VatReturnDetails[]
 }
 
-export function DataViewerContent({ companies }: DataViewerContentProps) {
-// export function DataViewerContent({ companies, allVatReturns }: DataViewerContentProps) {
-const [allVatReturns, setAllVatReturns] = useState<VatReturnDetails[]>([])
-  const [isDataLoading, setIsDataLoading] = useState(true) // Loading state for the big data
-  const [dataError, setDataError] = useState<string | null>(null)
-
-  
+export function DataViewerContent({ companies, allVatReturns }: DataViewerContentProps) {
   const [selectedCompany, setSelectedCompany] = useState<Company | null>(null)
   const [companySearch, setCompanySearch] = useState("")
   const [fromYear, setFromYear] = useState<string>("2024")
@@ -72,25 +72,6 @@ const [allVatReturns, setAllVatReturns] = useState<VatReturnDetails[]>([])
     { value: "12", label: "December" },
   ]
 
-  useEffect(() => {
-    const loadAllData = async () => {
-      setIsDataLoading(true)
-      setDataError(null)
-
-      const result = await fetchAllVatReturnsAction()
-
-      if (result.success && result.data) {
-        setAllVatReturns(result.data)
-      } else {
-        console.error("Failed to load all VAT returns:", result.error)
-        setDataError("Could not load the complete dataset. Please try refreshing the page.")
-      }
-      setIsDataLoading(false)
-    }
-
-    loadAllData()
-  }, [])
-
   // Load company-specific data when company or date range changes
   useEffect(() => {
     if (!selectedCompany) return
@@ -124,17 +105,36 @@ const [allVatReturns, setAllVatReturns] = useState<VatReturnDetails[]>([])
     loadCompanyData()
   }, [selectedCompany, fromYear, fromMonth, toYear, toMonth, allVatReturns])
 
-
-
-
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("en-KE", {
-      style: "currency",
-      currency: "KES",
+      style: "decimal",
+      // currency: "KES",
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     }).format(amount)
   }
+
+  // --- NEW HELPER COMPONENT ---
+  // This component handles the logic for displaying currency and highlighting negatives.
+  const FormattedCurrencyCell = ({ value, isNilReturn }: { value: number; isNilReturn: boolean }) => {
+    // If it's a nil return, just show a dash.
+    if (isNilReturn) {
+      return <span>-</span>;
+    }
+
+    // Determine the CSS class based on the value.
+    const textColorClass = value < 0 ? "text-red-600 font-semibold" : "";
+
+    // Format the number using your existing function.
+    const formattedValue = new Intl.NumberFormat("en-KE", {
+      style: "decimal",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(value);
+
+    return <span className={textColorClass}>{formattedValue}</span>;
+  };
+
 
   const formatDate = (dateString: string) => {
     try {
@@ -537,11 +537,10 @@ const [allVatReturns, setAllVatReturns] = useState<VatReturnDetails[]>([])
                 <button
                   key={company.id}
                   onClick={() => setSelectedCompany(company)}
-                  className={`w-full text-left p-3 rounded-lg border transition-colors ${
-                    selectedCompany?.id === company.id
+                  className={`w-full text-left p-3 rounded-lg border transition-colors ${selectedCompany?.id === company.id
                       ? "bg-blue-50 border-blue-200 shadow-sm"
                       : "bg-white border-gray-200 hover:bg-gray-50"
-                  }`}
+                    }`}
                 >
                   <div className="font-medium text-sm truncate">{company.company_name}</div>
                   <div className="text-xs text-gray-500 font-mono">{company.kra_pin}</div>
@@ -679,100 +678,107 @@ const [allVatReturns, setAllVatReturns] = useState<VatReturnDetails[]>([])
                       )}
                     </div>
                   </CardHeader>
-                  <CardContent>
-                    <div className="overflow-auto border rounded-lg">
-                      <table className="w-full text-sm border-collapse">
-                        <thead>
-                          <tr className="border-b text-left bg-gray-50">
-                            <th className="pb-2 px-3 py-3 font-medium border-r">Sr.No.</th>
-                            <th className="pb-2 px-3 py-3 font-medium border-r">Period</th>
-                            <th className="pb-2 px-3 py-3 font-medium border-r">Filing Date</th>
-                            <th className="pb-2 px-3 py-3 font-medium border-r">Type</th>
-                            <th className="pb-2 px-3 py-3 font-medium border-r">Output VAT (6)</th>
-                            <th className="pb-2 px-3 py-3 font-medium border-r">Input VAT (12)</th>
-                            <th className="pb-2 px-3 py-3 font-medium border-r">VAT Withholding</th>
-                            <th className="pb-2 px-3 py-3 font-medium border-r">Credit B/F</th>
-                            <th className="pb-2 px-3 py-3 font-medium border-r">Net VAT Payable</th>
-                            <th className="pb-2 px-3 py-3 font-medium border-r">Purchases Reg.</th>
-                            <th className="pb-2 px-3 py-3 font-medium border-r">Purchases Not Reg.</th>
-                            <th className="pb-2 px-3 py-3 font-medium border-r">Sales Reg.</th>
-                            <th className="pb-2 px-3 py-3 font-medium">Sales Not Reg.</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {companyVatReturns.map((vatReturn, index) => {
-                            const sectionOValues = extractSectionOValues(vatReturn)
-                            const sectionB2Values = extractSectionB2Values(vatReturn)
-                            const sectionF2Values = extractSectionF2Values(vatReturn)
-                            const filingDate = getFilingDate(vatReturn)
-                            const isLate = filingDate ? isFilingLate(vatReturn, filingDate) : false
+                  <CardContent className="p-4">
+                    <div className="relative h-[600px] w-full overflow-auto border rounded-lg">
+                      <Table>
+                        <TableHeader className="sticky top-0 z-10 bg-background">
+                          <TableRow>
+                            {/* `whitespace-nowrap` is essential to prevent text wrapping and force horizontal scrolling */}
+                            <TableHead className="border-r whitespace-nowrap">Sr.No.</TableHead>
+                            <TableHead className="border-r whitespace-nowrap">Period</TableHead>
+                            <TableHead className="border-r whitespace-nowrap">Filing Date</TableHead>
+                            <TableHead className="border-r whitespace-nowrap">Type</TableHead>
+                            <TableHead className="border-r whitespace-nowrap">Output VAT (6)</TableHead>
+                            <TableHead className="border-r whitespace-nowrap">Input VAT (12)</TableHead>
+                            <TableHead className="border-r whitespace-nowrap">VAT Withholding</TableHead>
+                            <TableHead className="border-r whitespace-nowrap">Credit B/F</TableHead>
+                            <TableHead className="border-r whitespace-nowrap">Net VAT Payable</TableHead>
+                            <TableHead className="border-r whitespace-nowrap">Purchases Reg.</TableHead>
+                            <TableHead className="border-r whitespace-nowrap">Purchases Not Reg.</TableHead>
+                            <TableHead className="border-r whitespace-nowrap">Sales Reg.</TableHead>
+                            <TableHead className="whitespace-nowrap">Sales Not Reg.</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {companyVatReturns.length > 0 ? (
+                            companyVatReturns.map((vatReturn, index) => {
+                              const sectionOValues = extractSectionOValues(vatReturn)
+                              const sectionB2Values = extractSectionB2Values(vatReturn)
+                              const sectionF2Values = extractSectionF2Values(vatReturn)
+                              const filingDate = getFilingDate(vatReturn)
+                              const isLate = filingDate ? isFilingLate(vatReturn, filingDate) : false
 
-                            return (
-                              <tr key={index} className={`border-b ${index % 2 === 0 ? "bg-white" : "bg-blue-50"}`}>
-                                <td className="py-3 px-3 font-medium border-r">{index + 1}</td>
-                                <td className="py-3 px-3 border-r">
-                                  {new Date(vatReturn.year, vatReturn.month - 1).toLocaleDateString("en-US", {
-                                    month: "short",
-                                    year: "numeric",
-                                  })}
-                                </td>
-                                <td className="py-3 px-3 border-r">
-                                  <div className="flex items-center gap-2">
-                                    {filingDate ? (
-                                      <>
-                                        {isLate ? (
-                                          <AlertTriangle className="h-4 w-4 text-red-500" />
-                                        ) : (
-                                          <CheckCircle className="h-4 w-4 text-green-500" />
-                                        )}
-                                        <span className={`font-bold ${isLate ? "text-red-600" : "text-green-600"}`}>
-                                          {formatDate(filingDate)}
-                                        </span>
-                                      </>
-                                    ) : (
-                                      <span className="text-gray-400">-</span>
-                                    )}
-                                  </div>
-                                </td>
-                                <td className="py-3 px-3 border-r">
-                                  <Badge variant={vatReturn.is_nil_return ? "secondary" : "default"}>
-                                    {vatReturn.is_nil_return ? "Nil" : "VAT Filled"}
-                                  </Badge>
-                                </td>
-                                <td className="py-3 px-3 border-r">
-                                  {vatReturn.is_nil_return ? "-" : formatCurrency(sectionOValues.outputVat6)}
-                                </td>
-                                <td className="py-3 px-3 border-r">
-                                  {vatReturn.is_nil_return ? "-" : formatCurrency(sectionOValues.inputVat12)}
-                                </td>
-                                <td className="py-3 px-3 border-r">
-                                  {vatReturn.is_nil_return ? "-" : formatCurrency(sectionOValues.totalVatWithholding)}
-                                </td>
-                                <td className="py-3 px-3 border-r">
-                                  {vatReturn.is_nil_return ? "-" : formatCurrency(sectionOValues.creditBroughtForward)}
-                                </td>
-                                <td className="py-3 px-3 border-r">
-                                  {vatReturn.is_nil_return ? "-" : formatCurrency(sectionOValues.netVatPayable)}
-                                </td>
-                                <td className="py-3 px-3 border-r">
-                                  {vatReturn.is_nil_return ? "-" : formatCurrency(sectionF2Values.purchasesRegistered)}
-                                </td>
-                                <td className="py-3 px-3 border-r">
-                                  {vatReturn.is_nil_return
-                                    ? "-"
-                                    : formatCurrency(sectionF2Values.purchasesNotRegistered)}
-                                </td>
-                                <td className="py-3 px-3 border-r">
-                                  {vatReturn.is_nil_return ? "-" : formatCurrency(sectionB2Values.salesRegistered)}
-                                </td>
-                                <td className="py-3 px-3">
-                                  {vatReturn.is_nil_return ? "-" : formatCurrency(sectionB2Values.salesNotRegistered)}
-                                </td>
-                              </tr>
-                            )
-                          })}
-                        </tbody>
-                      </table>
+                              return (
+                                <TableRow key={vatReturn.id} className="border-b">
+                                  <TableCell className="font-medium border-r whitespace-nowrap">{index + 1}</TableCell>
+                                  <TableCell className="border-r whitespace-nowrap">
+                                    {new Date(vatReturn.year, vatReturn.month - 1).toLocaleDateString("en-US", {
+                                      month: "short",
+                                      year: "numeric",
+                                    })}
+                                  </TableCell>
+                                  <TableCell className="border-r whitespace-nowrap">
+                                    <div className="flex items-center gap-2">
+                                      {filingDate ? (
+                                        <>
+                                          {isLate ? (
+                                            <AlertTriangle className="h-4 w-4 flex-shrink-0 text-red-500" />
+                                          ) : (
+                                            <CheckCircle className="h-4 w-4 flex-shrink-0 text-green-500" />
+                                          )}
+                                          <span className={`font-bold ${isLate ? "text-red-600" : "text-green-600"}`}>
+                                            {formatDate(filingDate)}
+                                          </span>
+                                        </>
+                                      ) : (
+                                        <span className="text-gray-400">-</span>
+                                      )}
+                                    </div>
+                                  </TableCell>
+                                  <TableCell className="border-r whitespace-nowrap">
+                                    <Badge variant={vatReturn.is_nil_return ? "secondary" : "default"}>
+                                      {vatReturn.is_nil_return ? "Nil" : "VAT Filled"}
+                                    </Badge>
+                                  </TableCell>
+                                  <TableCell className="text-right border-r whitespace-nowrap">
+                                    <FormattedCurrencyCell value={sectionOValues.outputVat6} isNilReturn={vatReturn.is_nil_return} />
+                                  </TableCell>
+                                  <TableCell className="text-right border-r whitespace-nowrap">
+                                    <FormattedCurrencyCell value={sectionOValues.inputVat12} isNilReturn={vatReturn.is_nil_return} />
+                                  </TableCell>
+                                  <TableCell className="text-right border-r whitespace-nowrap">
+                                    <FormattedCurrencyCell value={sectionOValues.totalVatWithholding} isNilReturn={vatReturn.is_nil_return} />
+                                  </TableCell>
+                                  <TableCell className="text-right border-r whitespace-nowrap">
+                                    <FormattedCurrencyCell value={sectionOValues.creditBroughtForward} isNilReturn={vatReturn.is_nil_return} />
+                                  </TableCell>
+                                  <TableCell className="text-right border-r whitespace-nowrap font-bold">
+                                    <FormattedCurrencyCell value={sectionOValues.netVatPayable} isNilReturn={vatReturn.is_nil_return} />
+                                  </TableCell>
+                                  <TableCell className="text-right border-r whitespace-nowrap">
+                                    <FormattedCurrencyCell value={sectionF2Values.purchasesRegistered} isNilReturn={vatReturn.is_nil_return} />
+                                  </TableCell>
+                                  <TableCell className="text-right border-r whitespace-nowrap">
+                                    <FormattedCurrencyCell value={sectionF2Values.purchasesNotRegistered} isNilReturn={vatReturn.is_nil_return} />
+                                  </TableCell>
+                                  <TableCell className="text-right border-r whitespace-nowrap">
+                                    <FormattedCurrencyCell value={sectionB2Values.salesRegistered} isNilReturn={vatReturn.is_nil_return} />
+                                  </TableCell>
+                                  <TableCell className="text-right whitespace-nowrap">
+                                    <FormattedCurrencyCell value={sectionB2Values.salesNotRegistered} isNilReturn={vatReturn.is_nil_return} />
+                                  </TableCell>
+                                </TableRow>
+                              )
+                            })
+                          ) : (
+                            <TableRow>
+                              <TableCell colSpan={13} className="h-24 text-center">
+                                No VAT returns found.
+                              </TableCell>
+                            </TableRow>
+                          )}
+                        </TableBody>
+                      </Table>
                     </div>
                   </CardContent>
                 </Card>

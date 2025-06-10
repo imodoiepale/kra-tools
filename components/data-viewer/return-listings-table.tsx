@@ -146,8 +146,8 @@ export function ReturnListingsTable({ returnListings, company }: ReturnListingsT
     // Format amounts/currency
     if (key.toLowerCase().includes("amount") && typeof value === "number") {
       return new Intl.NumberFormat("en-KE", {
-        style: "currency",
-        currency: "KES",
+        style: "decimal",
+        // currency: "KES",
         minimumFractionDigits: 0,
         maximumFractionDigits: 0,
       }).format(value)

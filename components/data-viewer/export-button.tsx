@@ -27,14 +27,14 @@ export function ExportButton({
 }: ExportButtonProps) {
   const [isExporting, setIsExporting] = useState(false)
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat("en-KE", {
-      style: "currency",
-      currency: "KES",
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(amount)
-  }
+  // const formatCurrency = (amount: number) => {
+  //   return new Intl.NumberFormat("en-KE", {
+  //     style: "currency",
+  //     currency: "KES",
+  //     minimumFractionDigits: 2,
+  //     maximumFractionDigits: 2,
+  //   }).format(amount)
+  // }
 
   const calculateVatTotals = (vatReturn: VatReturnDetails) => {
     if (vatReturn.is_nil_return) return { outputVat: 0, inputVat: 0, netVat: 0 }

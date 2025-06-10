@@ -130,8 +130,8 @@ export function VatSectionViewer({ companyId, vatReturns }: VatSectionViewerProp
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("en-KE", {
-      style: "currency",
-      currency: "KES",
+      style: "decimal",
+      // currency: "KES",
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     }).format(amount)
