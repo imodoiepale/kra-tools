@@ -99,7 +99,7 @@ const navItems = [
     href: "/filed-vat",
     icon: FileSignature,
     label: "Filed VAT Summary",
-    category: "Accounting Cycles",
+    category: "i-Tax Summaries",
     available: true,
   },
   {

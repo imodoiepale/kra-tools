@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Button } from "@/components/ui/button"
 import { Download, Eye } from "lucide-react"
 import Link from "next/link"
-import type { Company, VatReturnDetails } from "@/lib/supabase"
+import type { Company, VatReturnDetails } from "@/lib/data-viewer/supabase"
 
 interface VatDataTableProps {
   companies: Company[]
