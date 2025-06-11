@@ -113,24 +113,50 @@ export function ReturnListingsTable({ returnListings, company }: ReturnListingsT
       })
     })
 
-    // Define preferred order for common columns (Sr.No. will be added separately)
+    // Convert to array and remove duplicates based on exact key names
+    const keysArray = Array.from(allKeys)
+
+    // Remove exact duplicates first
+    const uniqueKeys = [...new Set(keysArray)]
+
+    // Now handle case where we might have different cased versions of the same column
+    // Keep only one instance of "Status" (prefer the exact case match)
+    const finalKeys: string[] = []
+    const processedLowerKeys = new Set<string>()
+
+    // Define preferred order for common columns
     const preferredOrder = [
+      "Sr.No.",
       "Status",
-      "Entity Type",
-      "NSSF Status",
-      "Date of Filing",
       "Tax Obligation",
       "Type of Return",
-      "Return Period to",
-      "View Return Filed",
-      "Acknowledgement No",
+      "Date of Filing",
       "Return Period from",
+      "Return Period to",
+      "Acknowledgement No",
+      "Entity Type",
+      "NSSF Status",
+      "View Return Filed",
     ]
 
-    const orderedKeys = preferredOrder.filter((key) => allKeys.has(key))
-    const remainingKeys = Array.from(allKeys).filter((key) => !preferredOrder.includes(key))
+    // First, add columns that match preferred order
+    preferredOrder.forEach(preferredKey => {
+      const matchingKey = uniqueKeys.find(key => key === preferredKey)
+      if (matchingKey && !processedLowerKeys.has(matchingKey.toLowerCase())) {
+        finalKeys.push(matchingKey)
+        processedLowerKeys.add(matchingKey.toLowerCase())
+      }
+    })
 
-    return [...orderedKeys, ...remainingKeys]
+    // Then add remaining columns that weren't in preferred order
+    uniqueKeys.forEach(key => {
+      if (!processedLowerKeys.has(key.toLowerCase())) {
+        finalKeys.push(key)
+        processedLowerKeys.add(key.toLowerCase())
+      }
+    })
+
+    return finalKeys
   }
 
   const columnHeaders = getColumnHeaders()
@@ -168,6 +194,12 @@ export function ReturnListingsTable({ returnListings, company }: ReturnListingsT
       .join(" ")
   }
 
+  // Get the actual key from the record that matches the header (exact match)
+  const getActualKey = (record: any, header: string) => {
+    const keys = Object.keys(record)
+    return keys.find(key => key === header) || header
+  }
+
   if (returnListings.length === 0) {
     return (
       <Card>
@@ -186,15 +218,31 @@ export function ReturnListingsTable({ returnListings, company }: ReturnListingsT
     <div className="space-y-4">
       {/* Summary Card */}
       <Card>
-        <CardHeader className="flex flex-row items-center">
-          <div className="grid gap-2">
+        <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div className="grid gap-2 text-center md:text-left">
             <CardTitle>Return Summary Data</CardTitle>
             <CardDescription>
               Data extracted from KRA portal return Summary - Total {allRecords.length} records from{" "}
               {returnListings.length} listing{returnListings.length !== 1 ? "s" : ""}
             </CardDescription>
           </div>
-          <div className="ml-auto flex items-center gap-2">
+
+          <div className="flex w-full flex-col items-center gap-4 md:w-auto md:flex-row md:justify-center">
+            <div className="relative w-full max-w-md">
+              <Search className="absolute left-3 top-1/2 h-4 w-8 -translate-y-1/2 text-gray-400" />
+              <Input
+                placeholder="Search in all listing data..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10"
+              />
+            </div>
+            <Badge variant="secondary" className="whitespace-nowrap">
+              {filteredRecords.length} records
+            </Badge>
+          </div>
+
+          <div className="flex justify-center md:ml-auto">
             <ExportButton
               data={filteredRecords.map((record, index) => ({ "Sr.No.": index + 1, ...record }))}
               filename={`${company.company_name}_Return_Listings_Detailed`}
@@ -207,24 +255,6 @@ export function ReturnListingsTable({ returnListings, company }: ReturnListingsT
         </CardHeader>
       </Card>
 
-      {/* Search and Filters */}
-      <Card>
-        <CardContent className="p-4">
-          <div className="flex items-center gap-4">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-              <Input
-                placeholder="Search in all listing data..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
-              />
-            </div>
-            <Badge variant="secondary">{filteredRecords.length} records</Badge>
-          </div>
-        </CardContent>
-      </Card>
-
       {/* Data Table */}
       <Card>
         <CardContent className="p-0">
@@ -233,17 +263,15 @@ export function ReturnListingsTable({ returnListings, company }: ReturnListingsT
               <p>No records found matching your search criteria</p>
             </div>
           ) : (
-            <div className="overflow-auto border rounded-lg">
+            <div className="max-h-[70vh] overflow-auto rounded-lg border">
               <table className="w-full text-sm border-collapse">
-                <thead className="bg-gray-50 border-b">
+                <thead className="sticky top-0 z-10 bg-gray-50 border-b shadow-sm">
                   <tr>
-                    <th className="px-3 py-3 text-left font-medium text-gray-900 border-r">Sr.No.</th>
                     {columnHeaders.map((header, index) => (
                       <th
                         key={header}
-                        className={`px-3 py-3 text-left font-medium text-gray-900 ${
-                          index === columnHeaders.length - 1 ? "" : "border-r"
-                        }`}
+                        className={`px-3 py-3 text-left font-medium text-gray-900 bg-gray-50 ${index === columnHeaders.length - 1 ? "" : "border-r"
+                          }`}
                       >
                         {formatHeaderName(header)}
                       </th>
@@ -253,22 +281,24 @@ export function ReturnListingsTable({ returnListings, company }: ReturnListingsT
                 <tbody>
                   {filteredRecords.map((record, index) => (
                     <tr key={index} className={`border-b ${index % 2 === 0 ? "bg-white" : "bg-blue-50"}`}>
-                      <td className="px-3 py-3 text-gray-900 font-medium border-r">{index + 1}</td>
-                      {columnHeaders.map((header, headerIndex) => (
-                        <td
-                          key={header}
-                          className={`px-3 py-3 text-gray-900 ${
-                            headerIndex === columnHeaders.length - 1 ? "" : "border-r"
-                          }`}
-                        >
-                          {formatCellValue(record[header], header)}
-                        </td>
-                      ))}
+                      {columnHeaders.map((header, headerIndex) => {
+                        const actualKey = getActualKey(record, header)
+                        return (
+                          <td
+                            key={header}
+                            className={`px-3 py-3 text-gray-900 ${headerIndex === columnHeaders.length - 1 ? "" : "border-r"
+                              }`}
+                          >
+                            {formatCellValue(record[actualKey], header)}
+                          </td>
+                        )
+                      })}
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
+
           )}
         </CardContent>
       </Card>
