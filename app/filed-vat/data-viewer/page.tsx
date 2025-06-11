@@ -1,13 +1,10 @@
+// app/filed-vat/data-viewer/page.tsx
 import { ArrowLeft, Download } from "lucide-react"
 import Link from "next/link"
-
 import { Button } from "@/components/ui/button"
-import { getCompanies, getVatReturnDetails } from "@/lib/data-viewer/data-fetchers"
-import { DataViewerContent } from "@/components/data-viewer/data-viewer-content"
+import { DataViewerClient } from "@/components/data-viewer/data-viewer-client"
 
-export default async function DataViewerPage() {
-  const [companies, allVatReturns] = await Promise.all([getCompanies(), getVatReturnDetails()])
-
+export default function DataViewerPage() {
   return (
     <div className="flex min-h-screen flex-col">
       <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b bg-background px-4 md:px-6">
@@ -24,7 +21,7 @@ export default async function DataViewerPage() {
       </header>
 
       <div className="flex flex-1">
-        <DataViewerContent companies={companies} allVatReturns={allVatReturns} />
+        <DataViewerClient />
       </div>
     </div>
   )
