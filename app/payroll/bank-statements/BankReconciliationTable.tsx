@@ -1,7 +1,7 @@
 // @ts-nocheck
 'use client'
 
-import { useEffect, useState, useMemo, useCallback } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { format } from 'date-fns'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/hooks/use-toast'
@@ -15,7 +15,7 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table'
-import { Loader2, Download, UploadCloud, Edit, ChevronDown, Eye, CheckCircle, XCircle, AlertTriangle, MoreHorizontal, Trash } from 'lucide-react'
+import { Loader2, Download, UploadCloud, Edit, Eye, CheckCircle, AlertTriangle, MoreHorizontal, Trash } from 'lucide-react'
 import { BankStatementUploadDialog } from './components/BankStatementUploadDialog'
 import { BankExtractionDialog } from './components/BankExtractionDialog'
 import { QuickbooksBalanceDialog } from './components/QuickbooksBalanceDialog'
@@ -27,7 +27,6 @@ import {
     DropdownMenuTrigger,
     DropdownMenuSeparator
 } from "@/components/ui/dropdown-menu"
-
 import {
     AlertDialog,
     AlertDialogAction,
@@ -38,6 +37,7 @@ import {
     AlertDialogHeader,
     AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { FilterWithStatus } from './BankStatementFilters';
 
 interface Bank {
     id: number
@@ -106,7 +106,7 @@ interface Company {
     audit_client_effective_from: string | null;
     audit_client_effective_to: string | null;
     sheria_client_effective_from: string | null;
-    sheria_client_effective_from: string | null;
+    sheria_client_effective_to: string | null;
     imm_client_effective_from: string | null;
     imm_client_effective_to: string | null;
 }
@@ -117,39 +117,20 @@ interface BankReconciliationTableProps {
     searchTerm: string;
     setSearchTerm: (term: string) => void;
     onStatsChange: () => void;
-    activeFilters?: FilterWithStatus[]; // Changed from string[] to FilterWithStatus[]
-    selectedCategories: FilterWithStatus[]; // Changed similarly
+    selectedClientTypes: FilterWithStatus[];
+    selectedStatementStatuses: FilterWithStatus[];
 }
 
-// Helper function to normalize currency codes
 const normalizeCurrencyCode = (code: string | null): string => {
-    if (!code) return 'USD'; // Default fallback
-
-    // Convert to uppercase
+    if (!code) return 'USD';
     const upperCode = code.toUpperCase().trim();
-
-    // Map of common incorrect currency codes to valid ISO codes
     const currencyMap: Record<string, string> = {
-        'EURO': 'EUR',
-        'EUROS': 'EUR',
-        'US DOLLAR': 'USD',
-        'US DOLLARS': 'USD',
-        'USDOLLAR': 'USD',
-        'POUND': 'GBP',
-        'POUNDS': 'GBP',
-        'STERLING': 'GBP',
-        'KENYA SHILLING': 'KES',
-        'KENYA SHILLINGS': 'KES',
-        'KENYAN SHILLING': 'KES',
-        'KENYAN SHILLINGS': 'KES',
-        'KSH': 'KES',
-        'K.SH': 'KES',
-        'KSHS': 'KES',
-        'K.SHS': 'KES',
-        'SH': 'KES'
+        'EURO': 'EUR', 'EUROS': 'EUR', 'US DOLLAR': 'USD', 'US DOLLARS': 'USD',
+        'USDOLLAR': 'USD', 'POUND': 'GBP', 'POUNDS': 'GBP', 'STERLING': 'GBP',
+        'KENYA SHILLING': 'KES', 'KENYA SHILLINGS': 'KES', 'KENYAN SHILLING': 'KES',
+        'KENYAN SHILLINGS': 'KES', 'KSH': 'KES', 'K.SH': 'KES', 'KSHS': 'KES',
+        'K.SHS': 'KES', 'SH': 'KES'
     };
-
-    // Return mapped value or the original if not in the map
     return currencyMap[upperCode] || upperCode;
 };
 
@@ -159,8 +140,8 @@ export function BankReconciliationTable({
     searchTerm,
     setSearchTerm,
     onStatsChange,
-    activeFilters = [],
-    selectedCategories = []
+    selectedClientTypes = [],
+    selectedStatementStatuses = []
 }: BankReconciliationTableProps) {
     const [loading, setLoading] = useState<boolean>(true)
     const [companies, setCompanies] = useState<Company[]>([])
@@ -172,122 +153,63 @@ export function BankReconciliationTable({
     const [selectedStatement, setSelectedStatement] = useState<BankStatement | null>(null)
     const [quickbooksDialogOpen, setQuickbooksDialogOpen] = useState<boolean>(false)
     const [statementCycleId, setStatementCycleId] = useState<string | null>(null)
-
-    // const [showDeleteConfirmation, setShowDeleteConfirmation] = useState<boolean>(false);
-    // const [statementToDelete, setStatementToDelete] = useState<{ id: string, bankId: number } | null>(null);
     const [showDeleteConfirmation, setShowDeleteConfirmation] = useState<boolean>(false);
     const [statementToDelete, setStatementToDelete] = useState<{ id: string, bankId: number } | null>(null);
-
     const { toast } = useToast()
 
-    // Fetch all companies and banks
-    // Improved fetch function with extra logging and error handling
     const fetchCompaniesAndBanks = async () => {
-        console.log("Starting fetchCompaniesAndBanks...");
+        setLoading(true);
         try {
-            setLoading(true);
-
-            // Fetch all companies from acc_portal_company_duplicate
-            const { data: companiesData, error: companiesError } = await supabase
-                .from('acc_portal_company_duplicate')
-                .select('*');
-
-            if (companiesError) {
-                console.error('Error fetching companies:', companiesError);
-                toast({
-                    title: 'Error',
-                    description: 'Failed to fetch companies',
-                    variant: 'destructive',
-                });
-                return false;
-            }
-
-            console.log(`Successfully fetched ${companiesData?.length || 0} companies`);
-
-            // Fetch all banks
-            const { data: banksData, error: banksError } = await supabase
-                .from('acc_portal_banks')
-                .select('*');
-
-            if (banksError) {
-                console.error('Error fetching banks:', banksError);
-                toast({
-                    title: 'Error',
-                    description: 'Failed to fetch banks',
-                    variant: 'destructive',
-                });
-                return false;
-            }
-
-            console.log(`Successfully fetched ${banksData?.length || 0} banks`);
-
-            // Verify data before setting state
-            if (!companiesData || companiesData.length === 0) {
-                console.warn('No companies data returned from API');
-            }
-
-            if (!banksData || banksData.length === 0) {
-                console.warn('No banks data returned from API');
-            }
-
-            // Update state with the fetched data
+            const { data: companiesData, error: companiesError } = await supabase.from('acc_portal_company_duplicate').select('*');
+            if (companiesError) throw companiesError;
+            const { data: banksData, error: banksError } = await supabase.from('acc_portal_banks').select('*');
+            if (banksError) throw banksError;
             setCompanies(companiesData || []);
             setAllBanks(banksData || []);
-
-            console.log("State updated with companies and banks");
-            return true;
         } catch (error) {
-            console.error('Error fetching companies and banks:', error);
-            toast({
-                title: 'Error',
-                description: 'Failed to fetch companies and banks',
-                variant: 'destructive',
-            });
-            return false;
+            toast({ title: 'Error', description: 'Failed to fetch companies and banks', variant: 'destructive' });
         } finally {
             setLoading(false);
         }
     };
 
-    // Filter companies based on selected categories
     const filteredCompanies = useMemo(() => {
-        if (selectedCategories.length === 0) return companies;
-
+        if (!selectedClientTypes || selectedClientTypes.length === 0) {
+            return companies;
+        }
+        const currentDate = new Date();
+        const isClientCurrentlyActive = (company: Company, typeKey: string): boolean => {
+            const fromField = `${typeKey}_client_effective_from`;
+            const toField = `${typeKey}_client_effective_to`;
+            const fromDateStr = company[fromField];
+            const toDateStr = company[toField];
+            if (!fromDateStr || !toDateStr) return false;
+            return new Date(fromDateStr) <= currentDate && currentDate <= new Date(toDateStr);
+        };
+        const hasClientType = (company: Company, typeKey: string): boolean => {
+            const fromField = `${typeKey}_client_effective_from`;
+            return !!company[fromField];
+        };
         return companies.filter(company => {
-            return selectedCategories.some(category => {
-                const currentDate = new Date();
-                switch (category) {
-                    case 'acc':
-                        return company.acc_client_effective_from && company.acc_client_effective_to &&
-                            new Date(company.acc_client_effective_from) <= currentDate &&
-                            new Date(company.acc_client_effective_to) >= currentDate;
-                    case 'audit_tax':
-                        return company.audit_client_effective_from && company.audit_client_effective_to &&
-                            new Date(company.audit_client_effective_from) <= currentDate &&
-                            new Date(company.audit_client_effective_to) >= currentDate;
-                    case 'cps_sheria':
-                        return company.sheria_client_effective_from && company.sheria_client_effective_from &&
-                            new Date(company.sheria_client_effective_from) <= currentDate &&
-                            new Date(company.sheria_client_effective_from) >= currentDate;
-                    case 'imm':
-                        return company.imm_client_effective_from && company.imm_client_effective_to &&
-                            new Date(company.imm_client_effective_from) <= currentDate &&
-                            new Date(company.imm_client_effective_to) >= currentDate;
-                    default:
-                        return false;
+            return selectedClientTypes.some(filter => {
+                const { key: typeKey, status } = filter;
+                if (!hasClientType(company, typeKey)) return false;
+                const isCurrentlyActive = isClientCurrentlyActive(company, typeKey);
+                switch (status) {
+                    case 'active': return isCurrentlyActive;
+                    case 'inactive': return !isCurrentlyActive;
+                    case 'all': return true;
+                    default: return false;
                 }
             });
         });
-    }, [companies, selectedCategories]);
+    }, [companies, selectedClientTypes]);
 
-    // Organize companies and banks
     const organizedData = useMemo(() => {
         const companiesWithBanks = filteredCompanies.map(company => ({
             ...company,
             banks: allBanks.filter(bank => bank.company_name === company.company_name)
         }));
-
-        // Sort companies: those with banks first, then those without
         return companiesWithBanks.sort((a, b) => {
             if (a.banks.length === 0 && b.banks.length > 0) return 1;
             if (a.banks.length > 0 && b.banks.length === 0) return -1;
@@ -295,186 +217,94 @@ export function BankReconciliationTable({
         });
     }, [filteredCompanies, allBanks]);
 
-    // Filter by search term
-    // Filter by search term
     const searchFilteredData = useMemo(() => {
         if (!searchTerm) return organizedData;
-
         const lowerSearchTerm = searchTerm.toLowerCase();
         return organizedData.filter(company => {
-            // Add null check for company_name
-            const companyNameMatch = company.company_name
-                ? company.company_name.toLowerCase().includes(lowerSearchTerm)
-                : false;
-
-            // Add null checks for banks and their properties
-            const bankMatch = company.banks && company.banks.length > 0 && company.banks.some(bank => {
-                const bankNameMatch = bank.bank_name
-                    ? bank.bank_name.toLowerCase().includes(lowerSearchTerm)
-                    : false;
-
-                const accountNumberMatch = bank.account_number
-                    ? bank.account_number.includes(searchTerm)
-                    : false;
-
-                return bankNameMatch || accountNumberMatch;
-            });
-
+            const companyNameMatch = company.company_name?.toLowerCase().includes(lowerSearchTerm);
+            const bankMatch = company.banks?.some(bank =>
+                bank.bank_name?.toLowerCase().includes(lowerSearchTerm) ||
+                bank.account_number?.includes(searchTerm)
+            );
             return companyNameMatch || bankMatch;
         });
     }, [organizedData, searchTerm]);
 
-    // Filter statements based on active filters
-    // Filter statements based on active filters
-    const filteredStatements = useMemo(() => {
-        if (activeFilters.length === 0) return bankStatements;
-
-        return bankStatements.filter(statement => {
-            // Check if statement matches any of the active filters
-            return activeFilters.some(filter => {
-                // Get the condition for each filter type
-                let condition = false;
-
-                switch (filter) {
-                    case 'validated':
-                        condition = !!statement.validation_status?.is_validated;
-                        break;
-                    case 'pending_validation':
-                        condition = !statement.validation_status?.is_validated;
-                        break;
-                    case 'has_issues':
-                        condition = (statement.validation_status?.mismatches?.length || 0) > 0;
-                        break;
-                    case 'reconciled':
-                        const closingBal = statement.statement_extractions?.closing_balance || 0;
-                        const qbBal = statement.quickbooks_balance || 0;
-                        condition = Math.abs(closingBal - qbBal) <= 0.01;
-                        break;
-                    case 'pending_reconciliation':
-                        const closingBalance = statement.statement_extractions?.closing_balance || 0;
-                        const quickbooksBalance = statement.quickbooks_balance || 0;
-                        condition = Math.abs(closingBalance - quickbooksBalance) > 0.01;
-                        break;
-                    default:
-                        condition = true;
-                }
-
-                return condition;
-            });
-        });
-    }, [bankStatements, activeFilters]);
-
-    const getFilterCondition = (statement: BankStatement, filterKey: string) => {
+    const getStatementFilterCondition = (statement: BankStatement, filterKey: string) => {
         switch (filterKey) {
             case 'validated':
-                return statement.validation_status?.is_validated;
+                return !!statement.validation_status?.is_validated;
             case 'pending_validation':
                 return !statement.validation_status?.is_validated;
             case 'has_issues':
-                return statement.validation_status?.mismatches?.length > 0;
+                return (statement.validation_status?.mismatches?.length || 0) > 0;
             case 'reconciled':
-                return Math.abs((statement.quickbooks_balance || 0) -
-                    (statement.statement_extractions?.closing_balance || 0)) <= 0.01;
+                const closingBal = statement.statement_extractions?.closing_balance ?? null;
+                const qbBal = statement.quickbooks_balance ?? null;
+                return closingBal !== null && qbBal !== null && Math.abs(closingBal - qbBal) <= 0.01;
             case 'pending_reconciliation':
-                return Math.abs((statement.quickbooks_balance || 0) -
-                    (statement.statement_extractions?.closing_balance || 0)) > 0.01;
+                const closingBalance = statement.statement_extractions?.closing_balance ?? null;
+                const quickbooksBalance = statement.quickbooks_balance ?? null;
+                if (closingBalance === null || quickbooksBalance === null) return true;
+                return Math.abs(closingBalance - quickbooksBalance) > 0.01;
             default:
-                return true;
+                return false;
         }
     };
 
-    // Single useEffect to handle payroll cycle and data fetching - without searchTerm dependency
+    const filteredStatements = useMemo(() => {
+        if (!selectedStatementStatuses || selectedStatementStatuses.length === 0) {
+            return bankStatements;
+        }
+        return bankStatements.filter(statement => {
+            return selectedStatementStatuses.some(filter => getStatementFilterCondition(statement, filter.key));
+        });
+    }, [bankStatements, selectedStatementStatuses]);
+
     useEffect(() => {
         const initializeData = async () => {
             setLoading(true);
             try {
-                // Format month with leading zero for consistency
                 const monthStr = (selectedMonth + 1).toString().padStart(2, '0');
                 const cycleMonthYear = `${selectedYear}-${monthStr}`;
-                console.log(`Initializing data for period: ${cycleMonthYear}`);
-
-                // STEP 1: Get or create statement cycle
-                let cycle;
                 const { data: existingCycle, error: cycleError } = await supabase
-                    .from('statement_cycles')
-                    .select('id')
-                    .eq('month_year', cycleMonthYear)
-                    .single();
+                    .from('statement_cycles').select('id').eq('month_year', cycleMonthYear).single();
 
-                if (cycleError) {
-                    if (cycleError.code === 'PGRST116') { // No rows found
-                        console.log('No existing statement cycle found. Creating new cycle...');
-
-                        // Create new cycle
-                        const { data: newCycle, error: createError } = await supabase
-                            .from('statement_cycles')
-                            .insert({
-                                month_year: cycleMonthYear,
-                                status: 'active',
-                                created_at: new Date().toISOString()
-                            })
-                            .select('id')
-                            .single();
-
-                        if (createError) {
-                            throw new Error(`Failed to create statement cycle: ${createError.message}`);
-                        }
-
-                        cycle = newCycle;
-                        console.log('Created new statement cycle:', cycle);
-                    } else {
-                        throw new Error(`Failed to fetch statement cycle: ${cycleError.message}`);
-                    }
+                let cycleId;
+                if (cycleError && cycleError.code === 'PGRST116') {
+                    const { data: newCycle, error: createError } = await supabase
+                        .from('statement_cycles').insert({ month_year: cycleMonthYear, status: 'active' }).select('id').single();
+                    if (createError) throw createError;
+                    cycleId = newCycle.id;
+                } else if (cycleError) {
+                    throw cycleError;
                 } else {
-                    cycle = existingCycle;
-                    console.log('Found existing statement cycle:', cycle);
+                    cycleId = existingCycle.id;
                 }
-
-                // Update state with cycle ID
-                setStatementCycleId(cycle?.id || null);
-
-                // STEP 2: Fetch ALL banks (without filtering by searchTerm)
-                fetchCompaniesAndBanks();
-
-                // STEP 3: Fetch bank statements if we have a cycle ID
-                if (cycle?.id) {
+                setStatementCycleId(cycleId);
+                await fetchCompaniesAndBanks();
+                if (cycleId) {
                     const { data: statementsData, error: statementsError } = await supabase
-                        .from('acc_cycle_bank_statements')
-                        .select('*')
-                        .eq('statement_cycle_id', cycle.id);
-                    if (statementsError) {
-                        throw new Error(`Failed to fetch statements: ${statementsError.message}`);
-                    }
-
-                    console.log(`Fetched ${statementsData?.length || 0} bank statements`);
+                        .from('acc_cycle_bank_statements').select('*').eq('statement_cycle_id', cycleId);
+                    if (statementsError) throw statementsError;
                     setBankStatements(statementsData || []);
-                } else {
-                    console.warn('No statement cycle ID - skipping statement fetch');
-                    setBankStatements([]);
                 }
-
             } catch (error) {
-                console.error('Error initializing data:', error);
-                toast({
-                    title: 'Error',
-                    description: error.message || 'Failed to initialize data',
-                    variant: 'destructive'
-                });
+                toast({ title: 'Error', description: error.message || 'Failed to initialize data', variant: 'destructive' });
             } finally {
                 setLoading(false);
             }
         };
-
         initializeData();
     }, [selectedMonth, selectedYear, toast]);
 
-    const handleUploadStatement = async (bankId: number) => {
-        const bank = allBanks.find(b => b.id === bankId)
+    const handleUploadStatement = (bankId: number) => {
+        const bank = allBanks.find(b => b.id === bankId);
         if (bank) {
-            setSelectedBank(bank)
-            setUploadDialogOpen(true)
+            setSelectedBank(bank);
+            setUploadDialogOpen(true);
         }
-    }
+    };
 
     const handleViewStatement = (bankId: number) => {
         // Reset all states first

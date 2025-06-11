@@ -103,6 +103,20 @@ const navItems = [
     available: true,
   },
   {
+    href: "/filed-paye",
+    icon: FileSignature,
+    label: "Filed PAYE Summary",
+    category: "i-Tax Summaries",
+    available: false,
+  },
+  {
+    href: "/filed-it",
+    icon: FileSignature,
+    label: "Filed Income Tax Summary",
+    category: "i-Tax Summaries",
+    available: false,
+  },
+  {
     href: "/wh-vat",
     icon: FileSignature,
     label: "WH VAT Cycle",
