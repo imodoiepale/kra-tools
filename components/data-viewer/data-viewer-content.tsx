@@ -16,7 +16,8 @@ import { ReturnListingsTable } from "@/components/data-viewer/return-listings-ta
 import { ExportButton } from "@/components/data-viewer/export-button"
 import { CategoryFilters, CategoryStatus } from "./CategoryFilters"
 import { getFilteredCompanyDataAction } from "@/app/filed-vat/data-viewer/actions"
-import type { EnrichedCompany, VatReturnDetails, CompanyVatReturnListings } from "@/lib/data-viewer/supabase"
+import type { EnrichedCompany } from "@/lib/data-viewer/data-fetchers"
+import type { VatReturnDetails, CompanyVatReturnListings } from "@/lib/data-viewer/supabase"
 
 interface DataViewerContentProps {
   companies: EnrichedCompany[]
