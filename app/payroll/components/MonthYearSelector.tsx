@@ -8,8 +8,8 @@ import {
 } from "@/components/ui/select"
 
 interface MonthYearSelectorProps {
-    selectedYear: number;
-    selectedMonth: number;
+    selectedYear: number | null | undefined;
+    selectedMonth: number | null | undefined;
     onYearChange: (year: number) => void;
     onMonthChange: (month: number) => void;
 }
@@ -17,7 +17,7 @@ interface MonthYearSelectorProps {
 const years = Array.from(
     { length: new Date().getFullYear() - 2014 },
     (_, i) => 2015 + i
-);
+).reverse(); // Show most recent years first
 
 const months = [
     "January", "February", "March", "April", "May", "June",
@@ -30,11 +30,17 @@ export function MonthYearSelector({
     onYearChange,
     onMonthChange
 }: MonthYearSelectorProps) {
+    // Check if the props are ready. If not, you could render a loading state,
+    // but providing a fallback value to `.toString()` is cleaner and sufficient here.
+    const monthValue = selectedMonth !== null && selectedMonth !== undefined ? selectedMonth.toString() : "";
+    const yearValue = selectedYear !== null && selectedYear !== undefined ? selectedYear.toString() : "";
+
     return (
         <div className="flex gap-2">
             <Select
-                value={selectedMonth.toString()}
-                onValueChange={(value) => onMonthChange(parseInt(value))}
+                value={monthValue}
+                onValueChange={(value) => onMonthChange(parseInt(value, 10))}
+                disabled={monthValue === ""} // Optionally disable if no value
             >
                 <SelectTrigger className="w-[180px]">
                     <SelectValue placeholder="Select month" />
@@ -49,8 +55,9 @@ export function MonthYearSelector({
             </Select>
 
             <Select
-                value={selectedYear.toString()}
-                onValueChange={(value) => onYearChange(parseInt(value))}
+                value={yearValue}
+                onValueChange={(value) => onYearChange(parseInt(value, 10))}
+                disabled={yearValue === ""} // Optionally disable if no value
             >
                 <SelectTrigger className="w-[120px]">
                     <SelectValue placeholder="Select year" />

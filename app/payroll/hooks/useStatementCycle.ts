@@ -1,333 +1,165 @@
 // @ts-nocheck
-import { useState, useCallback } from 'react'
-import { format } from 'date-fns'
-import { supabase } from '@/lib/supabase'
-import { useToast } from '@/hooks/use-toast'
+import { useState, useCallback } from 'react';
+import { supabase } from '@/lib/supabase';
+import { useToast } from '@/hooks/use-toast';
 
+/**
+ * A centralized hook to manage all data interactions for the Bank Statement Reconciliation cycle.
+ * This version is aligned with the provided database schema and calculates stats client-side.
+ */
 export const useStatementCycle = () => {
-    const [selectedYear, setSelectedYear] = useState(new Date().getFullYear())
-    const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth())
-    const [searchTerm, setSearchTerm] = useState('')
-    const [loading, setLoading] = useState(false)
-    const [statementCycleId, setStatementCycleId] = useState<string | null>(null)
-    
-    const { toast } = useToast()
+    const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
+    const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+    const [searchTerm, setSearchTerm] = useState('');
+    const [loading, setLoading] = useState(false);
+    const { toast } = useToast();
 
-    const selectedMonthYear = `${selectedYear}-${(selectedMonth + 1).toString().padStart(2, '0')}`
-
-    const fetchOrCreateStatementCycle = useCallback(async () => {
-        setLoading(true)
+    const getOrCreateStatementCycle = useCallback(async (year: number, month: number): Promise<string | null> => {
+        const monthYearStr = `${year}-${(month + 1).toString().padStart(2, '0')}`;
         try {
-            // Use upsert with onConflict to ensure uniqueness
-            const { data: cycle, error } = await supabase
+            const { data, error } = await supabase
                 .from('statement_cycles')
-                .upsert(
-                    {
-                        month_year: selectedMonthYear,
-                        status: 'active',
-                        created_at: new Date().toISOString()
-                    },
-                    {
-                        onConflict: 'month_year',
-                        ignoreDuplicates: true // This ensures we don't update existing records
-                    }
-                )
-                .select()
-                .single()
+                .select('id')
+                .eq('month_year', monthYearStr)
+                .single();
 
-            if (error) {
-                throw error;
-            }
+            if (data) return data.id;
 
-            // If no cycle was returned from upsert (because it already existed)
-            // fetch the existing one
-            if (!cycle) {
-                const { data: existingCycle, error: fetchError } = await supabase
+            if (error && error.code === 'PGRST116') { // 'No rows found'
+                const { data: newCycle, error: createError } = await supabase
                     .from('statement_cycles')
-                    .select('*')
-                    .eq('month_year', selectedMonthYear)
-                    .single()
-
-                if (fetchError) throw fetchError;
-
-                setStatementCycleId(existingCycle.id);
-                return existingCycle.id;
+                    .insert({ month_year: monthYearStr, status: 'active' })
+                    .select('id')
+                    .single();
+                if (createError) throw createError;
+                return newCycle.id;
             }
+            if (error) throw error;
 
-            // Store the cycle ID
-            setStatementCycleId(cycle.id);
-            return cycle.id;
         } catch (error) {
-            console.error('Failed to initialize statement cycle:', error);
-            toast({
-                title: 'Error',
-                description: 'Failed to initialize statement cycle',
-                variant: 'destructive'
-            });
+            console.error('Failed to get or create statement cycle:', error);
+            toast({ title: 'Cycle Initialization Error', description: `Could not initialize the statement cycle for ${monthYearStr}.`, variant: 'destructive' });
             return null;
+        }
+    }, [toast]);
+
+    const fetchInitialData = useCallback(async (year: number, month: number) => {
+        setLoading(true);
+        try {
+            const cycleId = await getOrCreateStatementCycle(year, month);
+            if (!cycleId) return { stats: null, banks: [], cycleId: null };
+
+            const [banksRes, statementsRes] = await Promise.all([
+                supabase.from('acc_portal_banks').select('*', { count: 'exact' }),
+                supabase.from('acc_cycle_bank_statements').select('statement_extractions, status').eq('statement_cycle_id', cycleId)
+            ]);
+
+            if (banksRes.error) throw banksRes.error;
+            if (statementsRes.error) throw statementsRes.error;
+
+            const statements = statementsRes.data || [];
+            const totalBanks = banksRes.count || 0;
+
+            const calculatedStats = statements.reduce((acc, statement) => {
+                const closingBal = parseFloat(statement.statement_extractions?.closing_balance);
+                // Correctly access quickbooks_balance from the status JSONB
+                const qbBal = parseFloat(statement.status?.quickbooks_balance);
+
+                if (!isNaN(closingBal) && !isNaN(qbBal)) {
+                    if (Math.abs(closingBal - qbBal) <= 0.01) {
+                        acc.reconciled++;
+                    } else {
+                        acc.mismatches++;
+                    }
+                }
+                return acc;
+            }, { reconciled: 0, mismatches: 0 });
+
+            const finalStats = {
+                total_banks: totalBanks,
+                statements_uploaded: statements.length,
+                reconciled: calculatedStats.reconciled,
+                mismatches: calculatedStats.mismatches,
+            };
+
+            return {
+                stats: finalStats,
+                banks: banksRes.data || [],
+                cycleId: cycleId
+            };
+        } catch (error) {
+            console.error('Failed to fetch initial data:', error);
+            toast({ title: 'Data Fetch Error', description: 'Failed to fetch initial page data.', variant: 'destructive' });
+            return { stats: null, banks: [], cycleId: null };
         } finally {
             setLoading(false);
         }
-    }, [selectedMonthYear, toast]);
+    }, [getOrCreateStatementCycle, toast]);
 
-    // Function to get bank statements for the current cycle
-    const fetchBankStatements = async (cycleId: string, filters = {}) => {
+    const fetchCoreData = useCallback(async (cycleId: string) => {
+        if (!cycleId) return { companies: [], banks: [], statements: [] };
+        setLoading(true);
         try {
-            // Build the query
-            let query = supabase
-                .from('acc_cycle_bank_statements')
-                .select(`
-                    *,
-                    bank:acc_portal_banks(
-                        id,
-                        bank_name,
-                        account_number,
-                        bank_currency,
-                        company_id,
-                        company_name
-                    )
-                `)
-                .eq('statement_cycle_id', cycleId)
+            const [companiesRes, banksRes, statementsRes] = await Promise.all([
+                supabase.from('acc_portal_company_duplicate').select('*'),
+                supabase.from('acc_portal_banks').select('*'),
+                supabase.from('acc_cycle_bank_statements').select('*').eq('statement_cycle_id', cycleId)
+            ]);
 
-            // Add search filter if provided
-            if (searchTerm) {
-                query = query.or(`bank.company_name.ilike.%${searchTerm}%,bank.bank_name.ilike.%${searchTerm}%`)
-            }
-
-            // Execute the query
-            const { data, error } = await query
-
-            if (error) throw error
-            return data || []
-        } catch (error) {
-            console.error('Error fetching bank statements:', error)
-            toast({
-                title: 'Error',
-                description: 'Failed to load bank statements',
-                variant: 'destructive'
-            })
-            return []
-        }
-    }
-
-    // Function to update bank statement
-    const updateBankStatement = async (statementId: string, updateData: any) => {
-        try {
-            const { data, error } = await supabase
-                .from('acc_cycle_bank_statements')
-                .update(updateData)
-                .eq('id', statementId)
-                .select()
-                .single()
-
-            if (error) throw error
-            return data
-        } catch (error) {
-            console.error('Error updating bank statement:', error)
-            toast({
-                title: 'Error',
-                description: 'Failed to update bank statement',
-                variant: 'destructive'
-            })
-            return null
-        }
-    }
-
-    // Function to handle document upload to Statement-Cycle storage
-    const uploadStatementDocument = async (file: File, path: string) => {
-        try {
-            const { data, error } = await supabase.storage
-                .from('Statement-Cycle')
-                .upload(path, file, {
-                    cacheControl: '3600',
-                    upsert: true
-                })
-
-            if (error) throw error
-            return data.path
-        } catch (error) {
-            console.error('Error uploading document:', error)
-            toast({
-                title: 'Error',
-                description: 'Failed to upload document',
-                variant: 'destructive'
-            })
-            return null
-        }
-    }
-
-    // Function to delete a document from storage
-    const deleteStatementDocument = async (path: string) => {
-        try {
-            const { error } = await supabase.storage
-                .from('Statement-Cycle')
-                .remove([path])
-
-            if (error) throw error
-            return true
-        } catch (error) {
-            console.error('Error deleting document:', error)
-            toast({
-                title: 'Error',
-                description: 'Failed to delete document',
-                variant: 'destructive'
-            })
-            return false
-        }
-    }
-
-    // Function to fetch banks
-    const fetchBanks = async (filters = {}) => {
-        try {
-            let query = supabase
-                .from('acc_portal_banks')
-                .select('*')
-                .not('company_id', 'is', null) // Ensure company_id is not null
-                .order('company_name', { ascending: true }) // Order by company name
-
-            if (searchTerm) {
-                query = query.or(`company_name.ilike.%${searchTerm}%,bank_name.ilike.%${searchTerm}%`)
-            }
-
-            const { data, error } = await query
-            if (error) throw error
-
-            // Filter out any banks that might have null company_id (double check)
-            const validBanks = data?.filter(bank => bank.company_id !== null) || []
-            
-            return validBanks
-        } catch (error) {
-            console.error('Error fetching banks:', error)
-            toast({
-                title: 'Error',
-                description: 'Failed to load bank data',
-                variant: 'destructive'
-            })
-            return []
-        }
-    }
-
-    // Function to get bank statement statistics
-    const fetchStatementStats = async (cycleId: string) => {
-        try {
-            // Get total banks count
-            const { data: banksData, error: banksError } = await supabase
-                .from('acc_portal_banks')
-                .select('id', { count: 'exact' })
-
-            if (banksError) throw banksError
-
-            // Get statements for the current cycle
-            const { data: statements, error: statementsError } = await supabase
-                .from('acc_cycle_bank_statements')
-                .select(`
-                    id, 
-                    statement_document, 
-                    statement_extractions,
-                    quickbooks_balance
-                `)
-                .eq('statement_cycle_id', cycleId)
-
-            if (statementsError) throw statementsError
-
-            // Calculate stats
-            const statementsUploaded = statements?.filter(s => 
-                s.statement_document?.statement_pdf !== null
-            ).length || 0
-
-            const reconciled = statements?.filter(s =>
-                s.statement_extractions?.closing_balance !== null &&
-                s.quickbooks_balance !== null &&
-                Math.abs(s.statement_extractions.closing_balance - s.quickbooks_balance) < 0.01
-            ).length || 0
-
-            const mismatches = statements?.filter(s =>
-                s.statement_extractions?.closing_balance !== null &&
-                s.quickbooks_balance !== null &&
-                Math.abs(s.statement_extractions.closing_balance - s.quickbooks_balance) >= 0.01
-            ).length || 0
+            if (companiesRes.error) throw companiesRes.error;
+            if (banksRes.error) throw banksRes.error;
+            if (statementsRes.error) throw statementsRes.error;
 
             return {
-                totalBanks: banksData?.length || 0,
-                statementsUploaded,
-                reconciled,
-                mismatches
-            }
+                companies: companiesRes.data || [],
+                banks: banksRes.data || [],
+                statements: statementsRes.data || [],
+            };
         } catch (error) {
-            console.error('Error fetching statement stats:', error)
-            toast({
-                title: 'Error',
-                description: 'Failed to load bank statement statistics',
-                variant: 'destructive'
-            })
-            return {
-                totalBanks: 0,
-                statementsUploaded: 0,
-                reconciled: 0,
-                mismatches: 0
-            }
+            toast({ title: 'Data Fetch Error', description: 'Failed to fetch reconciliation table data.', variant: 'destructive' });
+            return { companies: [], banks: [], statements: [] };
+        } finally {
+            setLoading(false);
         }
-    }
+    }, [toast]);
 
-    const createStatementCyclesForPeriod = async (statementPeriod: string) => {
+    const deleteStatement = useCallback(async (statement) => {
+        if (!statement?.id) return false;
+        setLoading(true);
         try {
-            const periodDates = parseStatementPeriod(statementPeriod);
-            if (!periodDates) return [];
+            const filesToRemove: string[] = [];
+            if (statement.statement_document?.statement_pdf) filesToRemove.push(statement.statement_document.statement_pdf);
+            if (statement.statement_document?.statement_excel) filesToRemove.push(statement.statement_document.statement_excel);
 
-            const { startMonth, startYear, endMonth, endYear } = periodDates;
-            const monthsInRange = generateMonthRange(startMonth, startYear, endMonth, endYear);
-
-            const createdCycles = [];
-
-            for (const { month, year } of monthsInRange) {
-                const monthStr = (month + 1).toString().padStart(2, '0');
-                const cycleMonthYear = `${year}-${monthStr}`;
-
-                const { data: cycle, error } = await supabase
-                    .from('statement_cycles')
-                    .upsert({
-                        month_year: cycleMonthYear,
-                        status: 'active',
-                        created_at: new Date().toISOString()
-                    }, {
-                        onConflict: 'month_year',
-                        ignoreDuplicates: true
-                    })
-                    .select()
-                    .single();
-
-                if (error) {
-                    console.error(`Cycle creation error for ${cycleMonthYear}:`, error);
-                    continue;
-                }
-
-                createdCycles.push(cycle);
+            if (filesToRemove.length > 0) {
+                await supabase.storage.from('Statement-Cycle').remove(filesToRemove);
             }
 
-            return createdCycles;
-        } catch (error) {
-            console.error('Statement cycle creation error:', error);
-            return [];
-        }
-    };
+            const { error } = await supabase.from('acc_cycle_bank_statements').delete().eq('id', statement.id);
+            if (error) throw error;
 
+            toast({ title: 'Success', description: 'Bank statement deleted successfully.' });
+            return true;
+        } catch (error) {
+            console.error('Error deleting statement:', error);
+            toast({ title: 'Deletion Error', description: 'Failed to delete the bank statement.', variant: 'destructive' });
+            return false;
+        } finally {
+            setLoading(false);
+        }
+    }, [toast]);
 
     return {
-        selectedYear,
-        setSelectedYear,
+        loading,
         selectedMonth,
         setSelectedMonth,
+        selectedYear,
+        setSelectedYear,
         searchTerm,
         setSearchTerm,
-        loading,
-        statementCycleId,
-        fetchOrCreateStatementCycle,
-        createStatementCyclesForPeriod,
-        fetchBankStatements,
-        updateBankStatement,
-        uploadStatementDocument,
-        deleteStatementDocument,
-        fetchBanks,
-        fetchStatementStats
-    }
-}
+        getOrCreateStatementCycle,
+        fetchInitialData,
+        fetchCoreData,
+        deleteStatement,
+    };
+};
