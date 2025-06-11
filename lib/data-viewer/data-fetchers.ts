@@ -86,38 +86,121 @@ async function fetchAllPages<T>(
 }
 
 // Enhanced companies fetcher
-export async function getCompanies(accountingOnly: boolean = false): Promise<Company[]> {
+export async function getCompanies(): Promise<Company[]> {
   try {
-    console.log(`Fetching ALL companies - accountingOnly: ${accountingOnly}`)
+    console.log("Fetching all companies...")
+    const companies = await fetchAllPages<Company>(
+      "acc_portal_company_duplicate",
+      "*",
+      {},
+      [{ column: "company_name", ascending: true }]
+    )
 
-    let query = supabase
-      .from("acc_portal_company_duplicate")
-      .select("*")
-      .order("company_name", { ascending: true })
-
-    // Filter for accounting companies using existing date fields
-    if (accountingOnly) {
-      query = query.not("acc_client_effective_from", "is", null)
-    }
-
-    const { data, error } = await query
-
-    if (error) {
-      console.error("Error fetching companies:", error)
-      throw new Error(`Database error: ${error.message}`)
-    }
-
-    const companies = (data || []) as Company[]
     console.log(`Successfully fetched ${companies.length} companies`)
     return companies
-
   } catch (error) {
-    console.error("Error in getCompanies:", error)
-    throw error
+    console.error("Unexpected error fetching companies:", error)
+    return []
   }
 }
 // Add these missing functions to lib/data-viewer/data-fetchers.ts
-export async function getCompanyById(id: number): Promise<Company | null> {
+export async function getAllVatReturns(options: {
+  companyIds?: number[]
+  includeNestedFields?: boolean
+  onProgress?: (loaded: number, total: number) => void
+}): Promise<VatReturnDetails[]> {
+  try {
+    const { companyIds, includeNestedFields = false, onProgress } = options
+
+    console.log("Fetching ALL VAT returns...")
+
+    // First, get the total count
+    let countQuery = supabase
+      .from("vat_return_details")
+      .select("*", { count: "exact", head: true })
+
+    if (companyIds && companyIds.length > 0) {
+      countQuery = countQuery.in("company_id", companyIds)
+    }
+
+    const { count, error: countError } = await countQuery
+
+    if (countError) {
+      console.error("Error getting count:", countError)
+      throw new Error(`Count error: ${countError.message}`)
+    }
+
+    const totalRecords = count || 0
+    console.log(`Total VAT returns to fetch: ${totalRecords}`)
+
+    if (totalRecords === 0) {
+      return []
+    }
+
+    // Select fields based on nested field requirement
+    const selectClause = includeNestedFields
+      ? "*"
+      : `
+        id, company_id, year, month, processing_status, is_nil_return, 
+        extraction_timestamp, created_at, updated_at, kra_pin,
+        section_o, section_m, section_n, section_b2, section_f2
+      `
+
+    // Fetch all data using pagination
+    const pageSize = 1000 // Fetch 1000 records per request
+    const allReturns: VatReturnDetails[] = []
+    let offset = 0
+
+    while (offset < totalRecords) {
+      let query = supabase
+        .from("vat_return_details")
+        .select(selectClause)
+        .order("year", { ascending: false })
+        .order("month", { ascending: false })
+        .range(offset, offset + pageSize - 1)
+
+      if (companyIds && companyIds.length > 0) {
+        query = query.in("company_id", companyIds)
+      }
+
+      const { data, error } = await query
+
+      if (error) {
+        console.error(`Error fetching batch ${offset}-${offset + pageSize}:`, error)
+        throw new Error(`Batch error: ${error.message}`)
+      }
+
+      if (data && data.length > 0) {
+        allReturns.push(...(data as VatReturnDetails[]))
+        console.log(`Fetched ${allReturns.length}/${totalRecords} VAT returns`)
+
+        // Call progress callback
+        if (onProgress) {
+          onProgress(allReturns.length, totalRecords)
+        }
+      }
+
+      offset += pageSize
+
+      // Break if we got less than expected (end of data)
+      if (!data || data.length < pageSize) {
+        break
+      }
+
+      // Small delay to prevent overwhelming the database
+      await new Promise(resolve => setTimeout(resolve, 100))
+    }
+
+    console.log(`Successfully fetched ${allReturns.length} total VAT returns`)
+    return allReturns
+
+  } catch (error) {
+    console.error("Error in getAllVatReturns:", error)
+    throw error
+  }
+}
+
+export async function getCompanyById(id: number) {
   try {
     const { data, error } = await supabase
       .from("acc_portal_company_duplicate")
@@ -132,7 +215,7 @@ export async function getCompanyById(id: number): Promise<Company | null> {
 
     return data as Company
   } catch (error) {
-    console.error("Error in getCompanyById:", error)
+    console.error("Unexpected error fetching company:", error)
     return null
   }
 }
@@ -335,131 +418,93 @@ function aggregateVatSectionByMonth(sectionData: any[], sectionField: string, ba
   return aggregated
 }
 
-export async function getAllVatReturns(options: {
-  companyIds?: number[]
-  includeNestedFields?: boolean
-  onProgress?: (loaded: number, total: number) => void
-}): Promise<VatReturnDetails[]> {
-  try {
-    const { companyIds, includeNestedFields = false, onProgress } = options
-
-    console.log("Fetching ALL VAT returns...")
-
-    // First, get the total count
-    let countQuery = supabase
-      .from("vat_return_details")
-      .select("*", { count: "exact", head: true })
-
-    if (companyIds && companyIds.length > 0) {
-      countQuery = countQuery.in("company_id", companyIds)
-    }
-
-    const { count, error: countError } = await countQuery
-
-    if (countError) {
-      console.error("Error getting count:", countError)
-      throw new Error(`Count error: ${countError.message}`)
-    }
-
-    const totalRecords = count || 0
-    console.log(`Total VAT returns to fetch: ${totalRecords}`)
-
-    if (totalRecords === 0) {
-      return []
-    }
-
-    // Select fields based on nested field requirement
-    const selectClause = includeNestedFields
-      ? "*"
-      : `
-        id, company_id, year, month, processing_status, is_nil_return, 
-        extraction_timestamp, created_at, updated_at, kra_pin,
-        section_o, section_m, section_n, section_b2, section_f2
-      `
-
-    // Fetch all data using pagination
-    const pageSize = 10000 // Fetch 1000 records per request
-    const allReturns: VatReturnDetails[] = []
-    let offset = 0
-
-    while (offset < totalRecords) {
-      let query = supabase
-        .from("vat_return_details")
-        .select(selectClause)
-        .order("year", { ascending: false })
-        .order("month", { ascending: false })
-        .range(offset, offset + pageSize - 1)
-
-      if (companyIds && companyIds.length > 0) {
-        query = query.in("company_id", companyIds)
-      }
-
-      const { data, error } = await query
-
-      if (error) {
-        console.error(`Error fetching batch ${offset}-${offset + pageSize}:`, error)
-        throw new Error(`Batch error: ${error.message}`)
-      }
-
-      if (data && data.length > 0) {
-        allReturns.push(...(data as VatReturnDetails[]))
-        console.log(`Fetched ${allReturns.length}/${totalRecords} VAT returns`)
-
-        // Call progress callback
-        if (onProgress) {
-          onProgress(allReturns.length, totalRecords)
-        }
-      }
-
-      offset += pageSize
-
-      // Break if we got less than expected (end of data)
-      if (!data || data.length < pageSize) {
-        break
-      }
-
-      // Small delay to prevent overwhelming the database
-      await new Promise(resolve => setTimeout(resolve, 100))
-    }
-
-    console.log(`Successfully fetched ${allReturns.length} total VAT returns`)
-    return allReturns
-
-  } catch (error) {
-    console.error("Error in getAllVatReturns:", error)
-    throw error
-  }
-}
 
 // Enhanced VAT returns fetcher with date filtering
 export async function getVatReturnDetails(
   companyId?: number,
   year?: number,
   month?: number,
-  limit?: number
+  limit?: number,
+  fromDate?: { year: number; month: number },
+  toDate?: { year: number; month: number }
 ): Promise<VatReturnDetails[]> {
   try {
-    let query = supabase
-      .from("vat_return_details")
-      .select("*")
-      .order("year", { ascending: false })
-      .order("month", { ascending: false })
+    console.log("Fetching VAT return details with filters:", {
+      companyId,
+      year,
+      month,
+      limit,
+      fromDate,
+      toDate
+    })
 
-    if (companyId) query = query.eq("company_id", companyId)
-    if (year) query = query.eq("year", year)
-    if (month) query = query.eq("month", month)
-    if (limit) query = query.limit(limit)
+    // If limit is specified and small, use single query
+    if (limit && limit <= 1000 && !fromDate && !toDate) {
+      let query = supabase
+        .from("vat_return_details")
+        .select("*")
+        .order("year", { ascending: false })
+        .order("month", { ascending: false })
+        .limit(limit)
 
-    const { data, error } = await query
+      if (companyId) query = query.eq("company_id", companyId)
+      if (year) query = query.eq("year", year)
+      if (month) query = query.eq("month", month)
 
-    if (error) {
-      console.error("Error fetching VAT return details:", error)
-      return []
+      const { data, error } = await query
+
+      if (error) {
+        console.error("Error fetching VAT return details:", error)
+        return []
+      }
+
+      return (data || []) as VatReturnDetails[]
     }
 
-    return (data || []) as VatReturnDetails[]
+    // For unlimited or large datasets, use pagination
+    const filters: { [key: string]: any } = {}
+    if (companyId) filters.company_id = companyId
+    if (year) filters.year = year
+    if (month) filters.month = month
+
+    let allReturns = await fetchAllPages<VatReturnDetails>(
+      "vat_return_details",
+      "*",
+      filters,
+      [
+        { column: "year", ascending: false },
+        { column: "month", ascending: false }
+      ]
+    )
+
+    // Apply date range filtering if specified
+    if (fromDate || toDate) {
+      allReturns = allReturns.filter((vatReturn) => {
+        const returnDate = new Date(vatReturn.year, vatReturn.month - 1)
+
+        if (fromDate) {
+          const fromDateTime = new Date(fromDate.year, fromDate.month - 1)
+          if (returnDate < fromDateTime) return false
+        }
+
+        if (toDate) {
+          const toDateTime = new Date(toDate.year, toDate.month - 1)
+          if (returnDate > toDateTime) return false
+        }
+
+        return true
+      })
+    }
+
+    // Apply limit after filtering
+    if (limit && limit > 0) {
+      allReturns = allReturns.slice(0, limit)
+    }
+
+    console.log(`Successfully fetched ${allReturns.length} VAT returns`)
+    return allReturns
   } catch (error) {
-    console.error("Error in getVatReturnDetails:", error)
+    console.error("Unexpected error fetching VAT return details:", error)
     return []
   }
 }
@@ -606,22 +651,24 @@ export async function getVatReturnDetailsOptimized(options: {
 }
 
 // Enhanced company return listings fetcher
-export async function getCompanyReturnListings(companyId: number): Promise<CompanyVatReturnListings[]> {
+export async function getCompanyReturnListings(companyId?: number): Promise<CompanyVatReturnListings[]> {
   try {
-    const { data, error } = await supabase
-      .from("company_vat_return_listings")
-      .select("*")
-      .eq("company_id", companyId)
-      .order("last_scraped_at", { ascending: false })
+    console.log("Fetching company return listings for company:", companyId)
 
-    if (error) {
-      console.error("Error fetching company return listings:", error)
-      return []
-    }
+    const filters: { [key: string]: any } = {}
+    if (companyId) filters.company_id = companyId
 
-    return (data || []) as CompanyVatReturnListings[]
+    const listings = await fetchAllPages<CompanyVatReturnListings>(
+      "company_vat_return_listings",
+      "*",
+      filters,
+      [{ column: "last_scraped_at", ascending: false }]
+    )
+
+    console.log(`Successfully fetched ${listings.length} return listings`)
+    return listings
   } catch (error) {
-    console.error("Error in getCompanyReturnListings:", error)
+    console.error("Unexpected error fetching company return listings:", error)
     return []
   }
 }
@@ -700,40 +747,59 @@ export async function getCompanyReturnListingsOptimized(options: {
 // Enhanced dashboard stats with full data support
 export async function getDashboardStats() {
   try {
-    console.log("Calculating dashboard stats from all data...")
+    console.log("Calculating dashboard stats from full dataset...")
 
-    // Get counts efficiently
-    const [companiesCount, returnsCount, returnsData] = await Promise.all([
-      supabase.from("acc_portal_company_duplicate").select("*", { count: "exact", head: true }),
-      supabase.from("vat_return_details").select("*", { count: "exact", head: true }),
-      supabase.from("vat_return_details").select("processing_status, is_nil_return")
+    // Use Promise.all to fetch all data concurrently
+    const [companies, vatReturns] = await Promise.all([
+      getCompanies(),
+      getVatReturnDetails() // This will fetch all VAT returns
     ])
 
-    const totalCompanies = companiesCount.count || 0
-    const totalReturns = returnsCount.count || 0
+    const totalCompanies = companies.length
+    const totalReturns = vatReturns.length
+    const successfulExtractions = vatReturns.filter(r => r.processing_status === "completed").length
+    const nilReturns = vatReturns.filter(r => r.is_nil_return).length
 
-    const returns = returnsData.data || []
-    const successfulExtractions = returns.filter(r => r.processing_status === "completed").length
-    const nilReturns = returns.filter(r => r.is_nil_return).length
-    const complianceRate = totalCompanies > 0 ? Math.round((successfulExtractions / totalCompanies) * 100) : 0
+    // Calculate missing returns more accurately
+    const currentDate = new Date()
+    const currentYear = currentDate.getFullYear()
+    const currentMonth = currentDate.getMonth() + 1
+
+    const companiesWithRecentReturns = new Set(
+      vatReturns
+        .filter(r => r.year === currentYear && r.month === (currentMonth - 1))
+        .map(r => r.company_id)
+    )
+
+    const missingReturns = Math.max(0, totalCompanies - companiesWithRecentReturns.size)
+    const complianceRate = totalCompanies > 0 ? Math.round(((totalCompanies - missingReturns) / totalCompanies) * 100) : 0
+
+    console.log("Dashboard stats calculated:", {
+      totalCompanies,
+      totalReturns,
+      successfulExtractions,
+      nilReturns,
+      missingReturns,
+      complianceRate
+    })
 
     return {
       totalCompanies,
       totalReturns,
       successfulExtractions,
       nilReturns,
-      missingReturns: Math.max(0, totalCompanies - successfulExtractions),
-      complianceRate
+      missingReturns,
+      complianceRate,
     }
   } catch (error) {
-    console.error("Error calculating dashboard stats:", error)
+    console.error("Unexpected error fetching dashboard stats:", error)
     return {
       totalCompanies: 0,
       totalReturns: 0,
       successfulExtractions: 0,
       nilReturns: 0,
       missingReturns: 0,
-      complianceRate: 0
+      complianceRate: 0,
     }
   }
 }
@@ -741,80 +807,93 @@ export async function getDashboardStats() {
 // Enhanced filing trends with full data
 export async function getFilingTrends() {
   try {
-    const { data, error } = await supabase
-      .from("vat_return_details")
-      .select("year, month, processing_status, is_nil_return")
-      .order("year", { ascending: false })
-      .order("month", { ascending: false })
+    console.log("Calculating filing trends from full dataset...")
 
-    if (error) {
-      console.error("Error fetching filing trends:", error)
+    // Fetch all VAT returns for trend analysis
+    const vatReturns = await getVatReturnDetails()
+
+    if (vatReturns.length === 0) {
       return []
     }
 
-    // Group by month/year
-    const trends: Record<string, any> = {}
+    // Group by month/year and calculate stats
+    const trends = vatReturns.reduce((acc: any[], curr) => {
+      const key = `${curr.year}-${curr.month.toString().padStart(2, "0")}`
+      const monthName = new Date(curr.year, curr.month - 1).toLocaleDateString("en-US", { month: "short" })
 
-      (data || []).forEach(item => {
-        const key = `${item.year}-${item.month.toString().padStart(2, "0")}`
-
-        if (!trends[key]) {
-          trends[key] = {
-            key,
-            name: new Date(item.year, item.month - 1).toLocaleDateString("en-US", { month: "short" }),
-            year: item.year,
-            month: item.month,
-            onTime: 0,
-            late: 0,
-            missing: 0,
-            nil: 0
-          }
+      let existing = acc.find((item) => item.key === key)
+      if (!existing) {
+        existing = {
+          key,
+          name: monthName,
+          year: curr.year,
+          month: curr.month,
+          onTime: 0,
+          late: 0,
+          missing: 0,
+          nil: 0,
         }
+        acc.push(existing)
+      }
 
-        if (item.is_nil_return) {
-          trends[key].nil++
-        } else if (item.processing_status === "completed") {
-          trends[key].onTime++
-        } else {
-          trends[key].late++
-        }
-      })
+      if (curr.is_nil_return) {
+        existing.nil++
+      } else if (curr.processing_status === "completed") {
+        existing.onTime++
+      } else {
+        existing.late++
+      }
 
-    return Object.values(trends)
-      .sort((a: any, b: any) => {
-        if (a.year !== b.year) return b.year - a.year
-        return b.month - a.month
+      return acc
+    }, [])
+
+    // Sort by year and month, then take last 12 months
+    const sortedTrends = trends
+      .sort((a, b) => {
+        if (a.year !== b.year) return a.year - b.year
+        return a.month - b.month
       })
-      .slice(0, 12) // Last 12 months
+      .slice(-12)
+
+    console.log(`Filing trends calculated for ${sortedTrends.length} months`)
+    return sortedTrends
   } catch (error) {
-    console.error("Error in getFilingTrends:", error)
+    console.error("Unexpected error fetching filing trends:", error)
     return []
   }
 }
 
 // Enhanced recent extractions with full company data
-export async function getRecentExtractions(limit: number = 50) {
+export async function getRecentExtractions() {
   try {
-    const { data: returns, error } = await supabase
-      .from("vat_return_details")
-      .select(`
-        *,
-        acc_portal_company_duplicate!inner(company_name)
-      `)
-      .order("extraction_timestamp", { ascending: false })
-      .limit(limit)
+    console.log("Fetching recent extractions...")
 
-    if (error) {
-      console.error("Error fetching recent extractions:", error)
+    // Use Promise.all to fetch data concurrently
+    const [recentVatReturns, companies] = await Promise.all([
+      getVatReturnDetails(undefined, undefined, undefined, 50), // Last 50 returns
+      getCompanies()
+    ])
+
+    if (recentVatReturns.length === 0) {
       return []
     }
 
-    return (returns || []).map(item => ({
+    // Create a map of company names for efficient lookup
+    const companyMap = new Map()
+    companies.forEach((company) => {
+      companyMap.set(company.id, company.company_name)
+    })
+
+    // Combine the data
+    const result = recentVatReturns.map((item) => ({
       ...item,
-      company_name: item.acc_portal_company_duplicate?.company_name || `Company ${item.company_id}`
+      company_name: companyMap.get(item.company_id) || `Company ${item.company_id}`,
     }))
+
+    console.log(`Recent extractions fetched: ${result.length} items`)
+    return result
   } catch (error) {
-    console.error("Error in getRecentExtractions:", error)
+    console.error("Unexpected error fetching recent extractions:", error)
     return []
   }
 }
