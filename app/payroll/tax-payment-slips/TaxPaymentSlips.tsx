@@ -79,7 +79,7 @@ export default function TaxPaymentSlips({
         { id: 'actions', label: 'Actions', defaultVisible: true },
     ];
 
-    const [visibleColumns, setVisibleColumns] = useState<string[]>(() => 
+    const [visibleColumns, setVisibleColumns] = useState<string[]>(() =>
         columnDefinitions.filter(col => col.defaultVisible).map(col => col.id)
     );
 
@@ -138,16 +138,16 @@ export default function TaxPaymentSlips({
             if (selectedCategories.length > 0) {
                 matchesCategory = selectedCategories.some(category => {
                     const currentDate = new Date();
-                    
+
                     // Extract the base category without status suffix
                     const baseCategory = category.split('_status_')[0];
-                    const status = category.includes('_status_') 
+                    const status = category.includes('_status_')
                         ? category.split('_status_')[1] as 'active' | 'inactive'
                         : 'active'; // Default to active status if not specified
-                    
+
                     let isInCategory = false;
                     let isActive = false;
-                    
+
                     switch (baseCategory) {
                         case 'acc':
                             isInCategory = true;
@@ -155,11 +155,11 @@ export default function TaxPaymentSlips({
                             break;
                         case 'audit_tax':
                             isInCategory = true;
-                            isActive = isDateInRange(currentDate, record.company.audit_tax_client_effective_from, record.company.audit_tax_client_effective_to);
+                            isActive = isDateInRange(currentDate, record.company.audit_client_effective_from, record.company.audit_client_effective_to);
                             break;
                         case 'cps_sheria':
                             isInCategory = true;
-                            isActive = isDateInRange(currentDate, record.company.cps_sheria_client_effective_from, record.company.cps_sheria_client_effective_to);
+                            isActive = isDateInRange(currentDate, record.company.sheria_client_effective_from, record.company.sheria_client_effective_from);
                             break;
                         case 'imm':
                             isInCategory = true;
@@ -168,12 +168,12 @@ export default function TaxPaymentSlips({
                         default:
                             return false;
                     }
-                    
+
                     // If status is 'all', return whether it's in the category
                     if (status === 'all') {
                         return isInCategory;
                     }
-                    
+
                     // Otherwise, check if the active status matches the requested status
                     return isInCategory && ((status === 'active' && isActive) || (status === 'inactive' && !isActive));
                 });
@@ -216,17 +216,17 @@ export default function TaxPaymentSlips({
         if (filteredRecords.length === 0) {
             return;
         }
-        
+
         // Get all records that have documents
-        const recordsWithDocuments = filteredRecords.filter(record => 
-            record.payment_slips_documents && 
+        const recordsWithDocuments = filteredRecords.filter(record =>
+            record.payment_slips_documents &&
             Object.values(record.payment_slips_documents).some(doc => doc)
         );
-        
+
         if (recordsWithDocuments.length === 0) {
             return;
         }
-        
+
         // Export CSV with document links
         handleBulkExport(recordsWithDocuments);
     };
@@ -283,7 +283,7 @@ export default function TaxPaymentSlips({
                             ))}
                         </DropdownMenuContent>
                     </DropdownMenu>
-                    
+
                     <Button
                         onClick={() => setShowSummaryHeaders(prev => !prev)}
                         className="h-8 flex items-center gap-1 px-2 bg-indigo-500 hover:bg-indigo-600"
@@ -291,7 +291,7 @@ export default function TaxPaymentSlips({
                         <Filter className="h-4 w-4 text-white" />
                         {showSummaryHeaders ? 'Hide Counts' : 'Show Counts'}
                     </Button>
-                    
+
                     <Button
                         // onClick={handleExtractAll}
                         className="h-8 px-2 bg-green-500 text-white hover:bg-green-600"

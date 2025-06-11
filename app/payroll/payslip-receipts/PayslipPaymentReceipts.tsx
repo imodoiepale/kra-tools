@@ -63,7 +63,7 @@ export default function PayslipPaymentReceipts({
     const { toast } = useToast();
 
     // Get the payment receipts document upload and delete functions from the hook
-    const { 
+    const {
         handlePaymentReceiptsDocumentUpload,
         handlePaymentReceiptsDocumentDelete,
         handlePaymentReceiptsDocumentDeleteWithRecord,
@@ -93,7 +93,7 @@ export default function PayslipPaymentReceipts({
         { id: 'emailStatus', label: 'Email Status', defaultVisible: true }
     ];
 
-    const [visibleColumns, setVisibleColumns] = useState<string[]>(() => 
+    const [visibleColumns, setVisibleColumns] = useState<string[]>(() =>
         columnDefinitions.filter(col => col.defaultVisible).map(col => col.id)
     );
 
@@ -128,21 +128,21 @@ export default function PayslipPaymentReceipts({
         try {
             // Log the upload request (helpful for debugging)
             console.log('Uploading document:', { recordId, documentType, fileName: file.name });
-            
+
             // Upload the document using the hook's function
             const path = await handlePaymentReceiptsDocumentUpload(recordId, file, documentType, 'PAYMENT RECEIPTS');
-            
+
             if (!path) {
                 throw new Error('Failed to upload document - no path returned');
             }
-            
+
             // Successfully uploaded - update local state if needed
             // (The hook should already update its internal state)
             toast({
                 title: 'Success',
                 description: `${documentType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())} uploaded successfully`,
             });
-            
+
             return path;
         } catch (error) {
             console.error('Error in document upload:', error);
@@ -151,31 +151,31 @@ export default function PayslipPaymentReceipts({
                 description: error instanceof Error ? error.message : 'Failed to upload document',
                 variant: 'destructive'
             });
-            
+
             throw error;
         }
     }, [handlePaymentReceiptsDocumentUpload]);
 
     // Batch document upload handler for multiple documents at once
     const handleBatchDocumentUploadWithFolder = useCallback(async (
-        recordId: string, 
-        documents: Array<{file: File, documentType: DocumentType}>
+        recordId: string,
+        documents: Array<{ file: File, documentType: DocumentType }>
     ) => {
         try {
             // Log the batch upload request
-            console.log('Batch uploading documents:', { 
-                recordId, 
-                documentCount: documents.length, 
+            console.log('Batch uploading documents:', {
+                recordId,
+                documentCount: documents.length,
                 types: documents.map(d => d.documentType).join(', ')
             });
-            
+
             // Use the batch upload function from the hook
             const result = await handleBatchPaymentReceiptsDocumentUpload(
-                recordId, 
-                documents, 
+                recordId,
+                documents,
                 'PAYMENT RECEIPTS'
             );
-            
+
             if (result.success && Object.keys(result.paths).length > 0) {
                 // Successfully uploaded - show success message
                 const count = Object.keys(result.paths).length;
@@ -183,7 +183,7 @@ export default function PayslipPaymentReceipts({
                     title: 'Success',
                     description: `${count} document${count !== 1 ? 's' : ''} uploaded successfully`,
                 });
-                
+
                 return result;
             } else {
                 throw new Error(result.error || 'Failed to upload documents - no paths returned');
@@ -195,7 +195,7 @@ export default function PayslipPaymentReceipts({
                 description: error instanceof Error ? error.message : 'Failed to upload documents',
                 variant: 'destructive'
             });
-            
+
             return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
         }
     }, [handleBatchPaymentReceiptsDocumentUpload]);
@@ -205,10 +205,10 @@ export default function PayslipPaymentReceipts({
         try {
             // Log the delete request (helpful for debugging)
             console.log('Deleting document:', { recordId, documentType });
-            
+
             // Delete the document using the hook's function
             await handlePaymentReceiptsDocumentDelete(recordId, documentType);
-            
+
             // Successfully deleted - toast notification is handled in the hook
             return true;
         } catch (error) {
@@ -227,7 +227,7 @@ export default function PayslipPaymentReceipts({
         try {
             // Call the API to update the status
             await handleStatusUpdate(recordId, statusUpdate);
-            
+
             // Update local state directly instead of refetching
             // (The hook should already update its internal state)
             setPayrollRecords(prevRecords => prevRecords.map(record => {
@@ -242,7 +242,7 @@ export default function PayslipPaymentReceipts({
                 }
                 return record;
             }));
-            
+
             toast({
                 title: 'Success',
                 description: 'Status updated successfully',
@@ -276,8 +276,8 @@ export default function PayslipPaymentReceipts({
     const handleBulkExport = async () => {
         try {
             // Count how many records have documents
-            const recordsWithDocuments = filteredRecords.filter(record => 
-                record.payment_receipts_documents && 
+            const recordsWithDocuments = filteredRecords.filter(record =>
+                record.payment_receipts_documents &&
                 Object.values(record.payment_receipts_documents).some(doc => doc !== null)
             );
 
@@ -293,30 +293,30 @@ export default function PayslipPaymentReceipts({
             // Create a ZIP file with all documents
             const JSZip = (await import('jszip')).default;
             const zip = new JSZip();
-            
+
             let documentCount = 0;
-            
+
             // Add each document to the ZIP file
             for (const record of recordsWithDocuments) {
                 if (!record.payment_receipts_documents) continue;
-                
+
                 const companyName = record.company?.company_name || 'Unknown';
                 const companyFolder = zip.folder(companyName);
-                
+
                 for (const [docType, path] of Object.entries(record.payment_receipts_documents)) {
                     if (!path) continue;
-                    
+
                     try {
                         // Get the document from storage
                         const { data, error } = await supabase.storage
                             .from('Payroll-Cycle')
                             .download(path);
-                            
+
                         if (error) throw error;
-                        
+
                         // Get filename from path
                         const fileName = path.split('/').pop() || `${docType}.pdf`;
-                        
+
                         // Add to ZIP
                         companyFolder?.file(fileName, data);
                         documentCount++;
@@ -325,7 +325,7 @@ export default function PayslipPaymentReceipts({
                     }
                 }
             }
-            
+
             if (documentCount === 0) {
                 toast({
                     title: 'Export failed',
@@ -334,10 +334,10 @@ export default function PayslipPaymentReceipts({
                 });
                 return;
             }
-            
+
             // Generate the ZIP file
             const content = await zip.generateAsync({ type: 'blob' });
-            
+
             // Create download link
             const url = URL.createObjectURL(content);
             const a = document.createElement('a');
@@ -345,13 +345,13 @@ export default function PayslipPaymentReceipts({
             a.download = `Payment_Receipts_${format(new Date(), 'yyyy-MM-dd')}.zip`;
             document.body.appendChild(a);
             a.click();
-            
+
             // Cleanup
             setTimeout(() => {
                 document.body.removeChild(a);
                 URL.revokeObjectURL(url);
             }, 0);
-            
+
             toast({
                 title: 'Export successful',
                 description: `Exported ${documentCount} documents from ${recordsWithDocuments.length} companies`,
@@ -380,16 +380,16 @@ export default function PayslipPaymentReceipts({
             if (selectedCategories.length > 0) {
                 matchesCategory = selectedCategories.some(category => {
                     const currentDate = new Date();
-                    
+
                     // Extract the base category without status suffix
                     const baseCategory = category.split('_status_')[0];
-                    const status = category.includes('_status_') 
+                    const status = category.includes('_status_')
                         ? category.split('_status_')[1] as 'active' | 'inactive'
                         : 'active'; // Default to active status if not specified
-                    
+
                     let isInCategory = false;
                     let isActive = false;
-                    
+
                     switch (baseCategory) {
                         case 'acc':
                             isInCategory = true;
@@ -397,11 +397,11 @@ export default function PayslipPaymentReceipts({
                             break;
                         case 'audit_tax':
                             isInCategory = true;
-                            isActive = isDateInRange(currentDate, record.company.audit_tax_client_effective_from, record.company.audit_tax_client_effective_to);
+                            isActive = isDateInRange(currentDate, record.company.audit_client_effective_from, record.company.audit_client_effective_to);
                             break;
                         case 'cps_sheria':
                             isInCategory = true;
-                            isActive = isDateInRange(currentDate, record.company.cps_sheria_client_effective_from, record.company.cps_sheria_client_effective_to);
+                            isActive = isDateInRange(currentDate, record.company.sheria_client_effective_from, record.company.sheria_client_effective_from);
                             break;
                         case 'imm':
                             isInCategory = true;
@@ -410,12 +410,12 @@ export default function PayslipPaymentReceipts({
                         default:
                             return false;
                     }
-                    
+
                     // If status is 'all', return whether it's in the category
                     if (status === 'all') {
                         return isInCategory;
                     }
-                    
+
                     // Otherwise, check if the active status matches the requested status
                     return isInCategory && ((status === 'active' && isActive) || (status === 'inactive' && !isActive));
                 });

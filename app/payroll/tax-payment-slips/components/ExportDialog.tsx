@@ -199,9 +199,9 @@ export function ExportDialog({
             case 'acc':
               return isDateInRange(currentDate, record.company.acc_client_effective_from, record.company.acc_client_effective_to);
             case 'audit_tax':
-              return isDateInRange(currentDate, record.company.audit_tax_client_effective_from, record.company.audit_tax_client_effective_to);
+              return isDateInRange(currentDate, record.company.audit_client_effective_from, record.company.audit_client_effective_to);
             case 'cps_sheria':
-              return isDateInRange(currentDate, record.company.cps_sheria_client_effective_from, record.company.cps_sheria_client_effective_to);
+              return isDateInRange(currentDate, record.company.sheria_client_effective_from, record.company.sheria_client_effective_from);
             case 'imm':
               return isDateInRange(currentDate, record.company.imm_client_effective_from, record.company.imm_client_effective_to);
             default:

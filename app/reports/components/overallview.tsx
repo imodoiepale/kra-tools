@@ -19,10 +19,10 @@ interface OverallViewProps {
     name: string;
     acc_client_effective_from: string | null;
     acc_client_effective_to: string | null;
-    audit_tax_client_effective_from: string | null;
-    audit_tax_client_effective_to: string | null;
-    cps_sheria_client_effective_from: string | null;
-    cps_sheria_client_effective_to: string | null;
+    audit_client_effective_from: string | null;
+    audit_client_effective_to: string | null;
+    sheria_client_effective_from: string | null;
+    sheria_client_effective_from: string | null;
     imm_client_effective_from: string | null;
     imm_client_effective_to: string | null;
   }>;
@@ -76,7 +76,7 @@ export default function OverallView({
   const [selectedFilters, setSelectedFilters] = useState<Record<string, Record<string, boolean>>>(initialSelectedFilters);
   // Use the companies passed from parent directly
   const [filteredCompanies, setFilteredCompanies] = useState(companies);
-  
+
   // Update filteredCompanies when companies prop changes
   useEffect(() => {
     setFilteredCompanies(companies);
@@ -173,7 +173,7 @@ export default function OverallView({
     isDateInRange,
     totalFilteredCount,
   } = useCompanyFilters(companies, initialSearchQuery);
-  
+
   // Sync search query with parent component
   const setSearchQuery = (query: string) => {
     setLocalSearchQuery(query);
@@ -289,7 +289,7 @@ export default function OverallView({
 
         currentDate.setMonth(currentDate.getMonth() + 1);
       }
-      
+
       // Reverse the array to show most recent month first
       months.reverse();
 
@@ -307,23 +307,23 @@ export default function OverallView({
   const applyDateRange = async () => {
     console.log("[DEBUG] Applying date range:", startDate, endDate);
     console.log("[DEBUG] Filtered companies count:", filteredCompanies.length);
-    
+
     setIsLoading(true);
-    
+
     try {
       // Get all company IDs
       const companyIds = filteredCompanies.map(company => company.id);
       console.log("[DEBUG] Company IDs to fetch:", companyIds);
-      
+
       if (companyIds.length === 0) {
         console.warn("[DEBUG] No companies to fetch data for");
         setIsLoading(false);
         return;
       }
-      
+
       // Fetch real data from the database using our hook
       await fetchReportData(startDate, endDate, companyIds);
-      
+
     } catch (error) {
       console.error("[DEBUG] Error in applyDateRange:", error);
     } finally {
@@ -376,7 +376,7 @@ export default function OverallView({
     }
     return sorted;
   }, [filteredCompanies, sortConfig]);
-  
+
   // Format data for DataTable component
   const formatDataForDataTable = () => {
     console.log("[DEBUG] formatDataForDataTable - viewMode:", viewMode);
@@ -387,12 +387,12 @@ export default function OverallView({
     // Add detailed debug logging for reportData structure
     console.log("[DEBUG] reportData structure:",
       reportData && Object.keys(reportData).length > 0 ?
-      Object.keys(reportData).slice(0,1).map(companyId => ({
-        companyId,
-        years: Object.keys(reportData[companyId]),
-        sampleMonth: reportData[companyId][Object.keys(reportData[companyId])[0]]?.[0]
-      })) :
-      "No data"
+        Object.keys(reportData).slice(0, 1).map(companyId => ({
+          companyId,
+          years: Object.keys(reportData[companyId]),
+          sampleMonth: reportData[companyId][Object.keys(reportData[companyId])[0]]?.[0]
+        })) :
+        "No data"
     );
 
     // For the standard table view, we need to convert the data to month-based entries
@@ -403,7 +403,7 @@ export default function OverallView({
         // Convert month name to abbreviation (JAN, FEB, etc.)
         const monthAbbr = month.name.slice(0, 3).toUpperCase();
         const monthIndex = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"].indexOf(monthAbbr);
-        
+
         // Create default entry for this month
         const entry = {
           month: monthAbbr,
@@ -429,33 +429,33 @@ export default function OverallView({
             }
           });
         }
-        
+
         return entry;
       });
     }
-    
+
     // For company view and overall view, just pass filteredCompanies
     return filteredCompanies;
   };
-  
+
   // Format yearly data for the DataTable component's horizontal view
   const formatYearlyDataForTable = () => {
     console.log("[DEBUG] formatYearlyDataForTable - startYear/endYear:", startDate, endDate);
     console.log("[DEBUG] formatYearlyDataForTable - reportData available:", !!reportData);
     // If we don't have reportData, return empty object
     if (!reportData) return {};
-    
+
     // For company view, we need to format the data by year
     const yearlyDataFormatted = {};
-    
+
     // Get all years from the date range
     const startYear = parseInt(startDate.split('-')[0]);
     const endYear = parseInt(endDate.split('-')[0]);
-    
+
     // Create a structure for each year in the range
     for (let year = startYear; year <= endYear; year++) {
       yearlyDataFormatted[year] = [];
-      
+
       // For each month, create an entry in the year
       const monthNames = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
       monthNames.forEach(month => {
@@ -499,7 +499,7 @@ export default function OverallView({
         });
       });
     }
-    
+
     // If we have selected companies and report data, populate with actual data
     if (filteredCompanies.length > 0 && Object.keys(reportData).length > 0) {
       console.log("[DEBUG] formatYearlyDataForTable - populating with data for", filteredCompanies[0]?.id);
@@ -507,7 +507,7 @@ export default function OverallView({
       const firstCompany = filteredCompanies[0];
       if (firstCompany && reportData[firstCompany.id]) {
         const companyData = reportData[firstCompany.id];
-        
+
         // For each year in the company data
         Object.keys(companyData).forEach(year => {
           // If we have this year in our formatted data
@@ -530,7 +530,7 @@ export default function OverallView({
         });
       }
     }
-    
+
     return yearlyDataFormatted;
   };
 
@@ -548,7 +548,7 @@ export default function OverallView({
         ["acc", "audit", "sheria", "imm"].some((cat) => {
           const toField =
             company[
-              `${cat === "audit" ? "audit_tax" : cat}_client_effective_to`
+            `${cat === "audit" ? "audit_tax" : cat}_client_effective_to`
             ];
           return !toField || new Date(toField) > new Date();
         })
@@ -558,7 +558,7 @@ export default function OverallView({
           !["acc", "audit", "sheria", "imm"].some((cat) => {
             const toField =
               company[
-                `${cat === "audit" ? "audit_tax" : cat}_client_effective_to`
+              `${cat === "audit" ? "audit_tax" : cat}_client_effective_to`
               ];
             return !toField || new Date(toField) > new Date();
           })
@@ -570,26 +570,26 @@ export default function OverallView({
   const handleExport = () => {
     try {
       console.log("[DEBUG] Starting Excel export from OverallView");
-      
+
       // Create a workbook and worksheet
       const XLSX = require('xlsx');
       const wb = XLSX.utils.book_new();
-      
+
       if (viewMode === "table") {
         // For table view, export data as displayed in the table
         const headers = ["#", "Company"];
         const dataRows = [];
-        
+
         // Add month headers
         visibleMonths.forEach(month => {
           selectedColumns.forEach(col => {
             // Format column names based on tax type
             const colName = col === "paye" ? "PAYE" :
-                          col === "housingLevy" ? "Housing Levy" :
-                          col === "nita" ? "NITA" :
-                          col === "shif" ? "SHIF" :
-                          col === "nssf" ? "NSSF" : col;
-                          
+              col === "housingLevy" ? "Housing Levy" :
+                col === "nita" ? "NITA" :
+                  col === "shif" ? "SHIF" :
+                    col === "nssf" ? "NSSF" : col;
+
             // Add subcolumns based on selection
             if (selectedSubColumns.includes("all") || selectedSubColumns.includes("amount")) {
               headers.push(`${month.label} - ${colName} Amount`);
@@ -608,16 +608,16 @@ export default function OverallView({
             }
           });
         });
-        
+
         // Add data rows for each company
         sortedCompanies.forEach((company, index) => {
           const row = [index + 1, company.name];
-          
+
           // Process data for this company
           const companyMonthData = visibleMonths.map((month) => {
             const monthAbbr = month.name.slice(0, 3).toUpperCase();
             const monthIndex = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"].indexOf(monthAbbr);
-            
+
             // Create default entry for this month
             const entry = {
               month: monthAbbr,
@@ -627,10 +627,10 @@ export default function OverallView({
               shif: { amount: 0, date: null, status: null, bank: null, payMode: null },
               nssf: { amount: 0, date: null, status: null, bank: null, payMode: null }
             };
-            
+
             // Get company data from reportData
             const companyData = reportData[company.id];
-            
+
             // If we have data for this company and year
             if (companyData && companyData[month.year.toString()]) {
               // Get the month's data if it exists
@@ -644,10 +644,10 @@ export default function OverallView({
                 });
               }
             }
-            
+
             return entry;
           });
-          
+
           // Add data for each month to the row
           companyMonthData.forEach((monthData) => {
             selectedColumns.forEach(taxType => {
@@ -668,10 +668,10 @@ export default function OverallView({
               }
             });
           });
-          
+
           dataRows.push(row);
         });
-        
+
         // Create worksheet from data
         const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
         XLSX.utils.book_append_sheet(wb, ws, `Payroll Report`);
@@ -681,20 +681,20 @@ export default function OverallView({
           // Company view - create a sheet for the selected company
           const company = sortedCompanies[0];
           const sheetName = company.name.substring(0, 30); // Excel sheet name length limit
-          
+
           // Format yearly data
           const yearlyData = formatYearlyDataForTable();
           const headers = ["Month"];
           const dataRows = [];
-          
+
           // Add column headers
           selectedColumns.forEach(col => {
             const colName = col === "paye" ? "PAYE" :
-                          col === "housingLevy" ? "Housing Levy" :
-                          col === "nita" ? "NITA" :
-                          col === "shif" ? "SHIF" :
-                          col === "nssf" ? "NSSF" : col;
-                          
+              col === "housingLevy" ? "Housing Levy" :
+                col === "nita" ? "NITA" :
+                  col === "shif" ? "SHIF" :
+                    col === "nssf" ? "NSSF" : col;
+
             if (selectedSubColumns.includes("all") || selectedSubColumns.includes("amount")) {
               headers.push(`${colName} Amount`);
             }
@@ -711,12 +711,12 @@ export default function OverallView({
               headers.push(`${colName} Pay Mode`);
             }
           });
-          
+
           // Add data for each year and month
           Object.keys(yearlyData).forEach(year => {
             yearlyData[year].forEach(monthData => {
               const row = [`${monthData.month} ${year}`];
-              
+
               selectedColumns.forEach(taxType => {
                 if (selectedSubColumns.includes("all") || selectedSubColumns.includes("amount")) {
                   row.push(formatAmount(monthData[taxType]?.amount || 0));
@@ -734,25 +734,25 @@ export default function OverallView({
                   row.push(monthData[taxType]?.payMode || "-");
                 }
               });
-              
+
               dataRows.push(row);
             });
           });
-          
+
           const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
           XLSX.utils.book_append_sheet(wb, ws, sheetName);
         } else {
           // Overall view - create a sheet with all companies
           const headers = ["#", "Company"];
-          
+
           // Add column headers
           selectedColumns.forEach(col => {
             const colName = col === "paye" ? "PAYE" :
-                          col === "housingLevy" ? "Housing Levy" :
-                          col === "nita" ? "NITA" :
-                          col === "shif" ? "SHIF" :
-                          col === "nssf" ? "NSSF" : col;
-                          
+              col === "housingLevy" ? "Housing Levy" :
+                col === "nita" ? "NITA" :
+                  col === "shif" ? "SHIF" :
+                    col === "nssf" ? "NSSF" : col;
+
             if (selectedSubColumns.includes("all") || selectedSubColumns.includes("amount")) {
               headers.push(`${colName} Amount`);
             }
@@ -769,7 +769,7 @@ export default function OverallView({
               headers.push(`${colName} Pay Mode`);
             }
           });
-          
+
           // Add data for each company
           const dataRows = sortedCompanies.map((company, index) => {
             const row = [index + 1, company.name];
@@ -793,18 +793,18 @@ export default function OverallView({
             });
             return row;
           });
-          
+
           const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
           XLSX.utils.book_append_sheet(wb, ws, "Companies Overview");
         }
       }
-      
+
       // Generate filename
       const filename = `payroll_report_${startDate}_${endDate}.xlsx`;
-      
+
       // Write to file and trigger download
       XLSX.writeFile(wb, filename);
-      
+
       console.log("[DEBUG] Excel export completed");
     } catch (error) {
       console.error("Error exporting to Excel:", error);
@@ -818,8 +818,8 @@ export default function OverallView({
       <div className="bg-white shadow-lg p-3 border-b border-gray-200">
         <div className="max-w-screen-2xl mx-auto">
           <div className="flex items-center justify-between mb-4">
-            
-            
+
+
             <div className="flex items-center gap-4">
               {/* Search input */}
               <div className="relative flex-grow max-w-md">
@@ -845,7 +845,7 @@ export default function OverallView({
                   className="pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg w-full focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent shadow-sm"
                 />
               </div>
-  
+
               {/* Client Category Filter */}
               <div className="flex items-center gap-2">
                 <Button
@@ -862,7 +862,7 @@ export default function OverallView({
                   )}
                 </Button>
               </div>
-  
+
               <ClientCategoryFilter
                 isOpen={isFilterOpen}
                 onClose={() => {
@@ -872,7 +872,7 @@ export default function OverallView({
                 onClearFilters={() => {
                   // Update local state
                   setSelectedFilters({});
-                  
+
                   // Sync with parent component if callback is provided
                   if (onFilterChange) {
                     onFilterChange({});
@@ -883,18 +883,18 @@ export default function OverallView({
                 ) => {
                   // Update local state
                   setSelectedFilters(filters);
-                  
+
                   // Sync with parent component if callback is provided
                   if (onFilterChange) {
                     onFilterChange(filters);
                   }
-  
+
                   // Reset to all companies if no filters are selected
                   if (!Object.keys(filters).length) {
                     setFilteredCompanies(companies);
                     return;
                   }
-  
+
                   // Apply the selected filters
                   const filtered = companies.filter((company) => {
                     // Check if any of the selected categories match the company
@@ -904,12 +904,12 @@ export default function OverallView({
                         if (!Object.values(statuses).some((value) => value)) {
                           return false;
                         }
-  
+
                         const now = new Date();
                         let isActive = false;
                         let effectiveFrom = null;
                         let effectiveTo = null;
-  
+
                         // Determine which category we're checking
                         switch (category) {
                           case "acc":
@@ -918,14 +918,14 @@ export default function OverallView({
                             break;
                           case "audit":
                             effectiveFrom =
-                              company.audit_tax_client_effective_from;
-                            effectiveTo = company.audit_tax_client_effective_to;
+                              company.audit_client_effective_from;
+                            effectiveTo = company.audit_client_effective_to;
                             break;
                           case "sheria":
                             effectiveFrom =
-                              company.cps_sheria_client_effective_from;
+                              company.sheria_client_effective_from;
                             effectiveTo =
-                              company.cps_sheria_client_effective_to;
+                              company.sheria_client_effective_from;
                             break;
                           case "imm":
                             effectiveFrom = company.imm_client_effective_from;
@@ -937,9 +937,8 @@ export default function OverallView({
                               (cat) => {
                                 const toField =
                                   company[
-                                    `${
-                                      cat === "audit" ? "audit_tax" : cat
-                                    }_client_effective_to`
+                                  `${cat === "audit" ? "audit_tax" : cat
+                                  }_client_effective_to`
                                   ];
                                 return (
                                   toField === null || new Date(toField) > now
@@ -948,24 +947,24 @@ export default function OverallView({
                             );
                             break;
                         }
-  
+
                         // For specific categories, determine if active based on effective dates
                         if (category !== "all") {
                           isActive =
                             effectiveTo === null || new Date(effectiveTo) > now;
                         }
-  
+
                         // Check if the company's status matches any of the selected statuses
                         return statuses[isActive ? "active" : "inactive"];
                       }
                     );
                   });
-  
+
                   setFilteredCompanies(filtered);
                 }}
                 selectedFilters={selectedFilters}
               />
-  
+
               {/* Date range selector */}
               <div className="flex items-center gap-3 bg-white p-1 rounded-lg shadow-sm border border-gray-200">
                 <div className="flex items-center">
@@ -1024,7 +1023,7 @@ export default function OverallView({
                     </select>
                   </div>
                 </div>
-  
+
                 <div className="flex items-center">
                   <label className="text-sm font-medium text-gray-700 mr-2">
                     From:
@@ -1101,7 +1100,7 @@ export default function OverallView({
                   )}
                 </button>
               </div>
-  
+
               {/* Export and View Mode buttons */}
               <div className="flex items-center gap-2">
                 <Button
@@ -1126,7 +1125,7 @@ export default function OverallView({
                   <Download className="h-4 w-4" />
                   Export
                 </Button>
-  
+
                 <Button
                   variant="outline"
                   size="sm"
@@ -1135,8 +1134,8 @@ export default function OverallView({
                       viewMode === "table"
                         ? "overall"
                         : viewMode === "overall"
-                        ? "company"
-                        : "table";
+                          ? "company"
+                          : "table";
                     setViewMode(nextMode);
                   }}
                   className="flex items-center gap-2"
@@ -1145,13 +1144,13 @@ export default function OverallView({
                   {viewMode === "table"
                     ? "Overall View"
                     : viewMode === "company"
-                    ? "Company View"
-                    : "Table View"}
+                      ? "Company View"
+                      : "Table View"}
                 </Button>
               </div>
             </div>
           </div>
-  
+
           <div className="flex flex-wrap items-center gap-4 justify-between">
             {/* Column filter controls */}
             <ColumnFilter
@@ -1174,7 +1173,7 @@ export default function OverallView({
           </div>
         </div>
       </div>
-  
+
       {/* Table container with horizontal scrolling */}
       <div className="flex-grow relative">
         {/* Debug info */}
@@ -1213,7 +1212,7 @@ export default function OverallView({
                             key: "name",
                             direction:
                               sortConfig.key === "name" &&
-                              sortConfig.direction === "asc"
+                                sortConfig.direction === "asc"
                                 ? "desc"
                                 : "asc",
                           });
@@ -1238,11 +1237,10 @@ export default function OverallView({
                               sum + calculateColSpan(selectedSubColumns),
                             0
                           )}
-                          className={`sticky top-0 z-50 text-white py-3 px-4 border border-slate-300 text-center ${
-                            index % 2 === 0
-                              ? "bg-[#1e4d7b]"
-                              : "bg-[#2a5a8c]"
-                          }`}
+                          className={`sticky top-0 z-50 text-white py-3 px-4 border border-slate-300 text-center ${index % 2 === 0
+                            ? "bg-[#1e4d7b]"
+                            : "bg-[#2a5a8c]"
+                            }`}
                         >
                           {month.label}
                         </th>
@@ -1262,14 +1260,14 @@ export default function OverallView({
                               {column === "paye"
                                 ? "PAYE"
                                 : column === "housingLevy"
-                                ? "Housing Levy"
-                                : column === "nita"
-                                ? "NITA"
-                                : column === "shif"
-                                ? "SHIF"
-                                : column === "nssf"
-                                ? "NSSF"
-                                : column}
+                                  ? "Housing Levy"
+                                  : column === "nita"
+                                    ? "NITA"
+                                    : column === "shif"
+                                      ? "SHIF"
+                                      : column === "nssf"
+                                        ? "NSSF"
+                                        : column}
                             </th>
                           ))}
                         </React.Fragment>
@@ -1291,14 +1289,14 @@ export default function OverallView({
                                     {subColumn === "amount"
                                       ? "Amount"
                                       : subColumn === "date"
-                                      ? "Pay Date"
-                                      : subColumn === "status"
-                                      ? "Status"
-                                      : subColumn === "bank"
-                                      ? "Bank"
-                                      : subColumn === "payMode"
-                                      ? "Pay Mode"
-                                      : subColumn}
+                                        ? "Pay Date"
+                                        : subColumn === "status"
+                                          ? "Status"
+                                          : subColumn === "bank"
+                                            ? "Bank"
+                                            : subColumn === "payMode"
+                                              ? "Pay Mode"
+                                              : subColumn}
                                   </th>
                                 )
                               )}
@@ -1334,7 +1332,7 @@ export default function OverallView({
                       const companyMonthData = visibleMonths.map((month) => {
                         const monthAbbr = month.name.slice(0, 3).toUpperCase();
                         const monthIndex = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"].indexOf(monthAbbr);
-                      
+
                         // Create default entry for this month
                         const entry = {
                           month: monthAbbr,
@@ -1344,10 +1342,10 @@ export default function OverallView({
                           shif: { amount: 0, date: null, status: null, bank: null, payMode: null },
                           nssf: { amount: 0, date: null, status: null, bank: null, payMode: null }
                         };
-                      
+
                         // Get company data from reportData
                         const companyData = reportData[company.id];
-                      
+
                         // If we have data for this company and year
                         if (companyData && companyData[month.year.toString()]) {
                           // Get the month's data if it exists
@@ -1361,10 +1359,10 @@ export default function OverallView({
                             });
                           }
                         }
-                      
+
                         return entry;
                       });
-  
+
                       return (
                         <tr
                           key={company.id}
@@ -1400,7 +1398,7 @@ export default function OverallView({
                               {company.name}
                             </div>
                           </td>
-  
+
                           {/* Render data for all visible months */}
                           {companyMonthData.map((monthData, monthIndex) => {
                             return (
@@ -1409,68 +1407,63 @@ export default function OverallView({
                                   <React.Fragment key={`${taxType}-${monthIndex}`}>
                                     {(selectedSubColumns.includes("all") ||
                                       selectedSubColumns.includes("amount")) && (
-                                      <td
-                                        className={`py-1.5 px-2 border border-slate-300 text-right text-[11px] ${
-                                          monthData[taxType]?.amount
+                                        <td
+                                          className={`py-1.5 px-2 border border-slate-300 text-right text-[11px] ${monthData[taxType]?.amount
                                             ? "font-medium text-slate-700"
                                             : "text-slate-500"
-                                        }`}
-                                      >
-                                        {formatAmount(
-                                          monthData[taxType]?.amount || 0
-                                        )}
-                                      </td>
-                                    )}
+                                            }`}
+                                        >
+                                          {formatAmount(
+                                            monthData[taxType]?.amount || 0
+                                          )}
+                                        </td>
+                                      )}
                                     {(selectedSubColumns.includes("all") ||
                                       selectedSubColumns.includes("date")) && (
-                                      <td
-                                        className={`py-1.5 px-2 border border-slate-300 text-right text-[11px] ${
-                                          monthData[taxType]?.date
+                                        <td
+                                          className={`py-1.5 px-2 border border-slate-300 text-right text-[11px] ${monthData[taxType]?.date
                                             ? "font-medium text-slate-700"
                                             : "text-slate-500"
-                                        }`}
-                                      >
-                                        {monthData[taxType]?.date
-                                          ? formatDate(monthData[taxType]?.date)
-                                          : "-"}
-                                      </td>
-                                    )}
+                                            }`}
+                                        >
+                                          {monthData[taxType]?.date
+                                            ? formatDate(monthData[taxType]?.date)
+                                            : "-"}
+                                        </td>
+                                      )}
                                     {(selectedSubColumns.includes("all") ||
                                       selectedSubColumns.includes("status")) && (
-                                      <td
-                                        className={`py-1.5 px-2 border border-slate-300 text-center text-[11px] ${
-                                          monthData[taxType]?.status
+                                        <td
+                                          className={`py-1.5 px-2 border border-slate-300 text-center text-[11px] ${monthData[taxType]?.status
                                             ? "font-medium text-slate-700"
                                             : "text-slate-500"
-                                        }`}
-                                      >
-                                        {monthData[taxType]?.status || "-"}
-                                      </td>
-                                    )}
+                                            }`}
+                                        >
+                                          {monthData[taxType]?.status || "-"}
+                                        </td>
+                                      )}
                                     {(selectedSubColumns.includes("all") ||
                                       selectedSubColumns.includes("bank")) && (
-                                      <td
-                                        className={`py-1.5 px-2 border border-slate-300 text-center text-[11px] ${
-                                          monthData[taxType]?.bank
+                                        <td
+                                          className={`py-1.5 px-2 border border-slate-300 text-center text-[11px] ${monthData[taxType]?.bank
                                             ? "font-medium text-slate-700"
                                             : "text-slate-500"
-                                        }`}
-                                      >
-                                        {monthData[taxType]?.bank || "-"}
-                                      </td>
-                                    )}
+                                            }`}
+                                        >
+                                          {monthData[taxType]?.bank || "-"}
+                                        </td>
+                                      )}
                                     {(selectedSubColumns.includes("all") ||
                                       selectedSubColumns.includes("payMode")) && (
-                                      <td
-                                        className={`py-1.5 px-2 border border-slate-300 text-center text-[11px] ${
-                                          monthData[taxType]?.payMode
+                                        <td
+                                          className={`py-1.5 px-2 border border-slate-300 text-center text-[11px] ${monthData[taxType]?.payMode
                                             ? "font-medium text-slate-700"
                                             : "text-slate-500"
-                                        }`}
-                                      >
-                                        {monthData[taxType]?.payMode || "-"}
-                                      </td>
-                                    )}
+                                            }`}
+                                        >
+                                          {monthData[taxType]?.payMode || "-"}
+                                        </td>
+                                      )}
                                   </React.Fragment>
                                 ))}
                               </React.Fragment>
@@ -1479,7 +1472,7 @@ export default function OverallView({
                         </tr>
                       );
                     })}
-  
+
                     {/* Empty state handling */}
                     {filteredCompanies.length === 0 && (
                       <tr>

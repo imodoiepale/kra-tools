@@ -181,13 +181,13 @@ const EditCompanyDialog = ({ company, onSave, onLockToggle, onDelete }) => {
                             />
                             <CompanyInfoSection
                                 label="Audit"
-                                fromDateField="audit_tax_client_effective_from"
-                                toDateField="audit_tax_client_effective_to"
+                                fromDateField="audit_client_effective_from"
+                                toDateField="audit_client_effective_to"
                             />
                             <CompanyInfoSection
                                 label="Sheria"
-                                fromDateField="cps_sheria_client_effective_from"
-                                toDateField="cps_sheria_client_effective_to"
+                                fromDateField="sheria_client_effective_from"
+                                toDateField="sheria_client_effective_from"
                             />
                         </div>
 
@@ -286,10 +286,10 @@ export default function CompanyListTable({ companies = [], updateCompany, toggle
                         acc_client_effective_to: updatedCompany.acc_client_effective_to,
                         imm_client_effective_from: updatedCompany.imm_client_effective_from,
                         imm_client_effective_to: updatedCompany.imm_client_effective_to,
-                        audit_tax_client_effective_from: updatedCompany.audit_tax_client_effective_from,
-                        audit_tax_client_effective_to: updatedCompany.audit_tax_client_effective_to,
-                        cps_sheria_client_effective_from: updatedCompany.cps_sheria_client_effective_from,
-                        cps_sheria_client_effective_to: updatedCompany.cps_sheria_client_effective_to,
+                        audit_client_effective_from: updatedCompany.audit_client_effective_from,
+                        audit_client_effective_to: updatedCompany.audit_client_effective_to,
+                        sheria_client_effective_from: updatedCompany.sheria_client_effective_from,
+                        sheria_client_effective_from: updatedCompany.sheria_client_effective_from,
                         is_locked: updatedCompany.is_locked
                     });
 
@@ -331,7 +331,7 @@ export default function CompanyListTable({ companies = [], updateCompany, toggle
         if (!companyToUpdate) return;
 
         const updatedCompany = { ...companyToUpdate, is_locked: !companyToUpdate.is_locked };
-        
+
         // Use passed-in toggleLock if available, otherwise fall back to handleUpdateCompany
         if (typeof toggleLock === 'function') {
             toggleLock(companyId);
@@ -373,28 +373,28 @@ export default function CompanyListTable({ companies = [], updateCompany, toggle
             cell: info => <StatusBadge status={calculateStatus(info.row.original.imm_client_effective_from, info.row.original.imm_client_effective_to)} />,
             header: 'IMM Status',
         }),
-        columnHelper.accessor('audit_tax_client_effective_from', {
+        columnHelper.accessor('audit_client_effective_from', {
             cell: info => formatDate(info.getValue()),
             header: 'Audit From',
         }),
-        columnHelper.accessor('audit_tax_client_effective_to', {
+        columnHelper.accessor('audit_client_effective_to', {
             cell: info => formatDate(info.getValue()),
             header: 'Audit To',
         }),
         columnHelper.accessor('audit_status', {
-            cell: info => <StatusBadge status={calculateStatus(info.row.original.audit_tax_client_effective_from, info.row.original.audit_tax_client_effective_to)} />,
+            cell: info => <StatusBadge status={calculateStatus(info.row.original.audit_client_effective_from, info.row.original.audit_client_effective_to)} />,
             header: 'Audit Status',
         }),
-        columnHelper.accessor('cps_sheria_client_effective_from', {
+        columnHelper.accessor('sheria_client_effective_from', {
             cell: info => formatDate(info.getValue()),
             header: 'Sheria From',
         }),
-        columnHelper.accessor('cps_sheria_client_effective_to', {
+        columnHelper.accessor('sheria_client_effective_from', {
             cell: info => formatDate(info.getValue()),
             header: 'Sheria To',
         }),
         columnHelper.accessor('sheria_status', {
-            cell: info => <StatusBadge status={calculateStatus(info.row.original.cps_sheria_client_effective_from, info.row.original.cps_sheria_client_effective_to)} />,
+            cell: info => <StatusBadge status={calculateStatus(info.row.original.sheria_client_effective_from, info.row.original.sheria_client_effective_from)} />,
             header: 'Sheria Status',
         }),
         columnHelper.accessor('actions', {
@@ -427,81 +427,81 @@ export default function CompanyListTable({ companies = [], updateCompany, toggle
     // Apply category filters to data
     const filteredData = useMemo(() => {
         if (Object.keys(categoryFilters).length === 0) return localCompanies;
-        
+
         return localCompanies.filter(item => {
             // Check if any category filter is active
-            const hasActiveFilters = Object.values(categoryFilters).some(categoryStatus => 
+            const hasActiveFilters = Object.values(categoryFilters).some(categoryStatus =>
                 Object.values(categoryStatus as Record<string, boolean>).some(isSelected => isSelected)
             );
-            
+
             if (!hasActiveFilters) return true;
-            
+
             // Get the item's category and status
             const accStatus = calculateStatus(item.acc_client_effective_from, item.acc_client_effective_to);
             const immStatus = calculateStatus(item.imm_client_effective_from, item.imm_client_effective_to);
-            const auditStatus = calculateStatus(item.audit_tax_client_effective_from, item.audit_tax_client_effective_to);
-            const sheriaStatus = calculateStatus(item.cps_sheria_client_effective_from, item.cps_sheria_client_effective_to);
-            
+            const auditStatus = calculateStatus(item.audit_client_effective_from, item.audit_client_effective_to);
+            const sheriaStatus = calculateStatus(item.sheria_client_effective_from, item.sheria_client_effective_from);
+
             // Check if ACC category filter matches
             if (categoryFilters['acc']) {
                 const accFilter = categoryFilters['acc'] as Record<string, boolean>;
-                if ((accStatus === 'Active' && accFilter['active']) || 
-                    (accStatus === 'Inactive' && accFilter['inactive']) || 
+                if ((accStatus === 'Active' && accFilter['active']) ||
+                    (accStatus === 'Inactive' && accFilter['inactive']) ||
                     accFilter['all']) {
                     return true;
                 }
             }
-            
+
             // Check if IMM category filter matches
             if (categoryFilters['imm']) {
                 const immFilter = categoryFilters['imm'] as Record<string, boolean>;
-                if ((immStatus === 'Active' && immFilter['active']) || 
-                    (immStatus === 'Inactive' && immFilter['inactive']) || 
+                if ((immStatus === 'Active' && immFilter['active']) ||
+                    (immStatus === 'Inactive' && immFilter['inactive']) ||
                     immFilter['all']) {
                     return true;
                 }
             }
-            
+
             // Check if Audit category filter matches
             if (categoryFilters['audit']) {
                 const auditFilter = categoryFilters['audit'] as Record<string, boolean>;
-                if ((auditStatus === 'Active' && auditFilter['active']) || 
-                    (auditStatus === 'Inactive' && auditFilter['inactive']) || 
+                if ((auditStatus === 'Active' && auditFilter['active']) ||
+                    (auditStatus === 'Inactive' && auditFilter['inactive']) ||
                     auditFilter['all']) {
                     return true;
                 }
             }
-            
+
             // Check if Sheria category filter matches
             if (categoryFilters['sheria']) {
                 const sheriaFilter = categoryFilters['sheria'] as Record<string, boolean>;
-                if ((sheriaStatus === 'Active' && sheriaFilter['active']) || 
-                    (sheriaStatus === 'Inactive' && sheriaFilter['inactive']) || 
+                if ((sheriaStatus === 'Active' && sheriaFilter['active']) ||
+                    (sheriaStatus === 'Inactive' && sheriaFilter['inactive']) ||
                     sheriaFilter['all']) {
                     return true;
                 }
             }
-            
+
             // Check if 'all' category has this status selected
             if (categoryFilters['all']) {
                 const allFilter = categoryFilters['all'] as Record<string, boolean>;
-                if (allFilter['all'] || 
-                    (accStatus === 'Active' && allFilter['active']) || 
-                    (accStatus === 'Inactive' && allFilter['inactive']) || 
-                    (immStatus === 'Active' && allFilter['active']) || 
-                    (immStatus === 'Inactive' && allFilter['inactive']) || 
-                    (auditStatus === 'Active' && allFilter['active']) || 
-                    (auditStatus === 'Inactive' && allFilter['inactive']) || 
-                    (sheriaStatus === 'Active' && allFilter['active']) || 
+                if (allFilter['all'] ||
+                    (accStatus === 'Active' && allFilter['active']) ||
+                    (accStatus === 'Inactive' && allFilter['inactive']) ||
+                    (immStatus === 'Active' && allFilter['active']) ||
+                    (immStatus === 'Inactive' && allFilter['inactive']) ||
+                    (auditStatus === 'Active' && allFilter['active']) ||
+                    (auditStatus === 'Inactive' && allFilter['inactive']) ||
+                    (sheriaStatus === 'Active' && allFilter['active']) ||
                     (sheriaStatus === 'Inactive' && allFilter['inactive'])) {
                     return true;
                 }
             }
-            
+
             return false;
         });
     }, [companies, categoryFilters]);
-    
+
     // Calculate statistics for complete and missing entries
     const calculateStats = () => {
         const stats = {
@@ -516,10 +516,10 @@ export default function CompanyListTable({ companies = [], updateCompany, toggle
             'acc_client_effective_to',
             'imm_client_effective_from',
             'imm_client_effective_to',
-            'audit_tax_client_effective_from',
-            'audit_tax_client_effective_to',
-            'cps_sheria_client_effective_from',
-            'cps_sheria_client_effective_to'
+            'audit_client_effective_from',
+            'audit_client_effective_to',
+            'sheria_client_effective_from',
+            'sheria_client_effective_from'
         ];
 
         // Initialize stats for each field
@@ -593,12 +593,12 @@ export default function CompanyListTable({ companies = [], updateCompany, toggle
                 formatDate(company.imm_client_effective_from),
                 formatDate(company.imm_client_effective_to),
                 calculateStatus(company.imm_client_effective_from, company.imm_client_effective_to),
-                formatDate(company.audit_tax_client_effective_from),
-                formatDate(company.audit_tax_client_effective_to),
-                calculateStatus(company.audit_tax_client_effective_from, company.audit_tax_client_effective_to),
-                formatDate(company.cps_sheria_client_effective_from),
-                formatDate(company.cps_sheria_client_effective_to),
-                calculateStatus(company.cps_sheria_client_effective_from, company.cps_sheria_client_effective_to),
+                formatDate(company.audit_client_effective_from),
+                formatDate(company.audit_client_effective_to),
+                calculateStatus(company.audit_client_effective_from, company.audit_client_effective_to),
+                formatDate(company.sheria_client_effective_from),
+                formatDate(company.sheria_client_effective_from),
+                calculateStatus(company.sheria_client_effective_from, company.sheria_client_effective_from),
             ]);
         });
 
@@ -647,9 +647,9 @@ export default function CompanyListTable({ companies = [], updateCompany, toggle
                     Export to Excel
                 </Button>
             </div>
-            <ClientCategoryFilter 
-                isOpen={isCategoryFilterOpen} 
-                onClose={() => setIsCategoryFilterOpen(false)} 
+            <ClientCategoryFilter
+                isOpen={isCategoryFilterOpen}
+                onClose={() => setIsCategoryFilterOpen(false)}
                 onApplyFilters={(filters) => setCategoryFilters(filters)}
                 onClearFilters={() => setCategoryFilters({})}
                 selectedFilters={categoryFilters}
@@ -670,19 +670,19 @@ export default function CompanyListTable({ companies = [], updateCompany, toggle
                             {['ACC', 'IMM', 'Audit', 'Sheria'].map((section) => (
                                 <React.Fragment key={section}>
                                     <TableHead className={`font-bold text-black ${section === 'ACC' ? 'bg-green-50' :
-                                            section === 'IMM' ? 'bg-blue-50' :
-                                                section === 'Audit' ? 'bg-yellow-50' :
-                                                    'bg-pink-50'
+                                        section === 'IMM' ? 'bg-blue-50' :
+                                            section === 'Audit' ? 'bg-yellow-50' :
+                                                'bg-pink-50'
                                         } text-center border border-gray-400 p-1 text-[10px]`}>From</TableHead>
                                     <TableHead className={`font-bold text-black ${section === 'ACC' ? 'bg-green-50' :
-                                            section === 'IMM' ? 'bg-blue-50' :
-                                                section === 'Audit' ? 'bg-yellow-50' :
-                                                    'bg-pink-50'
+                                        section === 'IMM' ? 'bg-blue-50' :
+                                            section === 'Audit' ? 'bg-yellow-50' :
+                                                'bg-pink-50'
                                         } text-center border border-gray-400 p-1 text-[10px]`}>To</TableHead>
                                     <TableHead className={`font-bold text-black ${section === 'ACC' ? 'bg-green-50' :
-                                            section === 'IMM' ? 'bg-blue-50' :
-                                                section === 'Audit' ? 'bg-yellow-50' :
-                                                    'bg-pink-50'
+                                        section === 'IMM' ? 'bg-blue-50' :
+                                            section === 'Audit' ? 'bg-yellow-50' :
+                                                'bg-pink-50'
                                         } text-center border border-gray-400 p-1 text-[10px]`}>Status</TableHead>
                                 </React.Fragment>
                             ))}
@@ -709,17 +709,17 @@ export default function CompanyListTable({ companies = [], updateCompany, toggle
                                     </TableHead>
                                     <TableHead className="font-bold text-black bg-blue-50 text-center border border-gray-400 p-1 text-[10px]">-</TableHead>
                                     <TableHead className="font-bold text-black bg-blue-50 text-center border border-gray-400 p-1 text-[10px]">
-                                        {stats.complete.audit_tax_client_effective_from || 0}
+                                        {stats.complete.audit_client_effective_from || 0}
                                     </TableHead>
                                     <TableHead className="font-bold text-black bg-blue-50 text-center border border-gray-400 p-1 text-[10px]">
-                                        {stats.complete.audit_tax_client_effective_to || 0}
+                                        {stats.complete.audit_client_effective_to || 0}
                                     </TableHead>
                                     <TableHead className="font-bold text-black bg-blue-50 text-center border border-gray-400 p-1 text-[10px]">-</TableHead>
                                     <TableHead className="font-bold text-black bg-blue-50 text-center border border-gray-400 p-1 text-[10px]">
-                                        {stats.complete.cps_sheria_client_effective_from || 0}
+                                        {stats.complete.sheria_client_effective_from || 0}
                                     </TableHead>
                                     <TableHead className="font-bold text-black bg-blue-50 text-center border border-gray-400 p-1 text-[10px]">
-                                        {stats.complete.cps_sheria_client_effective_to || 0}
+                                        {stats.complete.sheria_client_effective_from || 0}
                                     </TableHead>
                                     <TableHead className="font-bold text-black bg-blue-50 text-center border border-gray-400 p-1 text-[10px]">-</TableHead>
                                     <TableHead className="font-bold text-black bg-blue-50 text-center border border-gray-400 p-1 text-[10px]">-</TableHead>
@@ -744,17 +744,17 @@ export default function CompanyListTable({ companies = [], updateCompany, toggle
                                     </TableHead>
                                     <TableHead className="font-bold text-black bg-red-50 text-center border border-gray-400 p-1 text-[10px]">-</TableHead>
                                     <TableHead className="font-bold text-black bg-red-50 text-center border border-gray-400 p-1 text-[10px]">
-                                        {stats.missing.audit_tax_client_effective_from || 0}
+                                        {stats.missing.audit_client_effective_from || 0}
                                     </TableHead>
                                     <TableHead className="font-bold text-black bg-red-50 text-center border border-gray-400 p-1 text-[10px]">
-                                        {stats.missing.audit_tax_client_effective_to || 0}
+                                        {stats.missing.audit_client_effective_to || 0}
                                     </TableHead>
                                     <TableHead className="font-bold text-black bg-red-50 text-center border border-gray-400 p-1 text-[10px]">-</TableHead>
                                     <TableHead className="font-bold text-black bg-red-50 text-center border border-gray-400 p-1 text-[10px]">
-                                        {stats.missing.cps_sheria_client_effective_from || 0}
+                                        {stats.missing.sheria_client_effective_from || 0}
                                     </TableHead>
                                     <TableHead className="font-bold text-black bg-red-50 text-center border border-gray-400 p-1 text-[10px]">
-                                        {stats.missing.cps_sheria_client_effective_to || 0}
+                                        {stats.missing.sheria_client_effective_from || 0}
                                     </TableHead>
                                     <TableHead className="font-bold text-black bg-red-50 text-center border border-gray-400 p-1 text-[10px]">-</TableHead>
                                     <TableHead className="font-bold text-black bg-red-50 text-center border border-gray-400 p-1 text-[10px]">-</TableHead>
@@ -769,10 +769,10 @@ export default function CompanyListTable({ companies = [], updateCompany, toggle
                                     <TableCell
                                         key={cell.id}
                                         className={`p-1 ${cell.column.id === 'company_name'
-                                                ? 'text-left'
-                                                : cell.column.id === 'index'
-                                                    ? 'text-center w-8'
-                                                    : 'text-center'
+                                            ? 'text-left'
+                                            : cell.column.id === 'index'
+                                                ? 'text-center w-8'
+                                                : 'text-center'
                                             } border border-gray-200`}
                                     >
                                         {flexRender(cell.column.columnDef.cell, cell.getContext())}

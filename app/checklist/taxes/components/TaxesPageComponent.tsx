@@ -97,14 +97,14 @@ export default function TaxesPageComponent({ filteredCompanies = [] as Company[]
                 // Check if company is active in any of the selected categories
                 return categoryFilters.some(filter => {
                     if (!filter.checked) return false;
-                    
+
                     switch (filter.key) {
                         case 'acc':
                             return calculateStatus(company.acc_client_effective_from, company.acc_client_effective_to) === 'Active';
                         case 'audit_tax':
-                            return calculateStatus(company.audit_tax_client_effective_from, company.audit_tax_client_effective_to) === 'Active';
+                            return calculateStatus(company.audit_client_effective_from, company.audit_client_effective_to) === 'Active';
                         case 'cps_sheria':
-                            return calculateStatus(company.cps_sheria_client_effective_from, company.cps_sheria_client_effective_to) === 'Active';
+                            return calculateStatus(company.sheria_client_effective_from, company.sheria_client_effective_from) === 'Active';
                         case 'imm':
                             return calculateStatus(company.imm_client_effective_from, company.imm_client_effective_to) === 'Active';
                         default:
@@ -125,8 +125,8 @@ export default function TaxesPageComponent({ filteredCompanies = [] as Company[]
     };
 
     const handleCategoryFilterChange = (key) => {
-        setCategoryFilters(filters => 
-            filters.map(filter => 
+        setCategoryFilters(filters =>
+            filters.map(filter =>
                 filter.key === key ? { ...filter, checked: !filter.checked } : filter
             )
         );
@@ -137,23 +137,23 @@ export default function TaxesPageComponent({ filteredCompanies = [] as Company[]
     const displayCompanies = React.useMemo(() => {
         // Start with either filteredCompanies (if provided) or data.companies
         let companies = filteredCompanies.length > 0 ? filteredCompanies : data.companies;
-        
+
         // Apply search filter
         if (searchTerm) {
             const term = searchTerm.toLowerCase();
-            companies = companies.filter(company => 
-                company.company_name?.toLowerCase().includes(term) || 
+            companies = companies.filter(company =>
+                company.company_name?.toLowerCase().includes(term) ||
                 company.kra_pin?.toLowerCase().includes(term)
             );
         }
-        
+
         return companies;
     }, [filteredCompanies, data.companies, searchTerm]);
 
     // Calculate tax totals for the current tab
     const getTaxTotals = (companies) => {
         if (!Array.isArray(companies)) return null;
-        
+
         const total = companies.length;
         let active = 0;
         let inactive = 0;

@@ -6,10 +6,10 @@ export interface Company {
     updated_at: string
     acc_client_effective_from: string
     acc_client_effective_to: string
-    audit_tax_client_effective_from: string
-    audit_tax_client_effective_to: string
-    cps_sheria_client_effective_from: string
-    cps_sheria_client_effective_to: string
+    audit_client_effective_from: string
+    audit_client_effective_to: string
+    sheria_client_effective_from: string
+    sheria_client_effective_to: string
     imm_client_effective_from: string
     imm_client_effective_to: string
 }

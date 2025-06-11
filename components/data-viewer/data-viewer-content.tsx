@@ -5,119 +5,129 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import {
-  Search,
-  Building2,
-  FileText,
-  BarChart3,
-  Users,
-  CalendarDays,
-  AlertTriangle,
-  CheckCircle,
-  Mail,
-} from "lucide-react"
+import { Label } from "@/components/ui/label"
+import { Switch } from "@/components/ui/switch"
+import { Search, Building2, FileText, BarChart3, Users, CalendarDays, AlertTriangle, CheckCircle, Mail } from "lucide-react"
 import { VatSectionViewer } from "@/components/data-viewer/vat-section-viewer"
 import { ReturnListingsTable } from "@/components/data-viewer/return-listings-table"
 import { ExportButton } from "@/components/data-viewer/export-button"
-// ** FIX: Import the new server action **
+import { CategoryFilters, CategoryStatus } from "./CategoryFilters"
 import { getFilteredCompanyDataAction } from "@/app/filed-vat/data-viewer/actions"
-import type { Company, VatReturnDetails, CompanyVatReturnListings } from "@/lib/data-viewer/supabase"
+import type { EnrichedCompany, VatReturnDetails, CompanyVatReturnListings } from "@/lib/data-viewer/supabase"
 
-// ** FIX: Props are changed. `allVatReturns` is removed to fix the build error. **
 interface DataViewerContentProps {
-  companies: Company[]
+  companies: EnrichedCompany[]
   availableYears: number[]
 }
 
 export function DataViewerContent({ companies, availableYears }: DataViewerContentProps) {
-  const [selectedCompany, setSelectedCompany] = useState<Company | null>(null)
+  const [selectedCompany, setSelectedCompany] = useState<EnrichedCompany | null>(null)
   const [companySearch, setCompanySearch] = useState("")
-  // ** FIX: Safely set default year from props **
+  const [filterVatRegistered, setFilterVatRegistered] = useState(true)
+  const [selectedCategories, setSelectedCategories] = useState<string[]>(['acc']);
+  const [categoryStatuses, setCategoryStatuses] = useState<Record<string, CategoryStatus>>({ acc: 'active' });
+
   const [fromYear, setFromYear] = useState<string>(availableYears[0]?.toString() || new Date().getFullYear().toString())
   const [fromMonth, setFromMonth] = useState<string>("1")
   const [toYear, setToYear] = useState<string>(availableYears[0]?.toString() || new Date().getFullYear().toString())
   const [toMonth, setToMonth] = useState<string>("12")
 
-  // State to hold data fetched on-demand from the client
   const [companyVatReturns, setCompanyVatReturns] = useState<VatReturnDetails[]>([])
   const [companyListings, setCompanyListings] = useState<CompanyVatReturnListings[]>([])
   const [loading, setLoading] = useState(false)
 
-  // Filter companies based on search (this logic is preserved)
-  const filteredCompanies = companies.filter(
-    (company) =>
-      company.company_name.toLowerCase().includes(companySearch.toLowerCase()) ||
-      (company.kra_pin && company.kra_pin.toLowerCase().includes(companySearch.toLowerCase())),
-  )
+  const filteredCompanies = useMemo(() => {
+    return companies.filter(company => {
+      if (filterVatRegistered && company.vat_status !== 'Registered') {
+        return false;
+      }
 
-  // Months array is preserved
-  const months = [
-    { value: "1", label: "January" }, { value: "2", label: "February" }, { value: "3", label: "March" },
-    { value: "4", label: "April" }, { value: "5", label: "May" }, { value: "6", label: "June" },
-    { value: "7", label: "July" }, { value: "8", label: "August" }, { value: "9", label: "September" },
-    { value: "10", label: "October" }, { value: "11", label: "November" }, { value: "12", label: "December" },
-  ]
+      const searchTerm = companySearch.toLowerCase();
+      if (searchTerm && !(company.company_name.toLowerCase().includes(searchTerm) || (company.kra_pin && company.kra_pin.toLowerCase().includes(searchTerm)))) {
+        return false;
+      }
 
-  // ** FIX: This useEffect is refactored to call the server action instead of filtering a large prop. **
-  useEffect(() => {
-    // If no company is selected, clear the data.
-    if (!selectedCompany) {
-      setCompanyVatReturns([])
-      setCompanyListings([])
-      return
+      if (selectedCategories.length === 0) {
+        return true;
+      }
+
+      return selectedCategories.some(categoryKey => {
+        const statusFilter = categoryStatuses[categoryKey] || 'all';
+        if (statusFilter === 'all') return true;
+
+        const companyStatus = company.categoryStatus[categoryKey as keyof typeof company.categoryStatus];
+        return statusFilter === companyStatus;
+      });
+    });
+  }, [companies, companySearch, filterVatRegistered, selectedCategories, categoryStatuses]);
+
+  const handleCategoryToggle = (categoryKey: string) => {
+    if (categoryKey === 'all') {
+      setSelectedCategories([]);
+      return;
     }
+    setSelectedCategories(prev =>
+      prev.includes(categoryKey)
+        ? prev.filter(k => k !== categoryKey)
+        : [...prev, categoryKey]
+    );
+  };
 
+  const handleStatusChange = (categoryKey: string, status: CategoryStatus) => {
+    setCategoryStatuses(prev => ({ ...prev, [categoryKey]: status }));
+  };
+
+  useEffect(() => {
+    if (selectedCompany && !filteredCompanies.some(c => c.id === selectedCompany.id)) {
+      setSelectedCompany(null);
+    }
+  }, [filteredCompanies, selectedCompany]);
+
+  useEffect(() => {
+    if (!selectedCompany) {
+      setCompanyVatReturns([]);
+      setCompanyListings([]);
+      return;
+    }
     const loadCompanyData = async () => {
-      setLoading(true)
+      setLoading(true);
       try {
-        // Call the server action with the current filters to get data on-demand.
         const { vatReturns, listings } = await getFilteredCompanyDataAction({
           companyId: selectedCompany.id,
           fromYear: Number.parseInt(fromYear),
           fromMonth: Number.parseInt(fromMonth),
           toYear: Number.parseInt(toYear),
           toMonth: Number.parseInt(toMonth),
-        })
-
-        setCompanyVatReturns(vatReturns)
-        setCompanyListings(listings)
+        });
+        setCompanyVatReturns(vatReturns);
+        setCompanyListings(listings);
       } catch (error) {
-        console.error("Error loading company data:", error)
-        // Clear data on error
-        setCompanyVatReturns([])
-        setCompanyListings([])
+        console.error("Error loading company data:", error);
+        setCompanyVatReturns([]);
+        setCompanyListings([]);
       } finally {
-        setLoading(false)
+        setLoading(false);
       }
-    }
+    };
+    loadCompanyData();
+  }, [selectedCompany, fromYear, fromMonth, toYear, toMonth]);
 
-    loadCompanyData()
-  }, [selectedCompany, fromYear, fromMonth, toYear, toMonth])
-
-  // --- All your original helper functions are preserved below ---
+  const months = [
+    { value: "1", label: "January" }, { value: "2", label: "February" }, { value: "3", label: "March" },
+    { value: "4", label: "April" }, { value: "5", label: "May" }, { value: "6", label: "June" },
+    { value: "7", label: "July" }, { value: "8", label: "August" }, { value: "9", label: "September" },
+    { value: "10", label: "October" }, { value: "11", label: "November" }, { value: "12", label: "December" },
+  ];
 
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat("en-KE", {
-      style: "decimal",
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(amount)
-  }
+    return new Intl.NumberFormat("en-KE", { style: "decimal", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount);
+  };
 
   const FormattedCurrencyCell = ({ value, isNilReturn }: { value: number; isNilReturn: boolean }) => {
-    if (isNilReturn) {
-      return <span>-</span>;
-    }
+    if (isNilReturn) return <span>-</span>;
     const textColorClass = value < 0 ? "text-red-600 font-semibold" : "";
     const formattedValue = formatCurrency(value);
     return <span className={textColorClass}>{formattedValue}</span>;
@@ -126,49 +136,47 @@ export function DataViewerContent({ companies, availableYears }: DataViewerConte
   const formatDate = (dateString: string) => {
     try {
       if (dateString.includes("/")) {
-        const [day, month, year] = dateString.split("/")
-        return `${day.padStart(2, "0")}/${month.padStart(2, "0")}/${year}`
+        const [day, month, year] = dateString.split("/");
+        return `${day.padStart(2, "0")}/${month.padStart(2, "0")}/${year}`;
       }
-      const date = new Date(dateString)
-      const day = date.getDate().toString().padStart(2, "0")
-      const month = (date.getMonth() + 1).toString().padStart(2, "0")
-      const year = date.getFullYear()
-      return `${day}/${month}/${year}`
+      const date = new Date(dateString);
+      const day = date.getDate().toString().padStart(2, "0");
+      const month = (date.getMonth() + 1).toString().padStart(2, "0");
+      const year = date.getFullYear();
+      return `${day}/${month}/${year}`;
     } catch {
-      return dateString || "-"
+      return dateString || "-";
     }
-  }
+  };
 
   const parseAmount = (value: any): number => {
-    if (value === null || value === undefined || value === "" || value === "-") return 0
-    const cleanValue = String(value).replace(/[^\d.-]/g, "").replace(/,/g, "")
-    const parsed = Number.parseFloat(cleanValue)
-    return Number.isNaN(parsed) ? 0 : parsed
-  }
+    if (value === null || value === undefined || value === "" || value === "-") return 0;
+    const cleanValue = String(value).replace(/[^\d.-]/g, "").replace(/,/g, "");
+    const parsed = Number.parseFloat(cleanValue);
+    return Number.isNaN(parsed) ? 0 : parsed;
+  };
 
   const isFilingLate = (vatReturn: VatReturnDetails, filingDate: string) => {
-    if (!filingDate) return false
+    if (!filingDate) return false;
     try {
-      const [day, month, year] = filingDate.split("/")
-      const filing = new Date(Number.parseInt(year), Number.parseInt(month) - 1, Number.parseInt(day))
-      const returnPeriod = new Date(vatReturn.year, vatReturn.month - 1)
-      const deadline = new Date(returnPeriod.getFullYear(), returnPeriod.getMonth() + 1, 20)
-      return filing > deadline
+      const [day, month, year] = filingDate.split("/");
+      const filing = new Date(Number.parseInt(year), Number.parseInt(month) - 1, Number.parseInt(day));
+      const returnPeriod = new Date(vatReturn.year, vatReturn.month - 1);
+      const deadline = new Date(returnPeriod.getFullYear(), returnPeriod.getMonth() + 1, 20);
+      return filing > deadline;
     } catch (error) {
-      return false
+      return false;
     }
-  }
+  };
 
   const extractSectionOValues = (vatReturn: VatReturnDetails) => {
-    const sectionO = vatReturn.section_o
-    if (!sectionO?.data || !Array.isArray(sectionO.data)) {
-      return { outputVat6: 0, inputVat12: 0, totalVatWithholding: 0, creditBroughtForward: 0, netVatPayable: 0 }
-    }
+    const sectionO = vatReturn.section_o;
+    if (!sectionO?.data || !Array.isArray(sectionO.data)) return { outputVat6: 0, inputVat12: 0, totalVatWithholding: 0, creditBroughtForward: 0, netVatPayable: 0 };
     let outputVat6 = 0, inputVat12 = 0, totalVatWithholding = 0, creditBroughtForward = 0, netVatPayable = 0;
     sectionO.data.forEach((row: any) => {
-      const srNo = String(row["Sr.No."] || "").trim()
-      const amount = parseAmount(row["Amount (Ksh)"])
-      const descriptions = (row["Descriptions"] || "").toLowerCase()
+      const srNo = String(row["Sr.No."] || "").trim();
+      const amount = parseAmount(row["Amount (Ksh)"]);
+      const descriptions = (row["Descriptions"] || "").toLowerCase();
       switch (srNo) {
         case "13": if (descriptions.includes("output vat")) outputVat6 = amount; break;
         case "14": if (descriptions.includes("input vat")) inputVat12 = amount; break;
@@ -176,9 +184,9 @@ export function DataViewerContent({ companies, availableYears }: DataViewerConte
         case "22": if (descriptions.includes("vat withholding")) totalVatWithholding = amount; break;
         case "28": if (descriptions.includes("net vat payable") || descriptions.includes("credit carried forward")) netVatPayable = amount; break;
       }
-    })
-    return { outputVat6, inputVat12, totalVatWithholding, creditBroughtForward, netVatPayable }
-  }
+    });
+    return { outputVat6, inputVat12, totalVatWithholding, creditBroughtForward, netVatPayable };
+  };
 
   const extractSectionB2Values = (vatReturn: VatReturnDetails) => {
     const sectionB2 = vatReturn.section_b2;
@@ -206,52 +214,44 @@ export function DataViewerContent({ companies, availableYears }: DataViewerConte
     return { purchasesRegistered, purchasesNotRegistered };
   };
 
-  // Performance Optimization: Memoize the filing date lookup to avoid re-calculating on every render.
   const filingDateMap = useMemo(() => {
     const map = new Map<string, string>();
-    if (!companyListings || companyListings.length === 0) return map;
-
+    if (!companyListings) return map;
     for (const listing of companyListings) {
       if (!listing.listing_data) continue;
       const listingData = listing.listing_data as any;
       let dataArray = Array.isArray(listingData.data) ? listingData.data : Array.isArray(listingData) ? listingData : [];
-
       for (const row of dataArray) {
         const taxObligation = row["Tax Obligation"] || "";
         const returnPeriodFrom = row["Return Period from"] || "";
         const filingDate = row["Date of Filing"] || "";
-
         if (!taxObligation.includes("Value Added Tax") || !returnPeriodFrom.includes("/")) continue;
-
         try {
           const [, month, year] = returnPeriodFrom.split("/");
           const key = `${year}-${parseInt(month)}`;
-          if (!map.has(key)) {
-            map.set(key, filingDate);
-          }
-        } catch (e) { /* Ignore parsing errors */ }
+          if (!map.has(key)) map.set(key, filingDate);
+        } catch (e) { }
       }
     }
     return map;
   }, [companyListings]);
 
-  // This function is now much faster as it uses the memoized map.
   const getFilingDate = (vatReturn: VatReturnDetails) => {
     const key = `${vatReturn.year}-${vatReturn.month}`;
     return filingDateMap.get(key) || null;
   };
 
   const handleEmailReport = () => {
-    alert("Email functionality will be configured later. Report data is ready to be sent.")
-  }
+    alert("Email functionality will be configured later. Report data is ready to be sent.");
+  };
 
   const prepareSummaryData = () => {
     return companyVatReturns.map((vatReturn, index) => {
-      const sectionOValues = extractSectionOValues(vatReturn)
-      const sectionB2Values = extractSectionB2Values(vatReturn)
-      const sectionF2Values = extractSectionF2Values(vatReturn)
-      const filingDate = getFilingDate(vatReturn)
-      const isLate = filingDate ? isFilingLate(vatReturn, filingDate) : false
+      const sectionOValues = extractSectionOValues(vatReturn);
+      const sectionB2Values = extractSectionB2Values(vatReturn);
+      const sectionF2Values = extractSectionF2Values(vatReturn);
+      const filingDate = getFilingDate(vatReturn);
+      const isLate = filingDate ? isFilingLate(vatReturn, filingDate) : false;
       return {
         "Sr.No.": index + 1, "Company Name": selectedCompany?.company_name || "", "KRA PIN": selectedCompany?.kra_pin || "",
         Period: new Date(vatReturn.year, vatReturn.month - 1).toLocaleDateString("en-US", { month: "short", year: "numeric" }),
@@ -261,33 +261,28 @@ export function DataViewerContent({ companies, availableYears }: DataViewerConte
         "Net VAT Payable": vatReturn.is_nil_return ? 0 : sectionOValues.netVatPayable, "Purchases Registered": vatReturn.is_nil_return ? 0 : sectionF2Values.purchasesRegistered,
         "Purchases Not Registered": vatReturn.is_nil_return ? 0 : sectionF2Values.purchasesNotRegistered, "Sales Registered": vatReturn.is_nil_return ? 0 : sectionB2Values.salesRegistered,
         "Sales Not Registered": vatReturn.is_nil_return ? 0 : sectionB2Values.salesNotRegistered,
-      }
-    })
-  }
+      };
+    });
+  };
 
-  // Your original function, wrapped in useMemo for performance.
   const stats = useMemo(() => {
-    if (!selectedCompany || companyVatReturns.length === 0) {
-      return { totalReturns: 0, nilReturns: 0, dataReturns: 0, totalOutputVat: 0, totalInputVat: 0 }
-    }
-    const totalReturns = companyVatReturns.length
-    const nilReturns = companyVatReturns.filter((r) => r.is_nil_return).length
-    const dataReturns = totalReturns - nilReturns
-    let totalOutputVat = 0
-    let totalInputVat = 0
+    if (!selectedCompany || companyVatReturns.length === 0) return { totalReturns: 0, nilReturns: 0, dataReturns: 0, totalOutputVat: 0, totalInputVat: 0 };
+    const totalReturns = companyVatReturns.length;
+    const nilReturns = companyVatReturns.filter((r) => r.is_nil_return).length;
+    const dataReturns = totalReturns - nilReturns;
+    let totalOutputVat = 0, totalInputVat = 0;
     companyVatReturns.forEach((vatReturn) => {
       if (!vatReturn.is_nil_return) {
-        const sectionOValues = extractSectionOValues(vatReturn)
-        totalOutputVat += sectionOValues.outputVat6
-        totalInputVat += sectionOValues.inputVat12
+        const { outputVat6, inputVat12 } = extractSectionOValues(vatReturn);
+        totalOutputVat += outputVat6;
+        totalInputVat += inputVat12;
       }
-    })
-    return { totalReturns, nilReturns, dataReturns, totalOutputVat, totalInputVat }
-  }, [companyVatReturns, selectedCompany]); // Dependency array ensures this only recalculates when needed.
+    });
+    return { totalReturns, nilReturns, dataReturns, totalOutputVat, totalInputVat };
+  }, [companyVatReturns, selectedCompany]);
 
   return (
     <div className="flex flex-1">
-      {/* Sidebar */}
       <div className="w-80 border-r bg-gray-50/50 p-4 overflow-y-auto">
         <div className="space-y-4">
           <div>
@@ -299,34 +294,36 @@ export function DataViewerContent({ companies, availableYears }: DataViewerConte
             <Input placeholder="Search companies..." value={companySearch} onChange={(e) => setCompanySearch(e.target.value)} className="pl-10" />
           </div>
           <Card>
+            {/* <CardHeader className="pb-3"><CardTitle className="text-sm">View Filters</CardTitle></CardHeader> */}
+            <CardContent className="space-y-4 pt-2">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="vat-registered-filter" className="text-sm font-medium">VAT Registered Only</Label>
+                <Switch id="vat-registered-filter" checked={filterVatRegistered} onCheckedChange={setFilterVatRegistered} />
+              </div>
+              <CategoryFilters selectedCategories={selectedCategories} categoryStatuses={categoryStatuses} onCategoryToggle={handleCategoryToggle} onStatusChange={handleStatusChange} />
+            </CardContent>
+          </Card>
+          <Card>
             <CardHeader className="pb-3"><CardTitle className="text-sm flex items-center gap-2"><CalendarDays className="h-4 w-4" />Date Range Filter</CardTitle></CardHeader>
             <CardContent className="space-y-3">
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="text-xs font-medium text-gray-600">From Year</label>
-                  <Select value={fromYear} onValueChange={setFromYear}><SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
-                    <SelectContent>{availableYears.map((year) => (<SelectItem key={year} value={year.toString()}>{year}</SelectItem>))}</SelectContent>
-                  </Select>
+                  <Select value={fromYear} onValueChange={setFromYear}><SelectTrigger className="h-8"><SelectValue /></SelectTrigger><SelectContent>{availableYears.map((year) => (<SelectItem key={year} value={year.toString()}>{year}</SelectItem>))}</SelectContent></Select>
                 </div>
                 <div>
                   <label className="text-xs font-medium text-gray-600">From Month</label>
-                  <Select value={fromMonth} onValueChange={setFromMonth}><SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
-                    <SelectContent>{months.map((month) => (<SelectItem key={month.value} value={month.value}>{month.label}</SelectItem>))}</SelectContent>
-                  </Select>
+                  <Select value={fromMonth} onValueChange={setFromMonth}><SelectTrigger className="h-8"><SelectValue /></SelectTrigger><SelectContent>{months.map((month) => (<SelectItem key={month.value} value={month.value}>{month.label}</SelectItem>))}</SelectContent></Select>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="text-xs font-medium text-gray-600">To Year</label>
-                  <Select value={toYear} onValueChange={setToYear}><SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
-                    <SelectContent>{availableYears.map((year) => (<SelectItem key={year} value={year.toString()}>{year}</SelectItem>))}</SelectContent>
-                  </Select>
+                  <Select value={toYear} onValueChange={setToYear}><SelectTrigger className="h-8"><SelectValue /></SelectTrigger><SelectContent>{availableYears.map((year) => (<SelectItem key={year} value={year.toString()}>{year}</SelectItem>))}</SelectContent></Select>
                 </div>
                 <div>
                   <label className="text-xs font-medium text-gray-600">To Month</label>
-                  <Select value={toMonth} onValueChange={setToMonth}><SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
-                    <SelectContent>{months.map((month) => (<SelectItem key={month.value} value={month.value}>{month.label}</SelectItem>))}</SelectContent>
-                  </Select>
+                  <Select value={toMonth} onValueChange={setToMonth}><SelectTrigger className="h-8"><SelectValue /></SelectTrigger><SelectContent>{months.map((month) => (<SelectItem key={month.value} value={month.value}>{month.label}</SelectItem>))}</SelectContent></Select>
                 </div>
               </div>
             </CardContent>
@@ -336,22 +333,22 @@ export function DataViewerContent({ companies, availableYears }: DataViewerConte
               <span className="text-sm font-medium">Companies ({filteredCompanies.length})</span>
               {selectedCompany && (<Button variant="ghost" size="sm" onClick={() => setSelectedCompany(null)} className="text-xs">Clear Selection</Button>)}
             </div>
-            <div className="space-y-1 max-h-96 overflow-y-auto">
+            <div className="space-y-1 max-h-[50vh] overflow-y-auto">
               {filteredCompanies.map((company) => (
-                <button key={company.id} onClick={() => setSelectedCompany(company)}
-                  className={`w-full text-left p-3 rounded-lg border transition-colors ${selectedCompany?.id === company.id ? "bg-blue-50 border-blue-200 shadow-sm" : "bg-white border-gray-200 hover:bg-gray-50"}`}>
+                <button key={company.id} onClick={() => setSelectedCompany(company)} className={`w-full text-left p-3 rounded-lg border transition-colors ${selectedCompany?.id === company.id ? "bg-blue-50 border-blue-200 shadow-sm" : "bg-white border-gray-200 hover:bg-gray-50"}`}>
                   <div className="font-medium text-sm truncate">{company.company_name}</div>
-                  <div className="text-xs text-gray-500 font-mono">{company.kra_pin}</div>
-                  {/* ** FIX: The return count is removed because `allVatReturns` is no longer available on the client.
-                      Fetching this count for every company would be inefficient. ** */}
+                  <div className="text-xs flex items-center gap-2 text-gray-500 font-mono">
+                    {company.kra_pin || 'No KRA PIN'}
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${company.vat_status === 'Registered' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                      VAT: {company.vat_status}
+                    </span>
+                  </div>
                 </button>
               ))}
             </div>
           </div>
         </div>
       </div>
-
-      {/* Main Content */}
       <div className="flex-1 p-6 overflow-y-auto">
         {!selectedCompany ? (
           <div className="flex items-center justify-center h-full">
@@ -384,7 +381,6 @@ export function DataViewerContent({ companies, availableYears }: DataViewerConte
               <Card><CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2"><CardTitle className="text-sm font-medium">Output VAT</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold">{formatCurrency(stats.totalOutputVat)}</div><p className="text-xs text-muted-foreground">Total collected</p></CardContent></Card>
               <Card><CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2"><CardTitle className="text-sm font-medium">Input VAT</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold">{formatCurrency(stats.totalInputVat)}</div><p className="text-xs text-muted-foreground">Total claimed</p></CardContent></Card>
             </div>
-            {/* Preserved your original tab order and default value */}
             <Tabs defaultValue="listings" className="space-y-4">
               <TabsList>
                 <TabsTrigger value="listings">Return Summary</TabsTrigger>
@@ -434,11 +430,11 @@ export function DataViewerContent({ companies, availableYears }: DataViewerConte
                         <TableBody>
                           {companyVatReturns.length > 0 ? (
                             companyVatReturns.map((vatReturn, index) => {
-                              const sectionOValues = extractSectionOValues(vatReturn)
-                              const sectionB2Values = extractSectionB2Values(vatReturn)
-                              const sectionF2Values = extractSectionF2Values(vatReturn)
-                              const filingDate = getFilingDate(vatReturn)
-                              const isLate = filingDate ? isFilingLate(vatReturn, filingDate) : false
+                              const sectionOValues = extractSectionOValues(vatReturn);
+                              const sectionB2Values = extractSectionB2Values(vatReturn);
+                              const sectionF2Values = extractSectionF2Values(vatReturn);
+                              const filingDate = getFilingDate(vatReturn);
+                              const isLate = filingDate ? isFilingLate(vatReturn, filingDate) : false;
                               return (
                                 <TableRow key={vatReturn.id} className="border-b">
                                   <TableCell className="font-medium border-r whitespace-nowrap">{index + 1}</TableCell>
@@ -461,7 +457,7 @@ export function DataViewerContent({ companies, availableYears }: DataViewerConte
                                 </TableRow>
                               )
                             })
-                          ) : (<TableRow><TableCell colSpan={13} className="h-24 text-center">{loading ? "Loading data..." : "No VAT returns found. Select a company or adjust the date range."}</TableCell></TableRow>)}
+                          ) : (<TableRow><TableCell colSpan={13} className="h-24 text-center">{loading ? "Loading data..." : "No VAT returns found for the selected period."}</TableCell></TableRow>)}
                         </TableBody>
                       </Table>
                     </div>

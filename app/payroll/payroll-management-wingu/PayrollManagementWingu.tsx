@@ -139,9 +139,9 @@ export default function PayrollManagementWingu({
                         case 'acc':
                             return isDateInRange(currentDate, record.company.acc_client_effective_from, record.company.acc_client_effective_to);
                         case 'audit_tax':
-                            return isDateInRange(currentDate, record.company.audit_tax_client_effective_from, record.company.audit_tax_client_effective_to);
+                            return isDateInRange(currentDate, record.company.audit_client_effective_from, record.company.audit_client_effective_to);
                         case 'cps_sheria':
-                            return isDateInRange(currentDate, record.company.cps_sheria_client_effective_from, record.company.cps_sheria_client_effective_to);
+                            return isDateInRange(currentDate, record.company.sheria_client_effective_from, record.company.sheria_client_effective_from);
                         case 'imm':
                             return isDateInRange(currentDate, record.company.imm_client_effective_from, record.company.imm_client_effective_to);
                         default:
@@ -261,7 +261,7 @@ export default function PayrollManagementWingu({
                     >
                         Extract All
                     </Button>
-                    <Button 
+                    <Button
                         onClick={handleExportAll}
                         className="h-8 px-2 bg-blue-500 text-white hover:bg-blue-600 flex items-center gap-1"
                         size="sm"
@@ -269,7 +269,7 @@ export default function PayrollManagementWingu({
                         <Download className="h-4 w-4" />
                         Export
                     </Button>
-                    <Button 
+                    <Button
                         onClick={() => setBulkFilingDialogOpen(true)}
                         className="h-8 px-2 bg-purple-500 text-white hover:bg-purple-600 flex items-center gap-1"
                         size="sm"

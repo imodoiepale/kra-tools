@@ -6,10 +6,10 @@ interface Company {
   name: string;
   acc_client_effective_from: string | null;
   acc_client_effective_to: string | null;
-  audit_tax_client_effective_from: string | null;
-  audit_tax_client_effective_to: string | null;
-  cps_sheria_client_effective_from: string | null;
-  cps_sheria_client_effective_to: string | null;
+  audit_client_effective_from: string | null;
+  audit_client_effective_to: string | null;
+  sheria_client_effective_from: string | null;
+  sheria_client_effective_from: string | null;
   imm_client_effective_from: string | null;
   imm_client_effective_to: string | null;
 }
@@ -23,7 +23,7 @@ interface ServiceCategory {
 
 const isDateInRange = (currentDate: Date, fromDate?: string | null, toDate?: string | null): boolean => {
   if (!fromDate || !toDate) return false;
-  
+
   try {
     const parseDate = (dateStr: string) => {
       if (dateStr.includes('/')) {
@@ -35,7 +35,7 @@ const isDateInRange = (currentDate: Date, fromDate?: string | null, toDate?: str
 
     const from = parseDate(fromDate);
     const to = parseDate(toDate);
-    
+
     return currentDate >= from && currentDate <= to;
   } catch (error) {
     console.error('Error parsing dates:', error);
@@ -97,10 +97,10 @@ export function useCompanyFilters(companies: Company[]) {
 
       // Apply search filter
       const matchesSearch = company.name?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false;
-      
+
       // If no filters selected or "all" is selected, show all that match search
       if (selectedFilters.length === 0) return matchesSearch;
-      
+
       // Check if any selected filter matches
       const matchesFilters = selectedFilters.some(filterKey => {
         const fromDate = company[`${filterKey}_client_effective_from`];

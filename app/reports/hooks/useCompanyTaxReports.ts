@@ -37,14 +37,14 @@ const initCacheFromStorage = () => {
     const cachedData = localStorage.getItem(LOCALSTORAGE_KEY);
     if (cachedData) {
       const parsedData = JSON.parse(cachedData);
-      
+
       // Check cache version before using stored data
       if (parsedData.version !== CACHE_VERSION) {
         console.log("Cache version mismatch, clearing cache");
         localStorage.removeItem(LOCALSTORAGE_KEY);
         return;
       }
-      
+
       Object.entries(parsedData.data || {}).forEach(([companyId, entry]) => {
         // Only load if data is complete and not expired
         if (entry.complete && Date.now() - entry.timestamp < CACHE_TTL) {
@@ -74,7 +74,7 @@ const saveCacheToStorage = () => {
         cacheToSave[companyId] = entryToSave;
       }
     });
-    
+
     // Store with version information
     localStorage.setItem(LOCALSTORAGE_KEY, JSON.stringify({
       version: CACHE_VERSION,
@@ -114,7 +114,7 @@ const batchRequests = async (ids, batchSize, fetchFn) => {
 // Fetch companies function without pagination
 const fetchCompanies = async (searchQuery: string) => {
   console.time("fetchCompanies");
-  
+
   let query = supabase
     .from("acc_portal_company_duplicate")
     .select(
@@ -146,10 +146,10 @@ const fetchCompanies = async (searchQuery: string) => {
     name: company.company_name,
     acc_client_effective_from: company.acc_client_effective_from,
     acc_client_effective_to: company.acc_client_effective_to,
-    audit_tax_client_effective_from: company.audit_client_effective_from,
-    audit_tax_client_effective_to: company.audit_client_effective_to,
-    cps_sheria_client_effective_from: company.sheria_client_effective_from,
-    cps_sheria_client_effective_to: company.sheria_client_effective_to,
+    audit_client_effective_from: company.audit_client_effective_from,
+    audit_client_effective_to: company.audit_client_effective_to,
+    sheria_client_effective_from: company.sheria_client_effective_from,
+    sheria_client_effective_from: company.sheria_client_effective_to,
     imm_client_effective_from: company.imm_client_effective_from,
     imm_client_effective_to: company.imm_client_effective_to,
   })) || [];
@@ -483,7 +483,7 @@ export const useCompanyTaxReports = () => {
   // Track initial load completion
   const [initialLoadComplete, setInitialLoadComplete] = useState(false);
   const prefetchedCompanies = useRef(new Set<number>());
-  
+
   // Track company ID changes
   const previousCompaniesRef = useRef<any[]>([]);
 
@@ -507,29 +507,29 @@ export const useCompanyTaxReports = () => {
 
     const currentIds = companies.map(c => c.id);
     const previousIds = previousCompaniesRef.current.map(c => c.id);
-    
+
     // Check for changes
     const added = currentIds.filter(id => !previousIds.includes(id));
     const removed = previousIds.filter(id => !currentIds.includes(id));
-    
+
     if (added.length > 0 || removed.length > 0) {
       console.warn("Company IDs changed:", { added, removed });
-      
+
       // If currently selected company is no longer available, reset selection
       if (selectedCompany && !currentIds.includes(selectedCompany)) {
         console.warn(`Selected company ${selectedCompany} is no longer available`);
         setSelectedCompany(null);
-        
+
         // Clear cache for removed companies
         removed.forEach(id => {
           taxDataCache.delete(id);
         });
-        
+
         // Save updated cache
         saveCacheToStorage();
       }
     }
-    
+
     // Update reference
     previousCompaniesRef.current = [...(companies || [])];
   }, [companies, selectedCompany]);
@@ -658,7 +658,7 @@ export const useCompanyTaxReports = () => {
     taxDataCache.clear();
     localStorage.removeItem(LOCALSTORAGE_KEY);
     console.log("Cache cleared");
-    
+
     // Force refetch companies to get fresh IDs
     queryClient.invalidateQueries(["companies"]);
   }, [queryClient]);
@@ -713,14 +713,14 @@ export const useCompanyTaxReports = () => {
 
     // Set up periodic cache save
     const saveInterval = setInterval(saveCacheToStorage, 60000); // Save every minute
-    
+
     // Set up periodic cache validation (every 15 minutes)
     const validateInterval = setInterval(() => {
       // Check if any company IDs in cache no longer exist in the database
       if (companies && companies.length > 0) {
         const currentIds = new Set(companies.map(c => c.id));
         const cachedIds = Array.from(taxDataCache.keys());
-        
+
         const invalidIds = cachedIds.filter(id => !currentIds.has(id));
         if (invalidIds.length > 0) {
           console.warn(`Removing ${invalidIds.length} invalid company IDs from cache`);

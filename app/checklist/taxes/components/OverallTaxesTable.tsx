@@ -232,10 +232,10 @@ export default function OverallTaxesTable({ companies: initialCompanies }) {
                     // Copy over the effective dates from acc_portal_company_duplicate
                     acc_client_effective_from: accCompany.acc_client_effective_from,
                     acc_client_effective_to: accCompany.acc_client_effective_to,
-                    audit_tax_client_effective_from: accCompany.audit_tax_client_effective_from,
-                    audit_tax_client_effective_to: accCompany.audit_tax_client_effective_to,
-                    cps_sheria_client_effective_from: accCompany.cps_sheria_client_effective_from,
-                    cps_sheria_client_effective_to: accCompany.cps_sheria_client_effective_to,
+                    audit_client_effective_from: accCompany.audit_client_effective_from,
+                    audit_client_effective_to: accCompany.audit_client_effective_to,
+                    sheria_client_effective_from: accCompany.sheria_client_effective_from,
+                    sheria_client_effective_from: accCompany.sheria_client_effective_from,
                     imm_client_effective_from: accCompany.imm_client_effective_from,
                     imm_client_effective_to: accCompany.imm_client_effective_to,
                     is_locked: existingCompany?.is_locked || false

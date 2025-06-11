@@ -1,8 +1,17 @@
 // @ts-nocheck
 import { supabase } from "./supabase"
-import type { Company, VatReturnDetails, CompanyVatReturnListings } from "./supabase"
+import type { Company, VatReturnDetails, CompanyVatReturnListings, PinCheckerDetails } from "./supabase"
 
-// Helper function to fetch all pages of data
+export interface EnrichedCompany extends Company {
+  vat_status: 'Registered' | 'Not Registered' | 'Unknown';
+  categoryStatus: {
+    acc: 'active' | 'inactive';
+    audit_tax: 'active' | 'inactive';
+    cps_sheria: 'active' | 'inactive';
+    imm: 'active' | 'inactive';
+  };
+}
+
 async function fetchAllPages<T>(
   tableName: string,
   selectClause: string = "*",
@@ -13,96 +22,158 @@ async function fetchAllPages<T>(
   let allData: T[] = []
   let offset = 0
   let hasMore = true
-  const maxConcurrentPages = 2 // Limit concurrent requests to avoid overwhelming the database
-
-  console.log(`Starting to fetch all data from ${tableName}...`)
+  const maxConcurrentPages = 2
 
   while (hasMore) {
-    // Create batch of promises for concurrent fetching
-    const promises: Promise<{ data: T[] | null; error: any }>[] = []
-
+    const promises = []
     for (let i = 0; i < maxConcurrentPages && hasMore; i++) {
       const currentOffset = offset + (i * pageSize)
-
       let query = supabase
         .from(tableName)
         .select(selectClause)
         .range(currentOffset, currentOffset + pageSize - 1)
 
-      // Apply filters
       Object.entries(filters).forEach(([key, value]) => {
-        if (Array.isArray(value)) {
-          query = query.in(key, value)
-        } else if (value !== undefined && value !== null) {
-          query = query.eq(key, value)
-        }
+        if (Array.isArray(value)) query = query.in(key, value)
+        else if (value !== undefined && value !== null) query = query.eq(key, value)
       })
 
-      // Apply ordering
       orderBy.forEach(({ column, ascending }) => {
         query = query.order(column, { ascending })
       })
-
       promises.push(query)
     }
 
-    // Execute all promises concurrently
     const results = await Promise.all(promises)
-
-    // Process results
     let pageHasData = false
     for (const result of results) {
       if (result.error) {
         console.error(`Error fetching data from ${tableName}:`, result.error)
         continue
       }
-
       if (result.data && result.data.length > 0) {
         allData.push(...result.data)
         pageHasData = true
       }
-
-      // If this page has less than pageSize items, we've reached the end
       if (!result.data || result.data.length < pageSize) {
         hasMore = false
       }
     }
-
-    // If no pages had data, we're done
-    if (!pageHasData) {
-      hasMore = false
-    }
-
+    if (!pageHasData) hasMore = false
     offset += maxConcurrentPages * pageSize
-
-    // Progress logging
-    if (allData.length > 0) {
-      console.log(`Fetched ${allData.length} records from ${tableName}...`)
-    }
   }
-
-  console.log(`Completed fetching ${allData.length} total records from ${tableName}`)
   return allData
 }
 
-// Enhanced companies fetcher
-export async function getCompanies(): Promise<Company[]> {
-  try {
-    console.log("Fetching all companies...")
-    const companies = await fetchAllPages<Company>(
-      "acc_portal_company_duplicate",
-      "*",
-      {},
-      [{ column: "company_name", ascending: true }]
-    )
+const parseDate = (dateStr: string | null): Date | null => {
+  if (!dateStr || !dateStr.includes('/')) return null;
+  const parts = dateStr.split('/');
+  if (parts.length !== 3) return null;
+  const [day, month, year] = parts.map(Number);
+  if (isNaN(day) || isNaN(month) || isNaN(year)) return null;
+  return new Date(year, month - 1, day);
+};
 
-    console.log(`Successfully fetched ${companies.length} companies`)
-    return companies
+const isDateInRange = (currentDate: Date, fromDateStr: string | null, toDateStr: string | null): boolean => {
+  const fromDate = parseDate(fromDateStr);
+  const toDate = parseDate(toDateStr);
+  if (!fromDate || !toDate) return false;
+  return currentDate >= fromDate && currentDate <= toDate;
+};
+
+async function getPinCheckerDetailsMap(): Promise<Map<string, 'Registered' | 'Not Registered'>> {
+  try {
+    const details = await fetchAllPages<PinCheckerDetails>(
+      "PinCheckerDetails",
+      "company_name, vat_status"
+    );
+    const map = new Map<string, 'Registered' | 'Not Registered'>();
+    details.forEach(detail => {
+      if (detail.company_name && detail.vat_status) {
+        map.set(detail.company_name, detail.vat_status);
+      }
+    });
+    return map;
   } catch (error) {
-    console.error("Unexpected error fetching companies:", error)
-    return []
+    console.error("Unexpected error fetching Pin Checker details:", error);
+    return new Map();
   }
 }
+
+export async function getCompanies(): Promise<EnrichedCompany[]> {
+  try {
+    const selectClause = `
+      id, company_name, kra_pin, 
+      acc_client_effective_from, acc_client_effective_to,
+      audit_client_effective_from, audit_client_effective_to,
+      sheria_client_effective_from, sheria_client_effective_to,
+      imm_client_effective_from, imm_client_effective_to
+    `;
+
+    const [companies, pinDetailsMap] = await Promise.all([
+      fetchAllPages<Company>("acc_portal_company_duplicate", selectClause, {}, [{ column: "company_name", ascending: true }]),
+      getPinCheckerDetailsMap()
+    ]);
+
+    const currentDate = new Date();
+
+    return companies.map(company => ({
+      ...company,
+      vat_status: pinDetailsMap.get(company.company_name) || 'Unknown',
+      categoryStatus: {
+        acc: isDateInRange(currentDate, company.acc_client_effective_from, company.acc_client_effective_to) ? 'active' : 'inactive',
+        audit_tax: isDateInRange(currentDate, company.audit_client_effective_from, company.audit_client_effective_to) ? 'active' : 'inactive',
+        cps_sheria: isDateInRange(currentDate, company.sheria_client_effective_from, company.sheria_client_effective_to) ? 'active' : 'inactive',
+        imm: isDateInRange(currentDate, company.imm_client_effective_from, company.imm_client_effective_to) ? 'active' : 'inactive',
+      }
+    }));
+  } catch (error) {
+    console.error("Unexpected error fetching companies:", error);
+    return [];
+  }
+}
+
+
+// Fetches Pin Checker details for VAT status
+export async function getPinCheckerDetails(): Promise<PinCheckerDetails[]> {
+  try {
+    console.log("Fetching all Pin Checker details...")
+    const details = await fetchAllPages<PinCheckerDetails>(
+      "PinCheckerDetails",
+      "company_name, vat_status",
+      {},
+      [{ column: "company_name", ascending: true }]
+    );
+    console.log(`Successfully fetched ${details.length} Pin Checker details`);
+    return details;
+  } catch (error) {
+    console.error("Unexpected error fetching Pin Checker details:", error);
+    return [];
+  }
+}
+export async function getPinCheckerDetailsForCompany(companyName: string) {
+  try {
+    const { data, error } = await supabase
+      .from("pin_checker_results")
+      .select("*")
+      .eq("company_name", companyName)
+      .limit(1)
+      .single();
+
+    if (error && error.code !== 'PGRST116') {
+      console.error(`Error fetching pin checker details for ${companyName}:`, error);
+      return null;
+    }
+
+    // Assuming the type is similar to other details, adjust as needed.
+    return data as any | null;
+  } catch (error) {
+    console.error("Unexpected error in getPinCheckerDetailsForCompany:", error);
+    return null;
+  }
+}
+
+
 // Add these missing functions to lib/data-viewer/data-fetchers.ts
 export async function getAllVatReturns(options: {
   companyIds?: number[]

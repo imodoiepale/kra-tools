@@ -22,7 +22,7 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Checkbox } from '@/components/ui/checkbox'
-import {ExtractAllDialog} from './components/ExtractAllDialog'
+import { ExtractAllDialog } from './components/ExtractAllDialog'
 
 const DOCUMENT_TYPES = [
     {
@@ -151,22 +151,22 @@ export default function ExtractionReport({
             if (!record || !record.company) return false;
 
             const matchesSearch = record.company.company_name?.toLowerCase().includes(searchTerm.toLowerCase()) ?? false;
-            
+
             // Check category filters
             let matchesCategory = true;
             if (selectedCategories.length > 0) {
                 matchesCategory = selectedCategories.some(category => {
                     const currentDate = new Date();
-                    
+
                     // Extract the base category without status suffix
                     const baseCategory = category.split('_status_')[0];
-                    const status = category.includes('_status_') 
+                    const status = category.includes('_status_')
                         ? category.split('_status_')[1] as 'active' | 'inactive'
                         : 'active'; // Default to active status if not specified
-                    
+
                     let isInCategory = false;
                     let isActive = false;
-                    
+
                     switch (baseCategory) {
                         case 'acc':
                             isInCategory = true;
@@ -174,11 +174,11 @@ export default function ExtractionReport({
                             break;
                         case 'audit_tax':
                             isInCategory = true;
-                            isActive = isDateInRange(currentDate, record.company.audit_tax_client_effective_from, record.company.audit_tax_client_effective_to);
+                            isActive = isDateInRange(currentDate, record.company.audit_client_effective_from, record.company.audit_client_effective_to);
                             break;
                         case 'cps_sheria':
                             isInCategory = true;
-                            isActive = isDateInRange(currentDate, record.company.cps_sheria_client_effective_from, record.company.cps_sheria_client_effective_to);
+                            isActive = isDateInRange(currentDate, record.company.sheria_client_effective_from, record.company.sheria_client_effective_from);
                             break;
                         case 'imm':
                             isInCategory = true;
@@ -187,12 +187,12 @@ export default function ExtractionReport({
                         default:
                             return false;
                     }
-                    
+
                     // If status is 'all', return whether it's in the category
                     if (status === 'all') {
                         return isInCategory;
                     }
-                    
+
                     // Otherwise, check if the active status matches the requested status
                     return isInCategory && ((status === 'active' && isActive) || (status === 'inactive' && !isActive));
                 });
