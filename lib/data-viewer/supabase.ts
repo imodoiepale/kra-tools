@@ -38,7 +38,13 @@ export interface PinCheckerDetails {
 
 // The final, combined data structure passed to the client
 export interface EnrichedCompany extends Company {
-  vat_status: string // e.g., 'Registered' or 'Unknown'
+  vat_status: 'Registered' | 'Not Registered' | 'Unknown';
+  categoryStatus: {
+    acc: 'active' | 'inactive';
+    audit_tax: 'active' | 'inactive';
+    cps_sheria: 'active' | 'inactive';
+    imm: 'active' | 'inactive';
+  };
 }
 
 // Other types remain the same

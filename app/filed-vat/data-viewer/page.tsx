@@ -17,18 +17,32 @@ export default async function DataViewerPage() {
   );
 
   // Create a lookup map for VAT status, keyed by company_name
-  const vatStatusMap = new Map<string, string>();
+  const vatStatusMap = new Map<string, 'Registered' | 'Not Registered'>();
   pinCheckerDetails.forEach(detail => {
     if (detail.company_name && detail.vat_status) {
-      vatStatusMap.set(detail.company_name, detail.vat_status);
+      const status = detail.vat_status === 'Registered' || detail.vat_status === 'Not Registered' 
+        ? detail.vat_status 
+        : null;
+      if (status) {
+        vatStatusMap.set(detail.company_name, status);
+      }
     }
   });
 
-  // Enrich the primary company list with VAT status. All date fields are already present.
-  const enrichedCompanies: EnrichedCompany[] = companies.map(company => ({
-    ...company,
-    vat_status: vatStatusMap.get(company.company_name) || 'Unknown',
-  }));
+  // Enrich the primary company list with VAT status and default category status
+  const enrichedCompanies: EnrichedCompany[] = companies.map(company => {
+    const vatStatus = vatStatusMap.get(company.company_name) || 'Unknown';
+    return {
+      ...company,
+      vat_status: vatStatus,
+      categoryStatus: {
+        acc: company.acc_client_effective_to && new Date(company.acc_client_effective_to) < new Date() ? 'inactive' : 'active',
+        audit_tax: company.audit_client_effective_to && new Date(company.audit_client_effective_to) < new Date() ? 'inactive' : 'active',
+        cps_sheria: company.sheria_client_effective_to && new Date(company.sheria_client_effective_to) < new Date() ? 'inactive' : 'active',
+        imm: company.imm_client_effective_to && new Date(company.imm_client_effective_to) < new Date() ? 'inactive' : 'active',
+      },
+    };
+  });
 
   return (
     <div className="flex min-h-screen flex-col">
