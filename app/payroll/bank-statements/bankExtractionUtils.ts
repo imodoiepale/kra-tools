@@ -373,22 +373,92 @@ function extractPeriodFromPath(path) {
 
 // --- Bulk and Multi-Month Functions (as provided originally) ---
 
+/**
+ * Processes multiple bank statement files with support for multi-period statements
+ * @param {Array} batchFiles - Array of files to process
+ * @param {Object} params - Additional parameters for extraction
+ * @param {Function} onProgress - Callback for progress updates
+ * @returns {Promise<Array>} Array of processed results
+ */
 export async function processBulkExtraction(batchFiles, params, onProgress) {
-  // This function would contain the logic for handling multiple files.
-  // For now, it will process them one by one. A more advanced implementation
-  // could batch requests to the AI.
   const results = [];
+  const processedStatements = new Map(); // Track processed statements to avoid duplicates
+
   for (let i = 0; i < batchFiles.length; i++) {
     const file = batchFiles[i];
-    onProgress((i + 1) / batchFiles.length * 100);
-    const result = await performBankStatementExtraction(file.fileUrl, params);
-    results.push({
-      index: file.index,
-      success: result.success,
-      extractedData: result.extractedData,
-      error: result.success ? null : result.message,
-      originalItem: file.originalItem,
-    });
+    try {
+      // Update progress
+      onProgress({
+        progress: (i + 1) / batchFiles.length * 100,
+        message: `Processing file ${i + 1} of ${batchFiles.length}`,
+        currentFile: file.name
+      });
+
+      // Skip if we've already processed this statement
+      const fileKey = `${file.name}_${file.size}`;
+      if (processedStatements.has(fileKey)) {
+        results.push({
+          ...processedStatements.get(fileKey),
+          index: file.index,
+          originalItem: file.originalItem,
+          skipped: true,
+          message: 'Duplicate file skipped'
+        });
+        continue;
+      }
+
+      // Process the file
+      const result = await performBankStatementExtraction(file.fileUrl, params);
+      
+      // Handle multi-period statements
+      let statementPeriods = [];
+      if (result.success && result.extractedData?.statement_period) {
+        const period = parseStatementPeriod(result.extractedData.statement_period);
+        if (period) {
+          statementPeriods = generateMonthRange(
+            period.startMonth,
+            period.startYear,
+            period.endMonth,
+            period.endYear
+          );
+        }
+      }
+
+      // Prepare the result
+      const fileResult = {
+        index: file.index,
+        success: result.success,
+        extractedData: result.extractedData,
+        error: result.success ? null : result.message,
+        originalItem: file.originalItem,
+        fileInfo: {
+          name: file.name,
+          size: file.size,
+          type: file.type
+        },
+        statementPeriods,
+        processedAt: new Date().toISOString()
+      };
+
+      // Cache the result
+      processedStatements.set(fileKey, fileResult);
+      results.push(fileResult);
+
+    } catch (error) {
+      console.error(`Error processing file ${file.name}:`, error);
+      results.push({
+        index: file.index,
+        success: false,
+        error: error.message || 'Failed to process file',
+        originalItem: file.originalItem,
+        fileInfo: {
+          name: file.name,
+          size: file.size,
+          type: file.type
+        }
+      });
+    }
   }
+
   return results;
 }
