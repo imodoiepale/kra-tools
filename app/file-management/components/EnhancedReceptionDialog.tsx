@@ -55,11 +55,11 @@ export default function EnhancedReceptionDialog({
         isUrgent: false
     });
 
-    // Fetch employees and directors for the company and company ID 10
+    // Fetch people from company_id = 10 for the Received By dropdown
     const fetchCompanyPeople = async () => {
-        if (!companyId) return;
-        
+        const COMPANY_ID = '10';
         setLoadingPeople(true);
+        
         try {
             // Fetch all individuals with their employment history
             const { data: individuals, error } = await supabase
@@ -74,61 +74,34 @@ export default function EnhancedReceptionDialog({
             if (individuals) {
                 const now = new Date();
                 
-                const processEmployment = (person: any, isCompany10: boolean = false) => {
-                    // Skip if no employment history
+                // Filter for people employed at company_id = 10
+                const company10People = individuals.filter(person => {
                     if (!person.employment_history || !Array.isArray(person.employment_history)) return false;
                     
                     return person.employment_history.some((emp: any) => {
                         if (!emp || !emp.role) return false;
                         
-                        // Check if employed at the selected company or company 10
-                        const isTargetCompany = isCompany10 
-                            ? emp.company_id === '10' 
-                            : emp.company_id === companyId;
-                        
-                        if (!isTargetCompany) return false;
+                        // Check if employed at company_id = 10
+                        if (emp.company_id !== COMPANY_ID) return false;
                         
                         // Check if currently employed
                         const endDate = emp.end_date ? new Date(emp.end_date) : null;
                         return !endDate || endDate >= now;
                     });
-                };
-
-                // Get employees (non-directors) from both companies
-                const employeeList = individuals.filter(person => 
-                    processEmployment(person) || processEmployment(person, true)
-                ).filter(person => {
-                    // Filter for employees (non-directors)
-                    return person.employment_history.some((emp: any) => 
-                        emp.role && emp.role.toLowerCase() !== 'director'
-                    );
                 });
 
-                // Get directors from both companies
-                const directorList = individuals.filter(person => 
-                    processEmployment(person) || processEmployment(person, true)
-                ).filter(person => {
-                    // Filter for directors
-                    return person.employment_history.some((emp: any) => 
-                        emp.role && emp.role.toLowerCase() === 'director'
-                    );
-                });
+                // Sort people by name
+                const sortedPeople = [...company10People].sort((a, b) => 
+                    a.full_name.localeCompare(b.full_name)
+                );
 
-                // Remove duplicates
-                const uniqueEmployees = Array.from(new Map(
-                    employeeList.map((person: any) => [person.id, person])
-                ).values());
-
-                const uniqueDirectors = Array.from(new Map(
-                    directorList.map((person: any) => [person.id, person])
-                ).values());
-
-                setEmployees(uniqueEmployees);
-                setDirectors(uniqueDirectors);
+                // For Received By, we don't need to separate employees and directors
+                setEmployees(sortedPeople);
+                setDirectors([]);
             }
         } catch (error) {
             console.error('Error fetching company people:', error);
-            toast.error('Failed to load company employees and directors');
+            toast.error('Failed to load company employees');
         } finally {
             setLoadingPeople(false);
         }
@@ -302,7 +275,8 @@ export default function EnhancedReceptionDialog({
                     size="sm"
                     className={className}
                 >
-                    {existingData ? 'Edit' : 'Add'}
+                    {getStatusIcon()}
+                    {existingData && <Edit3 className="h-3 w-3 ml-1 text-blue-600" />}
                 </Button>
             </DialogTrigger>
 
@@ -341,69 +315,86 @@ export default function EnhancedReceptionDialog({
                                 <div className="grid grid-cols-2 gap-4">
                                     <div>
                                         <Label htmlFor="broughtBy">Who Brought Documents *</Label>
-                                        <Select
-                                            value={formData.broughtBy}
-                                            onValueChange={(value) => setFormData(prev => ({ ...prev, broughtBy: value === 'other' ? '' : value }))}
-                                            disabled={loadingPeople}
-                                        >
-                                            <SelectTrigger>
-                                                {loadingPeople ? (
-                                                    <span>Loading people...</span>
-                                                ) : (
-                                                    <SelectValue placeholder="Select person" />
-                                                )}
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem value="other">Other Person...</SelectItem>
-                                                
-                                                {employees.length > 0 && (
-                                                    <>
-                                                        <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground">
-                                                            Employees ({employees.length})
-                                                        </div>
-                                                        {employees.map((employee) => (
-                                                            <SelectItem key={employee.id} value={employee.full_name}>
-                                                                {employee.full_name}
-                                                            </SelectItem>
-                                                        ))}
-                                                    </>
-                                                )}
-                                                
-                                                {directors.length > 0 && (
-                                                    <>
-                                                        <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground">
-                                                            Directors ({directors.length})
-                                                        </div>
-                                                        {directors.map((director) => (
-                                                            <SelectItem key={director.id} value={director.full_name}>
-                                                                {director.full_name}
-                                                            </SelectItem>
-                                                        ))}
-                                                    </>
-                                                )}
-                                                
-                                                {employees.length === 0 && directors.length === 0 && (
-                                                    <div className="px-3 py-1.5 text-sm text-muted-foreground">
-                                                        No employees or directors found
-                                                    </div>
-                                                )}
-                                            </SelectContent>
-                                        </Select>
-                                        {formData.broughtBy === '' && (
-                                            <Input
-                                                value={formData.broughtBy}
-                                                onChange={(e) => setFormData(prev => ({ ...prev, broughtBy: e.target.value }))}
-                                                placeholder="Enter person's name"
-                                                className="mt-2"
-                                            />
-                                        )}
+                                        <div>
+                                            <Select
+                                                value={formData.broughtBy.startsWith('other:') ? 'other' : formData.broughtBy}
+                                                onValueChange={(value) => {
+                                                    if (value === 'other') {
+                                                        setFormData(prev => ({
+                                                            ...prev,
+                                                            broughtBy: 'other:'
+                                                        }));
+                                                    } else {
+                                                        setFormData(prev => ({
+                                                            ...prev,
+                                                            broughtBy: value
+                                                        }));
+                                                    }
+                                                }}
+                                                disabled={loadingPeople}
+                                            >
+                                                <SelectTrigger>
+                                                    {loadingPeople ? (
+                                                        <span>Loading people...</span>
+                                                    ) : (
+                                                        <SelectValue placeholder="Select person" />
+                                                    )}
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="other">Other Person...</SelectItem>
+                                                    
+                                                    {employees.length > 0 && (
+                                                        <>
+                                                            <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground">
+                                                                Employees ({employees.length})
+                                                            </div>
+                                                            {employees.map((employee) => (
+                                                                <SelectItem key={employee.id} value={employee.full_name}>
+                                                                    {employee.full_name}
+                                                                </SelectItem>
+                                                            ))}
+                                                        </>
+                                                    )}
+                                                    
+                                                    {directors.length > 0 && (
+                                                        <>
+                                                            <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground">
+                                                                Directors ({directors.length})
+                                                            </div>
+                                                            {directors.map((director) => (
+                                                                <SelectItem key={director.id} value={director.full_name}>
+                                                                    {director.full_name}
+                                                                </SelectItem>
+                                                            ))}
+                                                        </>
+                                                    )}
+                                                </SelectContent>
+                                            </Select>
+                                            
+                                            {(formData.broughtBy.startsWith('other:') || (!formData.broughtBy && !employees.length && !directors.length)) && (
+                                                <div className="mt-2">
+                                                    <Input
+                                                        value={formData.broughtBy.startsWith('other:') ? formData.broughtBy.substring(6) : formData.broughtBy}
+                                                        onChange={(e) => setFormData(prev => ({
+                                                            ...prev,
+                                                            broughtBy: 'other:' + e.target.value
+                                                        }))}
+                                                        placeholder="Enter person's name"
+                                                        className="w-full"
+                                                    />
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
 
-                                    <div>
+                                    <div className="space-y-2">
                                         <Label htmlFor="receivedBy">Received By</Label>
                                         <Select
                                             value={formData.receivedBy}
-                                            onValueChange={(value) => setFormData(prev => ({ ...prev, receivedBy: value === 'other' ? '' : value }))}
+                                            onValueChange={(value) => setFormData(prev => ({ 
+                                                ...prev, 
+                                                receivedBy: value === 'other' ? '' : value 
+                                            })}
                                         >
                                             <SelectTrigger>
                                                 {loadingPeople ? (
@@ -418,33 +409,17 @@ export default function EnhancedReceptionDialog({
                                                 <SelectItem value="Document Controller">Document Controller</SelectItem>
                                                 <SelectItem value="Manager">Manager</SelectItem>
                                                 
-                                                {(employees.length > 0 || directors.length > 0) && (
+                                                {employees.length > 0 && (
                                                     <>
                                                         <Separator className="my-1" />
-                                                        {employees.length > 0 && (
-                                                            <>
-                                                                <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground">
-                                                                    Employees ({employees.length})
-                                                                </div>
-                                                                {employees.map((employee) => (
-                                                                    <SelectItem key={`emp-${employee.id}`} value={employee.full_name}>
-                                                                        {employee.full_name}
-                                                                    </SelectItem>
-                                                                ))}
-                                                            </>
-                                                        )}
-                                                        {directors.length > 0 && (
-                                                            <>
-                                                                <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground">
-                                                                    Directors ({directors.length})
-                                                                </div>
-                                                                {directors.map((director) => (
-                                                                    <SelectItem key={`dir-${director.id}`} value={director.full_name}>
-                                                                        {director.full_name}
-                                                                    </SelectItem>
-                                                                ))}
-                                                            </>
-                                                        )}
+                                                        <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground">
+                                                            Company 10 Employees ({employees.length})
+                                                        </div>
+                                                        {employees.map((person) => (
+                                                            <SelectItem key={`person-${person.id}`} value={person.full_name}>
+                                                                {person.full_name}
+                                                            </SelectItem>
+                                                        ))}
                                                         <Separator className="my-1" />
                                                     </>
                                                 )}

@@ -30,7 +30,8 @@ import {
     MoreHorizontal,
     Archive,
     Mail,
-    FileDown
+    FileDown,
+    ArrowUpDown
 } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from 'react-hot-toast';
@@ -42,6 +43,8 @@ import BulkOperationsDialog from './BulkOperationsDialog';
 import { Company, FileRecord } from '../types/fileManagement';
 
 const columnHelper = createColumnHelper<Company>();
+
+type SortingState = Array<{ id: string; desc: boolean }>;
 
 interface EnhancedMonthlyTableProps {
     companies: Company[];
@@ -65,6 +68,7 @@ export default function EnhancedMonthlyTable({
     const [columnVisibility, setColumnVisibility] = useState({});
     const [selectedRows, setSelectedRows] = useState<string[]>([]);
     const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
+    const [sorting, setSorting] = useState<SortingState>([]);
 
     const year = selectedDate.getFullYear();
     const month = selectedDate.getMonth() + 1;
@@ -140,45 +144,69 @@ export default function EnhancedMonthlyTable({
         }),
 
         // Index column
-        columnHelper.accessor((_, index) => index + 1, {
+        columnHelper.accessor((row) => {
+            const index = companies.findIndex(c => c.id === row.id) + 1;
+            return index;
+        }, {
             id: 'index',
             header: '#',
             size: 60,
+            enableSorting: false,
         }),
 
         // Company details
         columnHelper.accessor('company_name', {
-            header: 'Company Name',
+            header: ({ column }) => (
+                <Button
+                    variant="ghost"
+                    onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+                    className="p-0 hover:bg-transparent"
+                >
+                    Company Name
+                    <ArrowUpDown className="ml-2 h-4 w-4" />
+                </Button>
+            ),
             cell: info => (
                 <div>
-                    <p className="font-medium text-blue-800">{info.getValue()}</p>
+                    <p className="font-medium text-gray-800">{info.getValue()}</p>
                     <p className="text-xs text-gray-500">{info.row.original.kra_pin}</p>
                 </div>
             ),
             size: 200,
+            sortingFn: 'alphanumeric',
         }),
 
-        columnHelper.accessor('category', {
-            header: 'Category',
-            cell: info => (
-                <Badge
-                    variant="outline"
-                    className={cn(
-                        "text-xs",
-                        info.getValue() === 'corporate' && "border-blue-200 text-blue-700 bg-blue-50",
-                        info.getValue() === 'sme' && "border-green-200 text-green-700 bg-green-50",
-                        info.getValue() === 'individual' && "border-purple-200 text-purple-700 bg-purple-50",
-                        info.getValue() === 'ngo' && "border-orange-200 text-orange-700 bg-orange-50"
-                    )}
-                >
-                    {info.getValue()}
-                </Badge>
-            ),
-            size: 100,
-        }),
+        // columnHelper.accessor('category', {
+        //     header: 'Category',
+        //     cell: info => (
+        //         <Badge
+        //             variant="outline"
+        //             className={cn(
+        //                 "text-xs",
+        //                 info.getValue() === 'corporate' && "border-blue-200 text-blue-700 bg-blue-50",
+        //                 info.getValue() === 'sme' && "border-green-200 text-green-700 bg-green-50",
+        //                 info.getValue() === 'individual' && "border-purple-200 text-purple-700 bg-purple-50",
+        //                 info.getValue() === 'ngo' && "border-orange-200 text-orange-700 bg-orange-50"
+        //             )}
+        //         >
+        //             {info.getValue()}
+        //         </Badge>
+        //     ),
+        //     size: 100,
+        // }),
 
         columnHelper.accessor('priority', {
-            header: 'Priority',
+            id: 'priority',
+            header: ({ column }) => (
+                <Button
+                    variant="ghost"
+                    onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+                    className="p-0 hover:bg-transparent"
+                >
+                    Priority
+                    <ArrowUpDown className="ml-2 h-4 w-4" />
+                </Button>
+            ),
             cell: info => (
                 <Badge
                     variant="outline"
@@ -193,12 +221,27 @@ export default function EnhancedMonthlyTable({
                 </Badge>
             ),
             size: 80,
+            sortingFn: (a, b) => {
+                const priorityOrder = { high: 3, medium: 2, low: 1 };
+                return priorityOrder[a.original.priority] - priorityOrder[b.original.priority];
+            },
         }),
 
         // Reception status
         columnHelper.display({
             id: 'reception',
-            header: 'Reception',
+            header: ({ column }) => (
+                <div className="text-center">
+                    <Button
+                        variant="ghost"
+                        onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+                        className="p-0 hover:bg-transparent"
+                    >
+                        Reception
+                        <ArrowUpDown className="ml-2 h-4 w-4" />
+                    </Button>
+                </div>
+            ),
             cell: ({ row }) => {
                 const record = getCompanyRecord(row.original.id);
                 return (
@@ -226,7 +269,16 @@ export default function EnhancedMonthlyTable({
         // Reception details
         columnHelper.display({
             id: 'receptionDetails',
-            header: 'Reception Details',
+            header: ({ column }) => (
+                <Button
+                    variant="ghost"
+                    onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+                    className="p-0 hover:bg-transparent"
+                >
+                    Reception Details
+                    <ArrowUpDown className="ml-2 h-4 w-4" />
+                </Button>
+            ),
             cell: ({ row }) => {
                 const record = getCompanyRecord(row.original.id);
                 const dateTime = formatDateTime(record?.received_at);
@@ -247,7 +299,18 @@ export default function EnhancedMonthlyTable({
         // Delivery status
         columnHelper.display({
             id: 'delivery',
-            header: 'Delivery',
+            header: ({ column }) => (
+                <div className="text-center">
+                    <Button
+                        variant="ghost"
+                        onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+                        className="p-0 hover:bg-transparent"
+                    >
+                        Delivery
+                        <ArrowUpDown className="ml-2 h-4 w-4" />
+                    </Button>
+                </div>
+            ),
             cell: ({ row }) => {
                 const record = getCompanyRecord(row.original.id);
                 return (
@@ -270,7 +333,16 @@ export default function EnhancedMonthlyTable({
         // Delivery details
         columnHelper.display({
             id: 'deliveryDetails',
-            header: 'Delivery Details',
+            header: ({ column }) => (
+                <Button
+                    variant="ghost"
+                    onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+                    className="p-0 hover:bg-transparent"
+                >
+                    Delivery Details
+                    <ArrowUpDown className="ml-2 h-4 w-4" />
+                </Button>
+            ),
             cell: ({ row }) => {
                 const record = getCompanyRecord(row.original.id);
                 const dateTime = formatDateTime(record?.delivered_at);
@@ -291,7 +363,16 @@ export default function EnhancedMonthlyTable({
         // Status
         columnHelper.display({
             id: 'status',
-            header: 'Status',
+            header: ({ column }) => (
+                <Button
+                    variant="ghost"
+                    onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+                    className="p-0 hover:bg-transparent"
+                >
+                    Status
+                    <ArrowUpDown className="ml-2 h-4 w-4" />
+                </Button>
+            ),
             cell: ({ row }) => {
                 const record = getCompanyRecord(row.original.id);
                 const status = record?.status || 'pending';
@@ -368,13 +449,20 @@ export default function EnhancedMonthlyTable({
         data,
         columns,
         state: {
+            sorting,
             globalFilter,
             columnVisibility,
         },
+        onSortingChange: setSorting,
+        onGlobalFilterChange: setGlobalFilter,
         onColumnVisibilityChange: setColumnVisibility,
         getCoreRowModel: getCoreRowModel(),
         getSortedRowModel: getSortedRowModel(),
         getFilteredRowModel: getFilteredRowModel(),
+        // Set default sorting by company name
+        initialState: {
+            sorting: [{ id: 'company_name', desc: false }]
+        }
     });
 
     // Calculate statistics
@@ -624,13 +712,13 @@ export default function EnhancedMonthlyTable({
                                         {headerGroup.headers.map(header => (
                                             <TableHead
                                                 key={header.id}
-                                                className="font-bold text-blue-800 text-center border-r border-blue-200 last:border-r-0"
+                                                className="font-bold text-blue-800 border-r border-blue-200 last:border-r-0"
                                                 style={{ width: header.column.columnDef.size }}
                                             >
                                                 {header.isPlaceholder ? null : (
                                                     <div
                                                         className={cn(
-                                                            "flex items-center justify-center px-2 py-2",
+                                                            "flex px-2 py-2",
                                                             header.column.getCanSort() && "cursor-pointer select-none hover:bg-blue-200 rounded"
                                                         )}
                                                         onClick={header.column.getToggleSortingHandler()}
@@ -671,7 +759,7 @@ export default function EnhancedMonthlyTable({
                                                 <TableCell
                                                     key={cell.id}
                                                     className={cn(
-                                                        "p-3 text-center border-r border-gray-100 last:border-r-0 align-middle",
+                                                        "p-3 border-r border-gray-100 last:border-r-0 align-middle",
                                                         isNilRecord && cellIndex > 1 && "text-red-600",
                                                         isUrgent && "font-medium"
                                                     )}
