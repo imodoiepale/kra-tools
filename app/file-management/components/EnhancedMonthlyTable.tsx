@@ -442,44 +442,42 @@ export default function EnhancedMonthlyTable({
     }
 
     return (
-        <div className="h-full flex flex-col">
+        <div className="h-[calc(100vh-200px)] flex flex-col bg-white rounded-lg shadow-sm border border-gray-200 overflow-auto p-2">
             {/* Toolbar */}
-            <div className="flex items-center justify-between p-4 bg-gradient-to-r from-blue-50 to-indigo-50 border-b">
-                <div className="flex items-center space-x-4">
-                    <div className="text-xl font-bold text-blue-800">
-                        {format(selectedDate, 'MMMM yyyy')}
-                    </div>
-
-                    <Popover>
-                        <PopoverTrigger asChild>
-                            <Button variant="outline" size="sm" className="border-blue-200 hover:bg-blue-50">
-                                <CalendarIcon className="h-4 w-4 mr-2" />
-                                Change Month
-                            </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0">
-                            <Calendar
-                                mode="single"
-                                selected={selectedDate}
-                                onSelect={(date) => date && onDateChange(date)}
-                                initialFocus
-                            />
-                        </PopoverContent>
-                    </Popover>
+            <div className="flex flex-wrap items-center justify-between gap-4 p-4 border-b">
+                {/* Search */}
+                <div className="flex items-center w-full sm:w-64 border-gray-200 focus:border-blue-400">
+                    <Search className="h-4 w-4 mr-2 text-blue-500" />
+                    <Input
+                        placeholder="Search companies..."
+                        value={globalFilter}
+                        onChange={e => setGlobalFilter(e.target.value)}
+                    />
                 </div>
 
-                <div className="flex items-center space-x-3">
-                    {/* Search */}
-                    <div className="flex items-center w-64">
-                        <Search className="h-4 w-4 mr-2 text-blue-500" />
-                        <Input
-                            placeholder="Search companies..."
-                            value={globalFilter}
-                            onChange={e => setGlobalFilter(e.target.value)}
-                            className="border-blue-200 focus:border-blue-400"
-                        />
-                    </div>
+                <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                    <div className="flex flex-wrap items-center gap-2 sm:gap-4">
+                        <div className="text-xl font-bold text-blue-800">
+                            {format(selectedDate, 'MMMM yyyy')}
+                        </div>
 
+                        <Popover>
+                            <PopoverTrigger asChild>
+                                <Button variant="outline" size="sm" className="border-blue-200 hover:bg-blue-50">
+                                    <CalendarIcon className="h-4 w-4 mr-2" />
+                                    Change Month
+                                </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-0">
+                                <Calendar
+                                    mode="single"
+                                    selected={selectedDate}
+                                    onSelect={(date) => date && onDateChange(date)}
+                                    initialFocus
+                                />
+                            </PopoverContent>
+                        </Popover>
+                    </div>
                     {/* Column Visibility */}
                     <Popover>
                         <PopoverTrigger asChild>
@@ -616,76 +614,82 @@ export default function EnhancedMonthlyTable({
             )}
 
             {/* Table */}
-            <div className="flex-1 overflow-hidden">
-                <ScrollArea className="h-full">
-                    <Table>
-                        <TableHeader className="sticky top-0 z-10">
-                            {table.getHeaderGroups().map(headerGroup => (
-                                <TableRow key={headerGroup.id} className="bg-gradient-to-r from-blue-100 to-indigo-100">
-                                    {headerGroup.headers.map(header => (
-                                        <TableHead
-                                            key={header.id}
-                                            className="font-bold text-blue-800 text-center border-r border-blue-200 last:border-r-0"
-                                            style={{ width: header.column.columnDef.size }}
-                                        >
-                                            {header.isPlaceholder ? null : (
-                                                <div
-                                                    className={cn(
-                                                        "flex items-center justify-center",
-                                                        header.column.getCanSort() && "cursor-pointer select-none hover:bg-blue-200 rounded px-2 py-1"
-                                                    )}
-                                                    onClick={header.column.getToggleSortingHandler()}
-                                                >
-                                                    {flexRender(header.column.columnDef.header, header.getContext())}
-                                                    {header.column.getIsSorted() && (
-                                                        <span className="ml-2 text-blue-600">
-                                                            {header.column.getIsSorted() === "asc" ? "↑" : "↓"}
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            )}
-                                        </TableHead>
-                                    ))}
-                                </TableRow>
-                            ))}
-                        </TableHeader>
-
-                        <TableBody>
-                            {table.getRowModel().rows.map((row, rowIndex) => {
-                                const record = getCompanyRecord(row.original.id);
-                                const isSelected = selectedRows.includes(row.original.id);
-                                const isNilRecord = record?.is_nil;
-                                const isUrgent = record?.is_urgent;
-
-                                return (
-                                    <TableRow
-                                        key={row.id}
-                                        className={cn(
-                                            "border-b transition-colors hover:bg-gray-50",
-                                            rowIndex % 2 === 0 ? 'bg-white' : 'bg-gray-50/30',
-                                            isSelected && "bg-blue-50 border-blue-200",
-                                            isNilRecord && "bg-red-50/50",
-                                            isUrgent && "bg-pink-50 border-l-4 border-l-pink-500"
-                                        )}
-                                    >
-                                        {row.getVisibleCells().map((cell, cellIndex) => (
-                                            <TableCell
-                                                key={cell.id}
-                                                className={cn(
-                                                    "text-center border-r border-gray-100 last:border-r-0",
-                                                    isNilRecord && cellIndex > 1 && "text-red-600",
-                                                    isUrgent && "font-medium"
-                                                )}
-                                                style={{ width: cell.column.columnDef.size }}
+            <div className="flex-1 flex flex-col overflow-hidden">
+                <ScrollArea className="h-[calc(100vh-300px)]">
+                    <div className="relative">
+                        <Table className="w-full">
+                            <TableHeader className="sticky top-0 z-10 bg-gradient-to-r from-blue-100 to-indigo-100">
+                                {table.getHeaderGroups().map(headerGroup => (
+                                    <TableRow key={headerGroup.id} className="h-12">
+                                        {headerGroup.headers.map(header => (
+                                            <TableHead
+                                                key={header.id}
+                                                className="font-bold text-blue-800 text-center border-r border-blue-200 last:border-r-0"
+                                                style={{ width: header.column.columnDef.size }}
                                             >
-                                                {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                                            </TableCell>
+                                                {header.isPlaceholder ? null : (
+                                                    <div
+                                                        className={cn(
+                                                            "flex items-center justify-center px-2 py-2",
+                                                            header.column.getCanSort() && "cursor-pointer select-none hover:bg-blue-200 rounded"
+                                                        )}
+                                                        onClick={header.column.getToggleSortingHandler()}
+                                                    >
+                                                        {flexRender(header.column.columnDef.header, header.getContext())}
+                                                        {header.column.getIsSorted() && (
+                                                            <span className="ml-2 text-blue-600">
+                                                                {header.column.getIsSorted() === "asc" ? "↑" : "↓"}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </TableHead>
                                         ))}
                                     </TableRow>
-                                );
-                            })}
-                        </TableBody>
-                    </Table>
+                                ))}
+                            </TableHeader>
+
+                            <TableBody>
+                                {table.getRowModel().rows.map((row, rowIndex) => {
+                                    const record = getCompanyRecord(row.original.id);
+                                    const isSelected = selectedRows.includes(row.original.id);
+                                    const isNilRecord = record?.is_nil;
+                                    const isUrgent = record?.is_urgent;
+
+                                    return (
+                                        <TableRow
+                                            key={row.id}
+                                            className={cn(
+                                                "h-16 border-b transition-colors hover:bg-gray-50",
+                                                rowIndex % 2 === 0 ? 'bg-white' : 'bg-gray-50/30',
+                                                isSelected && "bg-blue-50 border-blue-200",
+                                                isNilRecord && "bg-red-50/50",
+                                                isUrgent && "bg-pink-50 border-l-4 border-l-pink-500"
+                                            )}
+                                        >
+                                            {row.getVisibleCells().map((cell, cellIndex) => (
+                                                <TableCell
+                                                    key={cell.id}
+                                                    className={cn(
+                                                        "p-3 text-center border-r border-gray-100 last:border-r-0 align-middle",
+                                                        isNilRecord && cellIndex > 1 && "text-red-600",
+                                                        isUrgent && "font-medium"
+                                                    )}
+                                                    style={{
+                                                        width: cell.column.columnDef.size,
+                                                        minWidth: cell.column.columnDef.size,
+                                                        maxWidth: cell.column.columnDef.size
+                                                    }}
+                                                >
+                                                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                                                </TableCell>
+                                            ))}
+                                        </TableRow>
+                                    );
+                                })}
+                            </TableBody>
+                        </Table>
+                    </div>
 
                     {/* Empty State */}
                     {table.getRowModel().rows.length === 0 && (

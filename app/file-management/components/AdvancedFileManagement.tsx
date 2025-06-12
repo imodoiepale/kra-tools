@@ -31,7 +31,7 @@ export default function AdvancedFileManagement() {
     const [companies, setCompanies] = useState<Company[]>([]);
     const [fileRecords, setFileRecords] = useState<FileRecord[]>([]);
     const [loading, setLoading] = useState(true);
-    const [selectedTab, setSelectedTab] = useState('dashboard');
+    const [selectedTab, setSelectedTab] = useState('monthly');
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
     const [selectedDate, setSelectedDate] = useState(new Date());
 
@@ -165,29 +165,6 @@ export default function AdvancedFileManagement() {
         }
     };
 
-    // Handle company creation
-    const handleCreateCompany = async (companyData: Omit<Company, 'id' | 'created_at' | 'updated_at'>) => {
-        try {
-            const newCompany = await FileManagementService.createCompany(companyData);
-            setCompanies(prev => [...prev, newCompany]);
-
-            toast.success(`Company "${newCompany.company_name}" created successfully`, {
-                icon: '🏢',
-                style: {
-                    borderRadius: '10px',
-                    background: '#1e40af',
-                    color: '#fff',
-                },
-            });
-
-            return newCompany;
-        } catch (error: any) {
-            console.error('Error creating company:', error);
-            toast.error(`Failed to create company: ${error.message}`);
-            throw error;
-        }
-    };
-
     // Handle bulk operations
     const handleBulkOperation = async (operation: any) => {
         try {
@@ -220,7 +197,7 @@ export default function AdvancedFileManagement() {
                     </div>
                     <div className="space-y-2">
                         <p className="text-lg font-semibold text-blue-800">Loading File Management System</p>
-                        <p className="text-sm text-blue-600">Please wait while we fetch your data...</p>
+                        <p className="text-sm text-gray-400">Please wait while we fetch your data...</p>
                     </div>
                 </div>
             </div>
@@ -230,29 +207,19 @@ export default function AdvancedFileManagement() {
     return (
         <div className="h-screen flex bg-background">
             <Toaster position="top-right" />
-
-            {/* Sidebar */}
-            <AdvancedSidebar
-                filters={filters}
-                onFiltersChange={setFilters}
-                companies={companies}
-                isCollapsed={sidebarCollapsed}
-                onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
-            />
-
             {/* Main Content */}
             <div className="flex-1 flex flex-col overflow-hidden">
                 {/* Header */}
-                <div className="border-b bg-gradient-to-r from-blue-50 to-indigo-50 px-6 py-4 shadow-sm">
+                <div className="px-6 py-4">
                     <div className="flex items-center justify-between">
                         <div>
-                            <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+                            <h1 className="text-3xl font-bold">
                                 File Management System
                             </h1>
-                            <p className="text-blue-600 mt-1">
+                            <p className="text-gray-400 mt-1">
                                 Managing document flow for <span className="font-semibold">{filteredCompanies.length}</span> companies
                                 {filters.search || filters.categories.length > 0 || filters.status.length > 0 ?
-                                    <span className="text-blue-500"> (filtered from {companies.length})</span> : ''
+                                    <span className="text-gray-400"> (filtered from {companies.length})</span> : ''
                                 }
                             </p>
                         </div>
@@ -286,16 +253,6 @@ export default function AdvancedFileManagement() {
                                 <Download className="h-4 w-4 mr-2" />
                                 Export All
                             </Button>
-
-                            <AddCompanyDialog onCreateCompany={handleCreateCompany}>
-                                <Button
-                                    size="sm"
-                                    className="bg-blue-600 hover:bg-blue-700"
-                                >
-                                    <Plus className="h-4 w-4 mr-2" />
-                                    Add Company
-                                </Button>
-                            </AddCompanyDialog>
                         </div>
                     </div>
                 </div>
@@ -306,41 +263,39 @@ export default function AdvancedFileManagement() {
                     onValueChange={setSelectedTab}
                     className="flex-1 flex flex-col"
                 >
-                    <div className="border-b bg-card px-6 shadow-sm">
-                        <TabsList className="grid w-full max-w-lg grid-cols-4 bg-blue-50">
-                            <TabsTrigger
+                    <TabsList className="grid w-full max-w-lg grid-cols-4">
+                        {/* <TabsTrigger
                                 value="dashboard"
                                 className="flex items-center data-[state=active]:bg-blue-600 data-[state=active]:text-white"
                             >
                                 <LayoutDashboard className="h-4 w-4 mr-2" />
                                 Dashboard
-                            </TabsTrigger>
-                            <TabsTrigger
-                                value="monthly"
-                                className="flex items-center data-[state=active]:bg-blue-600 data-[state=active]:text-white"
-                            >
-                                <TableIcon className="h-4 w-4 mr-2" />
-                                Monthly
-                            </TabsTrigger>
-                            <TabsTrigger
-                                value="detailed"
-                                className="flex items-center data-[state=active]:bg-blue-600 data-[state=active]:text-white"
-                            >
-                                <List className="h-4 w-4 mr-2" />
-                                Detailed
-                            </TabsTrigger>
-                            <TabsTrigger
-                                value="settings"
-                                className="flex items-center data-[state=active]:bg-blue-600 data-[state=active]:text-white"
-                            >
-                                <Settings className="h-4 w-4 mr-2" />
-                                Settings
-                            </TabsTrigger>
-                        </TabsList>
-                    </div>
+                            </TabsTrigger> */}
+                        <TabsTrigger
+                            value="monthly"
+                            className="flex items-center data-[state=active]:bg-blue-600 data-[state=active]:text-white"
+                        >
+                            <TableIcon className="h-4 w-4 mr-2" />
+                            Monthly
+                        </TabsTrigger>
+                        <TabsTrigger
+                            value="detailed"
+                            className="flex items-center data-[state=active]:bg-blue-600 data-[state=active]:text-white"
+                        >
+                            <List className="h-4 w-4 mr-2" />
+                            Detailed
+                        </TabsTrigger>
+                        <TabsTrigger
+                            value="settings"
+                            className="flex items-center data-[state=active]:bg-blue-600 data-[state=active]:text-white"
+                        >
+                            <Settings className="h-4 w-4 mr-2" />
+                            Settings
+                        </TabsTrigger>
+                    </TabsList>
 
                     <div className="flex-1 overflow-hidden">
-                        <TabsContent value="dashboard" className="h-full">
+                        {/* <TabsContent value="dashboard" className="h-full">
                             <Dashboard
                                 stats={dashboardStats}
                                 companies={filteredCompanies}
@@ -348,7 +303,7 @@ export default function AdvancedFileManagement() {
                                 onRefresh={fetchData}
                                 isLoading={loading}
                             />
-                        </TabsContent>
+                        </TabsContent> */}
 
                         <TabsContent value="monthly" className="h-full">
                             <EnhancedMonthlyTable
@@ -373,29 +328,29 @@ export default function AdvancedFileManagement() {
                             <div className="max-w-4xl mx-auto space-y-6">
                                 <div className="text-center">
                                     <h2 className="text-2xl font-bold text-blue-800">System Settings</h2>
-                                    <p className="text-blue-600 mt-2">Configure your file management preferences</p>
+                                    <p className="text-gray-400 mt-2">Configure your file management preferences</p>
                                 </div>
 
                                 {/* Settings content would go here */}
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                     <div className="p-6 border border-blue-200 rounded-lg bg-blue-50">
                                         <h3 className="font-semibold text-blue-800 mb-2">Notification Settings</h3>
-                                        <p className="text-sm text-blue-600">Configure email and system notifications</p>
+                                        <p className="text-sm text-gray-400">Configure email and system notifications</p>
                                     </div>
 
                                     <div className="p-6 border border-blue-200 rounded-lg bg-blue-50">
                                         <h3 className="font-semibold text-blue-800 mb-2">Data Export</h3>
-                                        <p className="text-sm text-blue-600">Set up automated data export schedules</p>
+                                        <p className="text-sm text-gray-400">Set up automated data export schedules</p>
                                     </div>
 
                                     <div className="p-6 border border-blue-200 rounded-lg bg-blue-50">
                                         <h3 className="font-semibold text-blue-800 mb-2">User Management</h3>
-                                        <p className="text-sm text-blue-600">Manage user access and permissions</p>
+                                        <p className="text-sm text-gray-400">Manage user access and permissions</p>
                                     </div>
 
                                     <div className="p-6 border border-blue-200 rounded-lg bg-blue-50">
                                         <h3 className="font-semibold text-blue-800 mb-2">System Backup</h3>
-                                        <p className="text-sm text-blue-600">Configure automatic data backups</p>
+                                        <p className="text-sm text-gray-400">Configure automatic data backups</p>
                                     </div>
                                 </div>
                             </div>
