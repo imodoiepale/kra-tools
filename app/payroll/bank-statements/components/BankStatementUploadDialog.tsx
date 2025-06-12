@@ -2,33 +2,78 @@
 import { useState, useRef, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useToast } from '@/hooks/use-toast';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Loader2, Upload, AlertTriangle, UploadCloud, FileText, Sheet, Building, Landmark, CreditCard, DollarSign, Calendar } from 'lucide-react';
-import { BankValidationDialog } from './BankValidationDialog'; // Ensure correct import path
-import { performBankStatementExtraction } from '@/lib/bankExtractionUtils'; // Ensure correct import path
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Loader2, Upload, AlertTriangle, UploadCloud, FileText, Building, CreditCard, DollarSign, Sheet , Landmark, Calendar, Check, X } from 'lucide-react';
+import { BankValidationDialog } from './BankValidationDialog';
+import { performBankStatementExtraction, parseStatementPeriod, generateMonthRange } from '@/lib/bankExtractionUtils';
 
 // --- Interfaces & Types ---
-interface Bank { id: number; bank_name: string; account_number: string; bank_currency: string; company_id: number; company_name: string; }
+interface Bank { 
+    id: number; 
+    bank_name: string; 
+    account_number: string; 
+    bank_currency: string; 
+    company_id: number; 
+    company_name: string; 
+}
+
 interface BankStatement { 
     id: string; 
     has_soft_copy: boolean; 
     has_hard_copy: boolean; 
     statement_document: { 
-        statement_pdf: string | null; 
-        document_size?: number; // Add document size to the interface
+        statement_pdf: string | null;
+        statement_excel: string | null;
+        document_size?: number;
+        document_type?: string;
     }; 
     statement_extractions: any; 
     validation_status: any; 
-    status: any; 
+    status: any;
+    statement_month?: number;
+    statement_year?: number;
 }
-interface ValidationResult { isValid: boolean; mismatches: string[]; extractedData: any; }
-interface BankStatementUploadDialogProps { isOpen: boolean; onClose: () => void; bank: Bank; cycleMonth: number; cycleYear: number; onStatementUploaded: (statement: BankStatement) => void; existingStatement: BankStatement | null; statementCycleId: string | null; }
+
+interface ValidationResult { 
+    isValid: boolean; 
+    mismatches: string[]; 
+    extractedData: any; 
+    monthlyBalances?: Array<{
+        month: number;
+        year: number;
+        opening_balance: number | null;
+        closing_balance: number | null;
+        statement_page: number;
+        is_verified: boolean;
+    }>;
+}
+
+interface StatementPeriod {
+    month: number;
+    year: number;
+    key: string;
+    statement_pdf?: string | null;
+    statement_excel?: string | null;
+    isUploaded?: boolean;
+}
+
+interface BankStatementUploadDialogProps { 
+    isOpen: boolean; 
+    onClose: () => void; 
+    bank: Bank; 
+    cycleMonth: number; 
+    cycleYear: number; 
+    onStatementUploaded: (statement: BankStatement) => void; 
+    existingStatement: BankStatement | null; 
+    statementCycleId: string | null; 
+}
 
 // --- Main Component ---
 export function BankStatementUploadDialog({ isOpen, onClose, bank, cycleMonth, cycleYear, onStatementUploaded, existingStatement, statementCycleId }: BankStatementUploadDialogProps) {
