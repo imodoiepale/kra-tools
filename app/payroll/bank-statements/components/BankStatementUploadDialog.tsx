@@ -15,7 +15,18 @@ import { performBankStatementExtraction } from '@/lib/bankExtractionUtils'; // E
 
 // --- Interfaces & Types ---
 interface Bank { id: number; bank_name: string; account_number: string; bank_currency: string; company_id: number; company_name: string; }
-interface BankStatement { id: string; has_soft_copy: boolean; has_hard_copy: boolean; statement_document: { statement_pdf: string | null; }; statement_extractions: any; validation_status: any; status: any; }
+interface BankStatement { 
+    id: string; 
+    has_soft_copy: boolean; 
+    has_hard_copy: boolean; 
+    statement_document: { 
+        statement_pdf: string | null; 
+        document_size?: number; // Add document size to the interface
+    }; 
+    statement_extractions: any; 
+    validation_status: any; 
+    status: any; 
+}
 interface ValidationResult { isValid: boolean; mismatches: string[]; extractedData: any; }
 interface BankStatementUploadDialogProps { isOpen: boolean; onClose: () => void; bank: Bank; cycleMonth: number; cycleYear: number; onStatementUploaded: (statement: BankStatement) => void; existingStatement: BankStatement | null; statementCycleId: string | null; }
 
@@ -80,11 +91,14 @@ export function BankStatementUploadDialog({ isOpen, onClose, bank, cycleMonth, c
             // Step 3: Upload files and save data.
             setStatusMessage('Uploading files...');
             let pdfPath = existingStatement?.statement_document?.statement_pdf || null;
+            let documentSize = existingStatement?.statement_document?.document_size || 0;
+            
             if (pdfFile) {
                 const filePath = `statement_documents/${cycleYear}/${cycleMonth + 1}/${bank.company_id}/bank_${bank.id}_${Date.now()}.pdf`;
                 const { data, error } = await supabase.storage.from('Statement-Cycle').upload(filePath, pdfFile, { upsert: true });
                 if (error) throw error;
                 pdfPath = data.path;
+                documentSize = pdfFile.size; // Capture the file size
             }
 
             setStatusMessage('Saving statement...');
@@ -97,13 +111,21 @@ export function BankStatementUploadDialog({ isOpen, onClose, bank, cycleMonth, c
                 statement_year: cycleYear,
                 has_soft_copy: hasSoftCopy,
                 has_hard_copy: hasHardCopy,
-                statement_document: { statement_pdf: pdfPath },
+                statement_document: { 
+                    statement_pdf: pdfPath,
+                    document_size: documentSize // Include document size
+                },
                 statement_extractions: currentValidationResult?.extractedData || existingStatement?.statement_extractions || {},
                 validation_status: currentValidationResult ? { is_validated: currentValidationResult.isValid, mismatches: currentValidationResult.mismatches, validation_date: new Date().toISOString() } : (existingStatement?.validation_status || {}),
                 status: { ...existingStatement?.status, status: 'pending_validation' }
             };
 
-            const { data: upsertedStatement, error } = await supabase.from('acc_cycle_bank_statements').upsert(dataToSave).select().single();
+            // Update only the changed row using the ID if it exists
+            const { data: upsertedStatement, error } = await supabase
+                .from('acc_cycle_bank_statements')
+                .upsert(dataToSave, { onConflict: 'id' })
+                .select()
+                .single();
             if (error) throw error;
 
             toast({ title: 'Success', description: 'Bank statement processed successfully.' });
