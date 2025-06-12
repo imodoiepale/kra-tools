@@ -12,6 +12,7 @@ import {
     FileText,
     Loader2,
     PieChart,
+    Trash2,
     XCircle,
     UploadCloud
 } from 'lucide-react'
@@ -19,6 +20,8 @@ import { BankReconciliationTable } from './BankReconciliationTable'
 import { useStatementCycle } from '../hooks/useStatementCycle'
 import { BankStatementFilters } from './components/BankStatementFilters'
 import { BankStatementBulkUploadDialog } from './components/BankStatementBulkUploadDialog'
+import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog'
+import { deleteAllBankStatements } from './actions'
 
 export default function BankReconciliationPage() {
     const [stats, setStats] = useState({
@@ -32,6 +35,8 @@ export default function BankReconciliationPage() {
     const [banks, setBanks] = useState([]);
     const [statementCycleId, setStatementCycleId] = useState(null);
     const [showBulkUpload, setShowBulkUpload] = useState(false);
+    const [showDeleteAll, setShowDeleteAll] = useState(false);
+    const [refreshKey, setRefreshKey] = useState(0); // Add refresh key to force refresh
 
     // FIX: Use the fully-featured hook. It now provides initialized state.
     const {
@@ -43,7 +48,7 @@ export default function BankReconciliationPage() {
         searchTerm,
         setSearchTerm,
         fetchInitialData,
-    } = useStatementCycle();
+    } = useStatementCycle(refreshKey); // Pass refreshKey to force refresh
 
     const refreshAllData = useCallback(async () => {
         // FIX: The hook now handles the core data fetching.
@@ -126,9 +131,24 @@ export default function BankReconciliationPage() {
                                     onClientTypeChange={setSelectedClientTypes}
                                 />
                             </div>
-                            <Button onClick={() => setShowBulkUpload(true)} size="sm" className="h-8 flex items-center gap-2">
-                                <UploadCloud className="h-4 w-4" /> Bulk Upload
-                            </Button>
+                            <div className="flex items-center gap-2">
+                                <Button 
+                                    onClick={() => setShowBulkUpload(true)} 
+                                    size="sm" 
+                                    className="h-8 flex items-center gap-2"
+                                    variant="outline"
+                                >
+                                    <UploadCloud className="h-4 w-4" /> Bulk Upload
+                                </Button>
+                                {/* <Button 
+                                    onClick={() => setShowDeleteAll(true)} 
+                                    size="sm" 
+                                    className="h-8 flex items-center gap-2"
+                                    variant="destructive"
+                                >
+                                    <Trash2 className="h-4 w-4" /> Delete All
+                                </Button> */}
+                            </div>
                         </div>
 
                         {/* The table now receives initialized props */}
@@ -153,6 +173,23 @@ export default function BankReconciliationPage() {
                                 onUploadsComplete={refreshAllData}
                             />
                         )}
+                        <DeleteConfirmationDialog
+                            isOpen={showDeleteAll}
+                            onClose={() => setShowDeleteAll(false)}
+                            onConfirm={async () => {
+                                const result = await deleteAllBankStatements();
+                                if (result.success) {
+                                    // Force a complete refresh of the page data
+                                    setRefreshKey(prev => prev + 1);
+                                    // Also refresh the statement cycle data
+                                    await fetchInitialData();
+                                }
+                                return result;
+                            }}
+                            title="Delete All Bank Statements"
+                            description="Are you sure you want to delete ALL bank statements? This action cannot be undone and will remove all data from the database and storage."
+                            confirmText="Delete All Statements"
+                        />
                     </div>
                 </>
             )}

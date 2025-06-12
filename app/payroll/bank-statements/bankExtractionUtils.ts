@@ -245,62 +245,220 @@ export async function performBankStatementExtraction(fileUrl, params, onProgress
   }
 }
 
-// --- Bulk and Multi-Month Functions (as provided originally) ---
+// --- Statement Period and Path Utilities ---
 
+/**
+ * Parses a statement period string into date range
+ * @param {string} periodString - The statement period string (e.g., 'January 2023 - March 2023')
+ * @returns {Object|null} Object with start/end month/year or null if invalid
+ */
 function parseStatementPeriod(periodString) {
   if (!periodString) return null;
-  const singleMonthMatch = periodString.match(/(\w+)\s+(\d{4})/i);
-  if (singleMonthMatch) {
-    const month = new Date(`${singleMonthMatch[1]} 1, 2000`).getMonth() + 1;
-    const year = parseInt(singleMonthMatch[2]);
-    return { startMonth: month, startYear: year, endMonth: month, endYear: year };
+  
+  // Try different patterns to match the period string
+  const patterns = [
+    // Single month: 'January 2023'
+    { 
+      regex: /^(\w+)\s+(\d{4})$/i, 
+      handler: (match) => ({
+        startMonth: new Date(`${match[1]} 1, 2000`).getMonth() + 1,
+        startYear: parseInt(match[2]),
+        endMonth: new Date(`${match[1]} 1, 2000`).getMonth() + 1,
+        endYear: parseInt(match[2])
+      })
+    },
+    // Same year range: 'January - March 2023'
+    { 
+      regex: /^(\w+)\s*(?:-|to)\s*(\w+)\s+(\d{4})$/i, 
+      handler: (match) => ({
+        startMonth: new Date(`${match[1]} 1, 2000`).getMonth() + 1,
+        startYear: parseInt(match[3]),
+        endMonth: new Date(`${match[2]} 1, 2000`).getMonth() + 1,
+        endYear: parseInt(match[3])
+      })
+    },
+    // Cross-year range: 'November 2022 - January 2023'
+    { 
+      regex: /^(\w+)\s+(\d{4})\s*(?:-|to)\s*(\w+)\s+(\d{4})$/i, 
+      handler: (match) => ({
+        startMonth: new Date(`${match[1]} 1, 2000`).getMonth() + 1,
+        startYear: parseInt(match[2]),
+        endMonth: new Date(`${match[3]} 1, 2000`).getMonth() + 1,
+        endYear: parseInt(match[4])
+      })
+    },
+    // Month abbreviations: 'Jan 2023 - Mar 2023'
+    { 
+      regex: /^(\w{3})\s+(\d{4})\s*(?:-|to)\s*(\w{3})\s+(\d{4})$/i, 
+      handler: (match) => ({
+        startMonth: new Date(`${match[1]} 1, 2000`).getMonth() + 1,
+        startYear: parseInt(match[2]),
+        endMonth: new Date(`${match[3]} 1, 2000`).getMonth() + 1,
+        endYear: parseInt(match[4])
+      })
+    }
+  ];
+
+  for (const { regex, handler } of patterns) {
+    const match = periodString.match(regex);
+    if (match) {
+      return handler(match);
+    }
   }
-  const sameYearMatch = periodString.match(/(\w+)\s*(?:-|to)\s*(\w+)\s+(\d{4})/i);
-  if (sameYearMatch) {
-    const startMonth = new Date(`${sameYearMatch[1]} 1, 2000`).getMonth() + 1;
-    const endMonth = new Date(`${sameYearMatch[2]} 1, 2000`).getMonth() + 1;
-    const year = parseInt(sameYearMatch[3]);
-    return { startMonth, startYear: year, endMonth, endYear: year };
-  }
-  const differentYearMatch = periodString.match(/(\w+)\s+(\d{4})\s*(?:-|to)\s*(\w+)\s+(\d{4})/i);
-  if (differentYearMatch) {
-    const startMonth = new Date(`${differentYearMatch[1]} 1, 2000`).getMonth() + 1;
-    const startYear = parseInt(differentYearMatch[2]);
-    const endMonth = new Date(`${differentYearMatch[3]} 1, 2000`).getMonth() + 1;
-    const endYear = parseInt(differentYearMatch[4]);
-    return { startMonth, startYear, endMonth, endYear };
-  }
+  
   return null;
 }
 
+/**
+ * Generates an array of month-year objects for a given date range
+ * @param {number} startMonth - Starting month (1-12)
+ * @param {number} startYear - Starting year
+ * @param {number} endMonth - Ending month (1-12)
+ * @param {number} endYear - Ending year
+ * @returns {Array} Array of {month, year} objects
+ */
 function generateMonthRange(startMonth, startYear, endMonth, endYear) {
   const months = [];
-  for (let year = startYear; year <= endYear; year++) {
-    const start = year === startYear ? startMonth : 1;
-    const end = year === endYear ? endMonth : 12;
-    for (let month = start; month <= end; month++) {
-      months.push({ month, year });
+  let currentMonth = startMonth;
+  let currentYear = startYear;
+  
+  while (currentYear < endYear || (currentYear === endYear && currentMonth <= endMonth)) {
+    months.push({ 
+      month: currentMonth, 
+      year: currentYear,
+      // Generate a unique key for each month-year combination
+      key: `${currentYear}-${String(currentMonth).padStart(2, '0')}`
+    });
+    
+    // Move to next month
+    currentMonth++;
+    if (currentMonth > 12) {
+      currentMonth = 1;
+      currentYear++;
     }
   }
+  
   return months;
 }
 
+/**
+ * Generates a unique storage path for a statement file
+ * @param {string} accountNumber - Bank account number
+ * @param {number} month - Month (1-12)
+ * @param {number} year - Year
+ * @param {string} fileType - File type ('pdf' or 'excel')
+ * @param {string} [fileExtension='pdf'] - File extension
+ * @returns {string} Unique storage path
+ */
+function generateStoragePath(accountNumber, month, year, fileType, fileExtension = 'pdf') {
+  const paddedMonth = String(month).padStart(2, '0');
+  const timestamp = Date.now();
+  return `statements/${accountNumber}/${year}/${paddedMonth}/${fileType}_${timestamp}.${fileExtension}`;
+}
+
+/**
+ * Extracts the month and year from a storage path
+ * @param {string} path - Storage path
+ * @returns {Object} Object with month and year if found, null otherwise
+ */
+function extractPeriodFromPath(path) {
+  const match = path.match(/\/statements\/\w+\/(\d{4})\/(\d{2})\//);
+  if (!match) return null;
+  
+  return {
+    year: parseInt(match[1]),
+    month: parseInt(match[2])
+  };
+}
+
+// --- Bulk and Multi-Month Functions (as provided originally) ---
+
+/**
+ * Processes multiple bank statement files with support for multi-period statements
+ * @param {Array} batchFiles - Array of files to process
+ * @param {Object} params - Additional parameters for extraction
+ * @param {Function} onProgress - Callback for progress updates
+ * @returns {Promise<Array>} Array of processed results
+ */
 export async function processBulkExtraction(batchFiles, params, onProgress) {
-  // This function would contain the logic for handling multiple files.
-  // For now, it will process them one by one. A more advanced implementation
-  // could batch requests to the AI.
   const results = [];
+  const processedStatements = new Map(); // Track processed statements to avoid duplicates
+
   for (let i = 0; i < batchFiles.length; i++) {
     const file = batchFiles[i];
-    onProgress((i + 1) / batchFiles.length * 100);
-    const result = await performBankStatementExtraction(file.fileUrl, params);
-    results.push({
-      index: file.index,
-      success: result.success,
-      extractedData: result.extractedData,
-      error: result.success ? null : result.message,
-      originalItem: file.originalItem,
-    });
+    try {
+      // Update progress
+      onProgress({
+        progress: (i + 1) / batchFiles.length * 100,
+        message: `Processing file ${i + 1} of ${batchFiles.length}`,
+        currentFile: file.name
+      });
+
+      // Skip if we've already processed this statement
+      const fileKey = `${file.name}_${file.size}`;
+      if (processedStatements.has(fileKey)) {
+        results.push({
+          ...processedStatements.get(fileKey),
+          index: file.index,
+          originalItem: file.originalItem,
+          skipped: true,
+          message: 'Duplicate file skipped'
+        });
+        continue;
+      }
+
+      // Process the file
+      const result = await performBankStatementExtraction(file.fileUrl, params);
+      
+      // Handle multi-period statements
+      let statementPeriods = [];
+      if (result.success && result.extractedData?.statement_period) {
+        const period = parseStatementPeriod(result.extractedData.statement_period);
+        if (period) {
+          statementPeriods = generateMonthRange(
+            period.startMonth,
+            period.startYear,
+            period.endMonth,
+            period.endYear
+          );
+        }
+      }
+
+      // Prepare the result
+      const fileResult = {
+        index: file.index,
+        success: result.success,
+        extractedData: result.extractedData,
+        error: result.success ? null : result.message,
+        originalItem: file.originalItem,
+        fileInfo: {
+          name: file.name,
+          size: file.size,
+          type: file.type
+        },
+        statementPeriods,
+        processedAt: new Date().toISOString()
+      };
+
+      // Cache the result
+      processedStatements.set(fileKey, fileResult);
+      results.push(fileResult);
+
+    } catch (error) {
+      console.error(`Error processing file ${file.name}:`, error);
+      results.push({
+        index: file.index,
+        success: false,
+        error: error.message || 'Failed to process file',
+        originalItem: file.originalItem,
+        fileInfo: {
+          name: file.name,
+          size: file.size,
+          type: file.type
+        }
+      });
+    }
   }
+
   return results;
 }

@@ -16,29 +16,60 @@ export const useStatementCycle = () => {
 
     const getOrCreateStatementCycle = useCallback(async (year: number, month: number): Promise<string | null> => {
         const monthYearStr = `${year}-${(month + 1).toString().padStart(2, '0')}`;
+        
         try {
-            const { data, error } = await supabase
+            // First, try to get the existing cycle
+            const { data: existingCycle, error: fetchError } = await supabase
                 .from('statement_cycles')
                 .select('id')
                 .eq('month_year', monthYearStr)
-                .single();
+                .maybeSingle();
 
-            if (data) return data.id;
-
-            if (error && error.code === 'PGRST116') { // 'No rows found'
+            if (existingCycle) return existingCycle.id;
+            
+            // If we get here, no cycle exists yet - try to create one
+            try {
                 const { data: newCycle, error: createError } = await supabase
                     .from('statement_cycles')
-                    .insert({ month_year: monthYearStr, status: 'active' })
+                    .insert({ 
+                        month_year: monthYearStr, 
+                        status: 'active',
+                        created_at: new Date().toISOString()
+                    })
                     .select('id')
                     .single();
+                    
+                if (newCycle) return newCycle.id;
                 if (createError) throw createError;
-                return newCycle.id;
+                
+            } catch (createError) {
+                // If we get a unique constraint violation, it means another request created the cycle
+                if (createError.code === '23505') { // Unique violation
+                    // Try to fetch the cycle that was just created by another request
+                    const { data: cycle, error: refetchError } = await supabase
+                        .from('statement_cycles')
+                        .select('id')
+                        .eq('month_year', monthYearStr)
+                        .single();
+                    
+                    if (cycle) return cycle.id;
+                    if (refetchError) throw refetchError;
+                }
+                throw createError;
             }
-            if (error) throw error;
-
+            
+            return null;
+            
         } catch (error) {
             console.error('Failed to get or create statement cycle:', error);
-            toast({ title: 'Cycle Initialization Error', description: `Could not initialize the statement cycle for ${monthYearStr}.`, variant: 'destructive' });
+            // Only show error toast if it's not a unique constraint violation
+            if (error.code !== '23505') {
+                toast({ 
+                    title: 'Cycle Initialization Error', 
+                    description: `Could not initialize the statement cycle for ${monthYearStr}.`,
+                    variant: 'destructive' 
+                });
+            }
             return null;
         }
     }, [toast]);
