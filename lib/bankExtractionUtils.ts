@@ -241,7 +241,6 @@ export async function performBankStatementExtraction(fileUrl, params, onProgress
   }
 }
 
-// Function to handle multi-month statement submission
 async function handleMultiMonthStatement(
   statementData,
   bank,

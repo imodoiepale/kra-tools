@@ -185,13 +185,27 @@ export function BankExtractionDialog({
         <Dialog open={isOpen} onOpenChange={onClose}>
             <DialogContent className="w-[95vw] max-w-[1600px] max-h-[95vh] h-[95vh] p-6 flex flex-col overflow-hidden">
                 <DialogHeader>
-                    <DialogTitle className="text-xl flex justify-between items-center">
-                        <span className="font-semibold">{bank.company_name} - {bank.bank_name}</span>
-                        <div className="flex items-center gap-3 pr-16">
-                            <span className="text-sm text-muted-foreground">{formatFileSize(statement.statement_document.document_size)}</span>
-                            <Button variant="destructive" size="sm" onClick={() => setShowDeleteConfirmation(true)} disabled={isDeleting}>
-                                {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash className="h-4 w-4" />}
-                            </Button>
+                    <DialogTitle className="text-xl flex flex-col gap-2">
+                        <div className="flex justify-between items-center">
+                            <span className="font-semibold">{bank?.company_name || 'N/A'}</span>
+                            <div className="flex items-center gap-3 pr-16">
+                                <div className="text-sm text-muted-foreground">
+                                    Document Size: {statement?.statement_document?.document_size ? formatFileSize(statement.statement_document.document_size) : 'N/A'}
+                                </div>
+                                <Button
+                                    variant="destructive"
+                                    size="sm"
+                                    onClick={() => setShowDeleteConfirmation(true)}
+                                    disabled={isDeleting}
+                                    className="gap-1"
+                                >
+                                    {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash className="h-4 w-4" />}
+                                    Delete Statement
+                                </Button>
+                            </div>
+                        </div>
+                        <div className="text-base">
+                            Bank Statement - {bank?.bank_name || 'N/A'} {bank?.account_number || ''} | {statement?.statement_year && statement?.statement_month !== undefined ? format(new Date(statement.statement_year, statement.statement_month), 'MMMM yyyy') : 'N/A'}
                         </div>
                     </DialogTitle>
                 </DialogHeader>
