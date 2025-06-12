@@ -17,7 +17,7 @@ import {
 } from '@/components/ui/table'
 import { Loader2, UploadCloud, Edit, Eye, CheckCircle, AlertTriangle, MoreHorizontal, Trash } from 'lucide-react'
 import { BankStatementUploadDialog } from './components/BankStatementUploadDialog'
-import { BankExtractionDialog } from './components/BankExtractionDialog'
+import BankExtractionDialog  from './components/BankExtractionDialog'
 import { QuickbooksBalanceDialog } from './components/QuickbooksBalanceDialog'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import {
@@ -49,12 +49,13 @@ interface Bank {
     company_name: string
 }
 
+// FIX: Corrected the BankStatement interface
 interface BankStatement {
     id: string
     bank_id: number
     statement_month: number
     statement_year: number
-    quickbooks_balance: number | null
+    // quickbooks_balance: number | null // REMOVED: This was in the wrong place
     statement_document: {
         statement_pdf: string | null
         statement_excel: string | null
@@ -80,6 +81,7 @@ interface BankStatement {
         status: string
         assigned_to: string | null
         verification_date: string | null
+        quickbooks_balance?: number | null; // ADDED: QB balance is part of the status object
     }
 }
 
@@ -226,11 +228,13 @@ export function BankReconciliationTable({
             case 'has_issues': return (statement.validation_status?.mismatches?.length || 0) > 0;
             case 'reconciled':
                 const closingBal = statement.statement_extractions?.closing_balance ?? null;
-                const qbBal = statement.quickbooks_balance ?? null;
+                // FIX: Access qbBalance from the correct nested location
+                const qbBal = statement.status?.quickbooks_balance ?? null;
                 return closingBal !== null && qbBal !== null && Math.abs(closingBal - qbBal) <= 0.01;
             case 'pending_reconciliation':
                 const closingBalance = statement.statement_extractions?.closing_balance ?? null;
-                const quickbooksBalance = statement.quickbooks_balance ?? null;
+                // FIX: Access quickbooksBalance from the correct nested location
+                const quickbooksBalance = statement.status?.quickbooks_balance ?? null;
                 if (closingBalance === null || quickbooksBalance === null) return true;
                 return Math.abs(closingBalance - quickbooksBalance) > 0.01;
             default: return false;
@@ -329,7 +333,8 @@ export function BankReconciliationTable({
                                     company.banks.map((bank, bankIndex) => {
                                         const statement = statusFilteredStatements.find(s => s.bank_id === bank.id);
                                         const closingBalance = statement?.statement_extractions?.closing_balance;
-                                        const qbBalance = statement?.quickbooks_balance;
+                                        // FIX: Get the qbBalance from the correct nested location
+                                        const qbBalance = statement?.status?.quickbooks_balance;
                                         const difference = (closingBalance != null && qbBalance != null) ? closingBalance - qbBalance : null;
                                         return (
                                             <TableRow key={bank.id} className={`${bankIndex % 2 === 0 ? 'bg-blue-50 hover:bg-blue-100' : 'bg-white hover:bg-gray-50'} [&>td]:border-r [&>td]:border-gray-200 last:[&>td]:border-r-0`}>
@@ -358,8 +363,20 @@ export function BankReconciliationTable({
                                                 <TableCell className="border-r border-gray-200 text-right p-1">{formatCurrency(closingBalance, bank.bank_currency)}</TableCell>
                                                 <TableCell className="border-r border-gray-200 p-1">
                                                     <div className="flex items-center gap-1">
-                                                        <span className="flex-1 text-right">{formatCurrency(qbBalance, bank.bank_currency)}</span>
-                                                        <Button variant="ghost" size="icon" className="h-5 w-5 p-0" onClick={() => handleOpenDialog('qb', bank)}><Edit className="h-3 w-3" /></Button>
+                                                        <span className="flex-1 text-right">
+                                                            {qbBalance !== null && qbBalance !== undefined
+                                                                ? formatCurrency(qbBalance, bank.bank_currency)
+                                                                : '-'}
+                                                        </span>
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            className="h-5 w-5 p-0"
+                                                            onClick={() => handleOpenDialog('qb', bank)}
+                                                            aria-label="Edit QuickBooks balance"
+                                                        >
+                                                            <Edit className="h-3 w-3" />
+                                                        </Button>
                                                     </div>
                                                 </TableCell>
                                                 <TableCell className={`border-r border-gray-200 text-right p-1 ${difference !== null ? (Math.abs(difference) > 0.01 ? 'text-red-500 font-bold' : 'text-green-500 font-bold') : ''}`}>{formatCurrency(difference, bank.bank_currency)}</TableCell>

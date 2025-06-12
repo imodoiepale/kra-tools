@@ -9,7 +9,8 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.j
 
 // Constants
 const EMBEDDING_MODEL = "gemini-embedding-exp-03-07";
-const EXTRACTION_MODEL = "gemini-2.0-flash";
+const EXTRACTION_MODEL = "gemini-2.5-flash-preview-05-20";
+// const EXTRACTION_MODEL = "gemini-2.0-flash";
 const RATE_LIMIT_COOLDOWN = 60000;
 const MAX_FAILURES = 5;
 

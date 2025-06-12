@@ -72,9 +72,18 @@ export function BankStatementUploadDialog({ isOpen, onClose, bank, cycleMonth, c
                 try {
                     const extraction = await performBankStatementExtraction(fileUrl, { month: cycleMonth, year: cycleYear });
                     if (!extraction.success) throw new Error(extraction.message || 'Failed to extract data.');
-                    // For now, we assume validation is complex and handled in the dialog.
-                    // Let's create a placeholder result.
-                    currentValidationResult = { isValid: false, mismatches: ["Needs review"], extractedData: extraction.extractedData };
+                    
+                    // Use bank name from DB if account number matches
+                    const extractedData = { ...extraction.extractedData };
+                    if (extractedData.account_number && extractedData.account_number === bank.account_number) {
+                        extractedData.bank_name = bank.bank_name;
+                    }
+                    
+                    currentValidationResult = { 
+                        isValid: false, 
+                        mismatches: ["Needs review"], 
+                        extractedData 
+                    };
                     setValidationResult(currentValidationResult); // Save result to state
                 } finally {
                     URL.revokeObjectURL(fileUrl);
