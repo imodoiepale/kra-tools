@@ -30,7 +30,18 @@ import {
     generateCompleteMonthRange
 } from '@/lib/bankExtractionUtils';
 import { useStatementCycle } from '@/app/payroll/hooks/useStatementCycle';
-import { AlertTriangle, Trash, Loader2 } from 'lucide-react';
+import {
+    AlertTriangle,
+    Trash,
+    Loader2,
+    CheckCircle,
+    Check,
+    Plus, // Added: for adding monthly balances
+    X, // Added: for removing monthly balances
+    Calendar, // Added: for no monthly balances message
+    Save, // Added: for save button
+    XCircle // Added: for mismatch issues
+} from 'lucide-react';
 
 // --- Interface Definitions ---
 
@@ -186,16 +197,21 @@ export default function BankExtractionDialog({
                 const existingBalance = monthlyBalances.find(
                     b => b.month === rangeMonth.month && b.year === rangeMonth.year
                 );
-                return existingBalance || rangeMonth;
+
+                // If no existing balance, create a new one with null values
+                return existingBalance || {
+                    month: rangeMonth.month,
+                    year: rangeMonth.year,
+                    closing_balance: null,
+                    opening_balance: null,
+                    statement_page: 1, // Default to page 1
+                    closing_date: null,
+                    is_verified: false,
+                    verified_by: null,
+                    verified_at: null
+                };
             });
 
-            // Sort by year and month
-            mergedBalances.sort((a, b) => {
-                if (a.year !== b.year) return a.year - b.year;
-                return a.month - b.month;
-            });
-
-            // Update the monthly balances state
             setMonthlyBalances(mergedBalances);
 
             toast({
@@ -489,7 +505,6 @@ export default function BankExtractionDialog({
     const handleSave = async () => {
         setIsSaving(true);
         try {
-            // Parse the statement period to check if it's a multi-month statement
             const periodDates = parseStatementPeriod(formData.statementPeriod);
             const isMultiMonth = periodDates && (
                 periodDates.startMonth !== periodDates.endMonth ||
@@ -518,40 +533,35 @@ export default function BankExtractionDialog({
                             opening_balance: null,
                             closing_balance: null,
                             statement_page: 1,
-                            is_verified: false,
-                            verified_by: null,
-                            verified_at: null
+                            is_verified: false
                         };
 
                         // Check if statement already exists
                         const { data: existingStatement } = await supabase
                             .from('acc_cycle_bank_statements')
-                            .select('id')
+                            .select('id, statement_document')
                             .eq('bank_id', bank.id)
-                            .eq('statement_month', month - 1) // Convert to 0-indexed
+                            .eq('statement_month', month - 1)
                             .eq('statement_year', year)
-                            .single();
+                            .maybeSingle();
 
                         // Prepare statement data
                         const statementData = {
                             bank_id: bank.id,
                             company_id: bank.company_id,
-                            statement_month: month - 1, // Convert to 0-indexed
+                            statement_month: month - 1,
                             statement_year: year,
                             statement_document: statement.statement_document,
                             statement_extractions: {
-                                bank_name: formData.bank_name || null,
-                                account_number: formData.account_number || null,
-                                currency: formData.currency || null,
-                                statement_period: formData.statementPeriod,
+                                ...statement.statement_extractions,
                                 opening_balance: monthBalance.opening_balance,
                                 closing_balance: monthBalance.closing_balance,
-                                monthly_balances: monthlyBalances // Store all balances for reference
+                                monthly_balances: [monthBalance]
                             },
                             validation_status: {
                                 is_validated: true,
                                 validation_date: new Date().toISOString(),
-                                validated_by: 'current_user', // TODO: Replace with actual user
+                                validated_by: 'current_user_id',
                                 mismatches: []
                             },
                             status: {
@@ -604,7 +614,6 @@ export default function BankExtractionDialog({
                         variant: 'default'
                     });
                 }
-
             } else {
                 // Handle single month submission
                 const updatedExtractions = {
@@ -644,7 +653,6 @@ export default function BankExtractionDialog({
             }
 
             onClose();
-
         } catch (error: any) {
             console.error('Save error:', error);
             toast({
@@ -664,7 +672,6 @@ export default function BankExtractionDialog({
     const confirmDeleteStatement = async () => {
         setIsDeleting(true);
         try {
-            // Check if this is part of a multi-month statement
             const periodDates = parseStatementPeriod(formData.statementPeriod);
             const isMultiMonth = periodDates && (
                 periodDates.startMonth !== periodDates.endMonth ||
@@ -672,36 +679,6 @@ export default function BankExtractionDialog({
             );
 
             if (isMultiMonth) {
-                // Check if other statements use the same files
-                const { data: relatedStatements } = await supabase
-                    .from('acc_cycle_bank_statements')
-                    .select('id, statement_month, statement_year')
-                    .eq('bank_id', bank.id)
-                    .neq('id', statement.id);
-
-                let hasSharedFiles = false;
-                if (relatedStatements && relatedStatements.length > 0) {
-                    for (const related of relatedStatements) {
-                        const { data: relatedFull } = await supabase
-                            .from('acc_cycle_bank_statements')
-                            .select('statement_document')
-                            .eq('id', related.id)
-                            .single();
-
-                        if (relatedFull) {
-                            const samePdf = relatedFull.statement_document?.statement_pdf ===
-                                statement.statement_document?.statement_pdf;
-                            const sameExcel = relatedFull.statement_document?.statement_excel ===
-                                statement.statement_document?.statement_excel;
-
-                            if (samePdf || sameExcel) {
-                                hasSharedFiles = true;
-                                break;
-                            }
-                        }
-                    }
-                }
-
                 // For multi-month statements, only delete the current entry
                 const { error } = await supabase
                     .from('acc_cycle_bank_statements')
@@ -712,25 +689,36 @@ export default function BankExtractionDialog({
 
                 toast({
                     title: 'Success',
-                    description: hasSharedFiles
-                        ? 'Statement entry deleted. Files preserved for other periods.'
-                        : 'Statement entry deleted.',
+                    description: 'Statement entry deleted. Files preserved for other periods.',
                     variant: 'default'
                 });
             } else {
-                // For single-month statements, delete both entry and files
+                // For single-month statements, check if files are shared
+                let filesToRemove: string[] = [];
+
                 if (statement.statement_document?.statement_pdf) {
-                    await supabase.storage
-                        .from('Statement-Cycle')
-                        .remove([statement.statement_document.statement_pdf]);
+                    // Check if any other statements use this PDF
+                    const { data: relatedStatements, error: queryError } = await supabase
+                        .from('acc_cycle_bank_statements')
+                        .select('id')
+                        .neq('id', statement.id)
+                        .contains('statement_document', { statement_pdf: statement.statement_document.statement_pdf });
+
+                    if (queryError) throw queryError;
+
+                    if (!relatedStatements || relatedStatements.length === 0) {
+                        filesToRemove.push(statement.statement_document.statement_pdf);
+                    }
                 }
 
-                if (statement.statement_document?.statement_excel) {
+                // Delete files if not shared
+                if (filesToRemove.length > 0) {
                     await supabase.storage
                         .from('Statement-Cycle')
-                        .remove([statement.statement_document.statement_excel]);
+                        .remove(filesToRemove);
                 }
 
+                // Delete the statement entry
                 const { error } = await supabase
                     .from('acc_cycle_bank_statements')
                     .delete()
@@ -748,7 +736,6 @@ export default function BankExtractionDialog({
             if (onStatementDeleted) {
                 onStatementDeleted(statement.id);
             }
-
         } catch (error: any) {
             console.error('Error deleting statement:', error);
             toast({

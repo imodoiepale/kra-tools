@@ -865,54 +865,108 @@ async function batchExtractDocuments(files, prompt) {
 }
 
 // Helper functions for multi-month statements
-export function parseStatementPeriod(periodString) {
+// export function parseStatementPeriod(periodString) {
+//   if (!periodString) return null;
+
+//   // Try to match various date formats
+//   // Format: "January 2024" (single month)
+//   const singleMonthMatch = periodString.match(/(\w+)\s+(\d{4})/i);
+//   if (singleMonthMatch) {
+//     const month = new Date(`${singleMonthMatch[1]} 1, 2000`).getMonth() + 1;
+//     const year = parseInt(singleMonthMatch[2]);
+//     return {
+//       startMonth: month,
+//       startYear: year,
+//       endMonth: month,
+//       endYear: year
+//     };
+//   }
+
+//   // Format: "January - March 2024" or "January to March 2024"
+//   const sameYearMatch = periodString.match(/(\w+)\s*(?:-|to)\s*(\w+)\s+(\d{4})/i);
+//   if (sameYearMatch) {
+//     const startMonth = new Date(`${sameYearMatch[1]} 1, 2000`).getMonth() + 1;
+//     const endMonth = new Date(`${sameYearMatch[2]} 1, 2000`).getMonth() + 1;
+//     const year = parseInt(sameYearMatch[3]);
+//     return {
+//       startMonth,
+//       startYear: year,
+//       endMonth,
+//       endYear: year
+//     };
+//   }
+
+//   // Format: "January 2024 - March 2024" or "January 2024 to March 2024"
+//   const differentYearMatch = periodString.match(/(\w+)\s+(\d{4})\s*(?:-|to)\s*(\w+)\s+(\d{4})/i);
+//   if (differentYearMatch) {
+//     const startMonth = new Date(`${differentYearMatch[1]} 1, 2000`).getMonth() + 1;
+//     const startYear = parseInt(differentYearMatch[2]);
+//     const endMonth = new Date(`${differentYearMatch[3]} 1, 2000`).getMonth() + 1;
+//     const endYear = parseInt(differentYearMatch[4]);
+//     return {
+//       startMonth,
+//       startYear,
+//       endMonth,
+//       endYear
+//     };
+//   }
+
+//   return null;
+// }
+// Helper to generate complete month ranges
+export function generateCompleteMonthRange(startMonth: number, startYear: number, endMonth: number, endYear: number) {
+  const months: { month: number; year: number }[] = [];
+
+  for (let year = startYear; year <= endYear; year++) {
+    const monthStart = year === startYear ? startMonth : 1;
+    const monthEnd = year === endYear ? endMonth : 12;
+
+    for (let month = monthStart; month <= monthEnd; month++) {
+      months.push({ month, year });
+    }
+  }
+
+  return months;
+}
+
+// Enhanced statement period parser
+export function parseStatementPeriod(periodString: string | null) {
   if (!periodString) return null;
 
-  // Try to match various date formats
-  // Format: "January 2024" (single month)
-  const singleMonthMatch = periodString.match(/(\w+)\s+(\d{4})/i);
-  if (singleMonthMatch) {
-    const month = new Date(`${singleMonthMatch[1]} 1, 2000`).getMonth() + 1;
-    const year = parseInt(singleMonthMatch[2]);
-    return {
-      startMonth: month,
-      startYear: year,
-      endMonth: month,
-      endYear: year
-    };
-  }
+  // Try common formats
+  const formats = [
+    // "January 2023 - March 2024"
+    /^(?<startMonth>\w+)\s+(?<startYear>\d{4})\s*(?:-|to)\s*(?<endMonth>\w+)\s+(?<endYear>\d{4})$/i,
+    // "Jan 2023 - Mar 2024"
+    /^(?<startMonth>\w{3})\s+(?<startYear>\d{4})\s*(?:-|to)\s*(?<endMonth>\w{3})\s+(?<endYear>\d{4})$/i,
+    // "01/2023 - 03/2024"
+    /^(?<startMonth>\d{2})\/(?<startYear>\d{4})\s*(?:-|to)\s*(?<endMonth>\d{2})\/(?<endYear>\d{4})$/,
+    // "January 2023" (single month)
+    /^(?<startMonth>\w+)\s+(?<startYear>\d{4})$/i
+  ];
 
-  // Format: "January - March 2024" or "January to March 2024"
-  const sameYearMatch = periodString.match(/(\w+)\s*(?:-|to)\s*(\w+)\s+(\d{4})/i);
-  if (sameYearMatch) {
-    const startMonth = new Date(`${sameYearMatch[1]} 1, 2000`).getMonth() + 1;
-    const endMonth = new Date(`${sameYearMatch[2]} 1, 2000`).getMonth() + 1;
-    const year = parseInt(sameYearMatch[3]);
-    return {
-      startMonth,
-      startYear: year,
-      endMonth,
-      endYear: year
-    };
-  }
+  for (const format of formats) {
+    const match = periodString.match(format);
+    if (match) {
+      const startMonth = new Date(`${match.groups?.startMonth} 1, 2000`).getMonth() + 1;
+      const startYear = parseInt(match.groups?.startYear || '0');
+      let endMonth = startMonth;
+      let endYear = startYear;
 
-  // Format: "January 2024 - March 2024" or "January 2024 to March 2024"
-  const differentYearMatch = periodString.match(/(\w+)\s+(\d{4})\s*(?:-|to)\s*(\w+)\s+(\d{4})/i);
-  if (differentYearMatch) {
-    const startMonth = new Date(`${differentYearMatch[1]} 1, 2000`).getMonth() + 1;
-    const startYear = parseInt(differentYearMatch[2]);
-    const endMonth = new Date(`${differentYearMatch[3]} 1, 2000`).getMonth() + 1;
-    const endYear = parseInt(differentYearMatch[4]);
-    return {
-      startMonth,
-      startYear,
-      endMonth,
-      endYear
-    };
+      if (match.groups?.endMonth && match.groups?.endYear) {
+        endMonth = new Date(`${match.groups.endMonth} 1, 2000`).getMonth() + 1;
+        endYear = parseInt(match.groups.endYear);
+      }
+
+      if (startMonth && startYear) {
+        return { startMonth, startYear, endMonth, endYear };
+      }
+    }
   }
 
   return null;
 }
+
 
 // Helper function to generate month range from start to end
 export function generateMonthRange(startMonth, startYear, endMonth, endYear) {
@@ -987,3 +1041,4 @@ export const getOrCreateStatementCycle = async (month: number, year: number): Pr
     throw error;
   }
 };
+
