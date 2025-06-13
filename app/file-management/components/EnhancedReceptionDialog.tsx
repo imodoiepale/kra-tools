@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Calendar, CalendarIcon, Check, ChevronDown, Clock, FileText, Mail, Package, Phone, Plus, Trash2, X, XCircle } from "lucide-react";
+import { Ban, Calendar, CalendarIcon, Check, CheckCircle, ChevronDown, Clock, Edit3, FileText, Mail, Package, Phone, Plus, Trash2, X, XCircle } from "lucide-react";
 import { format } from "date-fns";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
@@ -394,7 +394,7 @@ export default function EnhancedReceptionDialog({
                                             onValueChange={(value) => setFormData(prev => ({ 
                                                 ...prev, 
                                                 receivedBy: value === 'other' ? '' : value 
-                                            })}
+                                            }))}
                                         >
                                             <SelectTrigger>
                                                 {loadingPeople ? (
