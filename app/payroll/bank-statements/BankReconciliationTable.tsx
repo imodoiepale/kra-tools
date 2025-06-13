@@ -17,7 +17,7 @@ import {
 } from '@/components/ui/table'
 import { Loader2, UploadCloud, Edit, Eye, CheckCircle, AlertTriangle, MoreHorizontal, Trash } from 'lucide-react'
 import { BankStatementUploadDialog } from './components/BankStatementUploadDialog'
-import BankExtractionDialog  from './components/BankExtractionDialog'
+import BankExtractionDialog from './components/BankExtractionDialog'
 import { QuickbooksBalanceDialog } from './components/QuickbooksBalanceDialog'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import {
@@ -40,6 +40,7 @@ import {
 import { FilterWithStatus } from './BankStatementFilters';
 import { useStatementCycle } from '../hooks/useStatementCycle'
 
+// --- Interfaces (Ensure these are correctly defined in your project) ---
 interface Bank {
     id: number
     bank_name: string
@@ -49,16 +50,15 @@ interface Bank {
     company_name: string
 }
 
-// FIX: Corrected the BankStatement interface
 interface BankStatement {
     id: string
     bank_id: number
     statement_month: number
     statement_year: number
-    // quickbooks_balance: number | null // REMOVED: This was in the wrong place
     statement_document: {
         statement_pdf: string | null
         statement_excel: string | null
+        document_size?: number; // Added this back as it was in previous code
     }
     statement_extractions: {
         bank_name: string | null
@@ -81,7 +81,7 @@ interface BankStatement {
         status: string
         assigned_to: string | null
         verification_date: string | null
-        quickbooks_balance?: number | null; // ADDED: QB balance is part of the status object
+        quickbooks_balance?: number | null; // QB balance is part of the status object
     }
 }
 
@@ -192,7 +192,7 @@ export function BankReconciliationTable({
     const organizedData = useMemo(() => {
         const companiesWithBanks = filteredCompanies.map(company => ({
             ...company,
-            banks: allBanks.filter(bank => bank.company_name === company.company_name)
+            banks: allBanks.filter(bank => bank.company_id === company.id) // Filter by company_id, not company_name string
         }));
         return companiesWithBanks.sort((a, b) => {
             if (a.banks.length === 0 && b.banks.length > 0) return 1;
@@ -214,7 +214,7 @@ export function BankReconciliationTable({
         }).map(company => ({
             ...company,
             banks: company.banks.filter(bank =>
-                company.company_name?.toLowerCase().includes(lowerSearchTerm) ||
+                company.company_name?.toLowerCase().includes(lowerSearchTerm) || // Company name still filters banks
                 bank.bank_name?.toLowerCase().includes(lowerSearchTerm) ||
                 bank.account_number?.includes(searchTerm)
             )
@@ -223,43 +223,84 @@ export function BankReconciliationTable({
 
     const getStatementFilterCondition = (statement: BankStatement, filterKey: string) => {
         switch (filterKey) {
-            case 'validated': return !!statement.validation_status?.is_validated;
-            case 'pending_validation': return !statement.validation_status?.is_validated;
+            case 'validated': return !!statement.validation_status?.is_validated && (statement.validation_status?.mismatches?.length || 0) === 0;
+            case 'pending_validation': return !statement.validation_status?.is_validated && (statement.validation_status?.mismatches?.length || 0) === 0; // If not validated AND no issues
             case 'has_issues': return (statement.validation_status?.mismatches?.length || 0) > 0;
             case 'reconciled':
                 const closingBal = statement.statement_extractions?.closing_balance ?? null;
-                // FIX: Access qbBalance from the correct nested location
                 const qbBal = statement.status?.quickbooks_balance ?? null;
                 return closingBal !== null && qbBal !== null && Math.abs(closingBal - qbBal) <= 0.01;
             case 'pending_reconciliation':
                 const closingBalance = statement.statement_extractions?.closing_balance ?? null;
-                // FIX: Access quickbooksBalance from the correct nested location
                 const quickbooksBalance = statement.status?.quickbooks_balance ?? null;
-                if (closingBalance === null || quickbooksBalance === null) return true;
-                return Math.abs(closingBalance - quickbooksBalance) > 0.01;
+                if (closingBalance === null && quickbooksBalance === null) return false; // Not relevant for reconciliation if both are null
+                return closingBalance !== null && quickbooksBalance !== null && Math.abs(closingBalance - quickbooksBalance) > 0.01;
+            case 'all': return true; // Default for 'all' status
             default: return false;
         }
     };
 
     const statusFilteredStatements = useMemo(() => {
         if (!selectedStatementStatuses || selectedStatementStatuses.length === 0) {
+            return bankStatements; // If no filters selected, return all statements
+        }
+
+        // Convert selected filters to a set of keys for quick lookup
+        const activeFilterKeys = new Set(selectedStatementStatuses.map(f => f.key));
+
+        // If 'all' is explicitly selected, override other filters
+        if (activeFilterKeys.has('all')) {
             return bankStatements;
         }
+
         return bankStatements.filter(statement =>
-            selectedStatementStatuses.some(filter => getStatementFilterCondition(statement, filter.key))
+            Array.from(activeFilterKeys).some(filterKey => getStatementFilterCondition(statement, filterKey))
         );
     }, [bankStatements, selectedStatementStatuses]);
 
-    const handleOpenDialog = (type: 'upload' | 'view' | 'qb' | 'delete', bank: Bank) => {
-        const statement = bankStatements.find(s => s.bank_id === bank.id) || null;
+    const handleOpenDialog = async (type: 'upload' | 'view' | 'qb' | 'delete', bank: Bank) => {
+        // Find statement for the *currently selected month/year* in the table
+        const currentStatementForPeriod = bankStatements.find(s =>
+            s.bank_id === bank.id &&
+            s.statement_month === selectedMonth &&
+            s.statement_year === selectedYear
+        ) || null;
+
+        // For 'upload', if there's no statement for the current period but others exist, prompt user
+        if (type === 'upload' && !currentStatementForPeriod && bankStatements.some(s => s.bank_id === bank.id)) {
+            const confirmUpload = window.confirm(
+                `This bank already has statements for other periods. ` +
+                `Do you want to upload a new statement for ${format(new Date(selectedYear, selectedMonth, 1), 'MMMM yyyy')}? ` +
+                `This will create a new entry if one doesn't exist for this month, or replace it if it does.`
+            );
+            if (!confirmUpload) return;
+        }
+
         setActiveBank(bank);
-        setActiveStatement(statement);
+        setActiveStatement(currentStatementForPeriod); // Pass the statement for the current selected period
 
         switch (type) {
-            case 'upload': setUploadDialogOpen(true); break;
-            case 'view': if (statement) setExtractionDialogOpen(true); break;
-            case 'qb': if (statement) setQuickbooksDialogOpen(true); else toast({ title: "No Statement", description: "Upload a statement first to add a QuickBooks balance." }); break;
-            case 'delete': if (statement) setDeleteConfirmationOpen(true); break;
+            case 'upload':
+                setUploadDialogOpen(true);
+                break;
+            case 'view':
+                if (currentStatementForPeriod) setExtractionDialogOpen(true);
+                else toast({ title: "No Statement", description: "No statement found for this period. Please upload one first." });
+                break;
+            case 'qb':
+                if (currentStatementForPeriod) {
+                    setQuickbooksDialogOpen(true);
+                } else {
+                    toast({
+                        title: "No Statement",
+                        description: "Upload a statement first to add a QuickBooks balance."
+                    });
+                }
+                break;
+            case 'delete':
+                if (currentStatementForPeriod) setDeleteConfirmationOpen(true);
+                else toast({ title: "No Statement", description: "No statement found for this period to delete." });
+                break;
         }
     };
 
@@ -267,7 +308,7 @@ export function BankReconciliationTable({
         setUploadDialogOpen(false);
         setQuickbooksDialogOpen(false);
         setExtractionDialogOpen(false);
-        refreshData();
+        refreshData(); // Refresh data after any dialog closes
     };
 
     const confirmDelete = async () => {
@@ -279,7 +320,7 @@ export function BankReconciliationTable({
         setDeleteConfirmationOpen(false);
     };
 
-    const formatCurrency = (amount: number | null, currency: string) => {
+    const formatCurrency = (amount: number | null | undefined, currency: string) => {
         if (amount === null || amount === undefined) return '-';
         try {
             return new Intl.NumberFormat('en-US', { style: 'currency', currency: normalizeCurrencyCode(currency), minimumFractionDigits: 2 }).format(amount);
@@ -289,11 +330,47 @@ export function BankReconciliationTable({
     };
 
     const getValidationStatusIcon = (statement: BankStatement | null) => {
-        if (!statement?.statement_document?.statement_pdf) return null;
-        if (statement.validation_status?.is_validated) return <CheckCircle className="h-4 w-4 text-green-500" />;
-        if (statement.validation_status?.mismatches?.length > 0) return <AlertTriangle className="h-4 w-4 text-amber-500" />;
-        return null;
+        if (!statement?.statement_document?.statement_pdf) return null; // No PDF means no extraction/validation status
+        if (statement.validation_status?.is_validated && (statement.validation_status?.mismatches?.length || 0) === 0) {
+            return <CheckCircle className="h-4 w-4 text-green-500" />;
+        }
+        if ((statement.validation_status?.mismatches?.length || 0) > 0) {
+            return <AlertTriangle className="h-4 w-4 text-amber-500" />;
+        }
+        return null; // No icon if not validated and no explicit mismatches
     };
+
+    // Filter banks by selected statement statuses
+    const finalFilteredData = useMemo(() => {
+        // Start with search-filtered data
+        let companiesWithBanks = searchFilteredData;
+
+        // Then filter banks within each company by statement status
+        return companiesWithBanks.map(company => ({
+            ...company,
+            banks: company.banks.filter(bank => {
+                const statement = statusFilteredStatements.find(s =>
+                    s.bank_id === bank.id &&
+                    s.statement_month === selectedMonth &&
+                    s.statement_year === selectedYear
+                );
+
+                // If no specific statement status filters are applied, or 'all' is selected, include the bank
+                if (!selectedStatementStatuses || selectedStatementStatuses.length === 0 || selectedStatementStatuses.some(f => f.key === 'all')) {
+                    return true;
+                }
+
+                // If there's no statement for this month, check if a 'pending' or 'no_statement' filter applies
+                if (!statement) {
+                    return selectedStatementStatuses.some(f => f.key === 'no_statement'); // Assuming 'no_statement' filter key
+                }
+
+                // Otherwise, check if the statement matches any of the selected status filters
+                return selectedStatementStatuses.some(filter => getStatementFilterCondition(statement, filter.key));
+            })
+        })).filter(company => company.banks.length > 0); // Remove companies that have no matching banks after filtering
+    }, [searchFilteredData, statusFilteredStatements, selectedMonth, selectedYear, selectedStatementStatuses]);
+
 
     return (
         <div className="space-y-4">
@@ -317,10 +394,10 @@ export function BankReconciliationTable({
                     <TableBody>
                         {loading ? (
                             <TableRow><TableCell colSpan={11} className="text-center py-4"><Loader2 className="h-6 w-6 animate-spin mx-auto text-primary" /></TableCell></TableRow>
-                        ) : searchFilteredData.length === 0 ? (
+                        ) : finalFilteredData.length === 0 ? (
                             <TableRow><TableCell colSpan={11} className="text-center py-4">No banks found for the selected filters.</TableCell></TableRow>
                         ) : (
-                            searchFilteredData.map((company, companyIndex) => (
+                            finalFilteredData.map((company, companyIndex) => (
                                 company.banks.length === 0 ? (
                                     <TableRow key={`company-${company.id}`} className="bg-gray-50 hover:bg-gray-100">
                                         <TableCell className="font-medium text-center border-r border-gray-200 p-1">{companyIndex + 1}</TableCell>
@@ -331,9 +408,13 @@ export function BankReconciliationTable({
                                     </TableRow>
                                 ) : (
                                     company.banks.map((bank, bankIndex) => {
-                                        const statement = statusFilteredStatements.find(s => s.bank_id === bank.id);
+                                        const statement = bankStatements.find(s =>
+                                            s.bank_id === bank.id &&
+                                            s.statement_month === selectedMonth &&
+                                            s.statement_year === selectedYear
+                                        ); // Find the statement specific to the selected month/year
+
                                         const closingBalance = statement?.statement_extractions?.closing_balance;
-                                        // FIX: Get the qbBalance from the correct nested location
                                         const qbBalance = statement?.status?.quickbooks_balance;
                                         const difference = (closingBalance != null && qbBalance != null) ? closingBalance - qbBalance : null;
                                         return (
@@ -351,12 +432,27 @@ export function BankReconciliationTable({
                                                 <TableCell className="border-r border-gray-200 p-1">{normalizeCurrencyCode(bank.bank_currency)}</TableCell>
                                                 <TableCell className="border-r border-gray-200 p-1">
                                                     {statement ? (
-                                                        <Button variant="outline" size="sm" className="relative flex gap-1.5 items-center px-3 py-1.5 border-blue-300 bg-blue-50/50 hover:bg-blue-100/60" onClick={() => handleOpenDialog('view', bank)}>
-                                                            <Eye className="h-3.5 w-3.5" /><span>View</span>{getValidationStatusIcon(statement) && <span className="ml-0.5">{getValidationStatusIcon(statement)}</span>}
+                                                        <Button
+                                                            variant="outline"
+                                                            size="sm"
+                                                            className={`relative flex gap-1.5 items-center px-3 py-1.5 ${statement.statement_document?.statement_pdf ? 'border-green-300 bg-green-50/50 hover:bg-green-100/60' : 'border-blue-300 bg-blue-50/50 hover:bg-blue-100/60'}`}
+                                                            onClick={() => handleOpenDialog('view', bank)}
+                                                        >
+                                                            <Eye className="h-3.5 w-3.5" />
+                                                            <span>View</span>
+                                                            {getValidationStatusIcon(statement) && (
+                                                                <span className="ml-0.5">{getValidationStatusIcon(statement)}</span>
+                                                            )}
                                                         </Button>
                                                     ) : (
-                                                        <Button variant="outline" size="sm" className="relative flex gap-1.5 items-center px-3 py-1.5 border-dashed border-blue-300 bg-blue-50/50 hover:bg-blue-100/60" onClick={() => handleOpenDialog('upload', bank)}>
-                                                            <UploadCloud className="h-3.5 w-3.5" /><span>Upload</span>
+                                                        <Button
+                                                            variant="outline"
+                                                            size="sm"
+                                                            className="relative flex gap-1.5 items-center px-3 py-1.5 border-dashed border-blue-300 bg-blue-50/50 hover:bg-blue-100/60"
+                                                            onClick={() => handleOpenDialog('upload', bank)}
+                                                        >
+                                                            <UploadCloud className="h-3.5 w-3.5" />
+                                                            <span>Upload</span>
                                                         </Button>
                                                     )}
                                                 </TableCell>
@@ -380,7 +476,7 @@ export function BankReconciliationTable({
                                                     </div>
                                                 </TableCell>
                                                 <TableCell className={`border-r border-gray-200 text-right p-1 ${difference !== null ? (Math.abs(difference) > 0.01 ? 'text-red-500 font-bold' : 'text-green-500 font-bold') : ''}`}>{formatCurrency(difference, bank.bank_currency)}</TableCell>
-                                                <TableCell className="border-r border-gray-200 p-1 truncate"><TooltipProvider><Tooltip><TooltipTrigger className="truncate">{statement?.status?.status || 'Pending'}</TooltipTrigger><TooltipContent>{statement?.status?.status || 'Pending'}</TooltipContent></Tooltip></TooltipProvider></TableCell>
+                                                <TableCell className="border-r border-gray-200 p-1 truncate"><TooltipProvider><Tooltip><TooltipTrigger className="truncate">{statement?.status?.status || 'No Statement'}</TooltipTrigger><TooltipContent>{statement?.status?.status || 'No Statement'}</TooltipContent></Tooltip></TooltipProvider></TableCell>
                                                 <TableCell className="p-1">
                                                     <DropdownMenu>
                                                         <DropdownMenuTrigger asChild><Button variant="ghost" size="sm" className="h-5 w-5 p-0"><MoreHorizontal className="h-3 w-3" /></Button></DropdownMenuTrigger>
@@ -404,13 +500,40 @@ export function BankReconciliationTable({
             </div>
 
             {uploadDialogOpen && activeBank && (
-                <BankStatementUploadDialog isOpen={uploadDialogOpen} onClose={() => setUploadDialogOpen(false)} onStatementUploaded={handleDialogClose} bank={activeBank} cycleMonth={selectedMonth} cycleYear={selectedYear} existingStatement={activeStatement} statementCycleId={statementCycleId} />
+                <BankStatementUploadDialog
+                    isOpen={uploadDialogOpen}
+                    onClose={() => setUploadDialogOpen(false)}
+                    // When onStatementUploaded is called, it means a statement for the *current selected month* was processed
+                    onStatementUploaded={(statement) => {
+                        setActiveStatement(statement); // Set this as the active statement
+                        setUploadDialogOpen(false); // Close upload dialog
+                        setExtractionDialogOpen(true); // Open extraction dialog for this new/updated statement
+                        refreshData(); // Refresh overall table data
+                    }}
+                    bank={activeBank}
+                    cycleMonth={selectedMonth}
+                    cycleYear={selectedYear}
+                    existingStatement={activeStatement}
+                    statementCycleId={statementCycleId}
+                />
             )}
             {extractionDialogOpen && activeBank && activeStatement && (
-                <BankExtractionDialog isOpen={extractionDialogOpen} onClose={() => setExtractionDialogOpen(false)} onStatementUpdated={handleDialogClose} bank={activeBank} statement={activeStatement} />
+                <BankExtractionDialog
+                    isOpen={extractionDialogOpen}
+                    onClose={handleDialogClose} // Use the combined close handler
+                    onStatementUpdated={handleDialogClose} // Use the combined close handler
+                    bank={activeBank}
+                    statement={activeStatement}
+                />
             )}
             {quickbooksDialogOpen && activeBank && activeStatement && (
-                <QuickbooksBalanceDialog isOpen={quickbooksDialogOpen} onClose={() => setQuickbooksDialogOpen(false)} onBalanceUpdated={handleDialogClose} bank={activeBank} statement={activeStatement} />
+                <QuickbooksBalanceDialog
+                    isOpen={quickbooksDialogOpen}
+                    onClose={handleDialogClose} // Use the combined close handler
+                    onBalanceUpdated={handleDialogClose} // Use the combined close handler
+                    bank={activeBank}
+                    statement={activeStatement}
+                />
             )}
             <AlertDialog open={deleteConfirmationOpen} onOpenChange={setDeleteConfirmationOpen}>
                 <AlertDialogContent>

@@ -13,8 +13,24 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, Alert, AlertDescription, AlertTitle } from "@/components/ui/alert-dialog";
-import { Loader2, Save, AlertTriangle, CheckCircle, Check, Trash, Plus, X, XCircle } from 'lucide-react';
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle
+} from "@/components/ui/alert-dialog";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+    parseStatementPeriod,
+    generateMonthRange,
+    generateCompleteMonthRange
+} from '@/lib/bankExtractionUtils';
+import { useStatementCycle } from '@/app/payroll/hooks/useStatementCycle';
+import { AlertTriangle, Trash, Loader2 } from 'lucide-react';
 
 // --- Interface Definitions ---
 
@@ -26,10 +42,10 @@ interface ValidationStatus {
 }
 
 interface MonthlyBalance {
-    month: number;
+    month: number; // 1-indexed for consistency with generateMonthRange
     year: number;
-    closing_balance: number;
-    opening_balance: number;
+    closing_balance: number | null; // Can be null for empty input
+    opening_balance: number | null; // Can be null for empty input
     statement_page: number;
     closing_date: string | null;
     is_verified: boolean;
@@ -52,7 +68,7 @@ interface BankStatementExtraction {
 interface BankStatement {
     id: string;
     bank_id: number;
-    statement_month: number;
+    statement_month: number; // 0-indexed month (for DB column)
     statement_year: number;
     quickbooks_balance: number | null;
     statement_document: {
@@ -88,6 +104,7 @@ interface BankExtractionDialogProps {
     bank: Bank;
     statement: BankStatement;
     onStatementUpdated: (statement: BankStatement | null) => void;
+    onStatementDeleted?: (statementId: string) => void;
 }
 
 // --- Main Component ---
@@ -96,8 +113,11 @@ export default function BankExtractionDialog({
     onClose,
     bank,
     statement,
-    onStatementUpdated
+    onStatementUpdated,
+    onStatementDeleted
 }: BankExtractionDialogProps) {
+    const { getOrCreateStatementCycle, loading: cycleLoading, error: cycleError } = useStatementCycle();
+
     const { toast } = useToast();
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
@@ -143,6 +163,56 @@ export default function BankExtractionDialog({
         }
     }, [statement, toast]);
 
+    const handleStatementRangeData = useCallback(async () => {
+        try {
+            const periodDates = parseStatementPeriod(formData.statementPeriod);
+            if (!periodDates) {
+                console.warn("Could not parse statement period:", formData.statementPeriod);
+                return;
+            }
+
+            const { startMonth, startYear, endMonth, endYear } = periodDates;
+
+            // Generate complete month range
+            const completeMonthRange = generateCompleteMonthRange(
+                startMonth,
+                startYear,
+                endMonth,
+                endYear
+            );
+
+            // Merge with existing monthly balances
+            const mergedBalances = completeMonthRange.map(rangeMonth => {
+                const existingBalance = monthlyBalances.find(
+                    b => b.month === rangeMonth.month && b.year === rangeMonth.year
+                );
+                return existingBalance || rangeMonth;
+            });
+
+            // Sort by year and month
+            mergedBalances.sort((a, b) => {
+                if (a.year !== b.year) return a.year - b.year;
+                return a.month - b.month;
+            });
+
+            // Update the monthly balances state
+            setMonthlyBalances(mergedBalances);
+
+            toast({
+                description: `Loaded ${mergedBalances.length} months from the statement period`,
+                variant: 'default'
+            });
+
+        } catch (error) {
+            console.error('Error handling statement range data:', error);
+            toast({
+                title: 'Error',
+                description: 'Failed to process statement period',
+                variant: 'destructive'
+            });
+        }
+    }, [formData.statementPeriod, monthlyBalances, toast]);
+
     useEffect(() => {
         if (isOpen && statement) {
             setIsLoading(true);
@@ -151,14 +221,78 @@ export default function BankExtractionDialog({
                 account_number: statement.statement_extractions?.account_number || '',
                 currency: statement.statement_extractions?.currency || '',
                 statementPeriod: statement.statement_extractions?.statement_period || '',
-                quickbooks_balance: statement.quickbooks_balance ?? null,
+                quickbooks_balance: statement.status?.quickbooks_balance ?? null,
             });
-            setMonthlyBalances(statement.statement_extractions?.monthly_balances || []);
+
+            const extractedMonthlyBalances = statement.statement_extractions?.monthly_balances || [];
+            const statementPeriodString = statement.statement_extractions?.statement_period;
+
+            let compiledMonthlyBalances: MonthlyBalance[] = [];
+
+            if (statementPeriodString) {
+                const period = parseStatementPeriod(statementPeriodString);
+                if (period) {
+                    const allMonthsInPeriod = generateMonthRange(
+                        period.startMonth,
+                        period.startYear,
+                        period.endMonth,
+                        period.endYear
+                    );
+
+                    compiledMonthlyBalances = allMonthsInPeriod.map(monthInPeriod => {
+                        const foundBalance = extractedMonthlyBalances.find(
+                            eb => eb.month === monthInPeriod.month && eb.year === monthInPeriod.year
+                        );
+
+                        return foundBalance || {
+                            month: monthInPeriod.month,
+                            year: monthInPeriod.year,
+                            closing_balance: null,
+                            opening_balance: null,
+                            statement_page: 0,
+                            closing_date: null,
+                            is_verified: false,
+                            verified_by: null,
+                            verified_at: null,
+                            highlight_coordinates: null,
+                        };
+                    });
+                }
+            } else {
+                if (extractedMonthlyBalances.length > 0) {
+                    compiledMonthlyBalances = extractedMonthlyBalances;
+                } else if (statement.statement_month !== undefined && statement.statement_year !== undefined) {
+                    compiledMonthlyBalances = [{
+                        month: statement.statement_month + 1,
+                        year: statement.statement_year,
+                        closing_balance: null,
+                        opening_balance: null,
+                        statement_page: 0,
+                        closing_date: null,
+                        is_verified: false,
+                        verified_by: null,
+                        verified_at: null,
+                        highlight_coordinates: null,
+                    }];
+                }
+            }
+
+            setMonthlyBalances(compiledMonthlyBalances);
             loadPdfDocument();
         } else {
             setPdfUrl(null);
         }
     }, [isOpen, statement, loadPdfDocument]);
+
+    // Automatically handle range data when statement period changes
+    useEffect(() => {
+        if (statement?.statement_extractions?.statement_period && isOpen) {
+            const timer = setTimeout(() => {
+                handleStatementRangeData();
+            }, 500);
+            return () => clearTimeout(timer);
+        }
+    }, [statement?.statement_extractions?.statement_period, isOpen, handleStatementRangeData]);
 
     // --- Helper Functions ---
     const normalizeCurrencyCode = (code: string | null | undefined): string => {
@@ -195,7 +329,6 @@ export default function BankExtractionDialog({
         try {
             return new Intl.NumberFormat('en-US', { style: 'currency', currency: normalizedCurrency }).format(value);
         } catch {
-            // Fallback for invalid currency codes
             return `${normalizedCurrency} ${formatNumberWithCommas(value)}`;
         }
     }
@@ -219,10 +352,25 @@ export default function BankExtractionDialog({
             if (!extractions?.currency || normalizeCurrencyCode(extractions.currency) !== normalizeCurrencyCode(bank.bank_currency)) {
                 mismatches.push(`Currency does not match. Expected: ${bank.bank_currency}, Found: ${extractions?.currency || 'Not found'}`);
             }
+            if (extractions.monthly_balances?.length === 0) {
+                mismatches.push('No monthly balances extracted from the document.');
+            }
 
-            const updatedStatement = { ...statement, validation_status: { is_validated: mismatches.length === 0, validation_date: new Date().toISOString(), validated_by: 'current_user_id', mismatches } };
+            const updatedStatement = {
+                ...statement,
+                validation_status: {
+                    is_validated: mismatches.length === 0,
+                    validation_date: new Date().toISOString(),
+                    validated_by: 'current_user_id',
+                    mismatches
+                }
+            };
 
-            const { error } = await supabase.from('acc_cycle_bank_statements').update({ validation_status: updatedStatement.validation_status }).eq('id', statement.id);
+            const { error } = await supabase
+                .from('acc_cycle_bank_statements')
+                .update({ validation_status: updatedStatement.validation_status })
+                .eq('id', statement.id);
+
             if (error) throw error;
 
             onStatementUpdated(updatedStatement);
@@ -251,16 +399,34 @@ export default function BankExtractionDialog({
         const updatedBalances = [...monthlyBalances];
 
         try {
-            updatedBalances[balanceIndex] = { ...updatedBalances[balanceIndex], is_verified: true, verified_by: 'current_user_id', verified_at: new Date().toISOString() };
-            const updatedExtractions = { ...statement.statement_extractions, monthly_balances: updatedBalances };
+            updatedBalances[balanceIndex] = {
+                ...updatedBalances[balanceIndex],
+                is_verified: true,
+                verified_by: 'current_user_id',
+                verified_at: new Date().toISOString()
+            };
 
-            const { error, data } = await supabase.from('acc_cycle_bank_statements').update({ statement_extractions: updatedExtractions }).eq('id', statement.id).select().single();
+            const updatedExtractions = {
+                ...statement.statement_extractions,
+                monthly_balances: updatedBalances
+            };
+
+            const { error, data } = await supabase
+                .from('acc_cycle_bank_statements')
+                .update({ statement_extractions: updatedExtractions })
+                .eq('id', statement.id)
+                .select()
+                .single();
+
             if (error) throw error;
 
-            setMonthlyBalances(updatedBalances); // Update local state for immediate UI feedback
+            setMonthlyBalances(updatedBalances);
             onStatementUpdated(data);
 
-            toast({ title: 'Balance Verified', description: 'The monthly balance has been verified successfully.' });
+            toast({
+                title: 'Balance Verified',
+                description: 'The monthly balance has been verified successfully.'
+            });
         } catch (err) {
             const error = err instanceof Error ? err : new Error('Failed to verify balance');
             setError(error);
@@ -277,19 +443,43 @@ export default function BankExtractionDialog({
     const handleUpdateBalance = (index: number, field: string, value: string) => {
         const newBalances = [...monthlyBalances];
         const rawValue = String(value).replace(/,/g, '');
-        newBalances[index] = { ...newBalances[index], [field]: field === 'closing_balance' ? parseFloat(rawValue) || 0 : value, is_verified: false };
+        newBalances[index] = {
+            ...newBalances[index],
+            [field]: (field === 'closing_balance' || field === 'opening_balance')
+                ? (rawValue ? parseFloat(rawValue) : null)
+                : value,
+            is_verified: false
+        };
         setMonthlyBalances(newBalances);
     };
 
     const handleAddBalance = () => {
-        const newDate = new Date();
-        const newMonth = newDate.getMonth();
-        const newYear = newDate.getFullYear();
+        const latestMonth = monthlyBalances.reduce((latest, current) => {
+            const currentMonthDate = new Date(current.year, current.month - 1);
+            const latestMonthDate = new Date(latest.year, latest.month - 1);
+            return currentMonthDate > latestMonthDate ? current : latest;
+        }, { month: statement.statement_month + 1, year: statement.statement_year });
+
+        const nextDate = new Date(latestMonth.year, latestMonth.month);
+        const newMonth = nextDate.getMonth() + 1;
+        const newYear = nextDate.getFullYear();
+
         if (monthlyBalances.some(b => b.month === newMonth && b.year === newYear)) {
-            toast({ description: `Balance for ${format(new Date(newYear, newMonth), 'MMMM yyyy')} already exists.` });
+            toast({ description: `Balance for ${format(new Date(newYear, newMonth - 1), 'MMMM yyyy')} already exists.` });
             return;
         }
-        setMonthlyBalances(prev => [...prev, { month: newMonth, year: newYear, closing_balance: 0, opening_balance: 0, is_verified: false, statement_page: 0, closing_date: null, verified_by: null, verified_at: null }]);
+
+        setMonthlyBalances(prev => [...prev, {
+            month: newMonth,
+            year: newYear,
+            closing_balance: null,
+            opening_balance: null,
+            is_verified: false,
+            statement_page: 0,
+            closing_date: null,
+            verified_by: null,
+            verified_at: null
+        }]);
     };
 
     const handleRemoveBalance = (index: number) => {
@@ -299,34 +489,273 @@ export default function BankExtractionDialog({
     const handleSave = async () => {
         setIsSaving(true);
         try {
-            const updatedExtractions = { ...statement.statement_extractions, bank_name: formData.bank_name, account_number: formData.account_number, currency: formData.currency, statementPeriod: formData.statementPeriod, monthly_balances: monthlyBalances };
-            const updateData = { statement_extractions: updatedExtractions, quickbooks_balance: formData.quickbooks_balance !== null ? parseFloat(String(formData.quickbooks_balance)) : null };
+            // Parse the statement period to check if it's a multi-month statement
+            const periodDates = parseStatementPeriod(formData.statementPeriod);
+            const isMultiMonth = periodDates && (
+                periodDates.startMonth !== periodDates.endMonth ||
+                periodDates.startYear !== periodDates.endYear
+            );
 
-            const { data, error } = await supabase.from('acc_cycle_bank_statements').update(updateData).eq('id', statement.id).select('*').single();
-            if (error) throw error;
+            if (isMultiMonth && periodDates) {
+                // Handle multi-month submission
+                const { startMonth, startYear, endMonth, endYear } = periodDates;
+                const monthsInRange = generateMonthRange(startMonth, startYear, endMonth, endYear);
 
-            toast({ title: 'Success', description: 'Statement data saved successfully' });
-            onStatementUpdated(data);
+                let successCount = 0;
+                let errorCount = 0;
+
+                for (const { month, year } of monthsInRange) {
+                    try {
+                        // Get or create statement cycle for this month
+                        const cycleId = await getOrCreateStatementCycle(month, year);
+
+                        // Find the specific monthly balance
+                        const monthBalance = monthlyBalances.find(
+                            b => b.month === month && b.year === year
+                        ) || {
+                            month,
+                            year,
+                            opening_balance: null,
+                            closing_balance: null,
+                            statement_page: 1,
+                            is_verified: false,
+                            verified_by: null,
+                            verified_at: null
+                        };
+
+                        // Check if statement already exists
+                        const { data: existingStatement } = await supabase
+                            .from('acc_cycle_bank_statements')
+                            .select('id')
+                            .eq('bank_id', bank.id)
+                            .eq('statement_month', month - 1) // Convert to 0-indexed
+                            .eq('statement_year', year)
+                            .single();
+
+                        // Prepare statement data
+                        const statementData = {
+                            bank_id: bank.id,
+                            company_id: bank.company_id,
+                            statement_month: month - 1, // Convert to 0-indexed
+                            statement_year: year,
+                            statement_document: statement.statement_document,
+                            statement_extractions: {
+                                bank_name: formData.bank_name || null,
+                                account_number: formData.account_number || null,
+                                currency: formData.currency || null,
+                                statement_period: formData.statementPeriod,
+                                opening_balance: monthBalance.opening_balance,
+                                closing_balance: monthBalance.closing_balance,
+                                monthly_balances: monthlyBalances // Store all balances for reference
+                            },
+                            validation_status: {
+                                is_validated: true,
+                                validation_date: new Date().toISOString(),
+                                validated_by: 'current_user', // TODO: Replace with actual user
+                                mismatches: []
+                            },
+                            status: {
+                                status: 'validated',
+                                verification_date: new Date().toISOString(),
+                                assigned_to: null,
+                                quickbooks_balance: formData.quickbooks_balance
+                            },
+                            has_soft_copy: true,
+                            has_hard_copy: false
+                        };
+
+                        if (existingStatement) {
+                            // Update existing statement
+                            const { error: updateError } = await supabase
+                                .from('acc_cycle_bank_statements')
+                                .update(statementData)
+                                .eq('id', existingStatement.id);
+
+                            if (updateError) throw updateError;
+                        } else {
+                            // Insert new statement
+                            const { error: insertError } = await supabase
+                                .from('acc_cycle_bank_statements')
+                                .insert({
+                                    ...statementData,
+                                    statement_cycle_id: cycleId
+                                });
+
+                            if (insertError) throw insertError;
+                        }
+
+                        successCount++;
+                    } catch (error) {
+                        console.error(`Error saving statement for ${month}/${year}:`, error);
+                        errorCount++;
+                    }
+                }
+
+                // Show result
+                if (errorCount === 0) {
+                    toast({
+                        title: 'Success',
+                        description: `Saved ${successCount} monthly statements successfully`
+                    });
+                } else {
+                    toast({
+                        title: 'Partial Success',
+                        description: `Saved ${successCount} statements, ${errorCount} failed`,
+                        variant: 'default'
+                    });
+                }
+
+            } else {
+                // Handle single month submission
+                const updatedExtractions = {
+                    ...statement.statement_extractions,
+                    bank_name: formData.bank_name,
+                    account_number: formData.account_number,
+                    currency: formData.currency,
+                    statement_period: formData.statementPeriod,
+                    monthly_balances: monthlyBalances
+                };
+
+                const updatedStatus = {
+                    ...statement.status,
+                    quickbooks_balance: formData.quickbooks_balance !== null
+                        ? parseFloat(String(formData.quickbooks_balance))
+                        : null
+                };
+
+                const { data, error } = await supabase
+                    .from('acc_cycle_bank_statements')
+                    .update({
+                        statement_extractions: updatedExtractions,
+                        status: updatedStatus
+                    })
+                    .eq('id', statement.id)
+                    .select('*')
+                    .single();
+
+                if (error) throw error;
+
+                toast({
+                    title: 'Success',
+                    description: 'Statement data saved successfully'
+                });
+
+                onStatementUpdated(data);
+            }
+
             onClose();
+
         } catch (error: any) {
-            toast({ title: 'Save Error', description: error.message || 'Failed to save statement data', variant: 'destructive' });
+            console.error('Save error:', error);
+            toast({
+                title: 'Save Error',
+                description: error.message || 'Failed to save statement data',
+                variant: 'destructive'
+            });
         } finally {
             setIsSaving(false);
         }
     };
 
-    const confirmDelete = async () => {
+    const handleDeleteStatement = () => {
+        setShowDeleteConfirmation(true);
+    };
+
+    const confirmDeleteStatement = async () => {
         setIsDeleting(true);
         try {
-            if (statement.statement_document.statement_pdf) {
-                await supabase.storage.from('Statement-Cycle').remove([statement.statement_document.statement_pdf]);
+            // Check if this is part of a multi-month statement
+            const periodDates = parseStatementPeriod(formData.statementPeriod);
+            const isMultiMonth = periodDates && (
+                periodDates.startMonth !== periodDates.endMonth ||
+                periodDates.startYear !== periodDates.endYear
+            );
+
+            if (isMultiMonth) {
+                // Check if other statements use the same files
+                const { data: relatedStatements } = await supabase
+                    .from('acc_cycle_bank_statements')
+                    .select('id, statement_month, statement_year')
+                    .eq('bank_id', bank.id)
+                    .neq('id', statement.id);
+
+                let hasSharedFiles = false;
+                if (relatedStatements && relatedStatements.length > 0) {
+                    for (const related of relatedStatements) {
+                        const { data: relatedFull } = await supabase
+                            .from('acc_cycle_bank_statements')
+                            .select('statement_document')
+                            .eq('id', related.id)
+                            .single();
+
+                        if (relatedFull) {
+                            const samePdf = relatedFull.statement_document?.statement_pdf ===
+                                statement.statement_document?.statement_pdf;
+                            const sameExcel = relatedFull.statement_document?.statement_excel ===
+                                statement.statement_document?.statement_excel;
+
+                            if (samePdf || sameExcel) {
+                                hasSharedFiles = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                // For multi-month statements, only delete the current entry
+                const { error } = await supabase
+                    .from('acc_cycle_bank_statements')
+                    .delete()
+                    .eq('id', statement.id);
+
+                if (error) throw error;
+
+                toast({
+                    title: 'Success',
+                    description: hasSharedFiles
+                        ? 'Statement entry deleted. Files preserved for other periods.'
+                        : 'Statement entry deleted.',
+                    variant: 'default'
+                });
+            } else {
+                // For single-month statements, delete both entry and files
+                if (statement.statement_document?.statement_pdf) {
+                    await supabase.storage
+                        .from('Statement-Cycle')
+                        .remove([statement.statement_document.statement_pdf]);
+                }
+
+                if (statement.statement_document?.statement_excel) {
+                    await supabase.storage
+                        .from('Statement-Cycle')
+                        .remove([statement.statement_document.statement_excel]);
+                }
+
+                const { error } = await supabase
+                    .from('acc_cycle_bank_statements')
+                    .delete()
+                    .eq('id', statement.id);
+
+                if (error) throw error;
+
+                toast({
+                    title: 'Success',
+                    description: 'Bank statement and files deleted successfully'
+                });
             }
-            await supabase.from('acc_cycle_bank_statements').delete().eq('id', statement.id);
-            toast({ title: 'Success', description: 'Bank statement deleted successfully' });
-            onStatementUpdated(null);
+
             onClose();
+            if (onStatementDeleted) {
+                onStatementDeleted(statement.id);
+            }
+
         } catch (error: any) {
-            toast({ title: 'Error', description: 'Failed to delete bank statement', variant: 'destructive' });
+            console.error('Error deleting statement:', error);
+            toast({
+                title: 'Error',
+                description: 'Failed to delete statement',
+                variant: 'destructive'
+            });
         } finally {
             setIsDeleting(false);
             setShowDeleteConfirmation(false);
@@ -347,8 +776,15 @@ export default function BankExtractionDialog({
                                 <div className="text-sm text-muted-foreground">
                                     Document Size: {statement?.statement_document?.document_size ? formatFileSize(statement.statement_document.document_size) : 'N/A'}
                                 </div>
-                                <Button variant="destructive" size="sm" onClick={() => setShowDeleteConfirmation(true)} disabled={isDeleting} className="gap-1">
-                                    {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash className="h-4 w-4" />} Delete Statement
+                                <Button
+                                    variant="destructive"
+                                    size="sm"
+                                    onClick={handleDeleteStatement}
+                                    disabled={isDeleting}
+                                    className="gap-1"
+                                >
+                                    {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash className="h-4 w-4" />}
+                                    Delete Statement
                                 </Button>
                             </div>
                         </div>
@@ -359,72 +795,206 @@ export default function BankExtractionDialog({
                 </DialogHeader>
 
                 <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
-                    <TabsList className="grid w-full grid-cols-2"><TabsTrigger value="overview">Overview</TabsTrigger><TabsTrigger value="validation">Validation</TabsTrigger></TabsList>
+                    <TabsList className="grid w-full grid-cols-2">
+                        <TabsTrigger value="overview">Overview</TabsTrigger>
+                        <TabsTrigger value="validation">Validation</TabsTrigger>
+                    </TabsList>
 
                     <TabsContent value="overview" className="flex-1 flex flex-col overflow-hidden pt-4">
                         <div className="grid grid-cols-5 gap-4 h-full overflow-hidden">
                             <div className="col-span-3 flex flex-col h-full overflow-auto border rounded-md bg-muted p-2">
                                 {isLoading ? (
-                                    <div className="flex items-center justify-center h-full"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
+                                    <div className="flex items-center justify-center h-full">
+                                        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                                    </div>
                                 ) : pdfUrl ? (
                                     <iframe src={pdfUrl} className="w-full h-full" title="Bank Statement PDF" />
                                 ) : (
-                                    <div className="flex items-center justify-center h-full text-muted-foreground">No PDF document available.</div>
+                                    <div className="flex items-center justify-center h-full text-muted-foreground">
+                                        No PDF document available.
+                                    </div>
                                 )}
                             </div>
                             <div className="col-span-2 flex flex-col h-full gap-4 overflow-hidden">
                                 <Card className="shrink-0">
-                                    <CardHeader className="py-2"><CardTitle className="text-base">Account & QB Details</CardTitle></CardHeader>
+                                    <CardHeader className="py-2">
+                                        <CardTitle className="text-base">Account & QB Details</CardTitle>
+                                    </CardHeader>
                                     <CardContent className="space-y-3 pt-4">
                                         <div className="space-y-1">
                                             <Label htmlFor="bank_name">Bank Name</Label>
                                             <div className="flex items-center gap-2">
-                                                <Input id="bank_name" name="bank_name" value={formData.bank_name} onChange={handleFormChange} className={formData.bank_name && !formData.bank_name.toLowerCase().includes(bank.bank_name.toLowerCase()) ? "border-yellow-500" : ""} />
-                                                {formData.bank_name && (formData.bank_name.toLowerCase().includes(bank.bank_name.toLowerCase()) ? <Badge variant="outline" className="bg-green-50 text-green-700 border-green-300"><Check className="h-3 w-3 mr-1" />Match</Badge> : <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-300"><AlertTriangle className="h-3 w-3 mr-1" />Mismatch</Badge>)}
+                                                <Input
+                                                    id="bank_name"
+                                                    name="bank_name"
+                                                    value={formData.bank_name}
+                                                    onChange={handleFormChange}
+                                                    className={formData.bank_name && !formData.bank_name.toLowerCase().includes(bank.bank_name.toLowerCase()) ? "border-yellow-500" : ""}
+                                                />
+                                                {formData.bank_name && (
+                                                    formData.bank_name.toLowerCase().includes(bank.bank_name.toLowerCase()) ?
+                                                        <Badge variant="outline" className="bg-green-50 text-green-700 border-green-300">
+                                                            <Check className="h-3 w-3 mr-1" />Match
+                                                        </Badge> :
+                                                        <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-300">
+                                                            <AlertTriangle className="h-3 w-3 mr-1" />Mismatch
+                                                        </Badge>
+                                                )}
                                             </div>
                                         </div>
                                         <div className="space-y-1">
                                             <Label htmlFor="account_number">Account Number</Label>
                                             <div className="flex items-center gap-2">
-                                                <Input id="account_number" name="account_number" value={formData.account_number} onChange={handleFormChange} className={formData.account_number && !formData.account_number.includes(bank.account_number) ? "border-yellow-500" : ""} />
-                                                {formData.account_number && (formData.account_number.includes(bank.account_number) ? <Badge variant="outline" className="bg-green-50 text-green-700 border-green-300"><Check className="h-3 w-3 mr-1" />Match</Badge> : <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-300"><AlertTriangle className="h-3 w-3 mr-1" />Mismatch</Badge>)}
+                                                <Input
+                                                    id="account_number"
+                                                    name="account_number"
+                                                    value={formData.account_number}
+                                                    onChange={handleFormChange}
+                                                    className={formData.account_number && !formData.account_number.includes(bank.account_number) ? "border-yellow-500" : ""}
+                                                />
+                                                {formData.account_number && (
+                                                    formData.account_number.includes(bank.account_number) ?
+                                                        <Badge variant="outline" className="bg-green-50 text-green-700 border-green-300">
+                                                            <Check className="h-3 w-3 mr-1" />Match
+                                                        </Badge> :
+                                                        <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-300">
+                                                            <AlertTriangle className="h-3 w-3 mr-1" />Mismatch
+                                                        </Badge>
+                                                )}
                                             </div>
                                         </div>
                                         <div className="space-y-1">
                                             <Label htmlFor="currency">Currency</Label>
                                             <div className="flex items-center gap-2">
-                                                <Input id="currency" name="currency" value={formData.currency} onChange={handleFormChange} className={formData.currency && normalizeCurrencyCode(formData.currency) !== normalizeCurrencyCode(bank.bank_currency) ? "border-yellow-500" : ""} />
-                                                {formData.currency && (normalizeCurrencyCode(formData.currency) === normalizeCurrencyCode(bank.bank_currency) ? <Badge variant="outline" className="bg-green-50 text-green-700 border-green-300"><Check className="h-3 w-3 mr-1" />Match</Badge> : <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-300"><AlertTriangle className="h-3 w-3 mr-1" />Mismatch</Badge>)}
+                                                <Input
+                                                    id="currency"
+                                                    name="currency"
+                                                    value={formData.currency}
+                                                    onChange={handleFormChange}
+                                                    className={formData.currency && normalizeCurrencyCode(formData.currency) !== normalizeCurrencyCode(bank.bank_currency) ? "border-yellow-500" : ""}
+                                                />
+                                                {formData.currency && (
+                                                    normalizeCurrencyCode(formData.currency) === normalizeCurrencyCode(bank.bank_currency) ?
+                                                        <Badge variant="outline" className="bg-green-50 text-green-700 border-green-300">
+                                                            <Check className="h-3 w-3 mr-1" />Match
+                                                        </Badge> :
+                                                        <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-300">
+                                                            <AlertTriangle className="h-3 w-3 mr-1" />Mismatch
+                                                        </Badge>
+                                                )}
                                             </div>
                                         </div>
                                         <div className="space-y-1">
                                             <Label htmlFor="statementPeriod">Statement Period</Label>
-                                            <Input id="statementPeriod" name="statementPeriod" value={formData.statementPeriod} onChange={handleFormChange} />
+                                            <Input
+                                                id="statementPeriod"
+                                                name="statementPeriod"
+                                                value={formData.statementPeriod}
+                                                onChange={handleFormChange}
+                                            />
                                         </div>
                                         <div className="space-y-1">
                                             <Label htmlFor="quickbooks_balance">QuickBooks Balance</Label>
-                                            <Input id="quickbooks_balance" name="quickbooks_balance" placeholder="Enter QB balance..." value={formData.quickbooks_balance !== null ? formatNumberWithCommas(formData.quickbooks_balance) : ''} onChange={(e) => { const value = e.target.value.replace(/[^0-9.]/g, ''); setFormData(prev => ({ ...prev, quickbooks_balance: value ? parseFloat(value) : null })); }} />
+                                            <Input
+                                                id="quickbooks_balance"
+                                                name="quickbooks_balance"
+                                                placeholder="Enter QB balance..."
+                                                value={formData.quickbooks_balance !== null ? formatNumberWithCommas(formData.quickbooks_balance) : ''}
+                                                onChange={(e) => {
+                                                    const value = e.target.value.replace(/[^0-9.]/g, '');
+                                                    setFormData(prev => ({
+                                                        ...prev,
+                                                        quickbooks_balance: value ? parseFloat(value) : null
+                                                    }));
+                                                }}
+                                            />
                                         </div>
                                     </CardContent>
                                 </Card>
                                 <Card className="flex-1 flex flex-col overflow-hidden">
-                                    <CardHeader className="py-2 flex flex-row items-center justify-between"><CardTitle className="text-base">Monthly Balances</CardTitle><Button variant="outline" size="sm" onClick={handleAddBalance}><Plus className="h-4 w-4 mr-1" />Add</Button></CardHeader>
+                                    <CardHeader className="py-2 flex flex-row items-center justify-between">
+                                        <CardTitle className="text-base">Monthly Balances</CardTitle>
+                                        <Button variant="outline" size="sm" onClick={handleAddBalance}>
+                                            <Plus className="h-4 w-4 mr-1" />Add
+                                        </Button>
+                                    </CardHeader>
                                     <CardContent className="p-0 flex-1 overflow-auto">
-                                        <Table>
-                                            <TableHeader><TableRow><TableHead>Period</TableHead><TableHead>Closing Balance</TableHead><TableHead>Actions</TableHead></TableRow></TableHeader>
-                                            <TableBody>
-                                                {monthlyBalances.length > 0 ? (monthlyBalances.sort((a, b) => new Date(a.year, a.month) - new Date(b.year, b.month)).map((balance, index) => (
-                                                    <TableRow key={index}>
-                                                        <TableCell className="font-medium">{format(new Date(balance.year, balance.month), 'MMM yyyy')}</TableCell>
-                                                        <TableCell><Input type="text" value={formatNumberWithCommas(balance.closing_balance)} onChange={(e) => handleUpdateBalance(index, 'closing_balance', e.target.value)} /></TableCell>
-                                                        <TableCell className="flex gap-1">
-                                                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => verifyBalance(index)} disabled={balance.is_verified}><CheckCircle className={balance.is_verified ? "h-4 w-4 text-green-500" : "h-4 w-4"} /></Button>
-                                                            <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500" onClick={() => handleRemoveBalance(index)}><X className="h-4 w-4" /></Button>
-                                                        </TableCell>
-                                                    </TableRow>
-                                                ))) : <TableRow><TableCell colSpan={3} className="text-center py-8 text-muted-foreground">No monthly balances.</TableCell></TableRow>}
-                                            </TableBody>
-                                        </Table>
+                                        {monthlyBalances.length === 0 ? (
+                                            <div className="text-center py-8 text-muted-foreground">
+                                                <Calendar className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                                                <p>No monthly balances found</p>
+                                                <p className="text-sm mt-1">Click "Add" to add balance entries</p>
+                                            </div>
+                                        ) : (
+                                            <div className="space-y-2 p-4">
+                                                {monthlyBalances
+                                                    .sort((a, b) => {
+                                                        if (a.year !== b.year) return a.year - b.year;
+                                                        return a.month - b.month;
+                                                    })
+                                                    .map((balance, index) => (
+                                                        <div key={index} className="border rounded-lg p-3 space-y-2">
+                                                            <div className="flex justify-between items-center">
+                                                                <span className="font-medium">
+                                                                    {format(new Date(balance.year, balance.month - 1), 'MMMM yyyy')}
+                                                                </span>
+                                                                <div className="flex gap-2">
+                                                                    {balance.is_verified && (
+                                                                        <Badge variant="success" className="gap-1">
+                                                                            <CheckCircle className="h-3 w-3" />
+                                                                            Verified
+                                                                        </Badge>
+                                                                    )}
+                                                                    <Button
+                                                                        type="button"
+                                                                        onClick={() => handleRemoveBalance(index)}
+                                                                        size="sm"
+                                                                        variant="ghost"
+                                                                        className="h-8 w-8 p-0"
+                                                                    >
+                                                                        <X className="h-4 w-4" />
+                                                                    </Button>
+                                                                </div>
+                                                            </div>
+
+                                                            <div className="grid grid-cols-2 gap-2">
+                                                                <div>
+                                                                    <Label className="text-xs">Opening Balance</Label>
+                                                                    <Input
+                                                                        type="text"
+                                                                        value={formatNumberWithCommas(balance.opening_balance)}
+                                                                        onChange={(e) => handleUpdateBalance(index, 'opening_balance', e.target.value)}
+                                                                        placeholder="0.00"
+                                                                        className="mt-1"
+                                                                    />
+                                                                </div>
+                                                                <div>
+                                                                    <Label className="text-xs">Closing Balance</Label>
+                                                                    <Input
+                                                                        type="text"
+                                                                        value={formatNumberWithCommas(balance.closing_balance)}
+                                                                        onChange={(e) => handleUpdateBalance(index, 'closing_balance', e.target.value)}
+                                                                        placeholder="0.00"
+                                                                        className="mt-1"
+                                                                    />
+                                                                </div>
+                                                            </div>
+
+                                                            {!balance.is_verified && (
+                                                                <Button
+                                                                    variant="outline"
+                                                                    size="sm"
+                                                                    className="w-full"
+                                                                    onClick={() => verifyBalance(index)}
+                                                                >
+                                                                    <CheckCircle className="h-4 w-4 mr-2" />
+                                                                    Verify Balance
+                                                                </Button>
+                                                            )}
+                                                        </div>
+                                                    ))}
+                                            </div>
+                                        )}
                                     </CardContent>
                                 </Card>
                             </div>
@@ -434,8 +1004,14 @@ export default function BankExtractionDialog({
                     <TabsContent value="validation" className="flex-1 overflow-auto p-4 space-y-4">
                         {error && (
                             <Alert variant="destructive" className="mb-4">
-                                <AlertTriangle className="h-4 w-4" /><AlertTitle>Error</AlertTitle>
-                                <AlertDescription><p className="mb-2">{error.message}</p><Button variant="outline" size="sm" onClick={() => setError(null)} className="mt-2">Dismiss</Button></AlertDescription>
+                                <AlertTriangle className="h-4 w-4" />
+                                <AlertTitle>Error</AlertTitle>
+                                <AlertDescription>
+                                    <p className="mb-2">{error.message}</p>
+                                    <Button variant="outline" size="sm" onClick={() => setError(null)} className="mt-2">
+                                        Dismiss
+                                    </Button>
+                                </AlertDescription>
                             </Alert>
                         )}
                         <Card className="border-l-4 border-blue-500">
@@ -445,28 +1021,70 @@ export default function BankExtractionDialog({
                                         <div>
                                             <h4 className="font-medium text-sm text-muted-foreground">Validation Status</h4>
                                             <div className="mt-1 flex items-center">
-                                                {statement.validation_status?.is_validated ? <CheckCircle className="h-5 w-5 text-green-500 mr-2" /> : <AlertTriangle className="h-5 w-5 text-yellow-500 mr-2" />}
-                                                <span className="text-lg font-medium">{statement.validation_status?.is_validated ? 'All validations passed' : (statement.validation_status?.mismatches?.length > 0 ? `${statement.validation_status.mismatches.length} issues found` : 'Not validated yet')}</span>
+                                                {statement.validation_status?.is_validated ?
+                                                    <CheckCircle className="h-5 w-5 text-green-500 mr-2" /> :
+                                                    <AlertTriangle className="h-5 w-5 text-yellow-500 mr-2" />
+                                                }
+                                                <span className="text-lg font-medium">
+                                                    {statement.validation_status?.is_validated ?
+                                                        'All validations passed' :
+                                                        (statement.validation_status?.mismatches?.length > 0 ?
+                                                            `${statement.validation_status.mismatches.length} issues found` :
+                                                            'Not validated yet'
+                                                        )
+                                                    }
+                                                </span>
                                             </div>
-                                            {statement.validation_status?.validation_date && (<p className="text-xs text-muted-foreground mt-1">Last validated: {format(new Date(statement.validation_status.validation_date), 'PPpp')}{statement.validation_status.validated_by && (<span> by {statement.validation_status.validated_by}</span>)}</p>)}
+                                            {statement.validation_status?.validation_date && (
+                                                <p className="text-xs text-muted-foreground mt-1">
+                                                    Last validated: {format(new Date(statement.validation_status.validation_date), 'PPpp')}
+                                                    {statement.validation_status.validated_by && (
+                                                        <span> by {statement.validation_status.validated_by}</span>
+                                                    )}
+                                                </p>
+                                            )}
                                         </div>
-                                        <Button onClick={validateStatement} disabled={isValidating} variant={statement.validation_status?.is_validated ? 'outline' : 'default'} className="gap-2">
-                                            {isValidating ? <><Loader2 className="h-4 w-4 animate-spin" />Validating...</> : <><CheckCircle className="h-4 w-4" />{statement.validation_status?.is_validated ? 'Re-validate' : 'Validate Statement'}</>}
+                                        <Button
+                                            onClick={validateStatement}
+                                            disabled={isValidating}
+                                            variant={statement.validation_status?.is_validated ? 'outline' : 'default'}
+                                            className="gap-2"
+                                        >
+                                            {isValidating ?
+                                                <><Loader2 className="h-4 w-4 animate-spin" />Validating...</> :
+                                                <><CheckCircle className="h-4 w-4" />{statement.validation_status?.is_validated ? 'Re-validate' : 'Validate Statement'}</>
+                                            }
                                         </Button>
                                     </div>
                                     <div className="grid grid-cols-3 gap-4 text-sm">
-                                        <div className="space-y-1"><p className="text-muted-foreground">Document Type</p><p className="font-medium">{statement.statement_document?.document_type || 'Bank Statement'}</p></div>
-                                        <div className="space-y-1"><p className="text-muted-foreground">Document Size</p><p className="font-medium">{formatFileSize(statement.statement_document?.document_size || 0)}</p></div>
-                                        <div className="space-y-1"><p className="text-muted-foreground">Pages</p><p className="font-medium">{totalPages || 'N/A'}</p></div>
+                                        <div className="space-y-1">
+                                            <p className="text-muted-foreground">Document Type</p>
+                                            <p className="font-medium">{statement.statement_document?.document_type || 'Bank Statement'}</p>
+                                        </div>
+                                        <div className="space-y-1">
+                                            <p className="text-muted-foreground">Document Size</p>
+                                            <p className="font-medium">{formatFileSize(statement.statement_document?.document_size || 0)}</p>
+                                        </div>
+                                        <div className="space-y-1">
+                                            <p className="text-muted-foreground">Pages</p>
+                                            <p className="font-medium">{totalPages || 'N/A'}</p>
+                                        </div>
                                     </div>
                                     {statement.validation_status?.mismatches?.length > 0 && (
                                         <div className="mt-2 pt-4 border-t">
-                                            <div className="flex items-center justify-between mb-2"><h5 className="text-sm font-medium text-muted-foreground">Issues to resolve</h5><span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">{statement.validation_status.mismatches.length} issue{statement.validation_status.mismatches.length !== 1 ? 's' : ''}</span></div>
+                                            <div className="flex items-center justify-between mb-2">
+                                                <h5 className="text-sm font-medium text-muted-foreground">Issues to resolve</h5>
+                                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                                                    {statement.validation_status.mismatches.length} issue{statement.validation_status.mismatches.length !== 1 ? 's' : ''}
+                                                </span>
+                                            </div>
                                             <ul className="space-y-2">
                                                 {statement.validation_status.mismatches.map((issue, idx) => (
                                                     <li key={idx} className="flex items-start p-2 bg-red-50 rounded-md">
                                                         <XCircle className="h-4 w-4 text-red-500 mt-0.5 mr-2 flex-shrink-0" />
-                                                        <div><p className="text-sm font-medium text-red-800">{issue}</p></div>
+                                                        <div>
+                                                            <p className="text-sm font-medium text-red-800">{issue}</p>
+                                                        </div>
                                                     </li>
                                                 ))}
                                             </ul>
@@ -476,47 +1094,149 @@ export default function BankExtractionDialog({
                             </CardContent>
                         </Card>
                         <Card>
-                            <CardHeader className="py-3 bg-blue-50"><CardTitle className="text-base">Monthly Balances Summary</CardTitle></CardHeader>
+                            <CardHeader className="py-3 bg-blue-50">
+                                <CardTitle className="text-base">Monthly Balances Summary</CardTitle>
+                            </CardHeader>
                             <CardContent className="p-0">
                                 <Table>
-                                    <TableHeader className="bg-gray-50"><TableRow><TableHead>Period</TableHead><TableHead>Closing Balance</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
+                                    <TableHeader className="bg-gray-50">
+                                        <TableRow>
+                                            <TableHead>Period</TableHead>
+                                            <TableHead>Closing Balance</TableHead>
+                                            <TableHead>Status</TableHead>
+                                        </TableRow>
+                                    </TableHeader>
                                     <TableBody>
-                                        {statement.statement_extractions?.monthly_balances?.length > 0 ? (statement.statement_extractions.monthly_balances.sort((a, b) => a.year !== b.year ? a.year - b.year : a.month - b.month).map((balance, index) => (
-                                            <TableRow key={index} className={balance.month === statement.statement_month && balance.year === statement.statement_year ? "bg-blue-50" : ""}>
-                                                <TableCell>{format(new Date(balance.year, balance.month, 1), 'MMMM yyyy')}{balance.month === statement.statement_month && balance.year === statement.statement_year && (<Badge variant="outline" className="ml-2 bg-blue-50 text-blue-500 border-blue-200">Current</Badge>)}</TableCell>
-                                                <TableCell>{formatCurrency(balance.closing_balance, statement.statement_extractions?.currency || bank.bank_currency)}</TableCell>
-                                                <TableCell>{balance.is_verified ? (<Badge variant="outline" className="bg-green-50 text-green-700 border-green-300"><Check className="h-3 w-3 mr-1" />Verified</Badge>) : (<Button variant="outline" size="sm" className="h-7 text-xs bg-yellow-50 text-yellow-700 border-yellow-300 hover:bg-yellow-100" onClick={(e) => { e.stopPropagation(); verifyBalance(index); }}>Verify</Button>)}</TableCell>
+                                        {monthlyBalances.length > 0 ? (
+                                            monthlyBalances
+                                                .sort((a, b) => a.year !== b.year ? a.year - b.year : a.month - b.month)
+                                                .map((balance, index) => (
+                                                    <TableRow
+                                                        key={index}
+                                                        className={balance.month === statement.statement_month + 1 && balance.year === statement.statement_year ? "bg-blue-50" : ""}
+                                                    >
+                                                        <TableCell>
+                                                            {format(new Date(balance.year, balance.month - 1), 'MMMM yyyy')}
+                                                            {balance.month === statement.statement_month + 1 && balance.year === statement.statement_year && (
+                                                                <Badge variant="outline" className="ml-2 bg-blue-50 text-blue-500 border-blue-200">
+                                                                    Current
+                                                                </Badge>
+                                                            )}
+                                                        </TableCell>
+                                                        <TableCell>
+                                                            {formatCurrency(balance.closing_balance, statement.statement_extractions?.currency || bank.bank_currency)}
+                                                        </TableCell>
+                                                        <TableCell>
+                                                            {balance.is_verified ? (
+                                                                <Badge variant="outline" className="bg-green-50 text-green-700 border-green-300">
+                                                                    <Check className="h-3 w-3 mr-1" />Verified
+                                                                </Badge>
+                                                            ) : (
+                                                                <Button
+                                                                    variant="outline"
+                                                                    size="sm"
+                                                                    className="h-7 text-xs bg-yellow-50 text-yellow-700 border-yellow-300 hover:bg-yellow-100"
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        verifyBalance(index);
+                                                                    }}
+                                                                >
+                                                                    Verify
+                                                                </Button>
+                                                            )}
+                                                        </TableCell>
+                                                    </TableRow>
+                                                ))
+                                        ) : (
+                                            <TableRow>
+                                                <TableCell colSpan={3} className="text-center py-4 text-muted-foreground">
+                                                    No monthly balances added yet
+                                                </TableCell>
                                             </TableRow>
-                                        ))) : (<TableRow><TableCell colSpan={3} className="text-center py-4 text-muted-foreground">No monthly balances added yet</TableCell></TableRow>)}
+                                        )}
                                     </TableBody>
                                 </Table>
                             </CardContent>
                         </Card>
                         <Card>
-                            <CardHeader className="py-3 bg-blue-50"><CardTitle className="text-base">QuickBooks Reconciliation</CardTitle></CardHeader>
+                            <CardHeader className="py-3 bg-blue-50">
+                                <CardTitle className="text-base">QuickBooks Reconciliation</CardTitle>
+                            </CardHeader>
                             <CardContent className="py-4">
                                 <div className="grid grid-cols-2 gap-4">
-                                    <div className="p-3 bg-gray-50 rounded-md"><p className="text-sm text-muted-foreground mb-1">Bank Statement</p><p className="font-medium">{formatCurrency(statement.statement_extractions.closing_balance, statement.statement_extractions.currency || bank.bank_currency)}</p></div>
-                                    <div className="p-3 bg-gray-50 rounded-md"><p className="text-sm text-muted-foreground mb-1">QuickBooks</p><p className="font-medium">{formatCurrency(statement.quickbooks_balance, bank.bank_currency)}</p></div>
+                                    <div className="p-3 bg-gray-50 rounded-md">
+                                        <p className="text-sm text-muted-foreground mb-1">Bank Statement</p>
+                                        <p className="font-medium">
+                                            {formatCurrency(
+                                                statement.statement_extractions.closing_balance,
+                                                statement.statement_extractions.currency || bank.bank_currency
+                                            )}
+                                        </p>
+                                    </div>
+                                    <div className="p-3 bg-gray-50 rounded-md">
+                                        <p className="text-sm text-muted-foreground mb-1">QuickBooks</p>
+                                        <p className="font-medium">
+                                            {formatCurrency(statement.status?.quickbooks_balance, bank.bank_currency)}
+                                        </p>
+                                    </div>
                                 </div>
                             </CardContent>
                         </Card>
                     </TabsContent>
-
                 </Tabs>
+
                 <DialogFooter>
-                    <Button variant="outline" onClick={onClose} disabled={isSaving || isDeleting}>Close</Button>
+                    <Button variant="outline" onClick={onClose} disabled={isSaving || isDeleting}>
+                        Close
+                    </Button>
                     <Button onClick={handleSave} disabled={isSaving || isDeleting}>
-                        {isSaving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Saving...</> : <><Save className="mr-2 h-4 w-4" />Save All Changes</>}
+                        {isSaving ?
+                            <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Saving...</> :
+                            <><Save className="mr-2 h-4 w-4" />Save All Changes</>
+                        }
                     </Button>
                 </DialogFooter>
+
                 <AlertDialog open={showDeleteConfirmation} onOpenChange={setShowDeleteConfirmation}>
                     <AlertDialogContent>
-                        <AlertDialogHeader><AlertDialogTitle>Are you sure?</AlertDialogTitle><AlertDialogDescription>This will permanently delete the statement. This action cannot be undone.</AlertDialogDescription></AlertDialogHeader>
-                        <AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={confirmDelete} className="bg-red-600 hover:bg-red-700">Delete</AlertDialogAction></AlertDialogFooter>
+                        <AlertDialogHeader>
+                            <AlertDialogTitle>Delete Bank Statement</AlertDialogTitle>
+                            <AlertDialogDescription>
+                                {(() => {
+                                    const periodDates = parseStatementPeriod(formData.statementPeriod);
+                                    const isMultiMonth = periodDates && (
+                                        periodDates.startMonth !== periodDates.endMonth ||
+                                        periodDates.startYear !== periodDates.endYear
+                                    );
+
+                                    return (
+                                        <div className="space-y-2">
+                                            <p>Are you sure you want to delete this bank statement?</p>
+                                            {isMultiMonth && (
+                                                <div className="bg-amber-50 dark:bg-amber-950/20 p-3 rounded-md">
+                                                    <p className="text-sm text-amber-800 dark:text-amber-200">
+                                                        <AlertTriangle className="h-4 w-4 inline mr-1" />
+                                                        This is part of a multi-month statement. Only the entry for {format(new Date(statement.statement_year, statement.statement_month), 'MMMM yyyy')} will be deleted. The statement file will be preserved for other months.
+                                                    </p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })()}
+                            </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction
+                                onClick={confirmDeleteStatement}
+                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            >
+                                Delete
+                            </AlertDialogAction>
+                        </AlertDialogFooter>
                     </AlertDialogContent>
                 </AlertDialog>
-            </DialogContent>
-        </Dialog>
+            </DialogContent >
+        </Dialog >
     );
 }

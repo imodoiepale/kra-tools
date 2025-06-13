@@ -2,6 +2,7 @@
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
 import * as pdfjsLib from 'pdfjs-dist';
 import { API_KEYS } from './apiKeys';
+import { supabase } from "./supabase";
 
 // FIX: This is the critical line that resolves the "fake worker failed" error.
 // It must be at the top level of the file to configure pdf.js before it's used.
@@ -501,8 +502,8 @@ ${Object.entries(textResult.textByPage).map(([pageNum, text]) =>
             topK: 40,
             maxOutputTokens: 8192,
             thinkingConfig: {
-      thinkingBudget: 0,
-    },
+              thinkingBudget: 0,
+            },
           },
           safetySettings: [
             {
@@ -864,7 +865,7 @@ async function batchExtractDocuments(files, prompt) {
 }
 
 // Helper functions for multi-month statements
-function parseStatementPeriod(periodString) {
+export function parseStatementPeriod(periodString) {
   if (!periodString) return null;
 
   // Try to match various date formats
@@ -914,7 +915,7 @@ function parseStatementPeriod(periodString) {
 }
 
 // Helper function to generate month range from start to end
-function generateMonthRange(startMonth, startYear, endMonth, endYear) {
+export function generateMonthRange(startMonth, startYear, endMonth, endYear) {
   const months = [];
 
   for (let year = startYear; year <= endYear; year++) {
@@ -928,3 +929,61 @@ function generateMonthRange(startMonth, startYear, endMonth, endYear) {
 
   return months;
 }
+
+export const getOrCreateStatementCycle = async (month: number, year: number): Promise<string> => {
+  try {
+    const monthStr = (month + 1).toString().padStart(2, '0');
+    const monthYearStr = `${year}-${monthStr}`;
+
+    console.log('Finding or creating statement cycle for:', monthYearStr);
+
+    // 1. Try to find existing cycle
+    const { data: existingCycle, error: findError } = await supabase
+      .from('statement_cycles')
+      .select('id')
+      .eq('month_year', monthYearStr)
+      .maybeSingle();
+
+    if (findError && findError.code !== 'PGRST116') {
+      console.error('Error finding statement cycle:', findError);
+      throw findError;
+    }
+
+    if (existingCycle) {
+      console.log('Using existing cycle:', existingCycle.id);
+      return existingCycle.id;
+    }
+
+    // 2. Create new cycle if not found
+    console.log('Creating new statement cycle...');
+    const { data: newCycle, error: createError } = await supabase
+      .from('statement_cycles')
+      .insert({
+        month_year: monthYearStr,
+        status: 'active',
+        created_at: new Date().toISOString()
+      })
+      .select('id')
+      .single();
+
+    if (createError) {
+      console.error('Error creating statement cycle:', createError);
+      throw createError;
+    }
+
+    if (!newCycle) {
+      throw new Error('Failed to create new statement cycle');
+    }
+
+    console.log('Created new cycle:', newCycle.id);
+    return newCycle.id;
+  } catch (error) {
+    console.error('Error in getOrCreateStatementCycle:', {
+      error,
+      message: error.message,
+      month,
+      year
+    });
+    throw error;
+  }
+};

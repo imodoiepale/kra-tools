@@ -1356,27 +1356,37 @@ import {
         }
 
         // Helper function to get or create statement cycle
-        const getOrCreateStatementCycle = async (month, year) => {
+        const getOrCreateStatementCycle = async (month: number, year: number): Promise<string> => {
             try {
-                const monthStr = (month + 1).toString().padStart(2, '0'); // Correct 0-based to 1-based
+                // Input validation
+                if (month < 1 || month > 12) {
+                    throw new Error(`Invalid month: ${month}. Month must be between 1 and 12.`);
+                }
+
+                const monthStr = month.toString().padStart(2, '0');
                 const monthYearStr = `${year}-${monthStr}`;
 
-                // Try to find existing cycle
+                console.log(`[BulkUpload] Processing statement cycle for: ${monthYearStr}`);
+
+                // 1. Try to find existing cycle
                 const { data: existingCycle, error: findError } = await supabase
                     .from('statement_cycles')
                     .select('id')
                     .eq('month_year', monthYearStr)
-                    .maybeSingle(); // Use maybeSingle to prevent 406 errors
+                    .maybeSingle();
 
-                if (findError && findError.code !== 'PGRST116') throw findError;
+                if (findError && findError.code !== 'PGRST116') {
+                    console.error('Error finding statement cycle:', findError);
+                    throw findError;
+                }
 
                 if (existingCycle) {
-                    console.log(`Using existing cycle for ${monthYearStr}: ${existingCycle.id}`);
+                    console.log(`[BulkUpload] Using existing cycle: ${existingCycle.id}`);
                     return existingCycle.id;
                 }
 
-                // Create new cycle if not found
-                console.log(`Creating new cycle for ${monthYearStr}`);
+                // 2. Create new cycle if not found
+                console.log(`[BulkUpload] Creating new cycle for: ${monthYearStr}`);
                 const { data: newCycle, error: createError } = await supabase
                     .from('statement_cycles')
                     .insert({
@@ -1387,12 +1397,35 @@ import {
                     .select('id')
                     .single();
 
-                if (createError) throw createError;
+                // Handle race condition (another process created the cycle)
+                if (createError?.code === '23505') {
+                    console.log('[BulkUpload] Race condition detected, fetching existing cycle...');
+                    const { data: retryCycle } = await supabase
+                        .from('statement_cycles')
+                        .select('id')
+                        .eq('month_year', monthYearStr)
+                        .single();
 
-                console.log(`Created new cycle for ${monthYearStr}: ${newCycle.id}`);
+                    if (retryCycle) {
+                        return retryCycle.id;
+                    }
+                } else if (createError) {
+                    throw createError;
+                }
+
+                if (!newCycle) {
+                    throw new Error('Failed to create statement cycle: No data returned');
+                }
+
+                console.log(`[BulkUpload] Created new cycle: ${newCycle.id}`);
                 return newCycle.id;
             } catch (error) {
-                console.error('Error in getOrCreateStatementCycle:', error);
+                console.error('[BulkUpload] Error in getOrCreateStatementCycle:', {
+                    error,
+                    message: error.message,
+                    month,
+                    year
+                });
                 throw error;
             }
         };
