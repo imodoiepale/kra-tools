@@ -1189,7 +1189,9 @@ export default function BankExtractionDialog({
                         <AlertDialogHeader>
                             <AlertDialogTitle>Delete Bank Statement</AlertDialogTitle>
                             <AlertDialogDescription>
-                                {(() => {
+                                <div className="space-y-2">
+                                    <p>Are you sure you want to delete this bank statement?</p>
+                                    {(() => {
                                     const periodDates = parseStatementPeriod(formData.statementPeriod);
                                     const isMultiMonth = periodDates && (
                                         periodDates.startMonth !== periodDates.endMonth ||
@@ -1198,7 +1200,6 @@ export default function BankExtractionDialog({
 
                                     return (
                                         <div className="space-y-2">
-                                            <p>Are you sure you want to delete this bank statement?</p>
                                             {isMultiMonth && (
                                                 <div className="bg-amber-50 dark:bg-amber-950/20 p-3 rounded-md">
                                                     <p className="text-sm text-amber-800 dark:text-amber-200">
@@ -1210,6 +1211,7 @@ export default function BankExtractionDialog({
                                         </div>
                                     );
                                 })()}
+                                </div>
                             </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
