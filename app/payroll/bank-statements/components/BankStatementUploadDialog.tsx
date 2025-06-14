@@ -155,21 +155,25 @@ export function BankStatementUploadDialog({
 
             // Step 2: Determine Extracted Data (Avoid re-extraction if already provided)
             if (passedExtractedData) {
-                extractedData = { ...passedExtractedData }; // Use data passed from validation dialog
-            } else if (pdfPath) { // Only extract if there's a new PDF path or it's the initial upload
+                // Use the passed data from validation dialog
+                extractedData = { ...passedExtractedData };
+                console.log('Using passed extracted data:', extractedData);
+            } else if (pdfPath) {
+                // Only extract if there's a new PDF path
                 setStatusMessage('Extracting data...');
                 const fileUrl = supabase.storage.from('Statement-Cycle').getPublicUrl(pdfPath).data.publicUrl;
                 try {
                     const extraction = await performBankStatementExtraction(fileUrl, { month: cycleMonth, year: cycleYear });
                     if (!extraction.success) {
                         console.error('Extraction failed:', extraction.message);
-                        extractedData = {}; // Ensure it's an empty object even on failure
+                        extractedData = {};
                     } else {
                         extractedData = { ...extraction.extractedData };
+                        console.log('Extracted data from PDF:', extractedData);
                     }
                 } catch (extractionError) {
                     console.error("Error during extraction:", extractionError);
-                    extractedData = {}; // Ensure it's an empty object even on failure
+                    extractedData = {};
                 }
             } else {
                 throw new Error("No extracted data available and no PDF to extract from.");
@@ -260,7 +264,7 @@ export function BankStatementUploadDialog({
 
             for (const monthPeriod of targetMonths) {
                 // Get or create statement cycle for this month
-                const cycleIdForThisMonth = await getOrCreateStatementCycle(monthPeriod.month, monthPeriod.year);
+                const cycleIdForThisMonth = await getOrCreateStatementCycle(monthPeriod.year, monthPeriod.month - 1);
 
                 // Check if statement already exists
                 const { data: existingMonthStatement } = await supabase
@@ -521,6 +525,7 @@ export function BankStatementUploadDialog({
                 </DialogContent>
             </Dialog>
 
+            // In BankStatementUploadDialog.tsx - Fix the onProceed handler
             {showValidationDialog && validationResult && (
                 <BankValidationDialog
                     isOpen={showValidationDialog}
@@ -528,17 +533,25 @@ export function BankStatementUploadDialog({
                     bank={bank}
                     extractedData={validationResult.extractedData}
                     mismatches={validationResult.mismatches}
-                    onProceed={async (data) => { // <--- Changed signature to accept data
+                    onProceed={async (dataWithStatement) => {
                         setShowValidationDialog(false);
-                        await handleUpload(data); // <--- Pass the extracted data back
+                        // Fix: Pass the extracted data properly
+                        const result = await handleUpload(dataWithStatement);
+                        if (result && result.id) {
+                            onStatementUploaded(result);
+                            // Auto-open extraction dialog
+                            if (onOpenExtractionDialog) {
+                                setTimeout(() => {
+                                    onOpenExtractionDialog(result);
+                                }, 300);
+                            }
+                        }
                     }}
-                    onCancel={() => {
-                        setShowValidationDialog(false);
-                        setIsProcessing(false);
-                    }}
+                    onCancel={() => setShowValidationDialog(false)}
                     cycleMonth={cycleMonth}
                     cycleYear={cycleYear}
                     statementId={existingStatement?.id}
+                    onOpenExtractionDialog={onOpenExtractionDialog}
                 />
             )}
         </>

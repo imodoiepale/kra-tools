@@ -132,6 +132,7 @@ export function BankReconciliationTable({
     const { loading, getOrCreateStatementCycle, fetchCoreData, deleteStatement } = useStatementCycle();
     const { toast } = useToast();
 
+    // --- State Variables (Make sure all these are present) ---
     const [companies, setCompanies] = useState<Company[]>([]);
     const [allBanks, setAllBanks] = useState<Bank[]>([]);
     const [bankStatements, setBankStatements] = useState<BankStatement[]>([]);
@@ -140,16 +141,32 @@ export function BankReconciliationTable({
     const [activeBank, setActiveBank] = useState<Bank | null>(null);
     const [activeStatement, setActiveStatement] = useState<BankStatement | null>(null);
 
+    // FIX: Make sure these dialog state variables are defined
     const [uploadDialogOpen, setUploadDialogOpen] = useState<boolean>(false);
     const [extractionDialogOpen, setExtractionDialogOpen] = useState<boolean>(false);
     const [quickbooksDialogOpen, setQuickbooksDialogOpen] = useState<boolean>(false);
     const [deleteConfirmationOpen, setDeleteConfirmationOpen] = useState<boolean>(false);
 
+    // In BankReconciliationTable.tsx - Fix the refreshData function
     const refreshData = useCallback(async () => {
+        console.log('Refreshing data for year:', selectedYear, 'month:', selectedMonth);
+
+        // FIX: Ensure correct parameter order (year, month where month is 0-indexed)
         const cycleId = await getOrCreateStatementCycle(selectedYear, selectedMonth);
         if (cycleId) {
+            console.log('Got cycle ID:', cycleId);
             setStatementCycleId(cycleId);
             const { companies, banks, statements } = await fetchCoreData(cycleId);
+
+            console.log('Fetched data:', {
+                companies: companies.length,
+                banks: banks.length,
+                statements: statements.length,
+                selectedMonth,
+                selectedYear,
+                cycleId
+            });
+
             setCompanies(companies);
             setAllBanks(banks);
             setBankStatements(statements);
@@ -161,6 +178,17 @@ export function BankReconciliationTable({
         refreshData();
     }, [selectedYear, selectedMonth, refreshData]);
 
+    // In BankReconciliationTable.tsx - Add debug logging
+useEffect(() => {
+    console.log('BankReconciliationTable state:', {
+        uploadDialogOpen,
+        extractionDialogOpen,
+        quickbooksDialogOpen,
+        activeBank: activeBank?.bank_name,
+        activeStatement: activeStatement?.id
+    });
+
+}, [uploadDialogOpen, extractionDialogOpen, quickbooksDialogOpen, activeBank, activeStatement]);
     const filteredCompanies = useMemo(() => {
         if (!selectedClientTypes || selectedClientTypes.length === 0) {
             return companies;
@@ -258,34 +286,29 @@ export function BankReconciliationTable({
         );
     }, [bankStatements, selectedStatementStatuses]);
 
-    const handleOpenDialog = async (type: 'upload' | 'view' | 'qb' | 'delete', bank: Bank) => {
-        // Find statement for the *currently selected month/year* in the table
-        const currentStatementForPeriod = bankStatements.find(s =>
-            s.bank_id === bank.id &&
-            s.statement_month === selectedMonth &&
-            s.statement_year === selectedYear
-        ) || null;
-
-        // For 'upload', if there's no statement for the current period but others exist, prompt user
-        if (type === 'upload' && !currentStatementForPeriod && bankStatements.some(s => s.bank_id === bank.id)) {
-            const confirmUpload = window.confirm(
-                `This bank already has statements for other periods. ` +
-                `Do you want to upload a new statement for ${format(new Date(selectedYear, selectedMonth, 1), 'MMMM yyyy')}? ` +
-                `This will create a new entry if one doesn't exist for this month, or replace it if it does.`
-            );
-            if (!confirmUpload) return;
-        }
+    // In BankReconciliationTable.tsx - Fix the handleOpenDialog function
+    const handleOpenDialog = (dialogType: string, bank: Bank) => {
+        const currentStatementForPeriod = bankStatements.find(
+            s => s.bank_id === bank.id && s.statement_month === selectedMonth && s.statement_year === selectedYear
+        );
 
         setActiveBank(bank);
-        setActiveStatement(currentStatementForPeriod); // Pass the statement for the current selected period
+        setActiveStatement(currentStatementForPeriod || null);
 
-        switch (type) {
+        switch (dialogType) {
             case 'upload':
                 setUploadDialogOpen(true);
                 break;
-            case 'view':
-                if (currentStatementForPeriod) setExtractionDialogOpen(true);
-                else toast({ title: "No Statement", description: "No statement found for this period. Please upload one first." });
+            case 'view': 
+            case 'extract':
+                if (currentStatementForPeriod) {
+                    setExtractionDialogOpen(true); // FIX: Use setExtractionDialogOpen, not setShowExtractionDialog
+                } else {
+                    toast({
+                        title: "No Statement",
+                        description: "No statement found for this period to extract."
+                    });
+                }
                 break;
             case 'qb':
                 if (currentStatementForPeriod) {
@@ -293,23 +316,33 @@ export function BankReconciliationTable({
                 } else {
                     toast({
                         title: "No Statement",
-                        description: "Upload a statement first to add a QuickBooks balance."
+                        description: "No statement found for this period to update QB balance."
                     });
                 }
                 break;
             case 'delete':
-                if (currentStatementForPeriod) setDeleteConfirmationOpen(true);
-                else toast({ title: "No Statement", description: "No statement found for this period to delete." });
+                if (currentStatementForPeriod) {
+                    setDeleteConfirmationOpen(true);
+                } else {
+                    toast({
+                        title: "No Statement",
+                        description: "No statement found for this period to delete."
+                    });
+                }
                 break;
         }
     };
 
-    const handleDialogClose = () => {
+    // In BankReconciliationTable.tsx - Fix the handleDialogClose function
+    const handleDialogClose = useCallback(() => {
         setUploadDialogOpen(false);
+        setExtractionDialogOpen(false); // FIX: Make sure this matches your state variable name
         setQuickbooksDialogOpen(false);
-        setExtractionDialogOpen(false);
+        setDeleteConfirmationOpen(false);
+        setActiveBank(null);
+        setActiveStatement(null);
         refreshData(); // Refresh data after any dialog closes
-    };
+    }, [refreshData]);
 
     const confirmDelete = async () => {
         if (!activeStatement) return;
@@ -370,7 +403,17 @@ export function BankReconciliationTable({
             })
         })).filter(company => company.banks.length > 0); // Remove companies that have no matching banks after filtering
     }, [searchFilteredData, statusFilteredStatements, selectedMonth, selectedYear, selectedStatementStatuses]);
+    
+    const handleStatementUpdated = useCallback((updatedStatement: BankStatement | null) => {
+        console.log('Statement updated callback received:', updatedStatement);
 
+        // Update your local state
+        if (updatedStatement) {
+            // Refresh the statements list or update the specific statement
+            // This depends on your parent component's state management
+            fetchStatements(); // or whatever method you use to refresh data
+        }
+    }, []);
 
     return (
         <div className="space-y-4">
@@ -499,33 +542,69 @@ export function BankReconciliationTable({
                 </Table>
             </div>
 
+            // In BankReconciliationTable.tsx - Fix the upload dialog
             {uploadDialogOpen && activeBank && (
                 <BankStatementUploadDialog
                     isOpen={uploadDialogOpen}
                     onClose={() => setUploadDialogOpen(false)}
-                    // When onStatementUploaded is called, it means a statement for the *current selected month* was processed
                     onStatementUploaded={(statement) => {
-                        setActiveStatement(statement); // Set this as the active statement
-                        setUploadDialogOpen(false); // Close upload dialog
-                        setExtractionDialogOpen(true); // Open extraction dialog for this new/updated statement
-                        refreshData(); // Refresh overall table data
+                        console.log('Statement uploaded:', statement);
+                        setActiveStatement(statement);
+                        setUploadDialogOpen(false);
+                        setExtractionDialogOpen(true); // FIX: Use setExtractionDialogOpen
+                        refreshData();
                     }}
                     bank={activeBank}
                     cycleMonth={selectedMonth}
                     cycleYear={selectedYear}
                     existingStatement={activeStatement}
                     statementCycleId={statementCycleId}
+                    onOpenExtractionDialog={(statement) => {
+                        console.log('Auto-opening extraction dialog for:', statement);
+                        setActiveStatement(statement);
+                        setExtractionDialogOpen(true); // FIX: Use setExtractionDialogOpen
+                    }}
                 />
             )}
+
             {extractionDialogOpen && activeBank && activeStatement && (
                 <BankExtractionDialog
                     isOpen={extractionDialogOpen}
-                    onClose={handleDialogClose} // Use the combined close handler
-                    onStatementUpdated={handleDialogClose} // Use the combined close handler
+                    onClose={() => {
+                        console.log('Closing extraction dialog');
+                        setExtractionDialogOpen(false);
+                        setActiveStatement(null);
+                        setActiveBank(null);
+                        // Force refresh after a brief delay
+                        setTimeout(() => {
+                            refreshData();
+                        }, 100);
+                    }}
+                    onStatementUpdated={(updatedStatement) => {
+                        console.log('Statement updated in extraction dialog:', updatedStatement);
+                        setExtractionDialogOpen(false);
+                        setActiveStatement(null);
+                        setActiveBank(null);
+                        // Force refresh after a brief delay
+                        setTimeout(() => {
+                            refreshData();
+                        }, 100);
+                    }}
+                    onStatementDeleted={(statementId) => {
+                        console.log('Statement deleted:', statementId);
+                        setExtractionDialogOpen(false);
+                        setActiveStatement(null);
+                        setActiveBank(null);
+                        // Force refresh after a brief delay
+                        setTimeout(() => {
+                            refreshData();
+                        }, 100);
+                    }}
                     bank={activeBank}
                     statement={activeStatement}
                 />
             )}
+
             {quickbooksDialogOpen && activeBank && activeStatement && (
                 <QuickbooksBalanceDialog
                     isOpen={quickbooksDialogOpen}

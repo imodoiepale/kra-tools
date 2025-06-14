@@ -1,7 +1,7 @@
 // @ts-nocheck
 "use client"
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
@@ -30,7 +30,7 @@ import {
     generateCompleteMonthRange
 } from '@/lib/bankExtractionUtils';
 import { useStatementCycle } from '@/app/payroll/hooks/useStatementCycle';
-import { AlertTriangle, Trash, Loader2 } from 'lucide-react';
+import { AlertTriangle, Trash,Plus,X, Loader2,CheckCircle,Check,Calendar,XCircle,Save } from 'lucide-react';
 
 // --- Interface Definitions ---
 
@@ -137,12 +137,42 @@ export default function BankExtractionDialog({
     const [error, setError] = useState<Error | null>(null);
     const totalPages = statement.statement_extractions?.total_pages || 0;
 
+    const [showUpdateConfirmation, setShowUpdateConfirmation] = useState(false);
+    const [pendingUpdates, setPendingUpdates] = useState<{
+        type: 'single-month' | 'multi-month';
+        monthsInRange?: any[];
+        cycleIds?: string[];
+        extractionData: any;
+        validationStatus: any;
+        monthlyBalances: MonthlyBalance[];
+        statementId?: string;
+    } | null>(null);
+    
     // --- Effects ---
     useEffect(() => {
         if (isOpen) {
             setError(null);
         }
     }, [isOpen]);
+
+    // In BankExtractionDialog.tsx - Add at the top of the component
+    useEffect(() => {
+        console.log('BankExtractionDialog - Props received:', {
+            isOpen,
+            statement: statement ? {
+                id: statement.id,
+                extractions: statement.statement_extractions
+            } : null,
+            bank
+        });
+    }, [isOpen, statement, bank]);
+
+    const parsedPeriod = useMemo(() => {
+        if (formData.statementPeriod) {
+            return parseStatementPeriod(formData.statementPeriod);
+        }
+        return null;
+    }, [formData.statementPeriod]);
 
     const loadPdfDocument = useCallback(async () => {
         if (!statement?.statement_document?.statement_pdf) {
@@ -216,57 +246,58 @@ export default function BankExtractionDialog({
     useEffect(() => {
         if (isOpen && statement) {
             setIsLoading(true);
+
+            const extractions = statement.statement_extractions || {};
+
             setFormData({
-                bank_name: statement.statement_extractions?.bank_name || '',
-                account_number: statement.statement_extractions?.account_number || '',
-                currency: statement.statement_extractions?.currency || '',
-                statementPeriod: statement.statement_extractions?.statement_period || '',
-                quickbooks_balance: statement.status?.quickbooks_balance ?? null,
+                bank_name: extractions.bank_name || '',
+                account_number: extractions.account_number || '',
+                currency: extractions.currency || '',
+                statementPeriod: extractions.statement_period || ''
             });
 
-            const extractedMonthlyBalances = statement.statement_extractions?.monthly_balances || [];
-            const statementPeriodString = statement.statement_extractions?.statement_period;
+            // Initialize monthly balances ONCE
+            const initializeMonthlyBalances = () => {
+                const extractedMonthlyBalances = extractions.monthly_balances || [];
+                const statementPeriodString = extractions.statement_period;
 
-            let compiledMonthlyBalances: MonthlyBalance[] = [];
+                let compiledMonthlyBalances: MonthlyBalance[] = [];
 
-            if (statementPeriodString) {
-                const period = parseStatementPeriod(statementPeriodString);
-                if (period) {
-                    const allMonthsInPeriod = generateMonthRange(
-                        period.startMonth,
-                        period.startYear,
-                        period.endMonth,
-                        period.endYear
-                    );
-
-                    compiledMonthlyBalances = allMonthsInPeriod.map(monthInPeriod => {
-                        const foundBalance = extractedMonthlyBalances.find(
-                            eb => eb.month === monthInPeriod.month && eb.year === monthInPeriod.year
+                if (statementPeriodString) {
+                    const period = parseStatementPeriod(statementPeriodString);
+                    if (period) {
+                        const allMonthsInPeriod = generateMonthRange(
+                            period.startMonth,
+                            period.startYear,
+                            period.endMonth,
+                            period.endYear
                         );
 
-                        return foundBalance || {
-                            month: monthInPeriod.month,
-                            year: monthInPeriod.year,
-                            closing_balance: null,
-                            opening_balance: null,
-                            statement_page: 0,
-                            closing_date: null,
-                            is_verified: false,
-                            verified_by: null,
-                            verified_at: null,
-                            highlight_coordinates: null,
-                        };
-                    });
-                }
-            } else {
-                if (extractedMonthlyBalances.length > 0) {
-                    compiledMonthlyBalances = extractedMonthlyBalances;
-                } else if (statement.statement_month !== undefined && statement.statement_year !== undefined) {
+                        compiledMonthlyBalances = allMonthsInPeriod.map(monthInPeriod => {
+                            const foundBalance = extractedMonthlyBalances.find(
+                                eb => eb.month === monthInPeriod.month && eb.year === monthInPeriod.year
+                            );
+
+                            return foundBalance || {
+                                month: monthInPeriod.month,
+                                year: monthInPeriod.year,
+                                closing_balance: null,
+                                qb_balance: null, // FIXED: Add qb_balance field
+                                statement_page: 0,
+                                closing_date: null,
+                                is_verified: false,
+                                verified_by: null,
+                                verified_at: null,
+                                highlight_coordinates: null,
+                            };
+                        });
+                    }
+                } else {
+                    // Single month fallback
                     compiledMonthlyBalances = [{
                         month: statement.statement_month + 1,
                         year: statement.statement_year,
-                        closing_balance: null,
-                        opening_balance: null,
+                        closing_balance: extractions.closing_balance || null,
                         statement_page: 0,
                         closing_date: null,
                         is_verified: false,
@@ -275,24 +306,26 @@ export default function BankExtractionDialog({
                         highlight_coordinates: null,
                     }];
                 }
-            }
 
-            setMonthlyBalances(compiledMonthlyBalances);
+                setMonthlyBalances(compiledMonthlyBalances);
+            };
+
+            initializeMonthlyBalances();
             loadPdfDocument();
         } else {
             setPdfUrl(null);
         }
-    }, [isOpen, statement, loadPdfDocument]);
+    }, [isOpen, statement]);
 
     // Automatically handle range data when statement period changes
-    useEffect(() => {
-        if (statement?.statement_extractions?.statement_period && isOpen) {
-            const timer = setTimeout(() => {
-                handleStatementRangeData();
-            }, 500);
-            return () => clearTimeout(timer);
-        }
-    }, [statement?.statement_extractions?.statement_period, isOpen, handleStatementRangeData]);
+    // useEffect(() => {
+    //     if (statement?.statement_extractions?.statement_period && isOpen) {
+    //         const timer = setTimeout(() => {
+    //             handleStatementRangeData();
+    //         }, 500);
+    //         return () => clearTimeout(timer);
+    //     }
+    // }, [statement?.statement_extractions?.statement_period, isOpen, handleStatementRangeData]);
 
     // --- Helper Functions ---
     const normalizeCurrencyCode = (code: string | null | undefined): string => {
@@ -392,13 +425,14 @@ export default function BankExtractionDialog({
         }
     };
 
+    // In BankExtractionDialog.tsx - Fix verifyBalance function
     const verifyBalance = async (balanceIndex: number): Promise<void> => {
         if (!monthlyBalances[balanceIndex]) return;
 
         setError(null);
-        const updatedBalances = [...monthlyBalances];
-
         try {
+            // Update local state first
+            const updatedBalances = [...monthlyBalances];
             updatedBalances[balanceIndex] = {
                 ...updatedBalances[balanceIndex],
                 is_verified: true,
@@ -406,6 +440,10 @@ export default function BankExtractionDialog({
                 verified_at: new Date().toISOString()
             };
 
+            // Update state immediately for UI responsiveness
+            setMonthlyBalances(updatedBalances);
+
+            // Update database
             const updatedExtractions = {
                 ...statement.statement_extractions,
                 monthly_balances: updatedBalances
@@ -418,9 +456,12 @@ export default function BankExtractionDialog({
                 .select()
                 .single();
 
-            if (error) throw error;
+            if (error) {
+                // Revert local state on error
+                setMonthlyBalances(monthlyBalances);
+                throw error;
+            }
 
-            setMonthlyBalances(updatedBalances);
             onStatementUpdated(data);
 
             toast({
@@ -430,7 +471,11 @@ export default function BankExtractionDialog({
         } catch (err) {
             const error = err instanceof Error ? err : new Error('Failed to verify balance');
             setError(error);
-            toast({ title: 'Verification Failed', description: error.message, variant: 'destructive' });
+            toast({
+                title: 'Verification Failed',
+                description: error.message,
+                variant: 'destructive'
+            });
         }
     };
 
@@ -440,15 +485,16 @@ export default function BankExtractionDialog({
         setFormData(prev => ({ ...prev, [name]: value }));
     };
 
+    // In BankExtractionDialog.tsx - Remove qb_balance handling
     const handleUpdateBalance = (index: number, field: string, value: string) => {
         const newBalances = [...monthlyBalances];
         const rawValue = String(value).replace(/,/g, '');
         newBalances[index] = {
             ...newBalances[index],
-            [field]: (field === 'closing_balance' || field === 'opening_balance')
+            [field]: field === 'closing_balance'
                 ? (rawValue ? parseFloat(rawValue) : null)
                 : value,
-            is_verified: false
+            is_verified: false // Reset verification when edited
         };
         setMonthlyBalances(newBalances);
     };
@@ -487,169 +533,247 @@ export default function BankExtractionDialog({
     };
 
     const handleSave = async () => {
+        if (!statement || !bank) {
+            toast({
+                title: 'Error',
+                description: 'Missing required data to save statement',
+                variant: 'destructive'
+            });
+            return;
+        }
+
         setIsSaving(true);
+
         try {
-            // Parse the statement period to check if it's a multi-month statement
+            console.log('Starting save operation...');
+
+            // Parse statement period to determine if this is multi-month
             const periodDates = parseStatementPeriod(formData.statementPeriod);
             const isMultiMonth = periodDates && (
                 periodDates.startMonth !== periodDates.endMonth ||
                 periodDates.startYear !== periodDates.endYear
             );
 
+            console.log('Save operation details:', {
+                isMultiMonth,
+                periodDates,
+                statementPeriod: formData.statementPeriod,
+                monthlyBalancesCount: monthlyBalances.length
+            });
+
+            // Prepare complete extraction data
+            const completeExtractionData = {
+                bank_name: formData.bank_name || null,
+                account_number: formData.account_number || null,
+                currency: formData.currency || null,
+                statement_period: formData.statementPeriod || null,
+                opening_balance: statement.statement_extractions?.opening_balance || null,
+                closing_balance: monthlyBalances[0]?.closing_balance || null,
+                monthly_balances: monthlyBalances,
+                total_pages: statement.statement_extractions?.total_pages || 0
+            };
+
+            // Prepare validation status
+            const validationStatus = {
+                is_validated: true,
+                validation_date: new Date().toISOString(),
+                validated_by: 'current_user_id',
+                mismatches: []
+            };
+
             if (isMultiMonth && periodDates) {
-                // Handle multi-month submission
+                console.log('Processing multi-month statement...');
+
+                // Generate all months in the range
                 const { startMonth, startYear, endMonth, endYear } = periodDates;
                 const monthsInRange = generateMonthRange(startMonth, startYear, endMonth, endYear);
 
-                let successCount = 0;
-                let errorCount = 0;
+                console.log('Months in range:', monthsInRange);
 
-                for (const { month, year } of monthsInRange) {
-                    try {
-                        // Get or create statement cycle for this month
-                        const cycleId = await getOrCreateStatementCycle(month, year);
+                // Create statement cycles for all months
+                const cyclePromises = monthsInRange.map(({ month, year }) =>
+                    getOrCreateStatementCycle(year, month - 1) // Convert to 0-indexed
+                );
 
-                        // Find the specific monthly balance
-                        const monthBalance = monthlyBalances.find(
-                            b => b.month === month && b.year === year
-                        ) || {
-                            month,
-                            year,
-                            opening_balance: null,
-                            closing_balance: null,
-                            statement_page: 1,
-                            is_verified: false,
-                            verified_by: null,
-                            verified_at: null
-                        };
+                const cycleIds = await Promise.all(cyclePromises);
+                console.log('Created/retrieved cycle IDs:', cycleIds);
 
-                        // Check if statement already exists
-                        const { data: existingStatement } = await supabase
-                            .from('acc_cycle_bank_statements')
-                            .select('id')
-                            .eq('bank_id', bank.id)
-                            .eq('statement_month', month - 1) // Convert to 0-indexed
-                            .eq('statement_year', year)
-                            .single();
+                // Check for existing statements before proceeding
+                const existingStatementsPromises = monthsInRange.map(({ month, year }) =>
+                    supabase
+                        .from('acc_cycle_bank_statements')
+                        .select('id, statement_month, statement_year')
+                        .eq('bank_id', bank.id)
+                        .eq('statement_month', month - 1)
+                        .eq('statement_year', year)
+                        .maybeSingle()
+                );
 
-                        // Prepare statement data
-                        const statementData = {
-                            bank_id: bank.id,
-                            company_id: bank.company_id,
-                            statement_month: month - 1, // Convert to 0-indexed
-                            statement_year: year,
-                            statement_document: statement.statement_document,
-                            statement_extractions: {
-                                bank_name: formData.bank_name || null,
-                                account_number: formData.account_number || null,
-                                currency: formData.currency || null,
-                                statement_period: formData.statementPeriod,
-                                opening_balance: monthBalance.opening_balance,
-                                closing_balance: monthBalance.closing_balance,
-                                monthly_balances: monthlyBalances // Store all balances for reference
-                            },
-                            validation_status: {
-                                is_validated: true,
-                                validation_date: new Date().toISOString(),
-                                validated_by: 'current_user', // TODO: Replace with actual user
-                                mismatches: []
-                            },
-                            status: {
-                                status: 'validated',
-                                verification_date: new Date().toISOString(),
-                                assigned_to: null,
-                                quickbooks_balance: formData.quickbooks_balance
-                            },
-                            has_soft_copy: true,
-                            has_hard_copy: false
-                        };
+                const existingResults = await Promise.all(existingStatementsPromises);
+                const hasExistingStatements = existingResults.some(result => result.data !== null);
 
-                        if (existingStatement) {
-                            // Update existing statement
-                            const { error: updateError } = await supabase
-                                .from('acc_cycle_bank_statements')
-                                .update(statementData)
-                                .eq('id', existingStatement.id);
+                if (hasExistingStatements) {
+                    console.log('Found existing statements, showing confirmation...');
+                    setPendingUpdates({
+                        type: 'multi-month',
+                        monthsInRange,
+                        cycleIds,
+                        extractionData: completeExtractionData,
+                        validationStatus,
+                        monthlyBalances
+                    });
+                    setShowUpdateConfirmation(true);
+                    return;
+                }
 
-                            if (updateError) throw updateError;
-                        } else {
-                            // Insert new statement
-                            const { error: insertError } = await supabase
-                                .from('acc_cycle_bank_statements')
-                                .insert({
-                                    ...statementData,
-                                    statement_cycle_id: cycleId
-                                });
+                // Process each month
+                const insertPromises = monthsInRange.map(async ({ month, year }, index) => {
+                    const cycleId = cycleIds[index];
 
-                            if (insertError) throw insertError;
-                        }
-
-                        successCount++;
-                    } catch (error) {
-                        console.error(`Error saving statement for ${month}/${year}:`, error);
-                        errorCount++;
+                    if (!cycleId) {
+                        console.error(`No cycle ID for ${month}/${year}`);
+                        return null;
                     }
+
+                    // Find balance for this specific month
+                    const monthBalance = monthlyBalances.find(
+                        b => b.month === month && b.year === year
+                    ) || {
+                        month,
+                        year,
+                        closing_balance: null,
+                        opening_balance: null,
+                        statement_page: 1,
+                        closing_date: null,
+                        is_verified: false,
+                        verified_by: null,
+                        verified_at: null
+                    };
+
+                    // Create individual statement data for this month
+                    const individualStatementData = {
+                        bank_id: bank.id,
+                        company_id: bank.company_id,
+                        statement_cycle_id: cycleId,
+                        statement_month: month - 1, // Convert to 0-indexed
+                        statement_year: year,
+                        statement_document: statement.statement_document,
+                        statement_extractions: {
+                            ...completeExtractionData,
+                            monthly_balances: [monthBalance],
+                            closing_balance: monthBalance.closing_balance,
+                            opening_balance: monthBalance.opening_balance
+                        },
+                        has_soft_copy: statement.has_soft_copy || false,
+                        has_hard_copy: statement.has_hard_copy || false,
+                        validation_status: validationStatus,
+                        status: {
+                            status: 'validated',
+                            verification_date: new Date().toISOString(),
+                            assigned_to: statement.status?.assigned_to || null,
+                            quickbooks_balance: null
+                        }
+                    };
+
+                    return supabase
+                        .from('acc_cycle_bank_statements')
+                        .insert(individualStatementData)
+                        .select()
+                        .single();
+                });
+
+                const results = await Promise.all(insertPromises);
+                const successfulInserts = results.filter(result => result && !result.error);
+                const errorInserts = results.filter(result => result && result.error);
+
+                if (errorInserts.length > 0) {
+                    console.error('Some inserts failed:', errorInserts);
+                    throw new Error(`Failed to create ${errorInserts.length} statement records`);
                 }
 
-                // Show result
-                if (errorCount === 0) {
-                    toast({
-                        title: 'Success',
-                        description: `Saved ${successCount} monthly statements successfully`
-                    });
-                } else {
-                    toast({
-                        title: 'Partial Success',
-                        description: `Saved ${successCount} statements, ${errorCount} failed`,
-                        variant: 'default'
-                    });
+                // Delete the original combined statement if it exists
+                if (statement.id) {
+                    console.log('Deleting original combined statement:', statement.id);
+                    await supabase
+                        .from('acc_cycle_bank_statements')
+                        .delete()
+                        .eq('id', statement.id);
                 }
+
+                console.log(`Successfully created ${successfulInserts.length} individual statement records`);
+
+                toast({
+                    title: 'Success',
+                    description: `Successfully created ${successfulInserts.length} individual statement records`,
+                    variant: 'default'
+                });
 
             } else {
-                // Handle single month submission
-                const updatedExtractions = {
-                    ...statement.statement_extractions,
-                    bank_name: formData.bank_name,
-                    account_number: formData.account_number,
-                    currency: formData.currency,
-                    statement_period: formData.statementPeriod,
-                    monthly_balances: monthlyBalances
-                };
+                console.log('Processing single-month statement...');
 
-                const updatedStatus = {
-                    ...statement.status,
-                    quickbooks_balance: formData.quickbooks_balance !== null
-                        ? parseFloat(String(formData.quickbooks_balance))
-                        : null
-                };
-
-                const { data, error } = await supabase
+                // Check if statement already exists
+                const { data: existingStatement } = await supabase
                     .from('acc_cycle_bank_statements')
-                    .update({
-                        statement_extractions: updatedExtractions,
-                        status: updatedStatus
-                    })
+                    .select('id')
                     .eq('id', statement.id)
-                    .select('*')
                     .single();
 
-                if (error) throw error;
+                if (existingStatement) {
+                    console.log('Found existing single statement, showing confirmation...');
+                    setPendingUpdates({
+                        type: 'single-month',
+                        extractionData: completeExtractionData,
+                        validationStatus,
+                        monthlyBalances,
+                        statementId: statement.id
+                    });
+                    setShowUpdateConfirmation(true);
+                    return;
+                }
+
+                // Update the existing statement
+                const updatedStatus = {
+                    ...statement.status,
+                    status: 'validated',
+                    verification_date: new Date().toISOString(),
+                    quickbooks_balance: monthlyBalances[0]?.quickbooks_balance || statement.status?.quickbooks_balance || null
+                };
+
+                const { data: updatedStatement, error } = await supabase
+                    .from('acc_cycle_bank_statements')
+                    .update({
+                        statement_extractions: completeExtractionData,
+                        status: updatedStatus,
+                        validation_status: validationStatus
+                    })
+                    .eq('id', statement.id)
+                    .select()
+                    .single();
+
+                if (error) {
+                    console.error('Single month update error:', error);
+                    throw error;
+                }
+
+                console.log('Successfully updated single statement:', updatedStatement.id);
 
                 toast({
                     title: 'Success',
                     description: 'Statement data saved successfully'
                 });
 
-                onStatementUpdated(data);
+                // Update parent component
+                onStatementUpdated(updatedStatement);
             }
 
+            // Close dialog
             onClose();
 
-        } catch (error: any) {
-            console.error('Save error:', error);
+        } catch (error) {
+            console.error('Save operation failed:', error);
             toast({
                 title: 'Save Error',
-                description: error.message || 'Failed to save statement data',
+                description: `Failed to save statement data: ${error.message}`,
                 variant: 'destructive'
             });
         } finally {
@@ -657,8 +781,90 @@ export default function BankExtractionDialog({
         }
     };
 
-    const handleDeleteStatement = () => {
-        setShowDeleteConfirmation(true);
+    const handleDeleteStatement = async () => {
+        try {
+            setIsDeleting(true);
+
+            // Parse statement period to check if it's a range statement
+            const periodDates = parseStatementPeriod(formData.statementPeriod);
+            const isMultiMonth = periodDates && (
+                periodDates.startMonth !== periodDates.endMonth ||
+                periodDates.startYear !== periodDates.endYear
+            );
+
+            if (isMultiMonth && periodDates) {
+                // For range statements, ask user which periods to delete
+                const { startMonth, startYear, endMonth, endYear } = periodDates;
+                const monthsInRange = generateMonthRange(startMonth, startYear, endMonth, endYear);
+
+                const confirmed = window.confirm(
+                    `This statement covers ${monthsInRange.length} months. Do you want to delete the entry for all these months? The statement file will be preserved.`
+                );
+
+                if (!confirmed) return;
+
+                // Delete entries for all months in range
+                let deletedCount = 0;
+                for (const { month, year } of monthsInRange) {
+                    try {
+                        const { error: deleteError } = await supabase
+                            .from('acc_cycle_bank_statements')
+                            .delete()
+                            .eq('bank_id', bank.id)
+                            .eq('statement_month', month - 1) // Convert to 0-indexed
+                            .eq('statement_year', year);
+
+                        if (!deleteError) {
+                            deletedCount++;
+                        }
+                    } catch (monthDeleteError) {
+                        console.error(`Error deleting statement for ${month}/${year}:`, monthDeleteError);
+                    }
+                }
+
+                if (deletedCount > 0) {
+                    toast({
+                        title: 'Success',
+                        description: `Deleted statement entries for ${deletedCount} month(s). Statement file preserved.`
+                    });
+                    onStatementDeleted(statement.id);
+                    onClose();
+                } else {
+                    throw new Error('Failed to delete any statement entries');
+                }
+            } else {
+                // Single month deletion - only delete the database entry
+                const confirmed = window.confirm(
+                    'Are you sure you want to delete this statement entry? The statement file will be preserved for other periods that may reference it.'
+                );
+
+                if (!confirmed) return;
+
+                const { error: deleteError } = await supabase
+                    .from('acc_cycle_bank_statements')
+                    .delete()
+                    .eq('id', statement.id);
+
+                if (deleteError) throw deleteError;
+
+                toast({
+                    title: 'Success',
+                    description: 'Statement entry deleted. File preserved.'
+                });
+
+                onStatementDeleted(statement.id);
+                onClose();
+            }
+        } catch (error) {
+            console.error('Delete error:', error);
+            toast({
+                title: 'Delete Error',
+                description: 'Failed to delete statement entry',
+                variant: 'destructive'
+            });
+        } finally {
+            setIsDeleting(false);
+        }
     };
 
     const confirmDeleteStatement = async () => {
@@ -763,6 +969,175 @@ export default function BankExtractionDialog({
     };
 
     if (!isOpen) return null;
+
+
+    const processUpdates = async (updates: any) => {
+        if (!updates) {
+            toast({
+                title: 'Error',
+                description: 'No updates to process',
+                variant: 'destructive'
+            });
+            return;
+        }
+
+        setIsSaving(true);
+
+        try {
+            console.log('Processing confirmed updates:', updates);
+
+            if (updates.type === 'multi-month') {
+                const { monthsInRange, cycleIds, extractionData, validationStatus, monthlyBalances } = updates;
+
+                console.log('Processing multi-month updates...');
+
+                // Delete existing statements for these months
+                const deletePromises = monthsInRange.map(({ month, year }) =>
+                    supabase
+                        .from('acc_cycle_bank_statements')
+                        .delete()
+                        .eq('bank_id', bank.id)
+                        .eq('statement_month', month - 1)
+                        .eq('statement_year', year)
+                );
+
+                await Promise.all(deletePromises);
+                console.log('Deleted existing statements');
+
+                // Insert new statements
+                const insertPromises = monthsInRange.map(async ({ month, year }, index) => {
+                    const cycleId = cycleIds[index];
+
+                    if (!cycleId) {
+                        console.error(`No cycle ID for ${month}/${year}`);
+                        return null;
+                    }
+
+                    const monthBalance = monthlyBalances.find(
+                        b => b.month === month && b.year === year
+                    ) || {
+                        month,
+                        year,
+                        closing_balance: null,
+                        opening_balance: null,
+                        statement_page: 1,
+                        closing_date: null,
+                        is_verified: false,
+                        verified_by: null,
+                        verified_at: null
+                    };
+
+                    const statementData = {
+                        bank_id: bank.id,
+                        company_id: bank.company_id,
+                        statement_cycle_id: cycleId,
+                        statement_month: month - 1,
+                        statement_year: year,
+                        statement_document: statement.statement_document,
+                        statement_extractions: {
+                            ...extractionData,
+                            monthly_balances: [monthBalance],
+                            closing_balance: monthBalance.closing_balance,
+                            opening_balance: monthBalance.opening_balance
+                        },
+                        has_soft_copy: statement.has_soft_copy || false,
+                        has_hard_copy: statement.has_hard_copy || false,
+                        validation_status: validationStatus,
+                        status: {
+                            status: 'validated',
+                            verification_date: new Date().toISOString(),
+                            assigned_to: statement.status?.assigned_to || null,
+                            quickbooks_balance: null
+                        }
+                    };
+
+                    return supabase
+                        .from('acc_cycle_bank_statements')
+                        .insert(statementData)
+                        .select()
+                        .single();
+                });
+
+                const results = await Promise.all(insertPromises);
+                const successfulInserts = results.filter(result => result && !result.error);
+                const errorInserts = results.filter(result => result && result.error);
+
+                if (errorInserts.length > 0) {
+                    console.error('Some inserts failed:', errorInserts);
+                    throw new Error(`Failed to create ${errorInserts.length} statement records`);
+                }
+
+                // Delete the original combined statement
+                if (statement.id) {
+                    await supabase
+                        .from('acc_cycle_bank_statements')
+                        .delete()
+                        .eq('id', statement.id);
+                }
+
+                console.log(`Successfully processed ${successfulInserts.length} multi-month records`);
+
+                toast({
+                    title: 'Success',
+                    description: `Successfully updated ${successfulInserts.length} statement records`,
+                    variant: 'default'
+                });
+
+            } else if (updates.type === 'single-month') {
+                const { extractionData, validationStatus, monthlyBalances, statementId } = updates;
+
+                console.log('Processing single-month update...');
+
+                const updatedStatus = {
+                    ...statement.status,
+                    status: 'validated',
+                    verification_date: new Date().toISOString(),
+                    quickbooks_balance: monthlyBalances[0]?.quickbooks_balance || statement.status?.quickbooks_balance || null
+                };
+
+                const { data: updatedStatement, error } = await supabase
+                    .from('acc_cycle_bank_statements')
+                    .update({
+                        statement_extractions: extractionData,
+                        status: updatedStatus,
+                        validation_status: validationStatus
+                    })
+                    .eq('id', statementId)
+                    .select()
+                    .single();
+
+                if (error) {
+                    console.error('Single month update error:', error);
+                    throw error;
+                }
+
+                console.log('Successfully updated single statement:', updatedStatement.id);
+
+                toast({
+                    title: 'Success',
+                    description: 'Statement data updated successfully'
+                });
+
+                // Update parent component
+                onStatementUpdated(updatedStatement);
+            }
+
+            // Close dialog and clear state
+            onClose();
+
+        } catch (error) {
+            console.error('Process updates failed:', error);
+            toast({
+                title: 'Update Error',
+                description: `Failed to process updates: ${error.message}`,
+                variant: 'destructive'
+            });
+        } finally {
+            setIsSaving(false);
+            setShowUpdateConfirmation(false);
+            setPendingUpdates(null);
+        }
+    };
 
     // --- JSX Render ---
     return (
@@ -919,82 +1294,73 @@ export default function BankExtractionDialog({
                                         </Button>
                                     </CardHeader>
                                     <CardContent className="p-0 flex-1 overflow-auto">
-                                        {monthlyBalances.length === 0 ? (
-                                            <div className="text-center py-8 text-muted-foreground">
-                                                <Calendar className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                                                <p>No monthly balances found</p>
-                                                <p className="text-sm mt-1">Click "Add" to add balance entries</p>
-                                            </div>
-                                        ) : (
-                                            <div className="space-y-2 p-4">
-                                                {monthlyBalances
-                                                    .sort((a, b) => {
-                                                        if (a.year !== b.year) return a.year - b.year;
-                                                        return a.month - b.month;
-                                                    })
-                                                    .map((balance, index) => (
-                                                        <div key={index} className="border rounded-lg p-3 space-y-2">
-                                                            <div className="flex justify-between items-center">
-                                                                <span className="font-medium">
-                                                                    {format(new Date(balance.year, balance.month - 1), 'MMMM yyyy')}
-                                                                </span>
-                                                                <div className="flex gap-2">
-                                                                    {balance.is_verified && (
-                                                                        <Badge variant="success" className="gap-1">
-                                                                            <CheckCircle className="h-3 w-3" />
-                                                                            Verified
-                                                                        </Badge>
-                                                                    )}
-                                                                    <Button
-                                                                        type="button"
-                                                                        onClick={() => handleRemoveBalance(index)}
-                                                                        size="sm"
-                                                                        variant="ghost"
-                                                                        className="h-8 w-8 p-0"
-                                                                    >
-                                                                        <X className="h-4 w-4" />
-                                                                    </Button>
-                                                                </div>
-                                                            </div>
-
-                                                            <div className="grid grid-cols-2 gap-2">
-                                                                <div>
-                                                                    <Label className="text-xs">Opening Balance</Label>
-                                                                    <Input
-                                                                        type="text"
-                                                                        value={formatNumberWithCommas(balance.opening_balance)}
-                                                                        onChange={(e) => handleUpdateBalance(index, 'opening_balance', e.target.value)}
-                                                                        placeholder="0.00"
-                                                                        className="mt-1"
-                                                                    />
-                                                                </div>
-                                                                <div>
-                                                                    <Label className="text-xs">Closing Balance</Label>
+                                        <Table>
+                                            <TableHeader>
+                                                <TableRow>
+                                                    <TableHead>Period</TableHead>
+                                                    <TableHead>Closing Balance</TableHead>
+                                                    <TableHead>Actions</TableHead>
+                                                </TableRow>
+                                            </TableHeader>
+                                            <TableBody>
+                                                {monthlyBalances.length === 0 ? (
+                                                    <TableRow>
+                                                        <TableCell colSpan={3} className="text-center py-8 text-muted-foreground">
+                                                            <Calendar className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                                                            <p>No monthly balances found</p>
+                                                            <p className="text-sm mt-1">Click "Add" to add balance entries</p>
+                                                        </TableCell>
+                                                    </TableRow>
+                                                ) : (
+                                                    monthlyBalances
+                                                        .sort((a, b) => {
+                                                            if (a.year !== b.year) return a.year - b.year;
+                                                            return a.month - b.month;
+                                                        })
+                                                        .map((balance, index) => (
+                                                            <TableRow key={`${balance.year}-${balance.month}`}>
+                                                                <TableCell>
+                                                                    {format(new Date(balance.year, balance.month - 1), 'MMM yyyy')}
+                                                                </TableCell>
+                                                                <TableCell>
                                                                     <Input
                                                                         type="text"
                                                                         value={formatNumberWithCommas(balance.closing_balance)}
                                                                         onChange={(e) => handleUpdateBalance(index, 'closing_balance', e.target.value)}
                                                                         placeholder="0.00"
-                                                                        className="mt-1"
+                                                                        className="w-full max-w-[200px]"
                                                                     />
-                                                                </div>
-                                                            </div>
-
-                                                            {!balance.is_verified && (
-                                                                <Button
-                                                                    variant="outline"
-                                                                    size="sm"
-                                                                    className="w-full"
-                                                                    onClick={() => verifyBalance(index)}
-                                                                >
-                                                                    <CheckCircle className="h-4 w-4 mr-2" />
-                                                                    Verify Balance
-                                                                </Button>
-                                                            )}
-                                                        </div>
-                                                    ))}
-                                            </div>
-                                        )}
+                                                                </TableCell>
+                                                                <TableCell>
+                                                                    <div className="flex gap-2">
+                                                                        {balance.is_verified ? (
+                                                                            <Badge variant="outline" className="bg-green-50 text-green-700 border-green-300">
+                                                                                <Check className="h-3 w-3 mr-1" />Verified
+                                                                            </Badge>
+                                                                        ) : (
+                                                                            <Button
+                                                                                variant="outline"
+                                                                                size="sm"
+                                                                                onClick={() => verifyBalance(index)}
+                                                                            >
+                                                                                <CheckCircle className="h-4 w-4 mr-2" />
+                                                                                Verify
+                                                                            </Button>
+                                                                        )}
+                                                                        <Button
+                                                                            variant="ghost"
+                                                                            size="sm"
+                                                                            onClick={() => handleRemoveBalance(index)}
+                                                                        >
+                                                                            <X className="h-4 w-4" />
+                                                                        </Button>
+                                                                    </div>
+                                                                </TableCell>
+                                                            </TableRow>
+                                                        ))
+                                                )}
+                                            </TableBody>
+                                        </Table>
                                     </CardContent>
                                 </Card>
                             </div>
@@ -1196,6 +1562,35 @@ export default function BankExtractionDialog({
                         }
                     </Button>
                 </DialogFooter>
+
+                <AlertDialog open={showUpdateConfirmation} onOpenChange={setShowUpdateConfirmation}>
+                    <AlertDialogContent>
+                        <AlertDialogHeader>
+                            <AlertDialogTitle>Confirm Updates</AlertDialogTitle>
+                            <AlertDialogDescription>
+                                You are about to update existing bank statement records. Please review the changes carefully before proceeding.
+
+                                {pendingUpdates?.isMultiMonth && (
+                                    <div className="mt-4 bg-yellow-50 p-3 rounded-md">
+                                        <p className="text-sm text-yellow-700">
+                                            This will update {pendingUpdates.monthlyBalances.length} monthly records.
+                                        </p>
+                                    </div>
+                                )}
+                            </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction onClick={() => pendingUpdates && processUpdates(pendingUpdates)}>
+                                {isSaving ? (
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                ) : null}
+                                Confirm Updates
+                            </AlertDialogAction>
+                        </AlertDialogFooter>
+                    </AlertDialogContent>
+                </AlertDialog>
+
 
                 <AlertDialog open={showDeleteConfirmation} onOpenChange={setShowDeleteConfirmation}>
                     <AlertDialogContent>
