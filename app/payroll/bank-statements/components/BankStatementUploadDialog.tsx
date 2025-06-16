@@ -2,7 +2,7 @@
 // @ts-nocheck
 import { useState, useRef, useEffect } from 'react'
 import { format } from 'date-fns'
-import { 
+import {
     CircleMinus,
     CirclePlus,
     Clock10,
@@ -13,27 +13,27 @@ import {
     Upload,
     ClipboardCheck,
     Loader2,
-    AlertTriangle, 
-    CheckCircle, 
-    UploadCloud, 
-    Sheet, 
-    Building, 
-    Landmark, 
-    CreditCard, 
-    DollarSign, 
-    Calendar, 
-    Lock, 
+    AlertTriangle,
+    CheckCircle,
+    UploadCloud,
+    Sheet,
+    Building,
+    Landmark,
+    CreditCard,
+    DollarSign,
+    Calendar,
+    Lock,
     FileTextIcon
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/hooks/use-toast'
-import { 
+import {
     Dialog,
     DialogContent,
     DialogHeader,
     DialogTitle,
     DialogDescription,
-    DialogFooter 
+    DialogFooter
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -253,25 +253,25 @@ export function BankStatementUploadDialog({
     // Function to detect password and account number from filename
     const detectFileInfoFromFilename = (filename: string) => {
         if (!filename) return { password: null, accountNumber: null, bankName: null };
-        
+
         // Use the utility function if available
         const fileInfo = detectFileInfo ? detectFileInfo(filename) : {
             password: null,
             accountNumber: null,
             bankName: null
         };
-        
+
         // Update state if values exist
         if (fileInfo?.password) setDetectedPassword(fileInfo.password);
         if (fileInfo?.accountNumber) setDetectedAccountNumber(fileInfo.accountNumber);
-        
+
         return fileInfo;
     }
 
     // Function to detect password from filename
     const detectPasswordFromFilename = (filename: string): string | null => {
         if (!filename) return null;
-        
+
         // Simple pattern matching for common password formats in filenames
         // Examples: "statement_password123.pdf", "statement-pass_123.pdf"
         const passwordPatterns = [
@@ -279,7 +279,7 @@ export function BankStatementUploadDialog({
             /pwd[_\-]?(\w+)/i,              // Matches "pwd_123", "pwd-123"
             /\b(?:p|pw)[\s_\-]?(\w{4,})\b/i // Matches "p 1234", "pw_1234" with min 4 chars
         ];
-        
+
         for (const pattern of passwordPatterns) {
             const match = filename.match(pattern);
             if (match && match[1]) {
@@ -288,7 +288,7 @@ export function BankStatementUploadDialog({
                 return detectedPwd;
             }
         }
-        
+
         return null;
     };
 
@@ -389,25 +389,25 @@ export function BankStatementUploadDialog({
                 console.error('No file provided to check for password protection');
                 return false;
             }
-            
+
             const isProtected = await isPdfPasswordProtected(file);
             console.log('PDF password protection check:', isProtected ? 'Protected' : 'Not protected');
-            
+
             // Update state with result
             setPdfNeedsPassword(isProtected);
-            
+
             return isProtected;
         } catch (error) {
             console.error('Error checking if PDF is password protected:', error);
             // Assume it might be password protected if we can't determine
             setPdfNeedsPassword(true);
-            
+
             toast({
                 title: 'Warning',
                 description: 'Could not determine if PDF is password protected. Please proceed with caution.',
                 variant: 'default'
             });
-            
+
             return true; // Safer to assume it's protected
         }
     };
@@ -481,7 +481,7 @@ export function BankStatementUploadDialog({
                             .from('acc_portal_banks')
                             .update({ acc_password: passwordToTry })
                             .eq('id', bank.id);
-                        
+
                         console.log("Saved password to bank record");
                         toast({
                             title: "Password Saved",
@@ -608,7 +608,7 @@ export function BankStatementUploadDialog({
         setShowPasswordDialog(false)
         setShowExtractionDialog(false)
         setUploadedStatement(null)
-        
+
         // Reset file inputs
         if (pdfInputRef.current) pdfInputRef.current.value = ''
         if (excelInputRef.current) excelInputRef.current.value = ''
@@ -646,11 +646,11 @@ export function BankStatementUploadDialog({
         // Return mapped value or the original if not in the map
         return currencyMap[upperCode] || upperCode;
     };
-    
+
     // Function to validate extracted data against expected values
     const validateExtractedData = (extractedData: any): { isValid: boolean, mismatches: string[] } => {
         console.log("Validating extracted data:", extractedData);
-        
+
         if (!extractedData) {
             return { isValid: false, mismatches: ['No data extracted'] };
         }
@@ -667,36 +667,36 @@ export function BankStatementUploadDialog({
         console.log("Statement period:", extractedData.statement_period);
 
         // Validate bank name if available
-        if (bank?.bank_name && 
-            (!extractedData.bank_name || 
-             (extractedData.bank_name !== "Not Available" && 
-              !extractedData.bank_name.toLowerCase().includes(bank.bank_name.toLowerCase())))) {
+        if (bank?.bank_name &&
+            (!extractedData.bank_name ||
+                (extractedData.bank_name !== "Not Available" &&
+                    !extractedData.bank_name.toLowerCase().includes(bank.bank_name.toLowerCase())))) {
             mismatches.push('Bank name mismatch');
         }
 
         // Validate company name if available
-        if (bank?.company_name && 
-            (!extractedData.company_name || 
-             !extractedData.company_name.toLowerCase().includes(bank.company_name.toLowerCase()))) {
+        if (bank?.company_name &&
+            (!extractedData.company_name ||
+                !extractedData.company_name.toLowerCase().includes(bank.company_name.toLowerCase()))) {
             mismatches.push('Company name mismatch');
         }
 
         // Validate account number if available - using includes to handle formatting differences
-        if (bank?.account_number && 
-            (!extractedData.account_number || 
-             !extractedData.account_number.includes(bank.account_number))) {
+        if (bank?.account_number &&
+            (!extractedData.account_number ||
+                !extractedData.account_number.includes(bank.account_number))) {
             mismatches.push('Account number mismatch');
         }
 
         // Validate currency if available - normalize currency codes
-        if (bank?.bank_currency && 
+        if (bank?.bank_currency &&
             (!extractedData.currency ||
-             normalizeCurrencyCode(extractedData.currency) !== normalizeCurrencyCode(bank.bank_currency))) {
+                normalizeCurrencyCode(extractedData.currency) !== normalizeCurrencyCode(bank.bank_currency))) {
             mismatches.push('Currency mismatch');
         }
 
         // Validate statement period contains the expected month/year
-        if (!extractedData.statement_period || 
+        if (!extractedData.statement_period ||
             !isPeriodContained(extractedData.statement_period, cycleMonth, cycleYear)) {
             mismatches.push('Statement period mismatch');
         }
@@ -712,7 +712,7 @@ export function BankStatementUploadDialog({
         if (fileUrl) {
             URL.revokeObjectURL(fileUrl);
         }
-        
+
         // Create new fileUrl if pdfFile exists
         if (pdfFile) {
             const newFileUrl = URL.createObjectURL(pdfFile);
@@ -720,7 +720,7 @@ export function BankStatementUploadDialog({
         } else {
             setFileUrl(null);
         }
-        
+
         // Cleanup on unmount
         return () => {
             if (fileUrl) {
@@ -745,7 +745,7 @@ export function BankStatementUploadDialog({
         console.log("Parsing statement period:", periodString);
 
         // Try multiple date formats and period patterns
-        
+
         // Format: "January 2024" (single month)
         const singleMonthMatch = periodString.match(/(\w+)\s+(\d{4})/i);
         if (singleMonthMatch) {
@@ -818,11 +818,11 @@ export function BankStatementUploadDialog({
                 const d2 = parseInt(dateRangeMatch[4]);
                 const m2 = parseInt(dateRangeMatch[5]);
                 const y2 = parseInt(dateRangeMatch[6]);
-                
+
                 // Validate date parts (simple validation)
                 const isValidDDMMFormat = d1 <= 31 && m1 <= 12 && d2 <= 31 && m2 <= 12;
                 const isValidMMDDFormat = m1 <= 12 && d1 <= 31 && m2 <= 12 && d2 <= 31;
-                
+
                 if (isValidDDMMFormat) {
                     // Assume DD/MM/YYYY
                     console.log(`Parsed date range (DD/MM/YYYY): ${d1}/${m1}/${y1} - ${d2}/${m2}/${y2}`);
@@ -898,35 +898,35 @@ export function BankStatementUploadDialog({
             // Parse the period to get start and end months
             const period = extractedData.statement_period;
             const parsedPeriod = parseStatementPeriod(period);
-            
+
             if (!parsedPeriod) {
                 console.warn('Could not parse statement period:', period);
                 return [];
             }
-            
+
             const monthsInRange = generateMonthRange(
-                parsedPeriod.startMonth, 
-                parsedPeriod.startYear, 
-                parsedPeriod.endMonth, 
+                parsedPeriod.startMonth,
+                parsedPeriod.startYear,
+                parsedPeriod.endMonth,
                 parsedPeriod.endYear
             );
-            
+
             if (!monthsInRange || monthsInRange.length === 0) {
                 console.warn('Could not determine months in multi-month period:', period);
                 return [];
             }
-            
+
             console.log('Creating entries for months:', monthsInRange);
-            
+
             const createdStatements = [];
-            
+
             // Create a statement entry for each month in the range
             for (const { month, year } of monthsInRange) {
                 // Skip if this is the current selected month/year (it will be handled separately)
                 if (month === cycleMonth && year === cycleYear) {
                     continue;
                 }
-                
+
                 // Check if a statement already exists for this month/year
                 const { data: existingStatement, error: getExistingError } = await supabase
                     .from('acc_cycle_bank_statements')
@@ -935,13 +935,13 @@ export function BankStatementUploadDialog({
                     .eq('statement_month', month)
                     .eq('statement_year', year)
                     .single();
-                
+
                 if (getExistingError && getExistingError.code !== 'PGRST116') {
                     // Real error (not "no rows returned")
                     console.error('Error checking for existing statement:', getExistingError);
                     throw getExistingError;
                 }
-                
+
                 // Prepare statement data for this month
                 const monthStatementData = {
                     ...baseStatementData,
@@ -960,9 +960,9 @@ export function BankStatementUploadDialog({
                         mismatches: ['Auto-created from multi-month statement']
                     }
                 };
-                
+
                 let resultStatement;
-                
+
                 if (existingStatement) {
                     // Update existing statement
                     const { data: updatedStatement, error: updateError } = await supabase
@@ -971,7 +971,7 @@ export function BankStatementUploadDialog({
                         .eq('id', existingStatement.id)
                         .select('*')
                         .single();
-                    
+
                     if (updateError) throw updateError;
                     resultStatement = updatedStatement;
                     console.log(`Updated existing statement for ${month}/${year}:`, updatedStatement.id);
@@ -982,15 +982,15 @@ export function BankStatementUploadDialog({
                         .insert(monthStatementData)
                         .select('*')
                         .single();
-                    
+
                     if (insertError) throw insertError;
                     resultStatement = newStatement;
                     console.log(`Created new statement for ${month}/${year}:`, newStatement.id);
                 }
-                
+
                 createdStatements.push(resultStatement);
             }
-            
+
             return createdStatements;
         } catch (error) {
             console.error('Error generating document path:', error);
@@ -1004,29 +1004,29 @@ export function BankStatementUploadDialog({
         try {
             // Extract file extension from original name
             const extension = originalName.split('.').pop().toLowerCase();
-            
+
             // Create a clean company name for the path
             const companyName = (bank.company_name || 'unknown')
                 .toLowerCase()
                 .replace(/[^a-z0-9]+/g, '-')
                 .replace(/^-+|-+$/g, '');
-            
+
             // Create a clean bank name for the path
             const bankName = (bank.bank_name || 'unknown')
                 .toLowerCase()
                 .replace(/[^a-z0-9]+/g, '-')
                 .replace(/^-+|-+$/g, '');
-            
+
             // Format the date parts
             const monthStr = String(month).padStart(2, '0');
             const yearStr = String(year);
-            
+
             // Generate a timestamp for uniqueness
             const timestamp = format(new Date(), 'yyyyMMddHHmmss');
-            
+
             // Construct the path
             const path = `bank-statements/${companyName}/${bankName}/${yearStr}/${monthStr}/${bankName}-${yearStr}-${monthStr}-${timestamp}.${fileType}.${extension}`;
-            
+
             return path;
         } catch (error) {
             console.error('Error generating document path:', error);
@@ -1086,7 +1086,7 @@ export function BankStatementUploadDialog({
             let isMultiMonth = false;
             let statementRangeType = 'single';
             let monthsInRange = [];
-            
+
             if (extractedData?.statement_period) {
                 const parsedPeriod = parseStatementPeriod(extractedData.statement_period);
                 if (parsedPeriod) {
@@ -1096,10 +1096,10 @@ export function BankStatementUploadDialog({
                         parsedPeriod.endMonth,
                         parsedPeriod.endYear
                     );
-                    
+
                     isMultiMonth = monthsInRange.length > 1;
                     statementRangeType = parsedPeriod.type || 'unknown';
-                    
+
                     console.log(`Statement period analysis:`, {
                         period: extractedData.statement_period,
                         isMultiMonth,
@@ -1179,9 +1179,9 @@ export function BankStatementUploadDialog({
                         extractedData,
                         documentInfo
                     );
-                    
+
                     console.log(`Created ${additionalStatements.length} additional statements for multi-month range`);
-                    
+
                     // Update the main statement to reflect it's part of a multi-month set
                     if (mainStatement) {
                         const { error: updateError } = await supabase
@@ -1195,7 +1195,7 @@ export function BankStatementUploadDialog({
                                 }
                             })
                             .eq('id', mainStatement.id);
-                        
+
                         if (updateError) {
                             console.error("Error updating main statement with multi-month info:", updateError);
                         }
@@ -1214,7 +1214,7 @@ export function BankStatementUploadDialog({
             // Set the uploaded statement and show extraction dialog
             setUploadedStatement(mainStatement);
             onStatementUploaded(mainStatement);
-            
+
             // Show extraction dialog for reviewing/editing extracted data
             if (extractedData) {
                 setShowExtractionDialog(true);
@@ -1224,16 +1224,16 @@ export function BankStatementUploadDialog({
             if (fileUrl) {
                 URL.revokeObjectURL(fileUrl);
             }
-            
+
             setUploading(false);
-            
+
             toast({
                 title: 'Success',
-                description: isMultiMonth 
+                description: isMultiMonth
                     ? `Uploaded statement for ${monthsInRange.length} months (${extractedData.statement_period})`
                     : 'Statement uploaded successfully',
             });
-            
+
             return mainStatement;
         } catch (error) {
             console.error('Upload error:', error);
@@ -1275,8 +1275,8 @@ export function BankStatementUploadDialog({
             console.log("Setting extraction results:", {
                 success: extractionResults?.success,
                 responseLength: extractionResults?.response?.length,
-                extractedDataSample: extractionResults?.extractedData 
-                    ? JSON.stringify(extractionResults.extractedData).substring(0, 200) + "..." 
+                extractedDataSample: extractionResults?.extractedData
+                    ? JSON.stringify(extractionResults.extractedData).substring(0, 200) + "..."
                     : "No data"
             });
             setExtractionResults(extractionResults);
@@ -1719,7 +1719,7 @@ export function BankStatementUploadDialog({
                         setUploading(false);
                         setExtractionResults(null);
                         setValidationResults(null);
-                        
+
                         toast({
                             title: 'Upload Cancelled',
                             description: 'Bank statement upload was cancelled due to validation issues'
@@ -1741,18 +1741,18 @@ export function BankStatementUploadDialog({
                                 This PDF is password-protected. Please enter the password to continue.
                             </DialogDescription>
                         </DialogHeader>
-                        
+
                         <div className="grid gap-4 py-4">
                             <div className="flex flex-col gap-4">
                                 {/* Password input */}
                                 <div className="space-y-2">
                                     <Label htmlFor="password">Password</Label>
-                                    <Input 
-                                        id="password" 
-                                        type="password" 
+                                    <Input
+                                        id="password"
+                                        type="password"
                                         value={password}
                                         onChange={(e) => setPassword(e.target.value)}
-                                        placeholder="Enter password" 
+                                        placeholder="Enter password"
                                     />
                                 </div>
 
@@ -1801,7 +1801,7 @@ export function BankStatementUploadDialog({
                                 )}
                             </div>
                         </div>
-                        
+
                         <DialogFooter className="sm:justify-end">
                             <Button
                                 type="button"
