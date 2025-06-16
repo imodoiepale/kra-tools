@@ -31,7 +31,16 @@ export class FileManagementService {
                 email: item.current_communication_email || item.kra_email || '',
                 phone: item.phone || item.office_number || item.whatsapp_number || '',
                 created_at: item.created_at || new Date().toISOString(),
-                updated_at: item.updated_at || new Date().toISOString()
+                updated_at: item.updated_at || new Date().toISOString(),
+                // Add category effective dates
+                acc_client_effective_from: item.acc_client_effective_from,
+                acc_client_effective_to: item.acc_client_effective_to,
+                imm_client_effective_from: item.imm_client_effective_from,
+                imm_client_effective_to: item.imm_client_effective_to,
+                sheria_client_effective_from: item.sheria_client_effective_from,
+                sheria_client_effective_to: item.sheria_client_effective_to,
+                audit_client_effective_from: item.audit_client_effective_from,
+                audit_client_effective_to: item.audit_client_effective_to
             }));
         } catch (error: any) {
             console.error('Error in getCompanies:', error.message);

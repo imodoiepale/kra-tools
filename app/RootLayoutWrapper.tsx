@@ -6,7 +6,7 @@ import { Navbar } from '@/components/Navbar';
 import { ToastContainer } from 'react-toastify';
 
 export function RootLayoutWrapper({ children }: { children: React.ReactNode }) {
-    const [isExpanded, setIsExpanded] = useState(true);
+        const [isExpanded, setIsExpanded] = useState(true);
 
     return (
         <div className="flex h-screen">
