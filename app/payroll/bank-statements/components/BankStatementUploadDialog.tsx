@@ -1,6 +1,7 @@
 // BankStatementUploadDialog.tsx
 // @ts-nocheck
 import { useState, useRef, useEffect } from 'react'
+import { format } from 'date-fns'
 import { 
     CircleMinus,
     CirclePlus,
@@ -26,7 +27,6 @@ import {
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/hooks/use-toast'
-import { format } from 'date-fns'
 import { 
     Dialog,
     DialogContent,
@@ -993,12 +993,49 @@ export function BankStatementUploadDialog({
             
             return createdStatements;
         } catch (error) {
-            console.error('Error handling multi-month statement:', error);
-            throw new Error('Failed to process multi-month statement');
+            console.error('Error generating document path:', error);
+            // Fallback path if there's an error
+            return `bank-statements/statements/${Date.now()}-${Math.random().toString(36).substr(2, 9)}.${fileType}`;
         }
     };
 
-    // Add a new helper function to handle the actual upload
+    // Helper function to generate consistent document paths
+    const generateDocumentPath = (bank, year, month, fileType, originalName) => {
+        try {
+            // Extract file extension from original name
+            const extension = originalName.split('.').pop().toLowerCase();
+            
+            // Create a clean company name for the path
+            const companyName = (bank.company_name || 'unknown')
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, '-')
+                .replace(/^-+|-+$/g, '');
+            
+            // Create a clean bank name for the path
+            const bankName = (bank.bank_name || 'unknown')
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, '-')
+                .replace(/^-+|-+$/g, '');
+            
+            // Format the date parts
+            const monthStr = String(month).padStart(2, '0');
+            const yearStr = String(year);
+            
+            // Generate a timestamp for uniqueness
+            const timestamp = format(new Date(), 'yyyyMMddHHmmss');
+            
+            // Construct the path
+            const path = `bank-statements/${companyName}/${bankName}/${yearStr}/${monthStr}/${bankName}-${yearStr}-${monthStr}-${timestamp}.${fileType}.${extension}`;
+            
+            return path;
+        } catch (error) {
+            console.error('Error generating document path:', error);
+            // Fallback path if there's an error
+            return `bank-statements/statements/${Date.now()}-${Math.random().toString(36).substr(2, 9)}.${fileType}`;
+        }
+    };
+
+    // Helper function to handle the actual upload
     const processUpload = async (extractedData) => {
         try {
             if (!pdfFile) {
