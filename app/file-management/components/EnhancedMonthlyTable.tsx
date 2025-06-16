@@ -14,7 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuCheckboxItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Search, Download, Settings2, CalendarIcon, Send, Filter, MoreHorizontal, Archive, Mail, FileDown, ArrowUpDown } from "lucide-react";
+import { Search, Download, Settings2, CalendarIcon, Send, Filter, MoreHorizontal, Archive, Mail, FileDown, ArrowUpDown, Clock, Package, Loader2, CheckCircle, Ban } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from 'react-hot-toast';
 import { cn } from "@/lib/utils";
@@ -269,22 +269,47 @@ const applyCategoryFilters = (data: any[]) => {
 };
 
     // Get file record for a company in the selected month
-    const getCompanyRecord = (companyId: string) => {
-        return fileRecords.find(record =>
-            record.company_id === companyId &&
-            record.year === year &&
-            record.month === month
-        );
+    const getCompanyRecord = (companyId: string | number): FileRecord | null => {
+        const companyIdStr = companyId.toString();
+        
+        const record = fileRecords.find(record => {
+            const recordCompanyId = typeof record.company_id === 'number' 
+                ? record.company_id.toString() 
+                : record.company_id;
+                
+            return recordCompanyId === companyIdStr &&
+                   record.year === year &&
+                   record.month === month;
+        });
+        
+        return record || null;
     };
 
-    const formatDateTime = (dateTimeString?: string) => {
-        if (!dateTimeString) return { date: '-', time: '-' };
-        const date = new Date(dateTimeString);
-        return {
-            date: format(date, 'dd.MM.yyyy'),
-            time: format(date, 'HH:mm')
-        };
+    // Get latest reception for display
+const getLatestReception = (record: FileRecord | null): ReceptionRecord | null => {
+    if (!record?.receptions || record.receptions.length === 0) return null;
+    return record.receptions[record.receptions.length - 1];
+};
+
+// Get total files received
+const getTotalFilesReceived = (record: FileRecord | null): number => {
+    if (!record?.receptions) return 0;
+    return record.receptions.reduce((total, reception) => total + reception.files_count, 0);
+};
+
+// Check if has any receptions
+const hasAnyReceptions = (record: FileRecord | null): boolean => {
+    return record?.receptions && record.receptions.length > 0;
+};
+
+const formatDateTime = (dateTimeString?: string) => {
+    if (!dateTimeString) return { date: '-', time: '-' };
+    const date = new Date(dateTimeString);
+    return {
+        date: format(date, 'dd.MM.yyyy'),
+        time: format(date, 'HH:mm')
     };
+};
 
     const handleSendReminder = async (companyName: string) => {
         try {
@@ -439,6 +464,8 @@ const applyCategoryFilters = (data: any[]) => {
             ),
             cell: ({ row }) => {
                 const record = getCompanyRecord(row.original.id);
+                const hasReception = record && (record.received_at || record.is_nil);
+                
                 return (
                     <div className="flex items-center justify-center">
                         <EnhancedReceptionDialog
@@ -449,16 +476,19 @@ const applyCategoryFilters = (data: any[]) => {
                             onConfirm={(data) => onUpdateRecord(row.original.id, year, month, data)}
                             existingData={record}
                         />
+                        {hasReception && (
+                            <CheckCircle className="h-4 w-4 ml-1 text-green-500" />
+                        )}
                         {record?.is_nil && (
-                            <Badge variant="destructive" className="ml-2 text-xs">NIL</Badge>
+                            <Badge variant="destructive" className="ml-1 text-xs">NIL</Badge>
                         )}
                         {record?.is_urgent && (
-                            <Badge variant="destructive" className="ml-2 text-xs animate-pulse">URGENT</Badge>
+                            <Badge variant="destructive" className="ml-1 text-xs animate-pulse">URGENT</Badge>
                         )}
                     </div>
                 );
             },
-            size: 120,
+            size: 140,
         }),
 
         // Reception details
@@ -476,20 +506,39 @@ const applyCategoryFilters = (data: any[]) => {
             ),
             cell: ({ row }) => {
                 const record = getCompanyRecord(row.original.id);
-                const dateTime = formatDateTime(record?.received_at);
-
+                const latestReception = getLatestReception(record);
+                const totalFiles = getTotalFilesReceived(record);
+                const totalReceptions = record?.receptions?.length || 0;
+                
+                if (!latestReception) {
+                    return <div className="text-xs text-gray-400">No receptions</div>;
+                }
+        
+                const dateTime = formatDateTime(latestReception.received_at);
+        
                 return (
                     <div className="text-xs">
                         <p className="font-medium">{dateTime.date}</p>
                         <p className="text-gray-500">{dateTime.time}</p>
-                        {record?.brought_by && (
-                            <p className="text-blue-600 mt-1">By: {record.brought_by}</p>
+                        {latestReception.brought_by && (
+                            <p className="text-blue-600 mt-1">By: {latestReception.brought_by}</p>
+                        )}
+                        {totalReceptions > 1 && (
+                            <div className="flex items-center gap-1 mt-1">
+                                <Badge variant="outline" className="text-xs">
+                                    {totalReceptions} receptions
+                                </Badge>
+                                <Badge variant="outline" className="text-xs">
+                                    {totalFiles} files
+                                </Badge>
+                            </div>
                         )}
                     </div>
                 );
             },
             size: 140,
         }),
+        
 
         // Delivery status
         columnHelper.display({
@@ -508,6 +557,9 @@ const applyCategoryFilters = (data: any[]) => {
             ),
             cell: ({ row }) => {
                 const record = getCompanyRecord(row.original.id);
+                const hasReceptions = hasAnyReceptions(record);
+                const totalReceptions = record?.receptions?.length || 0;
+                
                 return (
                     <div className="flex items-center justify-center">
                         <EnhancedDeliveryDialog
@@ -517,27 +569,32 @@ const applyCategoryFilters = (data: any[]) => {
                             month={month}
                             onConfirm={(data) => onUpdateRecord(row.original.id, year, month, data)}
                             existingData={record}
-                            receptionData={record}
                         />
+                        {hasReceptions && (
+                            <div className="flex items-center ml-1">
+                                <CheckCircle className="h-4 w-4 text-green-500" />
+                                {totalReceptions > 1 && (
+                                    <Badge variant="outline" className="ml-1 text-xs">
+                                        {totalReceptions}
+                                    </Badge>
+                                )}
+                            </div>
+                        )}
+                        {record?.is_nil && (
+                            <Badge variant="destructive" className="ml-1 text-xs">NIL</Badge>
+                        )}
+                        {record?.is_urgent && (
+                            <Badge variant="destructive" className="ml-1 text-xs animate-pulse">URGENT</Badge>
+                        )}
                     </div>
                 );
             },
-            size: 100,
+            size: 140,
         }),
 
         // Delivery details
         columnHelper.display({
             id: 'deliveryDetails',
-            header: ({ column }) => (
-                <Button
-                    variant="ghost"
-                    onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-                    className="p-0 hover:bg-transparent"
-                >
-                    Delivery Details
-                    <ArrowUpDown className="ml-2 h-4 w-4" />
-                </Button>
-            ),
             cell: ({ row }) => {
                 const record = getCompanyRecord(row.original.id);
                 const dateTime = formatDateTime(record?.delivered_at);
@@ -570,25 +627,64 @@ const applyCategoryFilters = (data: any[]) => {
             ),
             cell: ({ row }) => {
                 const record = getCompanyRecord(row.original.id);
-                const status = record?.status || 'pending';
+                
+                // Determine status based on record state
+                let status = 'pending';
+                if (record) {
+                    if (record.is_nil) {
+                        status = 'nil';
+                    } else if (record.delivered_at) {
+                        status = 'delivered';
+                    } else if (record.received_at) {
+                        status = 'received';
+                    } else if (record.processing_status === 'in_progress') {
+                        status = 'processed';
+                    }
+                }
 
                 const statusConfig = {
-                    pending: { label: 'Pending', color: 'bg-gray-100 text-gray-800' },
-                    received: { label: 'Received', color: 'bg-blue-100 text-blue-800' },
-                    processed: { label: 'Processed', color: 'bg-yellow-100 text-yellow-800' },
-                    delivered: { label: 'Delivered', color: 'bg-green-100 text-green-800' },
-                    nil: { label: 'NIL', color: 'bg-red-100 text-red-800' }
+                    pending: { 
+                        label: 'Pending', 
+                        color: 'bg-gray-100 text-gray-800 border border-gray-200',
+                        icon: <Clock className="h-3 w-3 mr-1" />
+                    },
+                    received: { 
+                        label: 'Received', 
+                        color: 'bg-blue-50 text-blue-700 border border-blue-200',
+                        icon: <Package className="h-3 w-3 mr-1" />
+                    },
+                    processed: { 
+                        label: 'In Process', 
+                        color: 'bg-yellow-50 text-yellow-700 border border-yellow-200',
+                        icon: <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                    },
+                    delivered: { 
+                        label: 'Delivered', 
+                        color: 'bg-green-50 text-green-700 border border-green-200',
+                        icon: <CheckCircle className="h-3 w-3 mr-1" />
+                    },
+                    nil: { 
+                        label: 'NIL', 
+                        color: 'bg-red-50 text-red-700 border border-red-200',
+                        icon: <Ban className="h-3 w-3 mr-1" />
+                    }
                 };
 
                 const config = statusConfig[status as keyof typeof statusConfig] || statusConfig.pending;
 
                 return (
-                    <Badge className={`text-xs ${config.color}`}>
-                        {config.label}
-                    </Badge>
+                    <div className="flex items-center">
+                        <Badge className={`text-xs font-normal ${config.color} flex items-center`}>
+                            {config.icon}
+                            {config.label}
+                        </Badge>
+                        {record?.is_urgent && (
+                            <span className="ml-2 h-2 w-2 rounded-full bg-red-500 animate-pulse" />
+                        )}
+                    </div>
                 );
             },
-            size: 100,
+            size: 140,
         }),
 
         // Actions
@@ -783,27 +879,37 @@ const filteredCompanies = useMemo(() => {
     const getStatusCounts = () => {
         const rows = table.getFilteredRowModel().rows;
         const total = rows.length;
-
+    
         const receivedCount = rows.filter(row => {
             const record = getCompanyRecord(row.original.id);
-            return record?.received_at || record?.is_nil;
+            return hasAnyReceptions(record) || record?.is_nil;
         }).length;
-
+    
         const deliveredCount = rows.filter(row => {
             const record = getCompanyRecord(row.original.id);
-            return record?.delivered_at;
+            return record?.deliveries && record.deliveries.length > 0;
         }).length;
-
+    
         const nilCount = rows.filter(row => {
             const record = getCompanyRecord(row.original.id);
             return record?.is_nil;
         }).length;
-
+    
         const urgentCount = rows.filter(row => {
             const record = getCompanyRecord(row.original.id);
             return record?.is_urgent;
         }).length;
-
+    
+        const totalFilesReceived = rows.reduce((total, row) => {
+            const record = getCompanyRecord(row.original.id);
+            return total + getTotalFilesReceived(record);
+        }, 0);
+    
+        const totalReceptions = rows.reduce((total, row) => {
+            const record = getCompanyRecord(row.original.id);
+            return total + (record?.receptions?.length || 0);
+        }, 0);
+    
         return {
             total,
             receivedComplete: receivedCount,
@@ -811,10 +917,11 @@ const filteredCompanies = useMemo(() => {
             deliveredComplete: deliveredCount,
             deliveredPending: total - deliveredCount,
             nilCount,
-            urgentCount
+            urgentCount,
+            totalFilesReceived,
+            totalReceptions
         };
     };
-
     const exportToExcel = async () => {
         try {
             // Implementation for Excel export
@@ -917,8 +1024,7 @@ const filteredCompanies = useMemo(() => {
                     {selectedRows.length > 0 && (
                         <BulkOperationsDialog
                             selectedCompanies={selectedRows}
-                            year={year}
-                            month={month}
+                            year={year}                            month={month}
                             onBulkOperation={onBulkOperation}
                             open={bulkDialogOpen}
                             onOpenChange={setBulkDialogOpen}
