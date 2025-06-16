@@ -2,10 +2,102 @@
 import { createClient } from '@supabase/supabase-js';
 import { Company, FileRecord, FileManagementStats, BulkOperation } from '../types/fileManagement';
 
-const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-);
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+// File Records functions
+export interface FileRecordHistoryEntry {
+  changed_at: string;
+  changed_by: string;
+  action: 'create' | 'update';
+  data: Record<string, any>;
+}
+
+export interface FileRecordWithHistory extends FileRecord {
+  history?: FileRecordHistoryEntry[];
+}
+
+export const getFileRecords = async (companyId: string, year: number, month: number): Promise<FileRecordWithHistory | null> => {
+  const { data, error } = await supabase
+    .from('file_records')
+    .select('*')
+    .eq('company_id', companyId)
+    .eq('year', year)
+    .eq('month', month)
+    .single();
+
+  if (error) {
+    if (error.code !== 'PGRST116') { // Ignore "record not found" errors
+      console.error('Error fetching file records:', error);
+    }
+    return null;
+  }
+  return data as FileRecordWithHistory;
+};
+
+export const upsertFileRecord = async (record: Partial<FileRecord> & { 
+  company_id: string; 
+  year: number; 
+  month: number;
+  updated_by: string;
+}): Promise<FileRecordWithHistory> => {
+  // Get current user info for history
+  const { data: { user } } = await supabase.auth.getUser();
+  
+  // Prepare the record with updated timestamp
+  const now = new Date().toISOString();
+  const recordToUpsert = {
+    ...record,
+    updated_at: now,
+    updated_by: user?.id || record.updated_by,
+  };
+
+  // Remove any undefined values
+  Object.keys(recordToUpsert).forEach(key => 
+    recordToUpsert[key] === undefined && delete recordToUpsert[key]
+  );
+
+  // Upsert the record
+  const { data, error } = await supabase
+    .from('file_records')
+    .upsert(recordToUpsert, { 
+      onConflict: 'company_id,year,month',
+      returning: 'representation' 
+    })
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error upserting file record:', error);
+    throw error;
+  }
+
+  return data as FileRecordWithHistory;
+};
+
+// Get file record history from the JSONB array
+export const getFileRecordHistory = async (companyId: string, year: number, month: number): Promise<FileRecordHistoryEntry[]> => {
+  const { data, error } = await supabase
+    .from('file_records')
+    .select('history')
+    .eq('company_id', companyId)
+    .eq('year', year)
+    .eq('month', month)
+    .single();
+
+  if (error) {
+    if (error.code === 'PGRST116') { // Not found
+      return [];
+    }
+    console.error('Error fetching file record history:', error);
+    throw error;
+  }
+
+  // Return the history array or empty array if none exists
+  return (data?.history || []) as FileRecordHistoryEntry[];
+};
 
 export class FileManagementService {
     // Companies CRUD

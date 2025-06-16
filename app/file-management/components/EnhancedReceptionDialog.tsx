@@ -16,6 +16,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { toast } from "react-hot-toast";
 import { supabase } from '@/lib/supabase';
+import { Separator } from '@/components/ui/separator';
+
+interface Individual {
+    id: string;
+    full_name: string;
+    role?: string;
+}
 
 interface EnhancedReceptionDialogProps {
     companyName: string;
@@ -55,49 +62,76 @@ export default function EnhancedReceptionDialog({
         isUrgent: false
     });
 
-    // Fetch people from company_id = 10 for the Received By dropdown
+    // Fetch people associated with the company from registry_individuals
     const fetchCompanyPeople = async () => {
-        const COMPANY_ID = '10';
         setLoadingPeople(true);
         
         try {
-            // Fetch all individuals with their employment history
-            const { data: individuals, error } = await supabase
+            // First, fetch all individuals (we'll filter client-side since JSONB contains is being problematic)
+            const { data: allIndividuals, error: fetchError } = await supabase
                 .from('registry_individuals')
                 .select('id, full_name, employment_history');
 
-            if (error) {
-                console.error('Error fetching company people:', error);
+            if (fetchError) {
+                console.error('Error fetching individuals:', fetchError);
                 return;
             }
 
-            if (individuals) {
-                const now = new Date();
+            // Filter individuals who have this company in their employment_history
+            const individualsData = allIndividuals?.filter(individual => {
+                if (!individual.employment_history) return false;
                 
-                // Filter for people employed at company_id = 10
-                const company10People = individuals.filter(person => {
-                    if (!person.employment_history || !Array.isArray(person.employment_history)) return false;
-                    
-                    return person.employment_history.some((emp: any) => {
-                        if (!emp || !emp.role) return false;
-                        
-                        // Check if employed at company_id = 10
-                        if (emp.company_id !== COMPANY_ID) return false;
-                        
-                        // Check if currently employed
-                        const endDate = emp.end_date ? new Date(emp.end_date) : null;
-                        return !endDate || endDate >= now;
-                    });
+                // Check if any employment record matches the company_id
+                return individual.employment_history.some((emp: any) => 
+                    emp.company_id === companyId.toString() && 
+                    emp.role?.toLowerCase() !== 'stakeholder'
+                );
+            }) || [];
+
+            if (!individualsData) {
+                console.error('No individuals data found');
+                return;
+            }
+
+            if (individualsData) {
+                const now = new Date();
+                const directorsList: Individual[] = [];
+                const employeesList: Individual[] = [];
+
+                individualsData.forEach(individual => {
+                    if (!individual.employment_history) return;
+
+                    // Find the employment record for this company
+                    const employment = individual.employment_history.find(
+                        (emp: any) => emp.company_id === companyId.toString() && 
+                                     emp.role?.toLowerCase() !== 'stakeholder'
+                    );
+
+                    if (!employment) return;
+
+                    // Check if currently employed
+                    const endDate = employment.end_date ? new Date(employment.end_date) : null;
+                    if (endDate && endDate < now) return; // Skip if employment has ended
+
+                    const person = {
+                        id: individual.id,
+                        full_name: individual.full_name,
+                        role: employment.role
+                    };
+
+                    if (employment.role?.toLowerCase().includes('director')) {
+                        directorsList.push(person);
+                    } else {
+                        employeesList.push(person);
+                    }
                 });
 
-                // Sort people by name
-                const sortedPeople = [...company10People].sort((a, b) => 
-                    a.full_name.localeCompare(b.full_name)
-                );
+                // Sort both lists by name
+                const sortByName = (a: Individual, b: Individual) => 
+                    a.full_name.localeCompare(b.full_name);
 
-                // For Received By, we don't need to separate employees and directors
-                setEmployees(sortedPeople);
-                setDirectors([]);
+                setDirectors([...directorsList].sort(sortByName));
+                setEmployees([...employeesList].sort(sortByName));
             }
         } catch (error) {
             console.error('Error fetching company people:', error);
@@ -216,23 +250,33 @@ export default function EnhancedReceptionDialog({
             dateTime.setHours(parseInt(hours), parseInt(minutes));
 
             const submissionData = {
+                company_id: companyId,
+                company_name: companyName,
+                year,
+                month,
                 received_at: isNil ? null : dateTime.toISOString(),
+                received_by: formData.receivedBy,
                 brought_by: formData.broughtBy,
                 delivery_method: formData.deliveryMethod,
                 document_types: formData.documentTypes,
                 files_count: formData.filesCount,
                 reception_notes: formData.receptionNotes,
-                received_by: formData.receivedBy,
-                processing_status: formData.processingStatus,
                 status: isNil ? 'nil' : 'received',
                 is_nil: isNil,
                 is_urgent: formData.isUrgent,
-                // Metadata
+                processing_status: formData.processingStatus,
                 updated_at: new Date().toISOString(),
                 updated_by: 'current_user' // Replace with actual user
             };
 
-            await onConfirm(submissionData);
+            // Upsert the file record
+            await upsertFileRecord(submissionData);
+            
+            // Call the onConfirm callback if provided
+            if (onConfirm) {
+                await onConfirm(submissionData);
+            }
+            
             setIsOpen(false);
             toast.success(
                 existingData
@@ -343,27 +387,46 @@ export default function EnhancedReceptionDialog({
                                                 <SelectContent>
                                                     <SelectItem value="other">Other Person...</SelectItem>
                                                     
-                                                    {employees.length > 0 && (
-                                                        <>
-                                                            <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground">
-                                                                Employees ({employees.length})
-                                                            </div>
-                                                            {employees.map((employee) => (
-                                                                <SelectItem key={employee.id} value={employee.full_name}>
-                                                                    {employee.full_name}
-                                                                </SelectItem>
-                                                            ))}
-                                                        </>
-                                                    )}
-                                                    
                                                     {directors.length > 0 && (
                                                         <>
                                                             <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground">
                                                                 Directors ({directors.length})
                                                             </div>
                                                             {directors.map((director) => (
-                                                                <SelectItem key={director.id} value={director.full_name}>
-                                                                    {director.full_name}
+                                                                <SelectItem 
+                                                                    key={director.id} 
+                                                                    value={director.full_name}
+                                                                    className="flex items-center gap-2"
+                                                                >
+                                                                    <span>{director.full_name}</span>
+                                                                    {director.role && (
+                                                                        <Badge variant="outline" className="text-xs font-normal ml-2">
+                                                                            {director.role}
+                                                                        </Badge>
+                                                                    )}
+                                                                </SelectItem>
+                                                            ))}
+                                                            <Separator className="my-1" />
+                                                        </>
+                                                    )}
+                                                    
+                                                    {employees.length > 0 && (
+                                                        <>
+                                                            <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground">
+                                                                Employees ({employees.length})
+                                                            </div>
+                                                            {employees.map((employee) => (
+                                                                <SelectItem 
+                                                                    key={employee.id} 
+                                                                    value={employee.full_name}
+                                                                    className="flex items-center gap-2"
+                                                                >
+                                                                    <span>{employee.full_name}</span>
+                                                                    {employee.role && (
+                                                                        <Badge variant="outline" className="text-xs font-normal ml-2">
+                                                                            {employee.role}
+                                                                        </Badge>
+                                                                    )}
                                                                 </SelectItem>
                                                             ))}
                                                         </>
@@ -390,49 +453,68 @@ export default function EnhancedReceptionDialog({
                                     <div className="space-y-2">
                                         <Label htmlFor="receivedBy">Received By</Label>
                                         <Select
-                                            value={formData.receivedBy}
-                                            onValueChange={(value) => setFormData(prev => ({ 
-                                                ...prev, 
-                                                receivedBy: value === 'other' ? '' : value 
-                                            }))}
+                                            value={formData.receivedBy.startsWith('other:') ? 'other' : formData.receivedBy}
+                                            onValueChange={(value) => {
+                                                if (value === 'other') {
+                                                    setFormData(prev => ({
+                                                        ...prev,
+                                                        receivedBy: 'other:'
+                                                    }));
+                                                } else {
+                                                    setFormData(prev => ({
+                                                        ...prev,
+                                                        receivedBy: value
+                                                    }));
+                                                }
+                                            }}
+                                            disabled={loadingPeople}
                                         >
                                             <SelectTrigger>
                                                 {loadingPeople ? (
-                                                    <span>Loading people...</span>
+                                                    <span>Loading staff...</span>
                                                 ) : (
-                                                    <SelectValue placeholder="Select person" />
+                                                    <SelectValue placeholder="Select receiver" />
                                                 )}
                                             </SelectTrigger>
                                             <SelectContent>
-                                                <SelectItem value="Front Desk">Front Desk</SelectItem>
-                                                <SelectItem value="Reception">Reception</SelectItem>
-                                                <SelectItem value="Document Controller">Document Controller</SelectItem>
-                                                <SelectItem value="Manager">Manager</SelectItem>
+                                                <SelectItem value="other">Other...</SelectItem>
                                                 
                                                 {employees.length > 0 && (
                                                     <>
                                                         <Separator className="my-1" />
                                                         <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground">
-                                                            Company 10 Employees ({employees.length})
+                                                            Employees ({employees.length})
                                                         </div>
-                                                        {employees.map((person) => (
-                                                            <SelectItem key={`person-${person.id}`} value={person.full_name}>
-                                                                {person.full_name}
+                                                        {employees.map((employee) => (
+                                                            <SelectItem 
+                                                                key={`recv-${employee.id}`} 
+                                                                value={employee.full_name}
+                                                                className="flex items-center gap-2"
+                                                            >
+                                                                <span>{employee.full_name}</span>
+                                                                {employee.role && (
+                                                                    <Badge variant="outline" className="text-xs font-normal ml-2">
+                                                                        {employee.role}
+                                                                    </Badge>
+                                                                )}
                                                             </SelectItem>
                                                         ))}
-                                                        <Separator className="my-1" />
                                                     </>
                                                 )}
-                                                <SelectItem value="other">Other...</SelectItem>
                                             </SelectContent>
                                         </Select>
-                                        {formData.receivedBy === '' && (
-                                            <Input
-                                                value={formData.receivedBy}
-                                                onChange={(e) => setFormData(prev => ({ ...prev, receivedBy: e.target.value }))}
-                                                placeholder="Enter receiver's name"
-                                                className="mt-2"
-                                            />
+                                        {(formData.receivedBy.startsWith('other:') || (!formData.receivedBy && !employees.length)) && (
+                                            <div className="mt-2">
+                                                <Input
+                                                    value={formData.receivedBy.startsWith('other:') ? formData.receivedBy.substring(6) : formData.receivedBy}
+                                                    onChange={(e) => setFormData(prev => ({
+                                                        ...prev,
+                                                        receivedBy: 'other:' + e.target.value
+                                                    }))}
+                                                    placeholder="Enter receiver's name"
+                                                    className="w-full"
+                                                />
+                                            </div>
                                         )}
                                     </div>
                                 </div>

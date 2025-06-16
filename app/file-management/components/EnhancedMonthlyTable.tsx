@@ -20,21 +20,7 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import {
-    Search,
-    Download,
-    Settings2,
-    CalendarIcon,
-    Send,
-    Filter,
-    MoreHorizontal,
-    Archive,
-    Mail,
-    FileDown,
-    ArrowUpDown,
-    Eye,
-    EyeOff
-} from "lucide-react";
+import { Search, Download, Settings2, CalendarIcon, Send, Filter, MoreHorizontal, Archive, Mail, FileDown, ArrowUpDown, Eye, EyeOff, XCircle, Clock, Package, Loader2, CheckCircle, Ban } from "lucide-react";
 import ClientCategoryFilter from '@/components/ClientCategoryFilter-updated-ui';
 import { format } from "date-fns";
 import { toast } from 'react-hot-toast';
@@ -101,12 +87,23 @@ export default function EnhancedMonthlyTable({
     const month = selectedDate.getMonth() + 1;
 
     // Get file record for a company in the selected month
-    const getCompanyRecord = (companyId: string) => {
-        return fileRecords.find(record =>
-            record.company_id === companyId &&
-            record.year === year &&
-            record.month === month
-        );
+    const getCompanyRecord = (companyId: string | number) => {
+        // Convert companyId to string for consistent comparison
+        const companyIdStr = companyId.toString();
+        
+        // Try to find a matching record
+        const record = fileRecords.find(record => {
+            // Handle both string and numeric company_id
+            const recordCompanyId = typeof record.company_id === 'number' 
+                ? record.company_id.toString() 
+                : record.company_id;
+                
+            return recordCompanyId === companyIdStr &&
+                   record.year === year &&
+                   record.month === month;
+        });
+        
+        return record || null;
     };
 
     const formatDateTime = (dateTimeString?: string) => {
@@ -271,6 +268,8 @@ export default function EnhancedMonthlyTable({
             ),
             cell: ({ row }) => {
                 const record = getCompanyRecord(row.original.id);
+                const hasReception = record && (record.received_at || record.is_nil);
+                
                 return (
                     <div className="flex items-center justify-center">
                         <EnhancedReceptionDialog
@@ -281,16 +280,19 @@ export default function EnhancedMonthlyTable({
                             onConfirm={(data) => onUpdateRecord(row.original.id, year, month, data)}
                             existingData={record}
                         />
+                        {hasReception && (
+                            <CheckCircle className="h-4 w-4 ml-1 text-green-500" />
+                        )}
                         {record?.is_nil && (
-                            <Badge variant="destructive" className="ml-2 text-xs">NIL</Badge>
+                            <Badge variant="destructive" className="ml-1 text-xs">NIL</Badge>
                         )}
                         {record?.is_urgent && (
-                            <Badge variant="destructive" className="ml-2 text-xs animate-pulse">URGENT</Badge>
+                            <Badge variant="destructive" className="ml-1 text-xs animate-pulse">URGENT</Badge>
                         )}
                     </div>
                 );
             },
-            size: 120,
+            size: 140,
         }),
 
         // Reception details
@@ -340,6 +342,24 @@ export default function EnhancedMonthlyTable({
             ),
             cell: ({ row }) => {
                 const record = getCompanyRecord(row.original.id);
+                const hasReception = record && (record.received_at || record.is_nil);
+                
+                if (!hasReception) {
+                    return (
+                        <div className="flex items-center justify-center">
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                disabled
+                                className="text-gray-400 cursor-not-allowed"
+                                title="Document reception must be recorded first"
+                            >
+                                <XCircle className="h-5 w-5" />
+                            </Button>
+                        </div>
+                    );
+                }
+                
                 return (
                     <div className="flex items-center justify-center">
                         <EnhancedDeliveryDialog
@@ -351,6 +371,9 @@ export default function EnhancedMonthlyTable({
                             existingData={record}
                             receptionData={record}
                         />
+                        {record?.delivered_at && (
+                            <CheckCircle className="h-4 w-4 ml-1 text-green-500" />
+                        )}
                     </div>
                 );
             },
@@ -360,16 +383,6 @@ export default function EnhancedMonthlyTable({
         // Delivery details
         columnHelper.display({
             id: 'deliveryDetails',
-            header: ({ column }) => (
-                <Button
-                    variant="ghost"
-                    onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-                    className="p-0 hover:bg-transparent"
-                >
-                    Delivery Details
-                    <ArrowUpDown className="ml-2 h-4 w-4" />
-                </Button>
-            ),
             cell: ({ row }) => {
                 const record = getCompanyRecord(row.original.id);
                 const dateTime = formatDateTime(record?.delivered_at);
@@ -402,25 +415,64 @@ export default function EnhancedMonthlyTable({
             ),
             cell: ({ row }) => {
                 const record = getCompanyRecord(row.original.id);
-                const status = record?.status || 'pending';
+                
+                // Determine status based on record state
+                let status = 'pending';
+                if (record) {
+                    if (record.is_nil) {
+                        status = 'nil';
+                    } else if (record.delivered_at) {
+                        status = 'delivered';
+                    } else if (record.received_at) {
+                        status = 'received';
+                    } else if (record.processing_status === 'in_progress') {
+                        status = 'processed';
+                    }
+                }
 
                 const statusConfig = {
-                    pending: { label: 'Pending', color: 'bg-gray-100 text-gray-800' },
-                    received: { label: 'Received', color: 'bg-blue-100 text-blue-800' },
-                    processed: { label: 'Processed', color: 'bg-yellow-100 text-yellow-800' },
-                    delivered: { label: 'Delivered', color: 'bg-green-100 text-green-800' },
-                    nil: { label: 'NIL', color: 'bg-red-100 text-red-800' }
+                    pending: { 
+                        label: 'Pending', 
+                        color: 'bg-gray-100 text-gray-800 border border-gray-200',
+                        icon: <Clock className="h-3 w-3 mr-1" />
+                    },
+                    received: { 
+                        label: 'Received', 
+                        color: 'bg-blue-50 text-blue-700 border border-blue-200',
+                        icon: <Package className="h-3 w-3 mr-1" />
+                    },
+                    processed: { 
+                        label: 'In Process', 
+                        color: 'bg-yellow-50 text-yellow-700 border border-yellow-200',
+                        icon: <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                    },
+                    delivered: { 
+                        label: 'Delivered', 
+                        color: 'bg-green-50 text-green-700 border border-green-200',
+                        icon: <CheckCircle className="h-3 w-3 mr-1" />
+                    },
+                    nil: { 
+                        label: 'NIL', 
+                        color: 'bg-red-50 text-red-700 border border-red-200',
+                        icon: <Ban className="h-3 w-3 mr-1" />
+                    }
                 };
 
                 const config = statusConfig[status as keyof typeof statusConfig] || statusConfig.pending;
 
                 return (
-                    <Badge className={`text-xs ${config.color}`}>
-                        {config.label}
-                    </Badge>
+                    <div className="flex items-center">
+                        <Badge className={`text-xs font-normal ${config.color} flex items-center`}>
+                            {config.icon}
+                            {config.label}
+                        </Badge>
+                        {record?.is_urgent && (
+                            <span className="ml-2 h-2 w-2 rounded-full bg-red-500 animate-pulse" />
+                        )}
+                    </div>
                 );
             },
-            size: 100,
+            size: 140,
         }),
 
         // Actions
@@ -751,8 +803,7 @@ export default function EnhancedMonthlyTable({
                     {selectedRows.length > 0 && (
                         <BulkOperationsDialog
                             selectedCompanies={selectedRows}
-                            year={year}
-                            month={month}
+                            year={year}                            month={month}
                             onBulkOperation={onBulkOperation}
                             open={bulkDialogOpen}
                             onOpenChange={setBulkDialogOpen}
