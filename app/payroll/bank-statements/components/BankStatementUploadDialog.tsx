@@ -1,75 +1,50 @@
 // @ts-nocheck
-import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Separator } from '@/components/ui/separator';
-import { Progress } from '@/components/ui/progress';
-import { useToast } from '@/hooks/use-toast';
+import { useState, useRef, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { useStatementCycle } from '@/app/payroll/hooks/useStatementCycle';
-import { performBankStatementExtraction } from '@/lib/bankExtractionUtils';
+import { useToast } from '@/hooks/use-toast';
+import { format, parseISO } from 'date-fns';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Loader2, Upload, AlertTriangle, UploadCloud, FileText, Building, CreditCard, DollarSign, Sheet , Landmark, Calendar, Check, X } from 'lucide-react';
 import { BankValidationDialog } from './BankValidationDialog';
-import { Upload, FileText, AlertCircle, CheckCircle2, Eye, Lock, Unlock } from 'lucide-react';
-import {
-    parseStatementPeriod,
-    generateMonthRange,
-    normalizeCurrencyCode,
-    detectPasswordFromFilename,
-    getBankNameFromFilename,
-    validateExtractedData
-} from '../utils/bankStatementUtils';
-import BankExtractionDialog from './BankExtractionDialog';
+import { performBankStatementExtraction, generateMonthRange, parseStatementPeriod } from '@/lib/bankExtractionUtils';
 
-// Types and Interfaces
-interface Bank {
-    id: number;
-    bank_name: string;
-    account_number: string;
-    bank_currency: string;
-    company_id: number;
-    acc_password?: string;
+// --- Interfaces & Types ---
+interface Bank { 
+    id: number; 
+    bank_name: string; 
+    account_number: string; 
+    bank_currency: string; 
+    company_id: number; 
+    company_name: string; 
 }
 
-interface BankStatement {
-    id: string;
-    bank_id: number;
-    statement_cycle_id: string;
-    statement_month: number;
-    statement_year: number;
-    statement_type: 'monthly' | 'range';
-    has_soft_copy: boolean;
-    has_hard_copy: boolean;
-    statement_document: {
-        statement_pdf?: string;
-        statement_excel?: string;
+interface BankStatement { 
+    id: string; 
+    has_soft_copy: boolean; 
+    has_hard_copy: boolean; 
+    statement_document: { 
+        statement_pdf: string | null;
+        statement_excel: string | null;
         document_size?: number;
-        password?: string;
-    };
-    statement_extractions: any;
-    validation_status?: {
-        is_validated: boolean;
-        validation_date: string;
-        validated_by: string | null;
-        mismatches: string[];
-    };
-    status?: {
-        status: string;
-        assigned_to: string | null;
-        verification_date: string | null;
-    };
-    related_statements?: string[];
+        document_type?: string;
+    }; 
+    statement_extractions: any; 
+    validation_status: any; 
+    status: any;
+    statement_month?: number;
+    statement_year?: number;
 }
 
-interface ValidationResult {
-    isValid: boolean;
-    mismatches: string[];
-    extractedData: any;
+interface ValidationResult { 
+    isValid: boolean; 
+    mismatches: string[]; 
+    extractedData: any; 
     monthlyBalances?: Array<{
         month: number;
         year: number;
@@ -80,898 +55,249 @@ interface ValidationResult {
     }>;
 }
 
-interface BankStatementUploadDialogProps {
-    isOpen: boolean;
-    onClose: () => void;
-    bank: Bank;
-    cycleMonth: number; // 0-indexed
-    cycleYear: number;
-    onStatementUploaded: (statement: BankStatement) => void;
-    existingStatement: BankStatement | null;
-    statementCycleId: string | null;
-    onOpenExtractionDialog?: (statement: BankStatement) => void;
+interface StatementPeriod {
+    month: number;
+    year: number;
+    key: string;
+    statement_pdf?: string | null;
+    statement_excel?: string | null;
+    isUploaded?: boolean;
 }
 
-// Main Component
-export function BankStatementUploadDialog({
-    isOpen,
-    onClose,
-    bank,
-    cycleMonth,
-    cycleYear,
-    onStatementUploaded,
-    existingStatement,
-    statementCycleId,
-    onOpenExtractionDialog
-}: BankStatementUploadDialogProps) {
-    const { getOrCreateStatementCycle, loading: cycleLoading, error: cycleError } = useStatementCycle();
+interface BankStatementUploadDialogProps { 
+    isOpen: boolean; 
+    onClose: () => void; 
+    bank: Bank; 
+    cycleMonth: number; 
+    cycleYear: number; 
+    onStatementUploaded: (statement: BankStatement) => void; 
+    existingStatement: BankStatement | null; 
+    statementCycleId: string | null; 
+}
 
-    // File and form states
+// --- Main Component ---
+export function BankStatementUploadDialog({ isOpen, onClose, bank, cycleMonth, cycleYear, onStatementUploaded, existingStatement, statementCycleId }: BankStatementUploadDialogProps) {
     const [pdfFile, setPdfFile] = useState<File | null>(null);
     const [excelFile, setExcelFile] = useState<File | null>(null);
     const [hasSoftCopy, setHasSoftCopy] = useState<boolean>(true);
     const [hasHardCopy, setHasHardCopy] = useState<boolean>(false);
-
-    // Password handling
-    const [password, setPassword] = useState<string>('');
-    const [detectedPassword, setDetectedPassword] = useState<string>('');
-    const [pdfNeedsPassword, setPdfNeedsPassword] = useState<boolean>(false);
-    const [passwordApplied, setPasswordApplied] = useState<boolean>(false);
-    const [applyingPassword, setApplyingPassword] = useState<boolean>(false);
-
-    // Processing states
     const [isProcessing, setIsProcessing] = useState<boolean>(false);
-    const [uploading, setUploading] = useState<boolean>(false);
-    const [extracting, setExtracting] = useState<boolean>(false);
     const [statusMessage, setStatusMessage] = useState('');
-    const [uploadProgress, setUploadProgress] = useState(0);
-
-    // Dialog states
     const [showValidationDialog, setShowValidationDialog] = useState<boolean>(false);
-    const [showExtractionDialog, setShowExtractionDialog] = useState<boolean>(false);
     const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
-    const [extractionResults, setExtractionResults] = useState<any>(null);
-    const [validationResults, setValidationResults] = useState<any>(null);
-    const [uploadedStatement, setUploadedStatement] = useState<BankStatement | null>(null);
-
-    // Refs
     const pdfInputRef = useRef<HTMLInputElement>(null);
     const { toast } = useToast();
 
-    // Reset form when dialog opens
     useEffect(() => {
         if (isOpen) {
             setPdfFile(null);
-            setExcelFile(null);
-            setPassword('');
-            setDetectedPassword('');
-            setPdfNeedsPassword(false);
-            setPasswordApplied(false);
-            setValidationResult(null);
-            setExtractionResults(null);
-            setValidationResults(null);
-            setUploadedStatement(null);
+            setValidationResult(null); // Clear previous validation result on open
             setHasSoftCopy(existingStatement?.has_soft_copy ?? true);
             setHasHardCopy(existingStatement?.has_hard_copy ?? false);
-            setStatusMessage('');
-            setUploadProgress(0);
+            if (pdfInputRef.current) pdfInputRef.current.value = '';
         }
     }, [isOpen, existingStatement]);
 
-    // Auto-detect password when file is selected
-    useEffect(() => {
-        if (pdfFile) {
-            const detected = detectPasswordFromFilename(pdfFile.name);
-            if (detected) {
-                setDetectedPassword(detected);
-                setPassword(detected);
-            }
-
-            // Also try bank's stored password
-            if (bank.acc_password) {
-                setPassword(bank.acc_password);
-            }
-        }
-    }, [pdfFile, bank.acc_password]);
-
-    // Multi-month statement handler
-    const handleMultiMonthStatement = async (
-        statementData: any,
-        bank: Bank,
-        extractedData: any,
-        documentInfo: any
-    ) => {
-        const additionalStatements = [];
-
-        try {
-            // Parse statement period
-            const periodDates = parseStatementPeriod(extractedData.statement_period);
-            if (!periodDates) return additionalStatements;
-
-            console.log('Processing multi-month statement:', periodDates);
-
-            // Generate all months in the range
-            const monthsInRange = generateMonthRange(
-                periodDates.startMonth,
-                periodDates.startYear,
-                periodDates.endMonth,
-                periodDates.endYear
-            );
-
-            // Skip the primary month (already created)
-            const primaryMonth = cycleMonth + 1; // Convert to 1-based
-            const primaryYear = cycleYear;
-
-            for (const monthPeriod of monthsInRange) {
-                if (monthPeriod.month === primaryMonth && monthPeriod.year === primaryYear) {
-                    continue; // Skip primary month
-                }
-
-                // Get or create cycle for this month
-                const cycle = await getOrCreateStatementCycle(monthPeriod.month - 1, monthPeriod.year); // Convert back to 0-based
-
-                // Find balance for this specific month
-                const monthBalance = extractedData.monthly_balances?.find(
-                    (balance: any) => balance.month === monthPeriod.month && balance.year === monthPeriod.year
-                );
-
-                const additionalStatementData = {
-                    ...statementData,
-                    statement_cycle_id: cycle.id,
-                    statement_month: monthPeriod.month - 1, // Convert to 0-based
-                    statement_year: monthPeriod.year,
-                    statement_type: 'range',
-                    statement_extractions: {
-                        ...extractedData,
-                        opening_balance: monthBalance?.opening_balance || null,
-                        closing_balance: monthBalance?.closing_balance || null,
-                    }
-                };
-
-                const { data: additionalStatement, error } = await supabase
-                    .from('acc_cycle_bank_statements')
-                    .insert(additionalStatementData)
-                    .select()
-                    .single();
-
-                if (!error && additionalStatement) {
-                    additionalStatements.push(additionalStatement);
-                    console.log(`Created additional statement for ${monthPeriod.month}/${monthPeriod.year}`);
-                }
-            }
-        } catch (error) {
-            console.error('Error creating multi-month statements:', error);
+    // Check if statement period matches the selected period
+    const checkStatementPeriod = (extractedData: any): { isValid: boolean; message: string } => {
+        if (!extractedData.statement_period) {
+            return { isValid: true, message: 'No statement period found in document' };
         }
 
-        return additionalStatements;
+        const period = parseStatementPeriod(extractedData.statement_period);
+        if (!period) {
+            return { isValid: true, message: 'Could not parse statement period' };
+        }
+
+        const expectedDate = new Date(cycleYear, cycleMonth, 1);
+        const statementDate = new Date(period.year, period.month - 1, 1);
+        
+        if (expectedDate.getTime() !== statementDate.getTime()) {
+            return { 
+                isValid: false, 
+                message: `Statement period (${format(statementDate, 'MMM yyyy')}) does not match selected period (${format(expectedDate, 'MMM yyyy')})`
+            };
+        }
+        return { isValid: true, message: 'Period matches' };
     };
 
-    // Password application handler
-    const handleApplyPassword = async () => {
-        if (!pdfFile || !password) {
-            toast({
-                title: "Missing Information",
-                description: "Please select a file and enter a password",
-                variant: "destructive"
-            });
-            return;
+    const handleUpload = async (forceProceed = false): Promise<BankStatement | null> => {
+        if (!pdfFile && !existingStatement) {
+            toast({ title: 'File Missing', description: 'Please select a PDF file.', variant: 'destructive' });
+            return null;
         }
-
-        setApplyingPassword(true);
-        try {
-            // Test if password works by attempting a simple extraction
-            const fileUrl = URL.createObjectURL(pdfFile);
-
-            const testResult = await performBankStatementExtraction(fileUrl, {
-                month: cycleMonth,
-                year: cycleYear,
-                password: password,
-                extractPeriodOnly: true // Only test extraction, don't do full process
-            });
-
-            URL.revokeObjectURL(fileUrl);
-
-            if (testResult?.success || !testResult?.requiresPassword) {
-                setPasswordApplied(true);
-                setPdfNeedsPassword(false);
-                toast({
-                    title: "Success",
-                    description: "Password applied successfully",
-                    variant: "default"
-                });
-            } else {
-                toast({
-                    title: "Invalid Password",
-                    description: "The password provided doesn't unlock this PDF. Please try again.",
-                    variant: "destructive"
-                });
-            }
-        } catch (error) {
-            console.error('Error applying password:', error);
-            toast({
-                title: "Error",
-                description: "Failed to apply password",
-                variant: "destructive"
-            });
-        } finally {
-            setApplyingPassword(false);
-        }
-    };
-
-    // Main upload processor
-    const processUpload = async (extractedData?: any) => {
-        let mainStatement: BankStatement | null = null;
-        let additionalStatements: BankStatement[] = [];
-        let fileUrl: string | null = null;
+        setIsProcessing(true);
+        setStatusMessage('Starting...');
 
         try {
-            setUploading(true);
-            setUploadProgress(10);
+            // Use a local variable to hold the validation result for this run.
+            let currentValidationResult = validationResult;
 
-            if (!pdfFile) {
-                throw new Error('No PDF file selected');
-            }
-
-            // Get or create statement cycle
-            const cycleId = statementCycleId || (await getOrCreateStatementCycle(cycleMonth, cycleYear)).id;
-            setUploadProgress(20);
-
-            // Upload PDF file
-            const pdfFileName = `${bank.id}_${cycleMonth + 1}_${cycleYear}_${Date.now()}.pdf`;
-            const { data: pdfUploadData, error: pdfUploadError } = await supabase.storage
-                .from('bank-statements')
-                .upload(pdfFileName, pdfFile);
-
-            if (pdfUploadError) throw pdfUploadError;
-            setUploadProgress(40);
-
-            // Upload Excel file if provided
-            let excelFileName: string | null = null;
-            if (excelFile) {
-                excelFileName = `${bank.id}_${cycleMonth + 1}_${cycleYear}_${Date.now()}.xlsx`;
-                const { error: excelUploadError } = await supabase.storage
-                    .from('bank-statements')
-                    .upload(excelFileName, excelFile);
-
-                if (excelUploadError) {
-                    console.warn('Excel upload failed:', excelUploadError);
-                    excelFileName = null;
-                }
-            }
-            setUploadProgress(60);
-
-            // Prepare document info
-            const documentInfo = {
-                statement_pdf: pdfUploadData.path,
-                statement_excel: excelFileName,
-                document_size: pdfFile.size,
-                password: passwordApplied ? password : null
-            };
-
-            // Determine if this is a multi-month statement
-            const isMultiMonth = extractedData && extractedData.statement_period &&
-                parseStatementPeriod(extractedData.statement_period) &&
-                (() => {
-                    const period = parseStatementPeriod(extractedData.statement_period);
-                    return period && (period.startMonth !== period.endMonth || period.startYear !== period.endYear);
-                })();
-
-            // Prepare main statement data
-            const statementData = {
-                company_id: bank.company_id,
-                bank_id: bank.id,
-                statement_cycle_id: cycleId,
-                statement_month: cycleMonth,
-                statement_year: cycleYear,
-                statement_type: isMultiMonth ? 'range' : 'monthly',
-                has_soft_copy: hasSoftCopy,
-                has_hard_copy: hasHardCopy,
-                statement_document: documentInfo,
-                statement_extractions: extractedData || {},
-                extraction_performed: !!extractedData,
-                extraction_timestamp: extractedData ? new Date().toISOString() : null,
-                validation_status: extractedData ? {
-                    is_validated: validationResults?.isValid || false,
-                    validation_date: new Date().toISOString(),
-                    validated_by: null,
-                    mismatches: validationResults?.mismatches || []
-                } : null,
-                status: {
-                    status: extractedData ? 'pending_validation' : 'uploaded',
-                    assigned_to: null,
-                    verification_date: null
-                }
-            };
-
-            // Insert or update main statement
-            if (existingStatement) {
-                const { data: updatedStatement, error: updateError } = await supabase
-                    .from('acc_cycle_bank_statements')
-                    .update(statementData)
-                    .eq('id', existingStatement.id)
-                    .select()
-                    .single();
-
-                if (updateError) throw updateError;
-                mainStatement = updatedStatement;
-            } else {
-                const { data: newStatement, error: insertError } = await supabase
-                    .from('acc_cycle_bank_statements')
-                    .insert(statementData)
-                    .select()
-                    .single();
-
-                if (insertError) throw insertError;
-                mainStatement = newStatement;
-                console.log("Created new statement:", mainStatement.id);
-            }
-            setUploadProgress(80);
-
-            // Handle multi-month statement if needed
-            if (isMultiMonth && extractedData && mainStatement) {
+            // Step 1: Extract & Validate ONLY if a new file exists and hasn't been validated yet.
+            if (pdfFile) {
+                setStatusMessage('Extracting data...');
+                const fileUrl = URL.createObjectURL(pdfFile);
                 try {
-                    additionalStatements = await handleMultiMonthStatement(
-                        statementData,
-                        bank,
-                        extractedData,
-                        documentInfo
-                    );
-
-                    console.log(`Created ${additionalStatements.length} additional statements for multi-month range`);
-
-                    // Update the main statement to reflect it's part of a multi-month set
-                    const { error: updateError } = await supabase
-                        .from('acc_cycle_bank_statements')
-                        .update({
-                            related_statements: additionalStatements.map(s => s.id),
-                            statement_extractions: {
-                                ...mainStatement.statement_extractions,
-                                is_multi_month: true,
-                                multi_month_statement_ids: additionalStatements.map(s => s.id)
-                            }
-                        })
-                        .eq('id', mainStatement.id);
-
-                    if (updateError) {
-                        console.error("Error updating main statement with multi-month info:", updateError);
+                    const extraction = await performBankStatementExtraction(fileUrl, { month: cycleMonth, year: cycleYear });
+                    if (!extraction.success) throw new Error(extraction.message || 'Failed to extract data.');
+                    
+                    // Use bank name from DB if account number matches
+                    const extractedData = { ...extraction.extractedData };
+                    if (extractedData.account_number && extractedData.account_number === bank.account_number) {
+                        extractedData.bank_name = bank.bank_name;
                     }
-                } catch (multiMonthError) {
-                    console.error("Error processing multi-month statements:", multiMonthError);
-                    toast({
-                        title: 'Warning',
-                        description: 'Failed to create additional months from multi-month statement',
-                        variant: 'default'
-                    });
+                    
+                    // Check statement period
+                    const periodCheck = checkStatementPeriod(extractedData);
+                    if (!periodCheck.isValid) {
+                        setStatusMessage('Period mismatch detected');
+                        const confirm = window.confirm(`${periodCheck.message}. Do you want to continue with the selected period (${format(new Date(cycleYear, cycleMonth, 1), 'MMM yyyy')})?`);
+                        if (!confirm) {
+                            setIsProcessing(false);
+                            return null;
+                        }
+                    }
+                    
+                    currentValidationResult = { 
+                        isValid: false, 
+                        mismatches: periodCheck.isValid ? ["Needs review"] : [periodCheck.message], 
+                        extractedData 
+                    };
+                    setValidationResult(currentValidationResult);
+                } finally {
+                    URL.revokeObjectURL(fileUrl);
                 }
             }
-            setUploadProgress(90);
 
-            // Set the uploaded statement and show extraction dialog
-            setUploadedStatement(mainStatement);
-            onStatementUploaded(mainStatement);
-
-            // Show extraction dialog for reviewing/editing extracted data
-            if (extractedData && onOpenExtractionDialog) {
-                onOpenExtractionDialog(mainStatement);
-            } else if (extractedData) {
-                setShowExtractionDialog(true);
-            }
-
-            // Clear URL objects
-            if (fileUrl) {
-                URL.revokeObjectURL(fileUrl);
-            }
-
-            setUploadProgress(100);
-            setUploading(false);
-
-            toast({
-                title: 'Success',
-                description: isMultiMonth
-                    ? `Uploaded statement for ${additionalStatements.length + 1} months`
-                    : 'Statement uploaded successfully',
-            });
-
-            return mainStatement;
-        } catch (error) {
-            console.error('Upload error:', error);
-            setUploading(false);
-            setUploadProgress(0);
-            toast({
-                title: 'Upload Error',
-                description: error.message || 'An error occurred during upload',
-                variant: 'destructive'
-            });
-            throw error;
-        }
-    };
-
-    // Main upload handler
-    const handleUpload = async () => {
-        if (!pdfFile) {
-            toast({
-                title: 'No File Selected',
-                description: 'Please select a file to upload',
-                variant: 'destructive'
-            });
-            return;
-        }
-
-        setUploading(true);
-        setStatusMessage('Starting extraction...');
-
-        try {
-            // Create file URL for extraction
-            const fileUrl = URL.createObjectURL(pdfFile);
-
-            // Attempt extraction with bank statement extraction utility
-            const extractionResults = await performBankStatementExtraction(fileUrl, {
-                month: cycleMonth,
-                year: cycleYear,
-                password: pdfNeedsPassword ? password : null
-            });
-
-            // Clean up URL
-            URL.revokeObjectURL(fileUrl);
-
-            setExtractionResults(extractionResults);
-
-            // If extraction successful, validate the data
-            if (extractionResults?.success) {
-                const validationResult = validateExtractedData(extractionResults.extractedData, bank);
-                setValidationResults(validationResult);
-
-                // If validation issues, show validation dialog
-                if (!validationResult.isValid) {
-                    setShowValidationDialog(true);
-                    setUploading(false);
-                    return;
-                }
-            } else if (extractionResults?.requiresPassword) {
-                setPdfNeedsPassword(true);
-                setUploading(false);
-                toast({
-                    title: "Password Required",
-                    description: "This PDF is password protected. Please provide a password.",
-                    variant: "default"
-                });
+            // Step 2: If validation issues exist and we are NOT forcing, show the dialog.
+            if (currentValidationResult && !currentValidationResult.isValid && !forceProceed) {
+                setShowValidationDialog(true);
+                setIsProcessing(false);
                 return;
             }
 
-            // Continue with upload process
-            await processUpload(extractionResults?.success ? extractionResults.extractedData : null);
+            // Step 3: Upload files and save data.
+            setStatusMessage('Uploading files...');
+            let pdfPath = existingStatement?.statement_document?.statement_pdf || null;
+            let documentSize = existingStatement?.statement_document?.document_size || 0;
+            
+            if (pdfFile) {
+                const filePath = `statement_documents/${cycleYear}/${cycleMonth + 1}/${bank.company_id}/bank_${bank.id}_${Date.now()}.pdf`;
+                const { data, error } = await supabase.storage.from('Statement-Cycle').upload(filePath, pdfFile, { upsert: true });
+                if (error) throw error;
+                pdfPath = data.path;
+                documentSize = pdfFile.size; // Capture the file size
+            }
+
+            setStatusMessage('Saving statement...');
+            const dataToSave = {
+                id: existingStatement?.id,
+                bank_id: bank.id,
+                company_id: bank.company_id,
+                statement_cycle_id: statementCycleId,
+                statement_month: cycleMonth,
+                statement_year: cycleYear,
+                has_soft_copy: hasSoftCopy,
+                has_hard_copy: hasHardCopy,
+                statement_document: { 
+                    statement_pdf: pdfPath,
+                    document_size: documentSize // Include document size
+                },
+                statement_extractions: currentValidationResult?.extractedData || existingStatement?.statement_extractions || {},
+                validation_status: currentValidationResult ? { is_validated: currentValidationResult.isValid, mismatches: currentValidationResult.mismatches, validation_date: new Date().toISOString() } : (existingStatement?.validation_status || {}),
+                status: { ...existingStatement?.status, status: 'pending_validation' }
+            };
+
+            // Update only the changed row using the ID if it exists
+            const { data: upsertedStatement, error } = await supabase
+                .from('acc_cycle_bank_statements')
+                .upsert(dataToSave, { onConflict: 'id' })
+                .select()
+                .single();
+            if (error) throw error;
+
+            toast({ title: 'Success', description: 'Bank statement processed successfully.' });
+            onStatementUploaded(upsertedStatement);
+            onClose();
+            return upsertedStatement;
 
         } catch (error) {
             console.error('Upload error:', error);
-            setUploading(false);
-            toast({
-                title: 'Upload Error',
-                description: error.message || 'An error occurred during upload',
-                variant: 'destructive'
-            });
+            toast({ title: 'Upload Error', description: error.message, variant: 'destructive' });
+        } finally {
+            setIsProcessing(false);
         }
     };
-
-    // Validation dialog handlers
-    const handleProceedWithValidation = async (updatedExtractedData: any) => {
-        try {
-            setShowValidationDialog(false);
-            await processUpload(updatedExtractedData);
-        } catch (error) {
-            console.error('Error proceeding with validation:', error);
-            toast({
-                title: 'Error',
-                description: 'Failed to proceed with upload',
-                variant: 'destructive'
-            });
-        }
-    };
-
-    const handleCancelValidation = () => {
-        setShowValidationDialog(false);
-        setUploading(false);
-        toast({
-            title: 'Upload Cancelled',
-            description: 'Upload cancelled due to validation issues',
-            variant: 'default'
-        });
-    };
-
-    // Extraction dialog handlers
-    const handleExtractionDialogClose = () => {
-        setShowExtractionDialog(false);
-        onClose();
-    };
-
-    const handleExtractionSave = async (updatedStatement: BankStatement) => {
-        setShowExtractionDialog(false);
-        onStatementUploaded(updatedStatement);
-        onClose();
-    };
-
-    // File handlers
-    const handlePdfFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (file) {
-            setPdfFile(file);
-
-            // Auto-detect password
-            const detected = detectPasswordFromFilename(file.name);
-            if (detected) {
-                setDetectedPassword(detected);
-                setPassword(detected);
-            }
-        }
-    };
-
-    const handleExcelFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (file) {
-            setExcelFile(file);
-        }
-    };
-
-    // Computed values
-    const isFormValid = useMemo(() => {
-        return pdfFile && (!pdfNeedsPassword || (password && passwordApplied));
-    }, [pdfFile, pdfNeedsPassword, password, passwordApplied]);
-
-    const uploadButtonText = useMemo(() => {
-        if (uploading) return 'Uploading...';
-        if (existingStatement) return 'Update Statement';
-        return 'Upload Statement';
-    }, [uploading, existingStatement]);
 
     return (
         <>
+            <Dialog open={isOpen} onOpenChange={onClose}><DialogContent className="sm:max-w-2xl">{/* Dialog UI */}</DialogContent></Dialog>
             <Dialog open={isOpen} onOpenChange={onClose}>
-                <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+                <DialogContent className="sm:max-w-3xl">
                     <DialogHeader>
-                        <DialogTitle>
-                            {existingStatement ? 'Update Bank Statement' : 'Upload Bank Statement'}
-                        </DialogTitle>
+                        <div className="bg-gradient-to-r from-blue-50 via-blue-100 to-blue-50 -mx-6 -mt-6 p-6 rounded-t-lg border-b border-blue-200">
+                            <div className="mb-2 flex justify-center"><div className="h-14 w-14 rounded-full bg-blue-100 border border-blue-200 flex items-center justify-center shadow-sm"><UploadCloud className="h-7 w-7 text-blue-600" /></div></div>
+                            <DialogTitle className="text-center text-xl text-blue-800">Upload Bank Statement</DialogTitle>
+                            <p className="text-center text-blue-600 text-sm mt-1">{bank.company_name}</p>
+                        </div>
                     </DialogHeader>
-
-                    <div className="space-y-6">
-                        {/* Bank Information */}
-                        <Card>
-                            <CardContent className="pt-6">
-                                <div className="grid grid-cols-2 gap-4 text-sm">
-                                    <div>
-                                        <Label className="text-xs text-muted-foreground">Bank</Label>
-                                        <p className="font-medium">{bank.bank_name}</p>
-                                    </div>
-                                    <div>
-                                        <Label className="text-xs text-muted-foreground">Account</Label>
-                                        <p className="font-medium">{bank.account_number}</p>
-                                    </div>
-                                    <div>
-                                        <Label className="text-xs text-muted-foreground">Period</Label>
-                                        <p className="font-medium">
-                                            {new Date(cycleYear, cycleMonth).toLocaleDateString('en-US', {
-                                                month: 'long',
-                                                year: 'numeric'
-                                            })}
-                                        </p>
-                                    </div>
-                                    <div>
-                                        <Label className="text-xs text-muted-foreground">Currency</Label>
-                                        <p className="font-medium">{bank.bank_currency}</p>
-                                    </div>
-                                </div>
-                            </CardContent>
-                        </Card>
-
-                        {/* Upload Progress */}
-                        {uploading && (
-                            <Card>
-                                <CardContent className="pt-6">
-                                    <div className="space-y-2">
-                                        <div className="flex justify-between text-sm">
-                                            <span>Upload Progress</span>
-                                            <span>{uploadProgress}%</span>
-                                        </div>
-                                        <Progress value={uploadProgress} className="w-full" />
-                                        {statusMessage && (
-                                            <p className="text-sm text-muted-foreground">{statusMessage}</p>
-                                        )}
-                                    </div>
-                                </CardContent>
-                            </Card>
-                        )}
-
-                        <Tabs defaultValue="upload" className="w-full">
-                            <TabsList className="grid w-full grid-cols-2">
-                                <TabsTrigger value="upload">File Upload</TabsTrigger>
-                                <TabsTrigger value="options">Options</TabsTrigger>
-                            </TabsList>
-
-                            <TabsContent value="upload" className="space-y-4">
-                                {/* PDF Upload */}
-                                <div className="space-y-2">
-                                    <Label htmlFor="pdf-upload">PDF Statement *</Label>
-                                    <div className="space-y-2">
-                                        <Input
-                                            id="pdf-upload"
-                                            ref={pdfInputRef}
-                                            type="file"
-                                            accept=".pdf"
-                                            onChange={handlePdfFileChange}
-                                            disabled={uploading}
-                                        />
-                                        {pdfFile && (
-                                            <div className="flex items-center gap-2 p-2 bg-muted rounded-md">
-                                                <FileText className="h-4 w-4 text-blue-600" />
-                                                <span className="text-sm font-medium">{pdfFile.name}</span>
-                                                <Badge variant="secondary" className="text-xs">
-                                                    {(pdfFile.size / 1024 / 1024).toFixed(2)} MB
-                                                </Badge>
-                                                {pdfNeedsPassword && !passwordApplied && (
-                                                    <Badge variant="destructive" className="text-xs">
-                                                        <Lock className="h-3 w-3 mr-1" />
-                                                        Password Required
-                                                    </Badge>
-                                                )}
-                                                {passwordApplied && (
-                                                    <Badge variant="default" className="text-xs">
-                                                        <Unlock className="h-3 w-3 mr-1" />
-                                                        Unlocked
-                                                    </Badge>
-                                                )}
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-
-                                {/* Password Section */}
-                                {(pdfNeedsPassword || detectedPassword) && (
-                                    <div className="space-y-3 p-4 bg-orange-50 border border-orange-200 rounded-md">
-                                        <div className="flex items-center gap-2">
-                                            <Lock className="h-4 w-4 text-orange-600" />
-                                            <Label className="font-medium text-orange-800">
-                                                PDF Password Protection
-                                            </Label>
-                                        </div>
-
-                                        {detectedPassword && (
-                                            <div className="flex items-center gap-2 text-sm text-green-700">
-                                                <CheckCircle2 className="h-4 w-4" />
-                                                <span>Auto-detected password: {detectedPassword}</span>
-                                            </div>
-                                        )}
-
-                                        <div className="space-y-2">
-                                            <Label htmlFor="pdf-password">Password</Label>
-                                            <div className="flex gap-2">
-                                                <Input
-                                                    id="pdf-password"
-                                                    type="password"
-                                                    value={password}
-                                                    onChange={(e) => setPassword(e.target.value)}
-                                                    placeholder="Enter PDF password"
-                                                    disabled={applyingPassword || passwordApplied}
-                                                />
-                                                <Button
-                                                    type="button"
-                                                    variant={passwordApplied ? "default" : "outline"}
-                                                    onClick={handleApplyPassword}
-                                                    disabled={!password || applyingPassword || passwordApplied}
-                                                    className="min-w-[100px]"
-                                                >
-                                                    {applyingPassword ? (
-                                                        "Testing..."
-                                                    ) : passwordApplied ? (
-                                                        <>
-                                                            <Unlock className="h-4 w-4 mr-1" />
-                                                            Applied
-                                                        </>
-                                                    ) : (
-                                                        "Apply"
-                                                    )}
-                                                </Button>
-                                            </div>
-                                        </div>
-
-                                        {bank.acc_password && (
-                                            <div className="text-xs text-muted-foreground">
-                                                <span>Bank's stored password available</span>
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
-
-                                {/* Excel Upload */}
-                                <div className="space-y-2">
-                                    <Label htmlFor="excel-upload">Excel Statement (Optional)</Label>
-                                    <Input
-                                        id="excel-upload"
-                                        type="file"
-                                        accept=".xlsx,.xls"
-                                        onChange={handleExcelFileChange}
-                                        disabled={uploading}
-                                    />
-                                    {excelFile && (
-                                        <div className="flex items-center gap-2 p-2 bg-muted rounded-md">
-                                            <FileText className="h-4 w-4 text-green-600" />
-                                            <span className="text-sm font-medium">{excelFile.name}</span>
-                                            <Badge variant="secondary" className="text-xs">
-                                                {(excelFile.size / 1024 / 1024).toFixed(2)} MB
-                                            </Badge>
-                                        </div>
-                                    )}
-                                </div>
-                            </TabsContent>
-
-                            <TabsContent value="options" className="space-y-4">
-                                {/* Copy Options */}
-                                <div className="space-y-4">
-                                    <Label className="text-base font-medium">Statement Availability</Label>
-
-                                    <div className="space-y-3">
-                                        <div className="flex items-center space-x-2">
-                                            <Checkbox
-                                                id="soft-copy"
-                                                checked={hasSoftCopy}
-                                                onCheckedChange={setHasSoftCopy}
-                                                disabled={uploading}
-                                            />
-                                            <Label htmlFor="soft-copy" className="text-sm">
-                                                Soft copy available (Digital)
-                                            </Label>
-                                        </div>
-
-                                        <div className="flex items-center space-x-2">
-                                            <Checkbox
-                                                id="hard-copy"
-                                                checked={hasHardCopy}
-                                                onCheckedChange={setHasHardCopy}
-                                                disabled={uploading}
-                                            />
-                                            <Label htmlFor="hard-copy" className="text-sm">
-                                                Hard copy available (Physical)
-                                            </Label>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Extraction Status */}
-                                {extractionResults && (
-                                    <div className="space-y-2">
-                                        <Label className="text-base font-medium">Extraction Status</Label>
-                                        <div className="p-3 bg-muted rounded-md">
-                                            {extractionResults.success ? (
-                                                <div className="flex items-center gap-2 text-green-700">
-                                                    <CheckCircle2 className="h-4 w-4" />
-                                                    <span className="text-sm">Data extracted successfully</span>
-                                                </div>
-                                            ) : (
-                                                <div className="flex items-center gap-2 text-orange-700">
-                                                    <AlertCircle className="h-4 w-4" />
-                                                    <span className="text-sm">
-                                                        {extractionResults.requiresPassword
-                                                            ? "Password required for extraction"
-                                                            : "No data could be extracted"
-                                                        }
-                                                    </span>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-                                )}
-
-                                {/* Validation Status */}
-                                {validationResults && (
-                                    <div className="space-y-2">
-                                        <Label className="text-base font-medium">Validation Status</Label>
-                                        <div className="p-3 bg-muted rounded-md">
-                                            {validationResults.isValid ? (
-                                                <div className="flex items-center gap-2 text-green-700">
-                                                    <CheckCircle2 className="h-4 w-4" />
-                                                    <span className="text-sm">All validations passed</span>
-                                                </div>
-                                            ) : (
-                                                <div className="space-y-2">
-                                                    <div className="flex items-center gap-2 text-orange-700">
-                                                        <AlertCircle className="h-4 w-4" />
-                                                        <span className="text-sm">Validation issues found</span>
-                                                    </div>
-                                                    <ul className="text-xs text-muted-foreground list-disc list-inside">
-                                                        {validationResults.mismatches.map((mismatch: string, index: number) => (
-                                                            <li key={index}>{mismatch}</li>
-                                                        ))}
-                                                    </ul>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-                                )}
-                            </TabsContent>
-                        </Tabs>
-
-                        <Separator />
-
-                        {/* Action Buttons */}
-                        <div className="flex justify-between">
-                            <Button
-                                type="button"
-                                variant="outline"
-                                onClick={onClose}
-                                disabled={uploading}
-                            >
-                                Cancel
-                            </Button>
-
-                            <div className="flex gap-2">
-                                {uploadedStatement && (
-                                    <Button
-                                        type="button"
-                                        variant="outline"
-                                        onClick={() => setShowExtractionDialog(true)}
-                                        disabled={uploading}
-                                    >
-                                        <Eye className="h-4 w-4 mr-2" />
-                                        Review Extraction
-                                    </Button>
-                                )}
-
-                                <Button
-                                    type="button"
-                                    onClick={handleUpload}
-                                    disabled={!isFormValid || uploading}
-                                    className="min-w-[150px]"
-                                >
-                                    {uploading ? (
-                                        <>
-                                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
-                                            {uploadButtonText}
-                                        </>
-                                    ) : (
-                                        <>
-                                            <Upload className="h-4 w-4 mr-2" />
-                                            {uploadButtonText}
-                                        </>
-                                    )}
-                                </Button>
+                    <div className="space-y-4 py-4 mt-2">
+                        {/* Info Section */}
+                        <div className="bg-gradient-to-r from-blue-50/80 to-blue-50/40 rounded-md p-4 border border-blue-100 shadow-sm">
+                            <div className="grid grid-cols-3 gap-x-6 gap-y-3">
+                                <div className="col-span-3"><h3 className="text-sm font-medium text-blue-800 border-b border-blue-100 pb-1 mb-2">Company Information</h3><div className="flex items-center gap-2"><Building className="h-4 w-4 text-blue-600" /><span className="font-medium">{bank.company_name}</span></div></div>
+                                <div><h3 className="text-sm font-medium text-blue-800 border-b border-blue-100 pb-1 mb-2">Bank Details</h3><div className="space-y-1.5"><div className="flex items-center gap-2"><Landmark className="h-4 w-4 text-blue-600" /><span className="font-medium">{bank.bank_name}</span></div><div className="flex items-center gap-2"><CreditCard className="h-4 w-4 text-blue-600" /><span className="font-mono text-xs">{bank.account_number}</span></div></div></div>
+                                <div><h3 className="text-sm font-medium text-blue-800 border-b border-blue-100 pb-1 mb-2">Currency</h3><div className="flex items-center gap-2"><DollarSign className="h-4 w-4 text-blue-600" /><span className="font-medium">{bank.bank_currency}</span></div></div>
+                                <div><h3 className="text-sm font-medium text-blue-800 border-b border-blue-100 pb-1 mb-2">Statement Period</h3><div className="flex items-center gap-2"><Calendar className="h-4 w-4 text-blue-600" /><span className="font-medium">{format(new Date(cycleYear, cycleMonth, 1), 'MMMM yyyy')}</span></div></div>
                             </div>
                         </div>
-
-                        {/* Status Message */}
-                        {statusMessage && !uploading && (
-                            <div className="p-3 bg-blue-50 border border-blue-200 rounded-md">
-                                <p className="text-sm text-blue-800">{statusMessage}</p>
+                        {/* File Inputs */}
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                <Label htmlFor="pdf-file" className="flex items-center gap-1.5"><FileText className="h-4 w-4 text-blue-600" />Bank Statement PDF</Label>
+                                <Input id="pdf-file" ref={pdfInputRef} type="file" accept=".pdf" onChange={(e) => { setPdfFile(e.target.files?.[0] || null); setValidationResult(null); }} disabled={isProcessing} className="cursor-pointer file:bg-blue-50 file:text-blue-700 file:border-blue-200 hover:file:bg-blue-100" />
                             </div>
-                        )}
+                            <div className="space-y-2">
+                                <Label htmlFor="excel-file" className="flex items-center gap-1.5"><Sheet className="h-4 w-4 text-emerald-600" />Bank Statement Excel (Optional)</Label>
+                                <Input id="excel-file" type="file" accept=".xlsx,.xls,.csv" onChange={(e) => setExcelFile(e.target.files?.[0] || null)} disabled={isProcessing} className="cursor-pointer file:bg-emerald-50 file:text-emerald-700 file:border-emerald-200 hover:file:bg-emerald-100" />
+                            </div>
+                        </div>
+                        {/* Checkboxes and Alert */}
+                        <div className="flex flex-row gap-6 mt-2 p-4 bg-slate-50/80 rounded-md border border-slate-200">
+                            <div className="flex items-center space-x-2"><Checkbox id="has-soft-copy" checked={hasSoftCopy} onCheckedChange={(checked) => setHasSoftCopy(!!checked)} disabled={isProcessing} /><Label htmlFor="has-soft-copy">Has Soft Copy</Label></div>
+                            <div className="flex items-center space-x-2"><Checkbox id="has-hard-copy" checked={hasHardCopy} onCheckedChange={(checked) => setHasHardCopy(!!checked)} disabled={isProcessing} /><Label htmlFor="has-hard-copy">Has Hard Copy</Label></div>
+                        </div>
+                        {existingStatement && (<Alert className="bg-amber-50 border-amber-200 text-amber-800"><AlertTriangle className="h-4 w-4 text-amber-600" /><div className="ml-2"><AlertTitle>Updating Existing Statement</AlertTitle><AlertDescription>New uploads will replace the current files.</AlertDescription></div></Alert>)}
                     </div>
+                    <DialogFooter className="bg-gradient-to-r from-slate-50 to-blue-50 -mx-6 -mb-6 p-4 border-t flex items-center justify-between">
+                        <Button type="button" variant="outline" onClick={onClose} disabled={isProcessing}>Cancel</Button>
+                        <Button type="button" onClick={() => handleUpload(false)} disabled={isProcessing || (!pdfFile && !existingStatement)} className="min-w-[120px]">
+                            {isProcessing ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />{statusMessage}</> : <><Upload className="mr-2 h-4 w-4" />Upload & Validate</>}
+                        </Button>
+                    </DialogFooter>
                 </DialogContent>
             </Dialog>
 
-            {/* Bank Validation Dialog */}
-            {showValidationDialog && validationResults && extractionResults && (
+            {showValidationDialog && validationResult && (
                 <BankValidationDialog
                     isOpen={showValidationDialog}
                     onClose={() => setShowValidationDialog(false)}
                     bank={bank}
-                    extractedData={extractionResults.extractedData}
-                    mismatches={validationResults.mismatches}
-                    onProceed={handleProceedWithValidation}
-                    onCancel={handleCancelValidation}
+                    extractedData={validationResult.extractedData}
+                    mismatches={validationResult.mismatches}
+                    onProceed={async (statement) => {
+                        setShowValidationDialog(false);
+                        const result = await handleUpload(true); // Force proceed past validation
+                        if (result && result.id) {
+                            // The extraction dialog will be opened by the parent component
+                            // when it receives the updated statement via onStatementUploaded
+                            onStatementUploaded(result);
+                        }
+                    }}
+                    onCancel={() => setShowValidationDialog(false)}
                     cycleMonth={cycleMonth}
                     cycleYear={cycleYear}
-                    fileUrl={pdfFile ? URL.createObjectURL(pdfFile) : null}
-                />
-            )}
-
-            {/* Bank Extraction Dialog */}
-            {showExtractionDialog && uploadedStatement && (
-                <BankExtractionDialog
-                    isOpen={showExtractionDialog}
-                    onClose={handleExtractionDialogClose}
-                    bank={bank}
-                    statement={uploadedStatement}
-                    pdfPassword={passwordApplied ? password : null}
-                    onSave={handleExtractionSave}
-                    extractionResults={extractionResults}
-                    validationResults={validationResults}
+                    statementId={existingStatement?.id}
                 />
             )}
         </>
