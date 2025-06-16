@@ -1,15 +1,8 @@
 // @ts-nocheck
 "use client";
 
-import React, { useState, useMemo, useEffect } from 'react';
-import {
-    useReactTable,
-    getCoreRowModel,
-    getSortedRowModel,
-    getFilteredRowModel,
-    flexRender,
-    createColumnHelper,
-} from '@tanstack/react-table';
+import React, { useState, useMemo } from 'react';
+import { useReactTable, getCoreRowModel, getSortedRowModel, getFilteredRowModel, flexRender, createColumnHelper } from '@tanstack/react-table';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,8 +13,8 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Search, Download, Settings2, CalendarIcon, Send, Filter, MoreHorizontal, Archive, Mail, FileDown, ArrowUpDown, Eye, EyeOff, XCircle, Clock, Package, Loader2, CheckCircle, Ban } from "lucide-react";
-import ClientCategoryFilter from '@/components/ClientCategoryFilter-updated-ui';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuCheckboxItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Search, Download, Settings2, CalendarIcon, Send, Filter, MoreHorizontal, Archive, Mail, FileDown, ArrowUpDown } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from 'react-hot-toast';
 import { cn } from "@/lib/utils";
@@ -29,7 +22,29 @@ import { cn } from "@/lib/utils";
 import EnhancedReceptionDialog from './EnhancedReceptionDialog';
 import EnhancedDeliveryDialog from './EnhancedDeliveryDialog';
 import BulkOperationsDialog from './BulkOperationsDialog';
-import { Company, FileRecord } from '../types/fileManagement';
+import { FileRecord } from '../types/fileManagement';
+
+interface Company {
+    id: number;
+    company_name: string;
+    kra_pin: string;
+    registration_number: string;
+    status: string;
+    
+    // Category effective dates
+    acc_client_effective_from: string;
+    acc_client_effective_to: string;
+    imm_client_effective_from: string;
+    imm_client_effective_to: string;
+    sheria_client_effective_from: string;
+    sheria_client_effective_to: string;
+    audit_client_effective_from: string;
+    audit_client_effective_to: string;
+    
+    // Other fields
+    [key: string]: any;
+}
+import ClientCategoryFilter from '@/components/ClientCategoryFilter-updated-ui';
 
 const columnHelper = createColumnHelper<Company>();
 
@@ -59,8 +74,15 @@ export default function EnhancedMonthlyTable({
     const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
     const [sorting, setSorting] = useState<SortingState>([]);
     const [isCategoryFilterOpen, setIsCategoryFilterOpen] = useState(false);
-    const [showStatsRows, setShowStatsRows] = useState(true);
-    const [categoryFilters, setCategoryFilters] = useState({
+    const [categoryFilters, setCategoryFilters] = useState<{
+        categories: { [key: string]: boolean };
+        categorySettings: {
+            [key: string]: {
+                clientStatus: { [key: string]: boolean };
+                sectionStatus: { [key: string]: boolean };
+            };
+        };
+    }>({
         categories: {
             'All Categories': false,
             'Acc': true,
@@ -70,21 +92,181 @@ export default function EnhancedMonthlyTable({
         },
         categorySettings: {
             'Acc': {
-                clientStatus: { 
-                    'All': false, 
-                    'Active': true, 
-                    'Inactive': false 
+                clientStatus: {
+                    All: false,
+                    Active: true,
+                    Inactive: false
+                },
+                sectionStatus: {
+                    All: false,
+                    Active: true,
+                    Inactive: false,
+                    Missing: false
                 }
             }
         }
     });
 
-    const handleFilterChange = (newFilters) => {
-        setCategoryFilters(newFilters);
-    };
-
     const year = selectedDate.getFullYear();
     const month = selectedDate.getMonth() + 1;
+
+    // Helper function to get a case-insensitive property from an object
+    const getCaseInsensitiveProp = (obj: any, prop: string) => {
+        const lowerProp = prop.toLowerCase();
+        const foundKey = Object.keys(obj).find(key => key.toLowerCase() === lowerProp);
+        return foundKey ? obj[foundKey] : undefined;
+    };
+
+    // Helper function to check if a company is active for a specific category
+    const isCompanyActiveForCategory = (company: any, category: string) => {
+        const categoryId = category.slice(0, 3).toLowerCase();
+        
+        // Directly access the date fields we know exist
+        const fromDateStr = company[`${categoryId}_client_effective_from`];
+        const toDateStr = company[`${categoryId}_client_effective_to`];
+
+        console.log(`Checking ${company.company_name} for category ${category} (${categoryId}):`, {
+            fromDateStr,
+            toDateStr,
+            companyId: company.id,
+            today: new Date().toISOString().split('T')[0]
+        });
+
+        if (!fromDateStr || !toDateStr) {
+            console.log(`No valid dates found for ${company.company_name} in ${category}`);
+            return false;
+        }
+
+        try {
+            // Parse dates in DD/MM/YYYY format
+            const [fromDay, fromMonth, fromYear] = fromDateStr.split('/').map(Number);
+            const [toDay, toMonth, toYear] = toDateStr.split('/').map(Number);
+            
+            const fromDate = new Date(fromYear, fromMonth - 1, fromDay);
+            const toDate = new Date(toYear, toMonth - 1, toDay);
+            const today = new Date();
+            today.setHours(0, 0, 0, 0); // Normalize to start of day
+
+            const isActive = today >= fromDate && today <= toDate;
+            
+            console.log(`Date check for ${company.company_name} (${category}):`, {
+                today: today.toISOString().split('T')[0],
+                fromDate: fromDate.toISOString().split('T')[0],
+                toDate: toDate.toISOString().split('T')[0],
+                isActive
+            });
+
+            return isActive;
+        } catch (error) {
+            console.error('Error parsing dates:', { 
+                company: company.company_name, 
+                category,
+                fromDateStr, 
+                toDateStr, 
+                error 
+            });
+            return false;
+        }
+    };
+
+// Apply category filters to companies
+const applyCategoryFilters = (data: any[]) => {
+    console.log('Applying category filters with settings:', categoryFilters);
+    
+    if (!categoryFilters.categories || Object.keys(categoryFilters.categories).length === 0) {
+        console.log('No category filters defined, returning all data');
+        return data;
+    }
+
+    // Get selected categories (excluding 'All Categories')
+    const selectedCategories = Object.entries(categoryFilters.categories)
+        .filter(([category, isSelected]) => category && category !== 'All Categories' && isSelected)
+        .map(([category]) => category);
+
+    console.log('Selected categories:', selectedCategories);
+
+    // If no specific categories are selected, return all data
+    if (selectedCategories.length === 0) {
+        console.log('No categories selected, returning all data');
+        return data;
+    }
+
+    // If 'All Categories' is selected, return all data
+    if (categoryFilters.categories['All Categories']) {
+        console.log('All categories selected, returning all data');
+        return data;
+    }
+
+    const filtered = data.filter(company => {
+        return selectedCategories.some(category => {
+            // Use slice(0, 3) to get the correct prefix like the manufacturers table
+            const categoryId = category.toLowerCase().slice(0, 3);
+            const fromField = `${categoryId}_client_effective_from`;
+            const toField = `${categoryId}_client_effective_to`;
+            
+            console.log(`Checking company ${company.company_name} for category ${category} (${categoryId})`);
+            console.log(`Looking for fields: ${fromField} and ${toField}`);
+            
+            const fromDateStr = company[fromField];
+            const toDateStr = company[toField];
+            
+            console.log(`Found dates: from=${fromDateStr}, to=${toDateStr}`);
+            
+            // If no dates are set, this company doesn't belong to this category
+            if (!fromDateStr || !toDateStr) {
+                console.log(`No dates found for ${company.company_name} in ${category} (${categoryId})`);
+                console.log('Available date fields:', 
+                    Object.keys(company).filter(key => key.endsWith('_effective_from') || key.endsWith('_effective_to'))
+                );
+                return false;
+            }
+
+            try {
+                // Calculate current status based on today's date
+                // Parse dates in DD/MM/YYYY format and reverse to YYYY-MM-DD for Date constructor
+                const today = new Date();
+                const effectiveFrom = new Date(fromDateStr.split('/').reverse().join('-'));
+                const effectiveTo = new Date(toDateStr.split('/').reverse().join('-'));
+                const currentStatus = today >= effectiveFrom && today <= effectiveTo ? 'active' : 'inactive';
+
+                // Get selected statuses from filter
+                const categorySettings = categoryFilters.categorySettings?.[category];
+                if (!categorySettings?.clientStatus) {
+                    return true;
+                }
+
+                const selectedClientStatuses = Object.entries(categorySettings.clientStatus)
+                    .filter(([_, isSelected]) => isSelected)
+                    .map(([status]) => status.toLowerCase());
+
+                // If All is selected or no statuses selected, include all
+                if (selectedClientStatuses.includes('all') || selectedClientStatuses.length === 0) {
+                    return true;
+                }
+
+                // Check if current status matches selected filters
+                const shouldShow = selectedClientStatuses.includes(currentStatus);
+                
+                console.log(`Company ${company.company_name} (${company.id}) - ${category}:`, {
+                    currentStatus,
+                    shouldShow,
+                    effectiveFrom: effectiveFrom.toISOString(),
+                    effectiveTo: effectiveTo.toISOString(),
+                    today: today.toISOString(),
+                    selectedClientStatuses
+                });
+                
+                return shouldShow;
+            } catch (error) {
+                console.error('Error checking dates:', error);
+                return false;
+            }
+        });
+    });
+    
+    console.log(`Filtered ${data.length} companies down to ${filtered.length}`);
+    return filtered;
+};
 
     // Get file record for a company in the selected month
     const getCompanyRecord = (companyId: string | number): FileRecord | null => {
@@ -550,125 +732,131 @@ const formatDateTime = (dateTimeString?: string) => {
         }),
     ], [year, month, companies, selectedRows, fileRecords]);
 
-    // Helper function to check if a company is active in a category based on effective dates
-    const isCategoryActive = (company: Company, category: string): boolean => {
-        const categoryId = category.toLowerCase();
-        const fromDateStr = company[`${categoryId}_client_effective_from`];
-        const toDateStr = company[`${categoryId}_client_effective_to`];
+// Table data with indices
+const filteredCompanies = useMemo(() => {
+    if (!companies.length) return [];
 
-        // If either date is missing, company is not active in this category
-        if (!fromDateStr || !toDateStr) return false;
+    const sortedCompanies = [...companies].sort((a, b) => {
+        return a.company_name.localeCompare(b.company_name);
+    });
 
-        try {
-            // Parse dates from DD/MM/YYYY format (as per the data)
-            const parseDate = (dateStr: string): Date => {
-                // Handle different date formats (DD/MM/YYYY or YYYY-MM-DD)
-                if (dateStr.includes('/')) {
-                    const [day, month, year] = dateStr.split('/').map(Number);
-                    return new Date(year, month - 1, day);
-                } else if (dateStr.includes('-')) {
-                    // Handle YYYY-MM-DD format
-                    return new Date(dateStr);
-                }
-                return new Date(dateStr); // Fallback to native parsing
+    const filteredResults = sortedCompanies.filter(company => {
+        // Search term filtering
+        if (globalFilter) {
+            const query = globalFilter.toLowerCase();
+            const searchFields = [
+                company.company_name,
+                company.kra_pin,
+                company.registration_number
+            ];
+            const matchesSearch = searchFields.some(field =>
+                field?.toString().toLowerCase().includes(query)
+            );
+            if (!matchesSearch) return false;
+        }
+
+        // Category filtering
+        const selectedCategories = Object.entries(categoryFilters.categories || {})
+            .filter(([category, isSelected]) => category && category !== 'All Categories' && isSelected)
+            .map(([category]) => category);
+
+        console.log('Selected categories for filtering:', selectedCategories);
+        
+        // Debug: Log all date fields from the company
+        const dateFields = Object.keys(company).filter(key => 
+            key.endsWith('_client_effective_from') || 
+            key.endsWith('_client_effective_to')
+        );
+        console.log('All date fields in company:', dateFields);
+        
+        // Log the actual values for the selected categories
+        const categoryValues = selectedCategories.reduce((acc, cat) => {
+            const prefix = cat.toLowerCase().slice(0, 3);
+            return {
+                ...acc,
+                [`${prefix}_from`]: company[`${prefix}_client_effective_from`],
+                [`${prefix}_to`]: company[`${prefix}_client_effective_to`]
             };
+        }, {});
+        
+        console.log('Company category values:', categoryValues);
 
-            const fromDate = parseDate(fromDateStr);
-            const toDate = parseDate(toDateStr);
-            const today = new Date();
+        // If no categories selected or All Categories is selected, include all
+        if (selectedCategories.length === 0 || categoryFilters.categories?.['All Categories']) {
+            console.log('No specific categories selected or All Categories is selected, including company');
+            return true;
+        }
+
+        return selectedCategories.some(category => {
+            const categoryId = category.toLowerCase();
+            const prefix = categoryId.slice(0, 3);
+            const fromField = `${prefix}_client_effective_from`;
+            const toField = `${prefix}_client_effective_to`;
             
-            // Reset time components for accurate date comparison
-            today.setHours(0, 0, 0, 0);
-            fromDate.setHours(0, 0, 0, 0);
-            toDate.setHours(23, 59, 59, 999); // End of the day
+            // Try to get the dates using the full category name first, then fall back to prefix
+            const fromDateStr = company[`${categoryId}_client_effective_from`] || company[fromField];
+            const toDateStr = company[`${categoryId}_client_effective_to`] || company[toField];
 
-            // Company is active if today is between from and to dates (inclusive)
-            return today >= fromDate && today <= toDate;
-        } catch (error) {
-            console.error(`Error parsing dates for ${company.company_name} (${category}):`, error, {
+            console.log(`Checking category ${category} (${categoryId}) for ${company.company_name}:`, {
+                fromField,
+                toField,
                 fromDateStr,
                 toDateStr,
-                category
+                hasBothDates: !!(fromDateStr && toDateStr),
+                allCompanyKeys: Object.keys(company)
             });
-            return false;
-        }
-    };
 
-    // Filter companies based on search and category filters
-    const filteredCompanies = useMemo(() => {
-        if (!companies) return [];
-        
-        return companies.filter(company => {
-            // Apply global search filter
-            if (globalFilter) {
-                const searchTerm = globalFilter.toLowerCase();
-                const searchFields = [
-                    company.company_name,
-                    company.kra_pin,
-                    company.itax_mobile_number,
-                    company.itax_main_email_address
-                ];
-
-                const matchesSearch = searchFields.some(field => 
-                    field?.toString().toLowerCase().includes(searchTerm)
-                );
-
-                if (!matchesSearch) return false;
+            // If no dates are set, this company doesn't belong to this category
+            if (!fromDateStr || !toDateStr) {
+                console.log(`No dates found for ${company.company_name} in category ${category} (${categoryId})`);
+                console.log('Available fields:', Object.keys(company));
+                return false;
             }
 
-            // Apply category filters
-            const selectedCategories = Object.entries(categoryFilters.categories || {})
-                .filter(([category, isSelected]) => category && category !== 'All Categories' && isSelected)
-                .map(([category]) => category);
+            // Calculate current status based on today's date
+            const today = new Date();
+            // Parse dates in DD/MM/YYYY format
+            const [fromDay, fromMonth, fromYear] = fromDateStr.split('/').map(Number);
+            const [toDay, toMonth, toYear] = toDateStr.split('/').map(Number);
+            
+            const effectiveFrom = new Date(fromYear, fromMonth - 1, fromDay);
+            const effectiveTo = new Date(toYear, toMonth - 1, toDay);
+            const currentStatus = today >= effectiveFrom && today <= effectiveTo ? 'active' : 'inactive';
+            
+            console.log(`Date check for ${company.company_name} (${category}):`, {
+                today: today.toISOString(),
+                effectiveFrom: effectiveFrom.toISOString(),
+                effectiveTo: effectiveTo.toISOString(),
+                currentStatus,
+                isActive: today >= effectiveFrom && today <= effectiveTo
+            });
 
-            // If no categories are selected, show all companies
-            if (selectedCategories.length === 0) {
+            // Get selected statuses from filter
+            const categorySettings = categoryFilters.categorySettings?.[category];
+            if (!categorySettings?.clientStatus) {
                 return true;
             }
 
-            // If 'All Categories' is selected, show all companies
-            if (categoryFilters.categories?.['All Categories']) {
+            const selectedClientStatuses = Object.entries(categorySettings.clientStatus)
+                .filter(([_, isSelected]) => isSelected)
+                .map(([status]) => status.toLowerCase());
+
+            // If All is selected or no statuses selected, include all
+            if (selectedClientStatuses.includes('all') || selectedClientStatuses.length === 0) {
                 return true;
             }
 
-            // Check if company matches any of the selected categories and statuses
-            return selectedCategories.some(category => {
-                const isActive = isCategoryActive(company, category);
-                const currentStatus = isActive ? 'active' : 'inactive';
-                
-
-
-                // Get selected statuses from filter
-                const categorySettings = categoryFilters.categorySettings?.[category];
-                
-                // If no specific status is selected, show all companies in this category
-                if (!categorySettings?.clientStatus) {
-                    return true;
-                }
-
-                const selectedClientStatuses = Object.entries(categorySettings.clientStatus)
-                    .filter(([_, isSelected]) => isSelected)
-                    .map(([status]) => status.toLowerCase());
-
-                // If 'All' is selected or no status is selected, show all statuses
-                if (selectedClientStatuses.includes('all') || selectedClientStatuses.length === 0) {
-                    return true;
-                }
-
-                // Check if current status matches any of the selected statuses
-                    return selectedClientStatuses.includes(currentStatus);
-            });
+            // Check if current status matches selected filters
+            return selectedClientStatuses.includes(currentStatus);
         });
-        
-        return result;
-    }, [companies, globalFilter, categoryFilters]);
+    });
 
-    // Table data with indices
-    const data = useMemo(() => filteredCompanies, [filteredCompanies]);
+    return filteredResults;
+}, [companies, globalFilter, categoryFilters]);
 
     // React Table setup
     const table = useReactTable({
-        data,
+        data: filteredCompanies,
         columns,
         state: {
             sorting,
@@ -749,33 +937,36 @@ const formatDateTime = (dateTimeString?: string) => {
             toast.error('Export failed');
         }
     };
-
-    if (companies.length === 0) {
-        return (
-            <div className="flex items-center justify-center h-96 text-center">
-                <div className="space-y-4">
-                    <div className="text-4xl">📁</div>
-                    <h3 className="text-lg font-semibold text-gray-800">No Companies Found</h3>
-                    <p className="text-gray-600">Try adjusting your filters or add some companies to get started.</p>
-                </div>
-            </div>
-        );
-    }
-
     return (
         <div className="h-[calc(100vh-200px)] flex flex-col bg-white rounded-lg shadow-sm border border-gray-200 overflow-auto p-2">
             {/* Toolbar */}
-            <div className="flex flex-wrap items-center justify-between gap-4 p-4 border-b">
-                {/* Search */}
-                <div className="flex items-center w-full sm:w-64 border-gray-200 focus:border-blue-400">
-                    <Search className="h-4 w-4 mr-2 text-blue-500" />
-                    <Input
-                        placeholder="Search companies..."
-                        value={globalFilter}
-                        onChange={e => setGlobalFilter(e.target.value)}
-                    />
+            <div className="flex items-center justify-between gap-2 mb-4">
+                <div className="flex items-center gap-2">
+                    <div className="relative w-64">
+                        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                        <Input
+                            type="search"
+                            placeholder="Search companies..."
+                            className="w-full pl-8"
+                            value={globalFilter}
+                            onChange={(e) => setGlobalFilter(e.target.value)}
+                        />
+                    </div>
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setIsCategoryFilterOpen(true)}
+                        className="flex items-center gap-2"
+                    >
+                        <Filter className="h-4 w-4" />
+                        Categories
+                        {Object.values(categoryFilters.categories).filter(Boolean).length > 1 && (
+                            <span className="ml-1 bg-primary text-primary-foreground rounded-full h-5 w-5 flex items-center justify-center text-xs">
+                                {Object.values(categoryFilters.categories).filter(Boolean).length - 1}
+                            </span>
+                        )}
+                    </Button>
                 </div>
-
                 <div className="flex flex-wrap items-center gap-2 sm:gap-3">
                     <div className="flex flex-wrap items-center gap-2 sm:gap-4">
                         <div className="text-xl font-bold text-blue-800">
@@ -829,17 +1020,6 @@ const formatDateTime = (dateTimeString?: string) => {
                         </PopoverContent>
                     </Popover>
 
-                    {/* Categories Filter */}
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setIsCategoryFilterOpen(true)}
-                        className="border-blue-200 hover:bg-blue-50"
-                    >
-                        <Filter className="h-4 w-4 mr-2" />
-                        Categories
-                    </Button>
-
                     {/* Bulk Operations */}
                     {selectedRows.length > 0 && (
                         <BulkOperationsDialog
@@ -882,16 +1062,6 @@ const formatDateTime = (dateTimeString?: string) => {
                     </Button>
                 </div>
             </div>
-
-            {/* Category Filter Dialog */}
-            <ClientCategoryFilter
-                open={isCategoryFilterOpen}
-                onOpenChange={setIsCategoryFilterOpen}
-                onFilterChange={handleFilterChange}
-                showSectionName={false}
-                initialFilters={categoryFilters}
-                showSectionStatus={false}
-            />
 
             {/* Statistics Bar */}
             {showTotals && (
@@ -955,80 +1125,105 @@ const formatDateTime = (dateTimeString?: string) => {
             )}
 
             {/* Table */}
-            <div className="flex-1 overflow-auto">
-                <Table className="min-w-[1500px]">
-                    <TableHeader className="sticky top-0 z-10 bg-gradient-to-r from-blue-100 to-indigo-100">
-                        {table.getHeaderGroups().map(headerGroup => (
-                            <TableRow key={headerGroup.id} className="h-12">
-                                {headerGroup.headers.map(header => (
-                                    <TableHead
-                                        key={header.id}
-                                        className="font-bold text-blue-800 border-r border-blue-200 last:border-r-0"
-                                        style={{ width: header.column.columnDef.size }}
-                                    >
-                                        {header.isPlaceholder ? null : (
-                                            <div
-                                                className={cn(
-                                                    "flex px-2 py-2",
-                                                    header.column.getCanSort() && "cursor-pointer select-none hover:bg-blue-200 rounded"
-                                                )}
-                                                onClick={header.column.getToggleSortingHandler()}
+            <div className="flex-1 flex flex-col overflow-hidden">
+                <ScrollArea className="h-[calc(100vh-300px)]">
+                    <div className="relative">
+                        <Table className="w-full">
+                            <TableHeader className="sticky top-0 z-10 bg-gradient-to-r from-blue-100 to-indigo-100">
+                                {table.getHeaderGroups().map(headerGroup => (
+                                    <TableRow key={headerGroup.id} className="h-12">
+                                        {headerGroup.headers.map(header => (
+                                            <TableHead
+                                                key={header.id}
+                                                className="font-bold text-blue-800 border-r border-blue-200 last:border-r-0"
+                                                style={{ width: header.column.columnDef.size }}
                                             >
-                                                {flexRender(header.column.columnDef.header, header.getContext())}
-                                                {header.column.getIsSorted() && (
-                                                    <span className="ml-2 text-blue-600">
-                                                        {header.column.getIsSorted() === "asc" ? "↑" : "↓"}
-                                                    </span>
+                                                {header.isPlaceholder ? null : (
+                                                    <div
+                                                        className={cn(
+                                                            "flex px-2 py-2",
+                                                            header.column.getCanSort() && "cursor-pointer select-none hover:bg-blue-200 rounded"
+                                                        )}
+                                                        onClick={header.column.getToggleSortingHandler()}
+                                                    >
+                                                        {flexRender(header.column.columnDef.header, header.getContext())}
+                                                        {header.column.getIsSorted() && (
+                                                            <span className="ml-2 text-blue-600">
+                                                                {header.column.getIsSorted() === "asc" ? "↑" : "↓"}
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                 )}
-                                            </div>
-                                        )}
-                                    </TableHead>
+                                            </TableHead>
+                                        ))}
+                                    </TableRow>
                                 ))}
-                            </TableRow>
-                        ))}
-                    </TableHeader>
-
-                    <TableBody>
-                        {table.getRowModel().rows.map((row, rowIndex) => {
-                            const record = getCompanyRecord(row.original.id);
-                            const isSelected = selectedRows.includes(row.original.id);
-                            const isNilRecord = record?.is_nil;
-                            const isUrgent = record?.is_urgent;
-
-                            return (
-                                <TableRow
-                                    key={row.id}
-                                    className={cn(
-                                        "h-16 border-b transition-colors hover:bg-gray-50",
-                                        rowIndex % 2 === 0 ? 'bg-white' : 'bg-gray-50/30',
-                                        isSelected && "bg-blue-50 border-blue-200",
-                                        isNilRecord && "bg-red-50/50",
-                                        isUrgent && "bg-pink-50 border-l-4 border-l-pink-500"
-                                    )}
-                                >
-                                    {row.getVisibleCells().map((cell, cellIndex) => (
-                                        <TableCell
-                                            key={cell.id}
+                            </TableHeader>
+                            
+                            <TableBody>
+                                {table.getRowModel().rows.length > 0 ? (
+                                    table.getRowModel().rows.map((row, rowIndex) => (
+                                        <TableRow
+                                            key={row.id}
                                             className={cn(
-                                                "p-3 border-r border-gray-100 last:border-r-0 align-middle",
-                                                isNilRecord && cellIndex > 1 && "text-red-600",
-                                                isUrgent && "font-medium"
+                                                "h-16 border-b transition-colors hover:bg-gray-50",
+                                                rowIndex % 2 === 0 ? 'bg-white' : 'bg-gray-50/30',
+                                                selectedRows.includes(row.original.id) && "bg-blue-50 border-blue-200",
+                                                getCompanyRecord(row.original.id)?.is_nil && "bg-red-50/50",
+                                                getCompanyRecord(row.original.id)?.is_urgent && "bg-pink-50 border-l-4 border-l-pink-500"
                                             )}
-                                            style={{
-                                                width: cell.column.columnDef.size,
-                                                minWidth: cell.column.columnDef.size,
-                                                maxWidth: cell.column.columnDef.size
-                                            }}
                                         >
-                                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                                            {row.getVisibleCells().map((cell, cellIndex) => {
+                                                const record = getCompanyRecord(row.original.id);
+                                                const isNilRecord = record?.is_nil;
+                                                const isUrgent = record?.is_urgent;
+                                                
+                                                return (
+                                                    <TableCell
+                                                        key={cell.id}
+                                                        className={cn(
+                                                            "p-3 border-r border-gray-100 last:border-r-0 align-middle",
+                                                            isNilRecord && cellIndex > 1 && "text-red-600",
+                                                            isUrgent && "font-medium"
+                                                        )}
+                                                        style={{
+                                                            width: cell.column.columnDef.size,
+                                                            minWidth: cell.column.columnDef.size,
+                                                            maxWidth: cell.column.columnDef.size
+                                                        }}
+                                                    >
+                                                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                                                    </TableCell>
+                                                );
+                                            })}
+                                        </TableRow>
+                                    ))
+                                ) : (
+                                    <TableRow>
+                                        <TableCell colSpan={table.getAllColumns().length} className="h-64 text-center">
+                                            <div className="flex flex-col items-center justify-center space-y-4">
+                                                <div className="text-4xl">📁</div>
+                                                <h3 className="text-lg font-semibold text-gray-800">No Companies Found</h3>
+                                                <p className="text-gray-600">
+                                                    Try adjusting your filters or add some companies to get started.
+                                                </p>
+                                            </div>
                                         </TableCell>
-                                    ))}
-                                </TableRow>
-                            );
-                        })}
-                    </TableBody>
-                </Table>
+                                    </TableRow>
+                                )}
+                            </TableBody>
+                        </Table>
+                    </div>
+                </ScrollArea>
             </div>
+            <ClientCategoryFilter
+                open={isCategoryFilterOpen}
+                onOpenChange={setIsCategoryFilterOpen}
+                onFilterChange={setCategoryFilters}
+                showSectionName=""
+                initialFilters={categoryFilters}
+                showSectionStatus={false}
+            />
         </div>
     );
 }
