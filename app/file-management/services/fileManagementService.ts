@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { createClient } from '@supabase/supabase-js';
-import { Company, FileRecord, FileManagementStats, BulkOperation, ReceptionRecord, DeliveryRecord } from '../types/fileManagement';
+import { Company, FileRecord, FileManagementStats, BulkOperation, ReceptionData, DeliveryData } from '../types/fileManagement';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -9,6 +9,9 @@ const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 // Helper function to generate UUID
 const generateUUID = () => crypto.randomUUID();
+
+// Helper function to get current timestamp in ISO format
+const getCurrentTimestamp = () => new Date().toISOString();
 
 export class FileManagementService {
     // Companies CRUD
@@ -32,8 +35,16 @@ export class FileManagementService {
                 contact_person: item.site_accountant_name || '',
                 email: item.current_communication_email || item.kra_email || '',
                 phone: item.phone || item.office_number || item.whatsapp_number || '',
-                created_at: item.created_at || new Date().toISOString(),
-                updated_at: item.updated_at || new Date().toISOString()
+                created_at: item.created_at || getCurrentTimestamp(),
+                updated_at: item.updated_at || getCurrentTimestamp(),
+                acc_client_effective_from: item.acc_client_effective_from,
+                acc_client_effective_to: item.acc_client_effective_to,
+                imm_client_effective_from: item.imm_client_effective_from,
+                imm_client_effective_to: item.imm_client_effective_to,
+                sheria_client_effective_from: item.sheria_client_effective_from,
+                sheria_client_effective_to: item.sheria_client_effective_to,
+                audit_client_effective_from: item.audit_client_effective_from,
+                audit_client_effective_to: item.audit_client_effective_to
             }));
         } catch (error: any) {
             console.error('Error in getCompanies:', error.message);
@@ -114,32 +125,48 @@ export class FileManagementService {
         }
     }
 
-    // File Records CRUD with JSON structure
-    static async getFileRecords(year?: number, month?: number): Promise<FileRecord[]> {
+    // File Records CRUD with JSONB structure
+    static async getFileRecords(year?: number, month?: number, companyId?: string): Promise<FileRecord[]> {
         try {
             let query = supabase
-                .from('file_records')
+                .from('file_transactions')
                 .select('*');
 
             if (year) query = query.eq('year', year);
             if (month) query = query.eq('month', month);
+            if (companyId) query = query.eq('company_id', companyId);
 
             const { data, error } = await query.order('created_at', { ascending: false });
 
             if (error) {
                 if (error.message && (
-                    error.message.includes('relation "file_records" does not exist') ||
+                    error.message.includes('relation "file_transactions" does not exist') ||
                     error.message.includes('relation does not exist') ||
                     error.code === '42P01'
                 )) {
-                    console.log('File records table does not exist, returning empty array');
+                    console.log('File transactions table does not exist, returning empty array');
                     return [];
                 }
                 console.error('Error fetching file records:', error.message);
                 return [];
             }
 
-            return data || [];
+            // Transform the data to match our FileRecord interface
+            return (data || []).map(item => ({
+                id: item.id.toString(),
+                company_id: item.company_id,
+                company_name: item.company_name || '',
+                year: item.year,
+                month: item.month,
+                reception_data: item.reception_data || [],
+                delivery_data: item.delivery_data || [],
+                processing_status: item.processing_status || 'pending',
+                is_urgent: item.is_urgent || false,
+                created_at: item.created_at,
+                updated_at: item.updated_at,
+                created_by: item.created_by || 'system',
+                updated_by: item.updated_by || 'system'
+            }));
         } catch (error: any) {
             console.error('Error in getFileRecords:', error.message);
             return [];
@@ -148,30 +175,42 @@ export class FileManagementService {
 
     static async createFileRecord(record: Omit<FileRecord, 'id' | 'created_at' | 'updated_at'>): Promise<FileRecord> {
         try {
+            const now = getCurrentTimestamp();
             const { data, error } = await supabase
-                .from('file_records')
+                .from('file_transactions')
                 .insert([{
-                    ...record,
-                    receptions: record.receptions || [],
-                    deliveries: record.deliveries || [],
-                    created_at: new Date().toISOString(),
-                    updated_at: new Date().toISOString()
+                    company_id: record.company_id,
+                    company_name: record.company_name,
+                    year: record.year,
+                    month: record.month,
+                    reception_data: record.reception_data || [],
+                    delivery_data: record.delivery_data || [],
+                    processing_status: record.processing_status || 'pending',
+                    is_urgent: record.is_urgent || false,
+                    created_at: now,
+                    updated_at: now,
+                    created_by: 'current_user', // Replace with actual user
+                    updated_by: 'current_user'   // Replace with actual user
                 }])
                 .select()
                 .single();
 
             if (error) {
                 if (error.message && (
-                    error.message.includes('relation "file_records" does not exist') ||
+                    error.message.includes('relation "file_transactions" does not exist') ||
                     error.message.includes('relation does not exist') ||
                     error.code === '42P01'
                 )) {
-                    throw new Error('File records table does not exist. Please create the table first.');
+                    throw new Error('File transactions table does not exist. Please create the table first.');
                 }
                 throw new Error(`Failed to create file record: ${error.message}`);
             }
             
-            return data;
+            return {
+                ...data,
+                reception_data: data.reception_data || [],
+                delivery_data: data.delivery_data || []
+            };
         } catch (error: any) {
             console.error('Error in createFileRecord:', error.message);
             throw error;
@@ -180,11 +219,13 @@ export class FileManagementService {
 
     static async updateFileRecord(id: string, updates: Partial<FileRecord>): Promise<FileRecord> {
         try {
+            const now = getCurrentTimestamp();
             const { data, error } = await supabase
-                .from('file_records')
+                .from('file_transactions')
                 .update({
                     ...updates,
-                    updated_at: new Date().toISOString()
+                    updated_at: now,
+                    updated_by: 'current_user' // Replace with actual user
                 })
                 .eq('id', id)
                 .select()
@@ -192,16 +233,20 @@ export class FileManagementService {
 
             if (error) {
                 if (error.message && (
-                    error.message.includes('relation "file_records" does not exist') ||
+                    error.message.includes('relation "file_transactions" does not exist') ||
                     error.message.includes('relation does not exist') ||
                     error.code === '42P01'
                 )) {
-                    throw new Error('File records table does not exist. Please create the table first.');
+                    throw new Error('File transactions table does not exist. Please create the table first.');
                 }
                 throw new Error(`Failed to update file record: ${error.message}`);
             }
             
-            return data;
+            return {
+                ...data,
+                reception_data: data.reception_data || [],
+                delivery_data: data.delivery_data || []
+            };
         } catch (error: any) {
             console.error('Error in updateFileRecord:', error.message);
             throw error;
@@ -213,21 +258,25 @@ export class FileManagementService {
         companyId: string,
         year: number,
         month: number,
-        receptionData: Omit<ReceptionRecord, 'id' | 'created_at' | 'created_by'>
+        receptionData: Omit<ReceptionData, 'id' | 'created_at' | 'created_by' | 'updated_at' | 'updated_by'>
     ): Promise<FileRecord> {
         try {
             const company = await this.getCompanyById(companyId);
+            const now = getCurrentTimestamp();
+            const userId = 'current_user'; // Replace with actual user ID
             
-            const reception: ReceptionRecord = {
+            const reception: ReceptionData = {
                 ...receptionData,
                 id: generateUUID(),
-                created_at: new Date().toISOString(),
-                created_by: 'current_user' // Replace with actual user
+                created_at: now,
+                created_by: userId,
+                updated_at: now,
+                updated_by: userId
             };
 
-            // Try to find existing record
+            // Try to find existing record for this company/year/month
             const { data: existing } = await supabase
-                .from('file_records')
+                .from('file_transactions')
                 .select('*')
                 .eq('company_id', companyId)
                 .eq('year', year)
@@ -236,30 +285,34 @@ export class FileManagementService {
 
             if (existing) {
                 // Add reception to existing record
-                const updatedReceptions = [...(existing.receptions || []), reception];
+                const updatedReceptions = [
+                    ...(existing.reception_data || []),
+                    reception
+                ];
                 
-                return await this.updateFileRecord(existing.id, {
-                    receptions: updatedReceptions,
-                    status: reception.received_at ? 'received' : 'nil',
-                    is_nil: !reception.received_at,
-                    is_urgent: reception.is_urgent || existing.is_urgent
+                return await this.updateFileRecord(existing.id.toString(), {
+                    reception_data: updatedReceptions,
+                    processing_status: 'received',
+                    is_urgent: reception.is_urgent || existing.is_urgent || false,
+                    updated_at: now,
+                    updated_by: userId
                 });
             } else {
-                // Create new record with reception
-                return await this.createFileRecord({
+                // Create new record with this reception
+                const newRecord: Omit<FileRecord, 'id' | 'created_at' | 'updated_at'> = {
                     company_id: companyId,
-                    company_name: company.company_name,
+                    company_name: company?.company_name || '',
                     year,
                     month,
-                    receptions: [reception],
-                    deliveries: [],
-                    status: reception.received_at ? 'received' : 'nil',
-                    is_nil: !reception.received_at,
+                    reception_data: [reception],
+                    delivery_data: [],
+                    processing_status: 'received',
                     is_urgent: reception.is_urgent || false,
-                    processing_status: 'pending',
-                    created_by: 'current_user',
-                    updated_by: 'current_user'
-                });
+                    created_by: userId,
+                    updated_by: userId
+                };
+                
+                return await this.createFileRecord(newRecord);
             }
         } catch (error: any) {
             console.error('Error in addReception:', error.message);
@@ -270,28 +323,228 @@ export class FileManagementService {
     static async updateReception(
         recordId: string,
         receptionId: string,
-        updates: Partial<ReceptionRecord>
+        updates: Partial<Omit<ReceptionData, 'id' | 'created_at' | 'created_by'>>
     ): Promise<FileRecord> {
         try {
+            const now = getCurrentTimestamp();
+            const userId = 'current_user'; // Replace with actual user ID
+            
             const { data: record } = await supabase
-                .from('file_records')
+                .from('file_transactions')
                 .select('*')
                 .eq('id', recordId)
                 .single();
 
             if (!record) throw new Error('File record not found');
 
-            const updatedReceptions = (record.receptions || []).map((reception: ReceptionRecord) =>
+            const updatedReceptions = (record.reception_data || []).map((reception: ReceptionData) =>
                 reception.id === receptionId 
-                    ? { ...reception, ...updates, updated_at: new Date().toISOString() }
+                    ? { 
+                        ...reception, 
+                        ...updates, 
+                        updated_at: now,
+                        updated_by: userId 
+                    }
                     : reception
             );
 
             return await this.updateFileRecord(recordId, {
-                receptions: updatedReceptions
+                reception_data: updatedReceptions,
+                is_urgent: updatedReceptions.some((r: ReceptionData) => r.is_urgent) || false,
+                updated_at: now,
+                updated_by: userId
             });
         } catch (error: any) {
             console.error('Error in updateReception:', error.message);
+            throw error;
+        }
+    }
+
+    static async deleteReception(recordId: string, receptionId: string): Promise<FileRecord> {
+        try {
+            const now = getCurrentTimestamp();
+            const userId = 'current_user'; // Replace with actual user ID
+            
+            const { data: record } = await supabase
+                .from('file_transactions')
+                .select('*')
+                .eq('id', recordId)
+                .single();
+
+            if (!record) throw new Error('File record not found');
+
+            const updatedReceptions = (record.reception_data || []).filter(
+                (reception: ReceptionData) => reception.id !== receptionId
+            );
+
+            // Determine new processing status
+            let newStatus = record.processing_status;
+            if (updatedReceptions.length === 0) {
+                // No more receptions, check if there are deliveries
+                if (record.delivery_data && record.delivery_data.length > 0) {
+                    newStatus = 'delivered';
+                } else {
+                    newStatus = 'pending';
+                }
+            }
+
+            return await this.updateFileRecord(recordId, {
+                reception_data: updatedReceptions,
+                processing_status: newStatus,
+                is_urgent: updatedReceptions.some((r: ReceptionData) => r.is_urgent) || false,
+                updated_at: now,
+                updated_by: userId
+            });
+        } catch (error: any) {
+            console.error('Error in deleteReception:', error.message);
+            throw error;
+        }
+    }
+
+    // Delivery management methods
+    static async addDelivery(
+        companyId: string,
+        year: number,
+        month: number,
+        deliveryData: Omit<DeliveryData, 'id' | 'created_at' | 'created_by' | 'updated_at' | 'updated_by'>,
+        receptionId?: string
+    ): Promise<FileRecord> {
+        try {
+            const now = getCurrentTimestamp();
+            const userId = 'current_user'; // Replace with actual user ID
+            
+            const delivery: DeliveryData = {
+                ...deliveryData,
+                id: generateUUID(),
+                reception_id: receptionId || 'general',
+                created_at: now,
+                created_by: userId,
+                updated_at: now,
+                updated_by: userId
+            };
+
+            // Try to find existing record
+            const { data: existing } = await supabase
+                .from('file_transactions')
+                .select('*')
+                .eq('company_id', companyId)
+                .eq('year', year)
+                .eq('month', month)
+                .maybeSingle();
+
+            if (!existing) {
+                throw new Error('No file transaction record found. Documents must be received before delivery.');
+            }
+
+            const updatedDeliveries = [
+                ...(existing.delivery_data || []),
+                delivery
+            ];
+            
+            // Determine new processing status
+            let newStatus = existing.processing_status;
+            if (delivery.status === 'delivered') {
+                newStatus = 'delivered';
+            } else if (existing.processing_status === 'pending') {
+                newStatus = 'received';
+            }
+
+            return await this.updateFileRecord(existing.id.toString(), {
+                delivery_data: updatedDeliveries,
+                processing_status: newStatus,
+                updated_at: now,
+                updated_by: userId
+            });
+        } catch (error: any) {
+            console.error('Error in addDelivery:', error.message);
+            throw error;
+        }
+    }
+
+    static async updateDelivery(
+        recordId: string,
+        deliveryId: string,
+        updates: Partial<Omit<DeliveryData, 'id' | 'created_at' | 'created_by'>>
+    ): Promise<FileRecord> {
+        try {
+            const now = getCurrentTimestamp();
+            const userId = 'current_user'; // Replace with actual user ID
+            
+            const { data: record } = await supabase
+                .from('file_transactions')
+                .select('*')
+                .eq('id', recordId)
+                .single();
+
+            if (!record) throw new Error('File record not found');
+
+            const updatedDeliveries = (record.delivery_data || []).map((delivery: DeliveryData) =>
+                delivery.id === deliveryId 
+                    ? { 
+                        ...delivery, 
+                        ...updates, 
+                        updated_at: now,
+                        updated_by: userId 
+                    }
+                    : delivery
+            );
+
+            // Determine new processing status
+            let newStatus = record.processing_status;
+            if (updates.status === 'delivered') {
+                newStatus = 'delivered';
+            } else if (record.processing_status === 'pending' && record.reception_data?.length) {
+                newStatus = 'received';
+            }
+
+            return await this.updateFileRecord(recordId, {
+                delivery_data: updatedDeliveries,
+                processing_status: newStatus,
+                updated_at: now,
+                updated_by: userId
+            });
+        } catch (error: any) {
+            console.error('Error in updateDelivery:', error.message);
+            throw error;
+        }
+    }
+
+    static async deleteDelivery(recordId: string, deliveryId: string): Promise<FileRecord> {
+        try {
+            const now = getCurrentTimestamp();
+            const userId = 'current_user'; // Replace with actual user ID
+            
+            const { data: record } = await supabase
+                .from('file_transactions')
+                .select('*')
+                .eq('id', recordId)
+                .single();
+
+            if (!record) throw new Error('File record not found');
+
+            const updatedDeliveries = (record.delivery_data || []).filter(
+                (delivery: DeliveryData) => delivery.id !== deliveryId
+            );
+
+            // Determine new processing status
+            let newStatus = record.processing_status;
+            if (updatedDeliveries.length === 0) {
+                // No more deliveries, revert to received if there are receptions
+                newStatus = record.reception_data?.length ? 'received' : 'pending';
+            } else if (updatedDeliveries.some((d: DeliveryData) => d.status === 'delivered')) {
+                newStatus = 'delivered';
+            } else {
+                newStatus = 'received';
+            }
+
+            return await this.updateFileRecord(recordId, {
+                delivery_data: updatedDeliveries,
+                processing_status: newStatus,
+                updated_at: now,
+                updated_by: userId
+            });
+        } catch (error: any) {
+            console.error('Error in deleteDelivery:', error.message);
             throw error;
         }
     }
@@ -427,7 +680,7 @@ export class FileManagementService {
         }
     }
 
-    // Legacy upsert method - updated to work with new structure
+    // Upsert method for file records
     static async upsertFileRecord(
         companyId: string,
         year: number,
@@ -605,6 +858,23 @@ export class FileManagementService {
                     );
                     break;
 
+                case 'mark_nil':
+                    await Promise.all(
+                        company_ids.map((id: string) =>
+                            this.addReception(id, data.year, data.month, {
+                                received_at: null,
+                                received_by: 'System',
+                                brought_by: 'N/A',
+                                delivery_method: 'nil',
+                                document_types: [],
+                                files_count: 0,
+                                reception_notes: 'Bulk marked as NIL - No documents received',
+                                is_urgent: false
+                            })
+                        )
+                    );
+                    break;
+
                 default:
                     throw new Error(`Unknown bulk operation: ${type}`);
             }
@@ -624,39 +894,37 @@ export class FileManagementService {
             return [];
         }
     }
-}
 
-// Helper functions for working with the new structure
-export const getFileRecord = async (companyId: string, year: number, month: number) => {
-    const { data, error } = await supabase
-        .from('file_records')
-        .select('*')
-        .eq('company_id', companyId)
-        .eq('year', year)
-        .eq('month', month)
-        .single();
+    // Helper function to get a file record by company, year, and month
+    static async getFileRecord(companyId: string, year: number, month: number) {
+        const { data, error } = await supabase
+            .from('file_transactions')
+            .select('*')
+            .eq('company_id', companyId)
+            .eq('year', year)
+            .eq('month', month)
+            .maybeSingle();
 
-    if (error) {
-        if (error.code !== 'PGRST116') {
-            console.error('Error fetching file record:', error);
+        if (error) {
+            console.error('Error getting file record:', error.message);
+            throw error;
         }
-        return null;
+
+        return data;
     }
 
-    return data;
-};
+    // Helper function to upsert a file record
+    static async upsertFileRecord(record: any) {
+        const { data, error } = await supabase
+            .from('file_transactions')
+            .upsert(record, { onConflict: 'company_id,year,month' })
+            .select()
+            .single();
 
-export const upsertFileRecord = async (record: any) => {
-    const { data, error } = await supabase
-        .from('file_records')
-        .upsert(record, { onConflict: 'company_id,year,month' })
-        .select()
-        .single();
-
-    if (error) {
-        console.error('Error upserting file record:', error);
-        throw error;
+        if (error) {
+            console.error('Error upserting file record:', error);
+            throw error;
+        }
+        return data;
     }
-
-    return data;
-};
+}

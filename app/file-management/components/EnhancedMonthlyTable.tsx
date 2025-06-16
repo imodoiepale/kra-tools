@@ -550,7 +550,7 @@ const formatDateTime = (dateTimeString?: string) => {
                         onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
                         className="p-0 hover:bg-transparent"
                     >
-                        Reception
+                        Delivery
                         <ArrowUpDown className="ml-2 h-4 w-4" />
                     </Button>
                 </div>
@@ -562,7 +562,7 @@ const formatDateTime = (dateTimeString?: string) => {
                 
                 return (
                     <div className="flex items-center justify-center">
-                        <EnhancedReceptionDialog
+                        <EnhancedDeliveryDialog
                             companyName={row.original.company_name}
                             companyId={row.original.id}
                             year={year}
