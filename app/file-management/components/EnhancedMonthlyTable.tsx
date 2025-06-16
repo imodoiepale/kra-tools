@@ -87,13 +87,10 @@ export default function EnhancedMonthlyTable({
     const month = selectedDate.getMonth() + 1;
 
     // Get file record for a company in the selected month
-    const getCompanyRecord = (companyId: string | number) => {
-        // Convert companyId to string for consistent comparison
+    const getCompanyRecord = (companyId: string | number): FileRecord | null => {
         const companyIdStr = companyId.toString();
         
-        // Try to find a matching record
         const record = fileRecords.find(record => {
-            // Handle both string and numeric company_id
             const recordCompanyId = typeof record.company_id === 'number' 
                 ? record.company_id.toString() 
                 : record.company_id;
@@ -106,14 +103,31 @@ export default function EnhancedMonthlyTable({
         return record || null;
     };
 
-    const formatDateTime = (dateTimeString?: string) => {
-        if (!dateTimeString) return { date: '-', time: '-' };
-        const date = new Date(dateTimeString);
-        return {
-            date: format(date, 'dd.MM.yyyy'),
-            time: format(date, 'HH:mm')
-        };
+    // Get latest reception for display
+const getLatestReception = (record: FileRecord | null): ReceptionRecord | null => {
+    if (!record?.receptions || record.receptions.length === 0) return null;
+    return record.receptions[record.receptions.length - 1];
+};
+
+// Get total files received
+const getTotalFilesReceived = (record: FileRecord | null): number => {
+    if (!record?.receptions) return 0;
+    return record.receptions.reduce((total, reception) => total + reception.files_count, 0);
+};
+
+// Check if has any receptions
+const hasAnyReceptions = (record: FileRecord | null): boolean => {
+    return record?.receptions && record.receptions.length > 0;
+};
+
+const formatDateTime = (dateTimeString?: string) => {
+    if (!dateTimeString) return { date: '-', time: '-' };
+    const date = new Date(dateTimeString);
+    return {
+        date: format(date, 'dd.MM.yyyy'),
+        time: format(date, 'HH:mm')
     };
+};
 
     const handleSendReminder = async (companyName: string) => {
         try {
@@ -310,20 +324,39 @@ export default function EnhancedMonthlyTable({
             ),
             cell: ({ row }) => {
                 const record = getCompanyRecord(row.original.id);
-                const dateTime = formatDateTime(record?.received_at);
-
+                const latestReception = getLatestReception(record);
+                const totalFiles = getTotalFilesReceived(record);
+                const totalReceptions = record?.receptions?.length || 0;
+                
+                if (!latestReception) {
+                    return <div className="text-xs text-gray-400">No receptions</div>;
+                }
+        
+                const dateTime = formatDateTime(latestReception.received_at);
+        
                 return (
                     <div className="text-xs">
                         <p className="font-medium">{dateTime.date}</p>
                         <p className="text-gray-500">{dateTime.time}</p>
-                        {record?.brought_by && (
-                            <p className="text-blue-600 mt-1">By: {record.brought_by}</p>
+                        {latestReception.brought_by && (
+                            <p className="text-blue-600 mt-1">By: {latestReception.brought_by}</p>
+                        )}
+                        {totalReceptions > 1 && (
+                            <div className="flex items-center gap-1 mt-1">
+                                <Badge variant="outline" className="text-xs">
+                                    {totalReceptions} receptions
+                                </Badge>
+                                <Badge variant="outline" className="text-xs">
+                                    {totalFiles} files
+                                </Badge>
+                            </div>
                         )}
                     </div>
                 );
             },
             size: 140,
         }),
+        
 
         // Delivery status
         columnHelper.display({
@@ -335,49 +368,46 @@ export default function EnhancedMonthlyTable({
                         onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
                         className="p-0 hover:bg-transparent"
                     >
-                        Delivery
+                        Reception
                         <ArrowUpDown className="ml-2 h-4 w-4" />
                     </Button>
                 </div>
             ),
             cell: ({ row }) => {
                 const record = getCompanyRecord(row.original.id);
-                const hasReception = record && (record.received_at || record.is_nil);
-                
-                if (!hasReception) {
-                    return (
-                        <div className="flex items-center justify-center">
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                disabled
-                                className="text-gray-400 cursor-not-allowed"
-                                title="Document reception must be recorded first"
-                            >
-                                <XCircle className="h-5 w-5" />
-                            </Button>
-                        </div>
-                    );
-                }
+                const hasReceptions = hasAnyReceptions(record);
+                const totalReceptions = record?.receptions?.length || 0;
                 
                 return (
                     <div className="flex items-center justify-center">
-                        <EnhancedDeliveryDialog
+                        <EnhancedReceptionDialog
                             companyName={row.original.company_name}
                             companyId={row.original.id}
                             year={year}
                             month={month}
                             onConfirm={(data) => onUpdateRecord(row.original.id, year, month, data)}
                             existingData={record}
-                            receptionData={record}
                         />
-                        {record?.delivered_at && (
-                            <CheckCircle className="h-4 w-4 ml-1 text-green-500" />
+                        {hasReceptions && (
+                            <div className="flex items-center ml-1">
+                                <CheckCircle className="h-4 w-4 text-green-500" />
+                                {totalReceptions > 1 && (
+                                    <Badge variant="outline" className="ml-1 text-xs">
+                                        {totalReceptions}
+                                    </Badge>
+                                )}
+                            </div>
+                        )}
+                        {record?.is_nil && (
+                            <Badge variant="destructive" className="ml-1 text-xs">NIL</Badge>
+                        )}
+                        {record?.is_urgent && (
+                            <Badge variant="destructive" className="ml-1 text-xs animate-pulse">URGENT</Badge>
                         )}
                     </div>
                 );
             },
-            size: 100,
+            size: 140,
         }),
 
         // Delivery details
@@ -661,27 +691,37 @@ export default function EnhancedMonthlyTable({
     const getStatusCounts = () => {
         const rows = table.getFilteredRowModel().rows;
         const total = rows.length;
-
+    
         const receivedCount = rows.filter(row => {
             const record = getCompanyRecord(row.original.id);
-            return record?.received_at || record?.is_nil;
+            return hasAnyReceptions(record) || record?.is_nil;
         }).length;
-
+    
         const deliveredCount = rows.filter(row => {
             const record = getCompanyRecord(row.original.id);
-            return record?.delivered_at;
+            return record?.deliveries && record.deliveries.length > 0;
         }).length;
-
+    
         const nilCount = rows.filter(row => {
             const record = getCompanyRecord(row.original.id);
             return record?.is_nil;
         }).length;
-
+    
         const urgentCount = rows.filter(row => {
             const record = getCompanyRecord(row.original.id);
             return record?.is_urgent;
         }).length;
-
+    
+        const totalFilesReceived = rows.reduce((total, row) => {
+            const record = getCompanyRecord(row.original.id);
+            return total + getTotalFilesReceived(record);
+        }, 0);
+    
+        const totalReceptions = rows.reduce((total, row) => {
+            const record = getCompanyRecord(row.original.id);
+            return total + (record?.receptions?.length || 0);
+        }, 0);
+    
         return {
             total,
             receivedComplete: receivedCount,
@@ -689,10 +729,11 @@ export default function EnhancedMonthlyTable({
             deliveredComplete: deliveredCount,
             deliveredPending: total - deliveredCount,
             nilCount,
-            urgentCount
+            urgentCount,
+            totalFilesReceived,
+            totalReceptions
         };
     };
-
     const exportToExcel = async () => {
         try {
             // Implementation for Excel export
