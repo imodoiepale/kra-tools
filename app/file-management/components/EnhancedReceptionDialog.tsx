@@ -51,6 +51,8 @@ export default function EnhancedReceptionDialog({
     const [isNil, setIsNil] = useState(false);
     const [employees, setEmployees] = useState<Individual[]>([]);
     const [directors, setDirectors] = useState<Individual[]>([]);
+    const [receivedByEmployees, setReceivedByEmployees] = useState<Individual[]>([]);
+    const [receivedByDirectors, setReceivedByDirectors] = useState<Individual[]>([]);
     const [loadingPeople, setLoadingPeople] = useState(false);
     const [showHistory, setShowHistory] = useState(false);
     const [editingReception, setEditingReception] = useState<string | null>(null);
@@ -103,6 +105,7 @@ export default function EnhancedReceptionDialog({
         setLoadingPeople(true);
         
         try {
+            // First, fetch all individuals
             const { data: allIndividuals, error: fetchError } = await supabase
                 .from('registry_individuals')
                 .select('id, full_name, employment_history');
@@ -112,25 +115,18 @@ export default function EnhancedReceptionDialog({
                 return;
             }
 
-            const individualsData = allIndividuals?.filter(individual => {
-                if (!individual.employment_history) return false;
-                
-                return individual.employment_history.some((emp: any) => 
-                    emp.company_id === companyId.toString() && 
-                    emp.role?.toLowerCase() !== 'stakeholder'
-                );
-            }) || [];
-
-            if (individualsData) {
-                const now = new Date();
+            const now = new Date();
+            
+            // Process employees and directors for both dropdowns
+            const processIndividuals = (targetCompanyId: string) => {
                 const directorsList: Individual[] = [];
                 const employeesList: Individual[] = [];
 
-                individualsData.forEach(individual => {
+                allIndividuals?.forEach(individual => {
                     if (!individual.employment_history) return;
 
                     const employment = individual.employment_history.find(
-                        (emp: any) => emp.company_id === companyId.toString() && 
+                        (emp: any) => emp.company_id === targetCompanyId && 
                                      emp.role?.toLowerCase() !== 'stakeholder'
                     );
 
@@ -155,9 +151,23 @@ export default function EnhancedReceptionDialog({
                 const sortByName = (a: Individual, b: Individual) => 
                     a.full_name.localeCompare(b.full_name);
 
-                setDirectors([...directorsList].sort(sortByName));
-                setEmployees([...employeesList].sort(sortByName));
-            }
+                return {
+                    directors: [...directorsList].sort(sortByName),
+                    employees: [...employeesList].sort(sortByName)
+                };
+            };
+
+
+            // Get people for the current company (for 'brought by')
+            const currentCompanyPeople = processIndividuals(companyId.toString());
+            setDirectors(currentCompanyPeople.directors);
+            setEmployees(currentCompanyPeople.employees);
+
+            // Get people for company_id = 10 (for 'received by')
+            const receivedByPeople = processIndividuals('10');
+            console.log('Received by people:', receivedByPeople);
+            setReceivedByDirectors(receivedByPeople.directors);
+            setReceivedByEmployees(receivedByPeople.employees);
         } catch (error) {
             console.error('Error fetching company people:', error);
             toast.error('Failed to load company employees');
@@ -881,15 +891,37 @@ export default function EnhancedReceptionDialog({
                                                <SelectContent>
                                                    <SelectItem value="other">Other...</SelectItem>
                                                     
-                                                   {employees.length > 0 && (
+                                                   {receivedByDirectors.length > 0 && (
                                                        <>
-                                                           <Separator className="my-1" />
                                                            <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground">
-                                                               Staff ({employees.length})
+                                                               Directors ({receivedByDirectors.length})
                                                            </div>
-                                                           {employees.map((employee) => (
+                                                           {receivedByDirectors.map((director) => (
                                                                <SelectItem 
-                                                                   key={`recv-${employee.id}`} 
+                                                                   key={`recv-dir-${director.id}`}
+                                                                   value={director.id}
+                                                                   className="flex items-center gap-2"
+                                                               >
+                                                                   <span>{director.full_name}</span>
+                                                                   {director.role && (
+                                                                       <Badge variant="outline" className="text-xs font-normal ml-2">
+                                                                           {director.role}
+                                                                       </Badge>
+                                                                   )}
+                                                               </SelectItem>
+                                                           ))}
+                                                           <Separator className="my-1" />
+                                                       </>
+                                                   )}
+                                                   
+                                                   {receivedByEmployees.length > 0 && (
+                                                       <>
+                                                           <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground">
+                                                               Staff ({receivedByEmployees.length})
+                                                           </div>
+                                                           {receivedByEmployees.map((employee) => (
+                                                               <SelectItem 
+                                                                   key={`recv-emp-${employee.id}`}
                                                                    value={employee.id}
                                                                    className="flex items-center gap-2"
                                                                >
@@ -905,7 +937,7 @@ export default function EnhancedReceptionDialog({
                                                    )}
                                                </SelectContent>
                                            </Select>
-                                           {(formData.receivedById === '' || (!formData.receivedById && !employees.length)) && (
+                                           {(formData.receivedById === '' || (!formData.receivedById && !receivedByEmployees.length && !receivedByDirectors.length)) && (
                                                <div className="mt-2">
                                                    <Input
                                                        value={formData.receivedBy}
