@@ -28,6 +28,10 @@ export interface ReceptionData {
     created_by: string;
     updated_at?: string;
     updated_by?: string;
+    version: number;
+    version_date: string;
+    version_notes?: string;
+    version_type: 'initial' | 'update' | 'correction';
 }
 
 export interface DeliveryData {

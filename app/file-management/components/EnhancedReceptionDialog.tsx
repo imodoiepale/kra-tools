@@ -66,8 +66,38 @@ export default function EnhancedReceptionDialog({
         filesCount: 1,
         receptionNotes: '',
         processingStatus: 'pending',
-        isUrgent: false
+        isUrgent: false,
+        versionNotes: '',
+        versionType: 'initial' as 'initial' | 'update' | 'correction'
     });
+
+    // Get the highest version number for existing receptions
+    const getMaxVersion = () => {
+        const receptions = getAllReceptions();
+        if (receptions.length === 0) return 1;
+        return Math.max(...receptions.map(r => r.version || 1)) + 1;
+    };
+
+    // Get version history for a specific reception
+    const getVersionHistory = (receptionId: string) => {
+        return existingData?.reception_data?.filter(
+            r => r.id === receptionId
+        ).sort((a, b) => (a.version || 1) - (b.version || 1)) || [];
+    };
+
+    // Update form data with version information
+    useEffect(() => {
+        if (existingData && editingReception) {
+            const reception = existingData.reception_data.find(r => r.id === editingReception);
+            if (reception) {
+                setFormData(prev => ({
+                    ...prev,
+                    versionNotes: '',
+                    versionType: 'update'
+                }));
+            }
+        }
+    }, [existingData, editingReception]);
 
     // Helper functions for reception management
     const getAllReceptions = (): ReceptionRecord[] => {
@@ -380,15 +410,32 @@ export default function EnhancedReceptionDialog({
                 updated_at: new Date().toISOString()
             };
 
-            // Prepare submission data
+            // Get existing receptions or start with an empty array
+            const existingReceptions = existingData?.reception_data || [];
+            
+            // Create a new array with the updated or new reception record
+            let updatedReceptions;
+            if (editingReception) {
+                // If editing, replace the existing record
+                updatedReceptions = existingReceptions.map(r => 
+                    r.id === editingReception ? receptionRecord : r
+                );
+            } else {
+                // If new, add to the existing records
+                updatedReceptions = [...existingReceptions, receptionRecord];
+            }
+
+            // Prepare submission data with all records
             const submissionData = {
                 company_id: parsedCompanyId,
                 year: parsedYear,
                 month: parsedMonth,
-                reception_data: [receptionRecord],
+                reception_data: updatedReceptions,
                 processing_status: formData.processingStatus,
                 is_urgent: formData.isUrgent
             };
+            
+            console.log('Submitting data with', updatedReceptions.length, 'reception records');
 
             console.log('Submitting data to service:', JSON.stringify(submissionData, null, 2));
             

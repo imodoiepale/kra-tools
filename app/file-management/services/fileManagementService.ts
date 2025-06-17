@@ -793,6 +793,69 @@ export class FileManagementService {
         }
     }
 
+    static async updateFileRecord(id: string, data: Partial<FileRecord>): Promise<FileRecord> {
+        try {
+            // Get existing record to preserve version history
+            const { data: existingRecord, error: getError } = await supabase
+                .from('file_records')
+                .select('*')
+                .eq('id', id)
+                .single();
+
+            if (getError) throw new Error(`Failed to fetch existing record: ${getError.message}`);
+
+            // Update reception data with versioning
+            if (data.reception_data) {
+                const existingReceptions = existingRecord?.reception_data || [];
+                const newReceptions = data.reception_data.map(reception => {
+                    const maxVersion = existingReceptions.length > 0 
+                        ? Math.max(...existingReceptions.map(r => r.version || 1)) + 1
+                        : 1;
+                    
+                    return {
+                        ...reception,
+                        version: maxVersion,
+                        version_date: new Date().toISOString(),
+                        version_type: 'update',
+                        created_at: new Date().toISOString(),
+                        created_by: 'system',
+                        updated_at: new Date().toISOString(),
+                        updated_by: 'system'
+                    };
+                });
+
+                data.reception_data = [...existingReceptions, ...newReceptions];
+            }
+
+            // Update delivery data with versioning
+            if (data.delivery_data) {
+                const existingDeliveries = existingRecord?.delivery_data || [];
+                const newDeliveries = data.delivery_data.map(delivery => ({
+                    ...delivery,
+                    created_at: new Date().toISOString(),
+                    created_by: 'system',
+                    updated_at: new Date().toISOString(),
+                    updated_by: 'system'
+                }));
+
+                data.delivery_data = [...existingDeliveries, ...newDeliveries];
+            }
+
+            const { data: updatedData, error } = await supabase
+                .from('file_records')
+                .update(data)
+                .eq('id', id)
+                .select()
+                .single();
+
+            if (error) throw new Error(`Failed to update file record: ${error.message}`);
+            return updatedData;
+        } catch (error: any) {
+            console.error('Error in updateFileRecord:', error.message);
+            throw error;
+        }
+    }
+
     // Statistics with updated logic
     static async getStats(year: number, month: number): Promise<FileManagementStats> {
         try {
