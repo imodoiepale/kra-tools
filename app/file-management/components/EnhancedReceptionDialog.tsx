@@ -17,15 +17,13 @@ import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { 
-    Ban, CalendarIcon, Check, CheckCircle, ChevronDown, ChevronRight, Clock, 
-    Edit3, FileText, History, Package, Plus, Trash2, X, XCircle, Eye, EyeOff 
-} from "lucide-react";
+import { Ban, CalendarIcon, Check, CheckCircle, ChevronDown, ChevronRight, Clock, Edit3, FileText, History, Package, Plus, Trash2, X, XCircle, Eye, EyeOff } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "react-hot-toast";
 import { supabase } from '@/lib/supabase';
 import { cn } from "@/lib/utils";
 import { Individual, FileRecord, ReceptionRecord } from '../types/fileManagement';
+import { FileManagementService } from '../services/fileManagementService';
 
 interface EnhancedReceptionDialogProps {
     companyName: string;
@@ -33,6 +31,7 @@ interface EnhancedReceptionDialogProps {
     year: number;
     month: number;
     onConfirm: (data: any) => Promise<void>;
+    onClose?: () => void;
     existingData?: FileRecord;
     className?: string;
 }
@@ -43,6 +42,7 @@ export default function EnhancedReceptionDialog({
     year,
     month,
     onConfirm,
+    onClose,
     existingData,
     className
 }: EnhancedReceptionDialogProps) {
@@ -57,32 +57,45 @@ export default function EnhancedReceptionDialog({
     const [formData, setFormData] = useState({
         date: new Date(),
         time: format(new Date(), 'HH:mm'),
-        broughtBy: '',
+        broughtById: '',
+        receivedById: '',
         deliveryMethod: 'physical',
         documentTypes: [] as string[],
         filesCount: 1,
         receptionNotes: '',
-        receivedBy: 'Front Desk',
         processingStatus: 'pending',
         isUrgent: false
     });
 
     // Helper functions for reception management
     const getAllReceptions = (): ReceptionRecord[] => {
-        return existingData?.receptions || [];
+        return existingData?.reception_data?.map((r: any) => ({
+            ...r,
+            received_at: new Date(r.received_at),
+            id: r.id || crypto.randomUUID()
+        })) || [];
     };
 
     const getLatestReception = (): ReceptionRecord | null => {
         const receptions = getAllReceptions();
-        return receptions.length > 0 ? receptions[receptions.length - 1] : null;
+        if (receptions.length === 0) return null;
+        
+        // Sort by received_at in descending order and return the first one
+        return [...receptions].sort((a, b) => 
+            new Date(b.received_at).getTime() - new Date(a.received_at).getTime()
+        )[0];
     };
 
     const getTotalFilesReceived = (): number => {
-        return getAllReceptions().reduce((total, reception) => total + reception.files_count, 0);
+        return getAllReceptions().reduce((total, reception) => total + (reception.files_count || 0), 0);
     };
 
     const hasAnyReceptions = (): boolean => {
         return getAllReceptions().length > 0;
+    };
+
+    const canReceive = (): boolean => {
+        return !existingData?.processing_status?.includes('nil');
     };
 
     // Fetch people associated with the company
@@ -160,6 +173,12 @@ export default function EnhancedReceptionDialog({
     }, [isOpen, companyId]);
 
     useEffect(() => {
+        // Validate required props
+        if (!companyId || !year || !month) {
+            console.error('Missing required props:', { companyId, year, month });
+            return;
+        }
+
         if (existingData) {
             setIsNil(existingData.is_nil || false);
             
@@ -171,12 +190,14 @@ export default function EnhancedReceptionDialog({
                     setFormData({
                         date: receivedAt,
                         time: format(receivedAt, 'HH:mm'),
+                        broughtById: reception.brought_by_id || '',
+                        receivedById: reception.received_by_id || '',
                         broughtBy: reception.brought_by || '',
+                        receivedBy: reception.received_by || '',
                         deliveryMethod: reception.delivery_method || 'physical',
                         documentTypes: reception.document_types || [],
                         filesCount: reception.files_count || 1,
                         receptionNotes: reception.reception_notes || '',
-                        receivedBy: reception.received_by || 'Front Desk',
                         processingStatus: existingData.processing_status || 'pending',
                         isUrgent: reception.is_urgent || false
                     });
@@ -189,19 +210,35 @@ export default function EnhancedReceptionDialog({
                     setFormData({
                         date: receivedAt,
                         time: format(receivedAt, 'HH:mm'),
+                        broughtById: latestReception.brought_by_id || '',
+                        receivedById: latestReception.received_by_id || '',
                         broughtBy: latestReception.brought_by || '',
+                        receivedBy: latestReception.received_by || '',
                         deliveryMethod: latestReception.delivery_method || 'physical',
                         documentTypes: latestReception.document_types || [],
                         filesCount: latestReception.files_count || 1,
                         receptionNotes: latestReception.reception_notes || '',
-                        receivedBy: latestReception.received_by || 'Front Desk',
                         processingStatus: existingData.processing_status || 'pending',
                         isUrgent: latestReception.is_urgent || false
                     });
                 }
             }
+        } else {
+            setFormData({
+                date: new Date(),
+                time: format(new Date(), 'HH:mm'),
+                broughtById: '',
+                receivedById: '',
+                broughtBy: '',
+                receivedBy: '',
+                deliveryMethod: 'physical',
+                documentTypes: [],
+                filesCount: 1,
+                receptionNotes: '',
+                processingStatus: 'pending'
+            });
         }
-    }, [existingData, editingReception]);
+    }, [existingData, companyId, year, month]);
 
     const documentTypeOptions = [
         { value: 'financial_statements', label: 'Financial Statements' },
@@ -259,8 +296,15 @@ export default function EnhancedReceptionDialog({
     const validateForm = () => {
         if (isNil) return true;
 
-        if (!formData.broughtBy.trim()) {
+        // Validate brought by (either ID or name)
+        if (!formData.broughtById && (!formData.broughtBy || !formData.broughtBy.trim())) {
             toast.error('Please specify who brought the documents');
+            return false;
+        }
+
+        // Validate received by (either ID or name)
+        if (!formData.receivedById && (!formData.receivedBy || !formData.receivedBy.trim())) {
+            toast.error('Please specify who received the documents');
             return false;
         }
 
@@ -282,123 +326,208 @@ export default function EnhancedReceptionDialog({
 
         setIsLoading(true);
         try {
+            console.log('Form data before submission:', formData);
+            console.log('Raw props - companyId:', companyId, 'year:', year, 'month:', month);
+            
+            // Validate required fields
+            if (!companyId || !year || !month) {
+                const errorMsg = `Missing required fields: company_id=${companyId}, year=${year}, month=${month}`;
+                console.error('Validation error:', errorMsg);
+                throw new Error(errorMsg);
+            }
+
+            // Convert values to proper types
+            const parsedCompanyId = parseInt(companyId);
+            const parsedYear = parseInt(year);
+            const parsedMonth = parseInt(month);
+
+            console.log('Parsed values - companyId:', parsedCompanyId, 'year:', parsedYear, 'month:', parsedMonth);
+
+            if (isNaN(parsedCompanyId) || isNaN(parsedYear) || isNaN(parsedMonth)) {
+                const errorMsg = `Invalid values - companyId: ${parsedCompanyId}, year: ${parsedYear}, month: ${parsedMonth}`;
+                console.error('Parsing error:', errorMsg);
+                throw new Error(errorMsg);
+            }
+
             const dateTime = new Date(formData.date);
             const [hours, minutes] = formData.time.split(':');
             dateTime.setHours(parseInt(hours), parseInt(minutes));
 
-            const receptionRecord: ReceptionRecord = {
+            const receptionRecord = {
                 id: editingReception || crypto.randomUUID(),
-                received_at: isNil ? null : dateTime.toISOString(),
-                received_by: formData.receivedBy,
-                brought_by: formData.broughtBy,
+                received_at: dateTime.toISOString(),
+                brought_by_id: formData.broughtById,
+                brought_by: formData.broughtById ? '' : formData.broughtBy,
+                received_by_id: formData.receivedById,
+                received_by: formData.receivedById ? '' : formData.receivedBy,
                 delivery_method: formData.deliveryMethod,
                 document_types: formData.documentTypes,
                 files_count: formData.filesCount,
                 reception_notes: formData.receptionNotes,
+                processing_status: formData.processingStatus,
                 is_urgent: formData.isUrgent,
                 created_at: new Date().toISOString(),
-                created_by: 'current_user' // Replace with actual user
+                updated_at: new Date().toISOString()
             };
 
+            // Prepare submission data
             const submissionData = {
-                company_id: companyId,
-                company_name: companyName,
-                year,
-                month,
-                reception_record: receptionRecord,
-                is_editing: !!editingReception,
-                status: isNil ? 'nil' : 'received',
-                is_nil: isNil,
-                is_urgent: formData.isUrgent,
+                company_id: parsedCompanyId,
+                year: parsedYear,
+                month: parsedMonth,
+                reception_data: [receptionRecord],
                 processing_status: formData.processingStatus,
-                updated_at: new Date().toISOString(),
-                updated_by: 'current_user'
+                is_urgent: formData.isUrgent
             };
 
-            await upsertFileRecord(submissionData);
+            console.log('Submitting data to service:', JSON.stringify(submissionData, null, 2));
             
-            if (onConfirm) {
-                await onConfirm(submissionData);
+            // Submit to service
+            try {
+                await FileManagementService.upsertFileRecord(submissionData);
+                console.log('Submission successful');
+            } catch (serviceError) {
+                console.error('Service error details:', {
+                    message: serviceError.message,
+                    code: serviceError.code,
+                    stack: serviceError.stack
+                });
+                throw serviceError;
             }
-            
-            setIsOpen(false);
-            setEditingReception(null);
-            toast.success(
-                editingReception
-                    ? 'Reception record updated successfully'
-                    : existingData
-                        ? 'New reception added successfully'
-                        : 'Documents reception confirmed successfully',
-                {
-                    icon: '✅',
-                    style: {
-                        borderRadius: '10px',
-                        background: '#1e40af',
-                        color: '#fff',
-                    },
-                }
-            );
-        } catch (error) {
-            console.error('Submission error:', error);
-            toast.error('Failed to save reception record');
+
+            toast.success('Reception record saved successfully');
+            onConfirm();
+            if (onClose) onClose();
+        } catch (error: any) {
+            console.error('Error submitting reception:', error);
+            toast.error(error.message || 'Failed to save reception record');
         } finally {
             setIsLoading(false);
         }
     };
 
     const upsertFileRecord = async (submissionData: any) => {
-        const { data: existingRecord } = await supabase
-            .from('file_records')
-            .select('*')
-            .eq('company_id', submissionData.company_id)
-            .eq('year', submissionData.year)
-            .eq('month', submissionData.month)
-            .single();
-
-        if (existingRecord) {
-            let updatedReceptions = [...(existingRecord.receptions || [])];
-            
-            if (submissionData.is_editing) {
-                // Update existing reception
-                const index = updatedReceptions.findIndex(r => r.id === submissionData.reception_record.id);
-                if (index !== -1) {
-                    updatedReceptions[index] = submissionData.reception_record;
-                }
-            } else {
-                // Add new reception
-                updatedReceptions.push(submissionData.reception_record);
+        console.log('Starting upsertFileRecord with data:', JSON.stringify(submissionData, null, 2));
+        
+        try {
+            // Validate required fields
+            if (!submissionData.company_id || !submissionData.year || !submissionData.month) {
+                throw new Error('Missing required fields: company_id, year, or month');
             }
 
-            await supabase
-                .from('file_records')
-                .update({
-                    receptions: updatedReceptions,
-                    status: submissionData.status,
-                    is_nil: submissionData.is_nil,
-                    is_urgent: submissionData.is_urgent,
+            // Extract reception record from the first item in the reception_data array
+            const receptionRecord = Array.isArray(submissionData.reception_data) && 
+                                 submissionData.reception_data.length > 0 
+                                 ? submissionData.reception_data[0] 
+                                 : null;
+            
+            if (!receptionRecord) {
+                throw new Error('No reception data provided');
+            }
+
+            console.log('Processing reception record:', JSON.stringify(receptionRecord, null, 2));
+            
+            // First, try to get existing record
+            const { data: existingRecord, error: selectError } = await supabase
+                .from('file_transactions')
+                .select('*')
+                .eq('company_id', submissionData.company_id)
+                .eq('year', submissionData.year)
+                .eq('month', submissionData.month)
+                .maybeSingle();
+    
+            if (selectError) {
+                console.error('Error checking existing record:', selectError);
+                throw selectError;
+            }
+            
+            console.log('Existing record:', existingRecord ? 'found' : 'not found');
+    
+            const now = new Date().toISOString();
+            
+            if (existingRecord) {
+                // Update existing record
+                console.log('Updating existing record');
+                
+                let updatedReceptionData = [...(existingRecord.reception_data || [])];
+                const existingReceptionIndex = updatedReceptionData.findIndex(r => r.id === receptionRecord.id);
+                
+                if (existingReceptionIndex !== -1) {
+                    // Update existing reception
+                    console.log('Updating existing reception at index:', existingReceptionIndex);
+                    updatedReceptionData[existingReceptionIndex] = {
+                        ...receptionRecord,
+                        updated_at: now
+                    };
+                } else {
+                    // Add new reception
+                    console.log('Adding new reception to existing record');
+                    updatedReceptionData.push({
+                        ...receptionRecord,
+                        created_at: receptionRecord.created_at || now,
+                        updated_at: now
+                    });
+                }
+    
+                const updateData = {
+                    reception_data: updatedReceptionData,
                     processing_status: submissionData.processing_status,
-                    updated_at: submissionData.updated_at,
-                    updated_by: submissionData.updated_by
-                })
-                .eq('id', existingRecord.id);
-        } else {
-            // Create new record
-            await supabase
-                .from('file_records')
-                .insert({
+                    is_urgent: submissionData.is_urgent,
+                    updated_at: now,
+                };
+                
+                console.log('Updating with data:', JSON.stringify(updateData, null, 2));
+    
+                const { data: updatedData, error: updateError } = await supabase
+                    .from('file_transactions')
+                    .update(updateData)
+                    .eq('id', existingRecord.id)
+                    .select()
+                    .single();
+    
+                if (updateError) {
+                    console.error('Error updating record:', updateError);
+                    throw updateError;
+                }
+                
+                console.log('Update successful:', updatedData);
+            } else {
+                // Create new record
+                console.log('Creating new record');
+                
+                const newData = {
                     company_id: submissionData.company_id,
-                    company_name: submissionData.company_name,
                     year: submissionData.year,
                     month: submissionData.month,
-                    receptions: [submissionData.reception_record],
-                    deliveries: [],
-                    status: submissionData.status,
-                    is_nil: submissionData.is_nil,
-                    is_urgent: submissionData.is_urgent,
-                    processing_status: submissionData.processing_status,
-                    created_by: submissionData.updated_by,
-                    updated_by: submissionData.updated_by
-                });
+                    reception_data: [{
+                        ...receptionRecord,
+                        created_at: receptionRecord.created_at || now,
+                        updated_at: now
+                    }],
+                    processing_status: submissionData.processing_status || 'pending',
+                    is_urgent: submissionData.is_urgent || false,
+                    created_at: now,
+                    updated_at: now,
+                };
+                
+                console.log('Inserting new record with data:', JSON.stringify(newData, null, 2));
+    
+                const { data: insertedData, error: insertError } = await supabase
+                    .from('file_transactions')
+                    .insert([newData])
+                    .select()
+                    .single();
+    
+                if (insertError) {
+                    console.error('Error inserting record:', insertError);
+                    throw insertError;
+                }
+                
+                console.log('Insert successful:', insertedData);
+            }
+        } catch (error) {
+            console.error('Error in upsertFileRecord:', error);
+            throw error;
         }
     };
 
@@ -414,7 +543,6 @@ export default function EnhancedReceptionDialog({
                     receptions: updatedReceptions,
                     status: updatedReceptions.length === 0 ? 'pending' : 'received',
                     updated_at: new Date().toISOString(),
-                    updated_by: 'current_user'
                 })
                 .eq('id', existingData.id);
 
@@ -444,7 +572,7 @@ export default function EnhancedReceptionDialog({
             documentTypes: [],
             filesCount: 1,
             receptionNotes: '',
-            receivedBy: 'Front Desk',
+            receivedBy: '',
             processingStatus: 'pending',
             isUrgent: false
         });
@@ -534,16 +662,17 @@ export default function EnhancedReceptionDialog({
                                                                         <strong>Received:</strong> {format(new Date(reception.received_at), 'PPp')}
                                                                     </div>
                                                                     <div>
-                                                                        <strong>Brought by:</strong> {reception.brought_by}
+                                                                        <strong>Brought by:</strong> {reception.brought_by_id ? 
+                                                                            employees.find(e => e.id === reception.brought_by_id)?.full_name || 
+                                                                            directors.find(d => d.id === reception.brought_by_id)?.full_name || 
+                                                                            reception.brought_by
+                                                                        : reception.brought_by}
                                                                     </div>
                                                                     <div>
-                                                                        <strong>Received by:</strong> {reception.received_by}
-                                                                    </div>
-                                                                    <div>
-                                                                        <strong>Files:</strong> {reception.files_count}
-                                                                    </div>
-                                                                    <div className="col-span-2">
-                                                                        <strong>Document Types:</strong> {reception.document_types?.join(', ') || 'N/A'}
+                                                                        <strong>Received by:</strong> {reception.received_by_id ? 
+                                                                            employees.find(e => e.id === reception.received_by_id)?.full_name : 
+                                                                            reception.received_by
+                                                                        }
                                                                     </div>
                                                                     {reception.reception_notes && (
                                                                         <div className="col-span-2">
@@ -634,17 +763,17 @@ export default function EnhancedReceptionDialog({
                                            <Label htmlFor="broughtBy">Who Brought Documents *</Label>
                                            <div>
                                                <Select
-                                                   value={formData.broughtBy.startsWith('other:') ? 'other' : formData.broughtBy}
+                                                   value={formData.broughtById || 'other'}
                                                    onValueChange={(value) => {
                                                        if (value === 'other') {
                                                            setFormData(prev => ({
                                                                ...prev,
-                                                               broughtBy: 'other:'
+                                                               broughtById: ''
                                                            }));
                                                        } else {
                                                            setFormData(prev => ({
                                                                ...prev,
-                                                               broughtBy: value
+                                                               broughtById: value
                                                            }));
                                                        }
                                                    }}
@@ -659,7 +788,7 @@ export default function EnhancedReceptionDialog({
                                                    </SelectTrigger>
                                                    <SelectContent>
                                                        <SelectItem value="other">Other Person...</SelectItem>
-                                                       
+                                                        
                                                        {directors.length > 0 && (
                                                            <>
                                                                <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground">
@@ -668,7 +797,7 @@ export default function EnhancedReceptionDialog({
                                                                {directors.map((director) => (
                                                                    <SelectItem 
                                                                        key={director.id} 
-                                                                       value={director.full_name}
+                                                                       value={director.id}
                                                                        className="flex items-center gap-2"
                                                                    >
                                                                        <span>{director.full_name}</span>
@@ -682,7 +811,7 @@ export default function EnhancedReceptionDialog({
                                                                <Separator className="my-1" />
                                                            </>
                                                        )}
-                                                       
+                                                        
                                                        {employees.length > 0 && (
                                                            <>
                                                                <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground">
@@ -691,7 +820,7 @@ export default function EnhancedReceptionDialog({
                                                                {employees.map((employee) => (
                                                                    <SelectItem 
                                                                        key={employee.id} 
-                                                                       value={employee.full_name}
+                                                                       value={employee.id}
                                                                        className="flex items-center gap-2"
                                                                    >
                                                                        <span>{employee.full_name}</span>
@@ -707,18 +836,18 @@ export default function EnhancedReceptionDialog({
                                                    </SelectContent>
                                                </Select>
                                                
-                                               {(formData.broughtBy.startsWith('other:') || (!formData.broughtBy && !employees.length && !directors.length)) && (
-                                                   <div className="mt-2">
-                                                       <Input
-                                                           value={formData.broughtBy.startsWith('other:') ? formData.broughtBy.substring(6) : formData.broughtBy}
-                                                           onChange={(e) => setFormData(prev => ({
-                                                               ...prev,
-                                                               broughtBy: 'other:' + e.target.value
-                                                           }))}
-                                                           placeholder="Enter person's name"
-                                                           className="w-full"
-                                                       />
-                                                   </div>
+                                               {(formData.broughtById === '' || (!formData.broughtById && !employees.length && !directors.length)) && (
+                                               <div className="mt-2">
+                                                   <Input
+                                                       value={formData.broughtBy}
+                                                       onChange={(e) => setFormData(prev => ({
+                                                           ...prev,
+                                                           broughtBy: e.target.value
+                                                       }))}
+                                                       placeholder="Enter person's name"
+                                                       className="w-full"
+                                                   />
+                                               </div>
                                                )}
                                            </div>
                                        </div>
@@ -726,17 +855,17 @@ export default function EnhancedReceptionDialog({
                                        <div className="space-y-2">
                                            <Label htmlFor="receivedBy">Received By</Label>
                                            <Select
-                                               value={formData.receivedBy.startsWith('other:') ? 'other' : formData.receivedBy}
+                                               value={formData.receivedById || 'other'}
                                                onValueChange={(value) => {
                                                    if (value === 'other') {
                                                        setFormData(prev => ({
                                                            ...prev,
-                                                           receivedBy: 'other:'
+                                                           receivedById: ''
                                                        }));
                                                    } else {
                                                        setFormData(prev => ({
                                                            ...prev,
-                                                           receivedBy: value
+                                                           receivedById: value
                                                        }));
                                                    }
                                                }}
@@ -750,9 +879,8 @@ export default function EnhancedReceptionDialog({
                                                    )}
                                                </SelectTrigger>
                                                <SelectContent>
-                                                   <SelectItem value="Front Desk">Front Desk</SelectItem>
                                                    <SelectItem value="other">Other...</SelectItem>
-                                                   
+                                                    
                                                    {employees.length > 0 && (
                                                        <>
                                                            <Separator className="my-1" />
@@ -762,7 +890,7 @@ export default function EnhancedReceptionDialog({
                                                            {employees.map((employee) => (
                                                                <SelectItem 
                                                                    key={`recv-${employee.id}`} 
-                                                                   value={employee.full_name}
+                                                                   value={employee.id}
                                                                    className="flex items-center gap-2"
                                                                >
                                                                    <span>{employee.full_name}</span>
@@ -777,15 +905,15 @@ export default function EnhancedReceptionDialog({
                                                    )}
                                                </SelectContent>
                                            </Select>
-                                           {(formData.receivedBy.startsWith('other:') || (!formData.receivedBy && !employees.length)) && (
+                                           {(formData.receivedById === '' || (!formData.receivedById && !employees.length)) && (
                                                <div className="mt-2">
                                                    <Input
-                                                       value={formData.receivedBy.startsWith('other:') ? formData.receivedBy.substring(6) : formData.receivedBy}
+                                                       value={formData.receivedBy}
                                                        onChange={(e) => setFormData(prev => ({
                                                            ...prev,
-                                                           receivedBy: 'other:' + e.target.value
+                                                           receivedBy: e.target.value
                                                        }))}
-                                                       placeholder="Enter receiver's name"
+                                                       placeholder="Enter staff member's name"
                                                        className="w-full"
                                                    />
                                                </div>

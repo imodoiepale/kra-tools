@@ -49,8 +49,7 @@ export interface DeliveryData {
 
 export interface FileRecord {
     id: string;
-    company_id: string | number;
-    company_name: string;
+    company_id: number;
     year: number;
     month: number;
     reception_data: ReceptionData[];
@@ -59,8 +58,6 @@ export interface FileRecord {
     is_urgent: boolean;
     created_at: string;
     updated_at: string;
-    created_by: string;
-    updated_by: string;
 }
 
 export interface FileManagementStats {
