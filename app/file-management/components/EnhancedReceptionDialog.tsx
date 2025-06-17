@@ -108,6 +108,25 @@ export default function EnhancedReceptionDialog({
         })) || [];
     };
 
+    // Get all unique document types from all receptions
+    const getAllDocumentTypes = (): string[] => {
+        const allTypes = new Set<string>();
+        getAllReceptions().forEach(reception => {
+            if (reception.document_types) {
+                reception.document_types.forEach(type => allTypes.add(type));
+            }
+        });
+        return Array.from(allTypes);
+    };
+
+    // Get document types that are not yet in the current reception
+    const getAvailableDocumentTypes = (): string[] => {
+        const currentTypes = new Set(formData.documentTypes || []);
+        return documentTypeOptions
+            .map(opt => opt.value)
+            .filter(type => !currentTypes.has(type));
+    };
+
     const getLatestReception = (): ReceptionRecord | null => {
         const receptions = getAllReceptions();
         if (receptions.length === 0) return null;
@@ -302,9 +321,27 @@ export default function EnhancedReceptionDialog({
     const handleDocumentTypeToggle = (docType: string) => {
         setFormData(prev => ({
             ...prev,
-            documentTypes: prev.documentTypes.includes(docType)
+            documentTypes: prev.documentTypes?.includes(docType)
                 ? prev.documentTypes.filter(type => type !== docType)
-                : [...prev.documentTypes, docType]
+                : [...(prev.documentTypes || []), docType]
+        }));
+    };
+
+    // Add a new document type to the current reception
+    const handleAddDocumentType = (docType: string) => {
+        if (!formData.documentTypes?.includes(docType)) {
+            setFormData(prev => ({
+                ...prev,
+                documentTypes: [...(prev.documentTypes || []), docType]
+            }));
+        }
+    };
+
+    // Remove a document type from the current reception
+    const handleRemoveDocumentType = (docType: string) => {
+        setFormData(prev => ({
+            ...prev,
+            documentTypes: prev.documentTypes?.filter(type => type !== docType) || []
         }));
     };
 

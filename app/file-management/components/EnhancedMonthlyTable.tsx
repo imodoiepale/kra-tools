@@ -14,7 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuCheckboxItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Search, Download, Settings2, CalendarIcon, Send, Filter, MoreHorizontal, Archive, Mail, FileDown, ArrowUpDown, Clock, Package, Loader2, CheckCircle, Ban, XCircle, User, FileText } from "lucide-react";
+import { Search, Download, Settings2, CalendarIcon, Send, Filter, MoreHorizontal, Archive, Mail, FileDown, ArrowUpDown, Clock, Package, Loader2, CheckCircle, Ban, XCircle, User, FileText, ChevronDown, MapPin, ChevronRight } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from 'react-hot-toast';
 import { cn } from "@/lib/utils";
@@ -23,6 +23,19 @@ import EnhancedReceptionDialog from './EnhancedReceptionDialog';
 import EnhancedDeliveryDialog from './EnhancedDeliveryDialog';
 import BulkOperationsDialog from './BulkOperationsDialog';
 import { FileRecord } from '../types/fileManagement';
+
+const documentTypeOptions = [
+    { value: 'financial_statements', label: 'Financial Statements' },
+    { value: 'tax_returns', label: 'Tax Returns' },
+    { value: 'audit_documents', label: 'Audit Documents' },
+    { value: 'payroll_records', label: 'Payroll Records' },
+    { value: 'bank_statements', label: 'Bank Statements' },
+    { value: 'invoices', label: 'Invoices & Bills' },
+    { value: 'contracts', label: 'Contracts' },
+    { value: 'legal_documents', label: 'Legal Documents' },
+    { value: 'compliance_reports', label: 'Compliance Reports' },
+    { value: 'other', label: 'Other Documents' }
+];
 
 interface Company {
     id: number;
@@ -73,6 +86,7 @@ export default function EnhancedMonthlyTable({
     const [selectedRows, setSelectedRows] = useState<string[]>([]);
     const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
     const [sorting, setSorting] = useState<SortingState>([]);
+    const [expandedReceptionId, setExpandedReceptionId] = useState<string | null>(null);
     const [isCategoryFilterOpen, setIsCategoryFilterOpen] = useState(false);
     const [categoryFilters, setCategoryFilters] = useState<{
         categories: { [key: string]: boolean };
@@ -512,7 +526,7 @@ const formatDateTime = (dateTimeString?: string) => {
             size: 140,
         }),
 
-        // Reception details
+        // Reception details with combined document types
         columnHelper.display({
             id: 'receptionDetails',
             header: ({ column }) => (
@@ -535,55 +549,115 @@ const formatDateTime = (dateTimeString?: string) => {
                     return <div className="text-xs text-gray-400">No receptions</div>;
                 }
                 
+                // Get all unique document types from all receptions
+                const allDocumentTypes = new Set<string>();
+                record?.reception_data?.forEach(reception => {
+                    reception.document_types?.forEach((type: string) => allDocumentTypes.add(type));
+                });
+                
                 const { date, time } = formatDateTime(latestReception.received_at);
                 
                 return (
-                    <div className="space-y-1">
-                        <div className="flex items-center">
-                            <CalendarIcon className="h-3.5 w-3.5 mr-1 text-gray-500" />
-                            <span className="text-sm">{date} at {time}</span>
-                        </div>
-                        <div className="flex items-center">
-                            <User className="h-3.5 w-3.5 mr-1 text-gray-500" />
-                            <span className="text-sm">{latestReception.received_by}</span>
-                        </div>
-                        {latestReception.brought_by && (
+                    <div className="space-y-2">
+                        {/* Latest Reception Summary */}
+                        <div className="space-y-1 p-2 bg-gray-50 rounded">
+                            <div className="flex items-center">
+                                <CalendarIcon className="h-3.5 w-3.5 mr-1 text-gray-500" />
+                                <span className="text-sm font-medium">Latest: {date} at {time}</span>
+                            </div>
                             <div className="flex items-center">
                                 <User className="h-3.5 w-3.5 mr-1 text-gray-500" />
-                                <span className="text-sm">Brought by: {latestReception.brought_by}</span>
+                                <span className="text-sm">Received by: {latestReception.received_by || 'N/A'}</span>
                             </div>
-                        )}
-                        {totalFiles > 0 && (
-                            <div className="flex items-center">
-                                <FileText className="h-3.5 w-3.5 mr-1 text-gray-500" />
-                                <span className="text-sm">{totalFiles} file{totalFiles > 1 ? 's' : ''}</span>
+                            {latestReception.brought_by && (
+                                <div className="flex items-center">
+                                    <User className="h-3.5 w-3.5 mr-1 text-gray-500" />
+                                    <span className="text-sm">Brought by: {latestReception.brought_by}</span>
+                                </div>
+                            )}
+                            {totalFiles > 0 && (
+                                <div className="flex items-center">
+                                    <FileText className="h-3.5 w-3.5 mr-1 text-gray-500" />
+                                    <span className="text-sm">{totalFiles} file{totalFiles > 1 ? 's' : ''}</span>
+                                </div>
+                            )}
+                            
+                            {/* Combined Document Types from all receptions */}
+                            <div className="pt-2 mt-2 border-t">
+                                <div className="text-xs font-medium text-gray-500 mb-1">All Document Types:</div>
+                                <div className="flex flex-wrap gap-1">
+                                    {Array.from(allDocumentTypes).map((type, i) => {
+                                        const docType = documentTypeOptions.find(opt => opt.value === type)?.label || type;
+                                        return (
+                                            <Badge key={i} variant="outline" className="text-xs">
+                                                {docType}
+                                            </Badge>
+                                        );
+                                    })}
+                                </div>
                             </div>
-                        )}
-                        {latestReception.document_types?.length > 0 && (
-                            <div className="flex flex-wrap gap-1 mt-1">
-                                {latestReception.document_types.map((type, i) => (
-                                    <Badge key={i} variant="outline" className="text-xs">
-                                        {type}
-                                    </Badge>
-                                ))}
-                            </div>
-                        )}
-                        {latestReception.notes && (
-                            <div className="text-xs text-gray-500 truncate max-w-[200px]" title={latestReception.notes}>
-                                {latestReception.notes}
-                            </div>
-                        )}
+                        </div>
+                        
+                        {/* Reception History */}
                         {totalReceptions > 1 && (
-                            <div className="text-xs text-blue-600">
-                                +{totalReceptions - 1} more reception{totalReceptions > 2 ? 's' : ''}
+                            <div className="mt-2">
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-6 text-xs text-blue-600 hover:text-blue-800 w-full justify-start"
+                                    onClick={() => {
+                                        setExpandedReceptionId(expandedReceptionId === row.original.id ? null : row.original.id);
+                                    }}
+                                >
+                                    {expandedReceptionId === row.original.id ? (
+                                        <ChevronDown className="h-3.5 w-3.5 mr-1" />
+                                    ) : (
+                                        <ChevronRight className="h-3.5 w-3.5 mr-1" />
+                                    )}
+                                    View History ({totalReceptions} {totalReceptions > 1 ? 'entries' : 'entry'})
+                                </Button>
+                                
+                                {expandedReceptionId === row.original.id && (
+                                    <div className="mt-2 space-y-2 max-h-48 overflow-y-auto">
+                                        {record?.reception_data?.map((reception, idx) => {
+                                            const { date, time } = formatDateTime(reception.received_at);
+                                            const isLatest = idx === 0;
+                                            return (
+                                                <div 
+                                                    key={reception.id || idx} 
+                                                    className={`p-2 text-xs border rounded ${isLatest ? 'bg-blue-50 border-blue-200' : 'bg-gray-50'}`}
+                                                >
+                                                    <div className="font-medium">{date} at {time}</div>
+                                                    <div className="text-gray-600">
+                                                        Received by: {reception.received_by || 'N/A'}
+                                                    </div>
+                                                    {reception.brought_by && (
+                                                        <div className="text-gray-600">
+                                                            Brought by: {reception.brought_by}
+                                                        </div>
+                                                    )}
+                                                    {reception.files_count > 0 && (
+                                                        <div className="text-gray-600">
+                                                            Files: {reception.files_count}
+                                                        </div>
+                                                    )}
+                                                    {reception.reception_notes && (
+                                                        <div className="mt-1 text-gray-500 italic">
+                                                            {reception.reception_notes}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>
                 );
             },
-            size: 240,
+            size: 300,
         }),
-        
 
         // Delivery status
         columnHelper.display({
