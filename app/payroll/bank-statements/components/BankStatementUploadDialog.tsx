@@ -26,50 +26,9 @@ import {
 } from '@/lib/bankExtractionUtils';
 import { detectFileInfo } from '../utils/fileDetectionUtils';
 import { ExtractionsService } from '@/lib/services/extractionService';
+import { Bank, BankStatement, ValidationResult } from '../../types';
 
 // --- Interfaces & Types ---
-interface Bank {
-    id: number;
-    bank_name: string;
-    account_number: string;
-    bank_currency: string;
-    company_id: number;
-    company_name: string;
-    acc_password?: string;
-}
-
-interface BankStatement {
-    id: string;
-    has_soft_copy: boolean;
-    has_hard_copy: boolean;
-    statement_document: {
-        statement_pdf: string | null;
-        statement_excel: string | null;
-        document_size?: number;
-        document_type?: string;
-        password?: string | null;
-    };
-    statement_extractions: any;
-    validation_status: any;
-    status: any;
-    statement_month?: number;
-    statement_year?: number;
-}
-
-interface ValidationResult {
-    isValid: boolean;
-    mismatches: string[];
-    extractedData: any;
-    monthlyBalances?: Array<{
-        month: number;
-        year: number;
-        opening_balance: number | null;
-        closing_balance: number | null;
-        statement_page: number;
-        is_verified: boolean;
-    }>;
-}
-
 interface BankStatementUploadDialogProps {
     isOpen: boolean;
     onClose: () => void;
@@ -315,8 +274,7 @@ export function BankStatementUploadDialog({
                 return { isValid: true, message: 'Could not parse statement period' };
             }
 
-            // Create safe dates for comparison
-            const expectedDate = createSafeDate(cycleYear, cycleMonth + 1); // cycleMonth is 0-indexed
+            const expectedDate = createSafeDate(cycleYear, cycleMonth + 1);
             const statementStartDate = createSafeDate(period.startYear, period.startMonth);
             const statementEndDate = createSafeDate(period.endYear, period.endMonth);
 
@@ -325,7 +283,6 @@ export function BankStatementUploadDialog({
                 return { isValid: true, message: 'Could not validate dates' };
             }
 
-            // Check if the expected date falls within the statement period
             const isWithinPeriod = expectedDate >= statementStartDate && expectedDate <= statementEndDate;
 
             if (!isWithinPeriod) {
@@ -510,14 +467,8 @@ export function BankStatementUploadDialog({
                 const periodCheck = checkStatementPeriod(extractedData);
                 if (!periodCheck.isValid) {
                     setStatusMessage('Period mismatch detected');
-                    const expectedPeriod = createSafeDate(cycleYear, cycleMonth + 1);
-                    const expectedText = expectedPeriod ? expectedPeriod.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : `${cycleMonth + 1}/${cycleYear}`;
-
-                    const confirm = window.confirm(`${periodCheck.message}. Do you want to continue with the selected period (${expectedText})?`);
-                    if (!confirm) {
-                        setIsProcessing(false);
-                        return null;
-                    }
+                    // Don't show browser confirm - let validation dialog handle it
+                    console.warn('Period mismatch:', periodCheck.message);
                 }
 
                 // Validate extracted data
@@ -686,6 +637,22 @@ export function BankStatementUploadDialog({
                                         </span>
                                     </div>
                                 </div>
+                                <div>
+                                    <h3 className="text-sm font-medium text-purple-800 border-b border-purple-100 pb-1 mb-2">Account Password</h3>
+                                    <div className="flex items-center gap-2">
+                                        <Lock className="h-4 w-4 text-purple-600" />
+                                        {bank.acc_password ? (
+                                            <span className="text-green-700 font-bold text-sm">
+                                                {bank.acc_password}
+                                            </span>
+                                        ) : (
+                                            <span className="text-red-700 font-bold text-sm">
+                                                Missing
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
+
                             </div>
                         </div>
 

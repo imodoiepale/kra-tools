@@ -97,57 +97,6 @@ export function BankValidationDialog({
     );
 
     const totalPages = extractedData?.total_pages || 0;
-
-    // Handle proceed action
-    // const handleProceedAction = async () => {
-    //     setIsProcessing(true);
-    //     try {
-    //         if (statementId) {
-    //             const { data: updatedStatement, error } = await supabase
-    //                 .from('acc_cycle_bank_statements')
-    //                 .update({
-    //                     validation_status: {
-    //                         is_validated: true,
-    //                         validation_date: new Date().toISOString(),
-    //                         validated_by: 'current_user',
-    //                         mismatches: []
-    //                     },
-    //                     status: {
-    //                         status: 'validated'
-    //                     }
-    //                 })
-    //                 .eq('id', statementId)
-    //                 .select('*')
-    //                 .single();
-
-    //             if (error) throw error;
-
-    //             // Auto-open extraction dialog after validation
-    //             if (onOpenExtractionDialog && updatedStatement) {
-    //                 onClose();
-    //                 setTimeout(() => {
-    //                     onOpenExtractionDialog(updatedStatement);
-    //                 }, 300);
-    //             } else {
-    //                 // <--- Key change here: Pass extractedData back to onProceed --->
-    //                 await onProceed(extractedData);
-    //             }
-    //         } else {
-    //             // <--- Key change here: Pass extractedData back to onProceed --->
-    //             await onProceed(extractedData);
-    //         }
-    //     } catch (error) {
-    //         console.error('Error during validation proceed:', error);
-    //         toast({
-    //             title: 'Error',
-    //             description: 'Failed to proceed with validation. Please try again.',
-    //             variant: 'destructive'
-    //         });
-    //     } finally {
-    //         setIsProcessing(false);
-    //     }
-    // };
-    // In BankValidationDialog.tsx - Update the handleProceedAction function
     const handleProceedAction = async () => {
         setIsProcessing(true);
         try {

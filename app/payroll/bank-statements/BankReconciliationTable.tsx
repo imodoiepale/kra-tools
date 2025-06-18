@@ -15,7 +15,7 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table'
-import { Loader2, UploadCloud, Edit, Eye, CheckCircle, AlertTriangle, MoreHorizontal, Trash } from 'lucide-react'
+import { Loader2, UploadCloud, Edit, Eye, CheckCircle, AlertTriangle, MoreHorizontal, Trash, X, Lock } from 'lucide-react'
 import { BankStatementUploadDialog } from './components/BankStatementUploadDialog'
 import BankExtractionDialog from './components/BankExtractionDialog'
 import { QuickbooksBalanceDialog } from './components/QuickbooksBalanceDialog'
@@ -35,68 +35,75 @@ import {
     AlertDialogDescription,
     AlertDialogFooter,
     AlertDialogHeader,
-    AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { FilterWithStatus } from './BankStatementFilters';
+    AlertDialogTitle
+} from "@/components/ui/alert-dialog"
+import { Bank, BankStatement, Company, BankReconciliationTableProps, FilterWithStatus } from './types'
+import { normalizeCurrencyCode } from './bankExtractionUtils'
 import { useStatementCycle } from '../hooks/useStatementCycle'
+import { Badge } from '@/components/ui/badge'
 
 // --- Interfaces (Ensure these are correctly defined in your project) ---
-interface Bank {
-    id: number
-    bank_name: string
-    account_number: string
-    bank_currency: string
-    company_id: number
-    company_name: string
-}
+// interface Bank {
+//     id: number
+//     bank_name: string
+//     account_number: string
+//     bank_currency: string
+//     company_id: number
+//     company_name: string
+//     acc_password?: string
+// }
 
-interface BankStatement {
-    id: string
-    bank_id: number
-    statement_month: number
-    statement_year: number
-    statement_document: {
-        statement_pdf: string | null
-        statement_excel: string | null
-        document_size?: number; // Added this back as it was in previous code
-    }
-    statement_extractions: {
-        bank_name: string | null
-        account_number: string | null
-        currency: string | null
-        statement_period: string | null
-        opening_balance: number | null
-        closing_balance: number | null
-        monthly_balances: Array<any>
-    }
-    validation_status: {
-        is_validated: boolean
-        validation_date: string | null
-        validated_by: string | null
-        mismatches: Array<string>
-    }
-    has_soft_copy: boolean
-    has_hard_copy: boolean
-    status: {
-        status: string
-        assigned_to: string | null
-        verification_date: string | null
-        quickbooks_balance?: number | null; // QB balance is part of the status object
-    }
-}
+// interface BankStatement {
+//     id: string
+//     bank_id: number
+//     statement_month: number
+//     statement_year: number
+//     statement_document: {
+//         statement_pdf: string | null
+//         statement_excel: string | null
+//         document_size?: number; // Added this back as it was in previous code
+//     }
+//     statement_extractions: {
+//         bank_name: string | null
+//         account_number: string | null
+//         currency: string | null
+//         statement_period: string | null
+//         opening_balance: number | null
+//         closing_balance: number | null
+//         monthly_balances: Array<any>
+//     }
+//     validation_status: {
+//         is_validated: boolean
+//         validation_date: string | null
+//         validated_by: string | null
+//         mismatches: Array<string>
+//     }
+//     has_soft_copy: boolean
+//     has_hard_copy: boolean
+//     status: {
+//         status: string
+//         assigned_to: string | null
+//         verification_date: string | null
+//         quickbooks_balance?: number | null; // QB balance is part of the status object
+//     }
+// }
 
-interface Company {
-    id: number;
-    company_name: string;
-    acc_client_effective_from: string | null;
-    acc_client_effective_to: string | null;
-    audit_client_effective_from: string | null;
-    audit_client_effective_to: string | null;
-    sheria_client_effective_from: string | null;
-    sheria_client_effective_to: string | null;
-    imm_client_effective_from: string | null;
-    imm_client_effective_to: string | null;
-}
+// interface Company {
+//     id: number;
+//     company_name: string;
+//     acc_client_effective_from: string | null;
+//     acc_client_effective_to: string | null;
+//     audit_client_effective_from: string | null;
+//     audit_client_effective_to: string | null;
+//     sheria_client_effective_from: string | null;
+//     sheria_client_effective_to: string | null;
+//     imm_client_effective_from: string | null;
+//     imm_client_effective_to: string | null;
+// }
+//     sheria_client_effective_to: string | null;
+//     imm_client_effective_from: string | null;
+//     imm_client_effective_to: string | null;
+// // }
 
 interface BankReconciliationTableProps {
     selectedYear: number;
@@ -120,6 +127,112 @@ const normalizeCurrencyCode = (code: string | null): string => {
     };
     return currencyMap[upperCode] || upperCode;
 };
+function EnhancedDeleteConfirmationDialog({
+    isOpen,
+    onClose,
+    onConfirm,
+    statement,
+    bank
+}: {
+    isOpen: boolean
+    onClose: () => void
+    onConfirm: (deleteType: 'period' | 'all' | 'file') => void
+    statement: BankStatement | null
+    bank: Bank | null
+}) {
+    const [deleteType, setDeleteType] = useState<'period' | 'all' | 'file'>('period')
+
+    if (!statement || !bank) return null
+
+    // Check if this is a multi-month statement
+    const isMultiMonth = statement.statement_extractions?.statement_period &&
+        statement.statement_extractions.statement_period.includes('-')
+
+    return (
+        <AlertDialog open={isOpen} onOpenChange={onClose}>
+            <AlertDialogContent className="max-w-md">
+                <AlertDialogHeader>
+                    <AlertDialogTitle className="flex items-center gap-2">
+                        <Trash className="h-5 w-5 text-red-500" />
+                        Delete Bank Statement
+                    </AlertDialogTitle>
+                    <AlertDialogDescription className="space-y-3">
+                        <p>Choose what you want to delete for <strong>{bank.company_name}</strong> - <strong>{bank.bank_name}</strong>:</p>
+
+                        <div className="space-y-2">
+                            <label className="flex items-center gap-2 cursor-pointer">
+                                <input
+                                    type="radio"
+                                    name="deleteType"
+                                    value="period"
+                                    checked={deleteType === 'period'}
+                                    onChange={(e) => setDeleteType(e.target.value as 'period')}
+                                    className="text-blue-600"
+                                />
+                                <span className="text-sm">
+                                    Delete only this period ({format(new Date(statement.statement_year, statement.statement_month), 'MMM yyyy')})
+                                    <br />
+                                    <span className="text-xs text-gray-500">Files will be preserved for other periods</span>
+                                </span>
+                            </label>
+
+                            {isMultiMonth && (
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                    <input
+                                        type="radio"
+                                        name="deleteType"
+                                        value="all"
+                                        checked={deleteType === 'all'}
+                                        onChange={(e) => setDeleteType(e.target.value as 'all')}
+                                        className="text-amber-600"
+                                    />
+                                    <span className="text-sm">
+                                        Delete all periods in this statement
+                                        <br />
+                                        <span className="text-xs text-gray-500">This covers multiple months</span>
+                                    </span>
+                                </label>
+                            )}
+
+                            <label className="flex items-center gap-2 cursor-pointer">
+                                <input
+                                    type="radio"
+                                    name="deleteType"
+                                    value="file"
+                                    checked={deleteType === 'file'}
+                                    onChange={(e) => setDeleteType(e.target.value as 'file')}
+                                    className="text-red-600"
+                                />
+                                <span className="text-sm">
+                                    Delete everything including files
+                                    <br />
+                                    <span className="text-xs text-red-500">⚠️ This cannot be undone</span>
+                                </span>
+                            </label>
+                        </div>
+                    </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                        onClick={() => onConfirm(deleteType)}
+                        className={`${deleteType === 'file'
+                                ? 'bg-red-600 hover:bg-red-700'
+                                : deleteType === 'all'
+                                    ? 'bg-amber-600 hover:bg-amber-700'
+                                    : 'bg-blue-600 hover:bg-blue-700'
+                            }`}
+                    >
+                        {deleteType === 'file' ? 'Delete Everything' :
+                            deleteType === 'all' ? 'Delete All Periods' :
+                                'Delete Period Only'}
+                    </AlertDialogAction>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
+    )
+}
+
 
 export function BankReconciliationTable({
     selectedYear,
@@ -344,14 +457,57 @@ useEffect(() => {
         refreshData(); // Refresh data after any dialog closes
     }, [refreshData]);
 
-    const confirmDelete = async () => {
-        if (!activeStatement) return;
-        const success = await deleteStatement(activeStatement);
-        if (success) {
-            refreshData();
+    // const confirmDelete = async () => {
+    //     if (!activeStatement) return;
+    //     const success = await deleteStatement(activeStatement);
+    //     if (success) {
+    //         refreshData();
+    //     }
+    //     setDeleteConfirmationOpen(false);
+    // };
+
+    const confirmDelete = async (deleteType: 'period' | 'all' | 'file') => {
+        if (!activeStatement || !activeBank) return
+
+        try {
+            // Here you would implement the different delete types
+            // This is a placeholder - implement based on your backend logic
+            let success = false
+
+            switch (deleteType) {
+                case 'period':
+                    // Delete only the current period entry
+                    success = await deleteStatement(activeStatement, { preserveFiles: true, periodOnly: true })
+                    break
+                case 'all':
+                    // Delete all periods but preserve files
+                    success = await deleteStatement(activeStatement, { preserveFiles: true, allPeriods: true })
+                    break
+                case 'file':
+                    // Delete everything including files
+                    success = await deleteStatement(activeStatement, { preserveFiles: false, allPeriods: true })
+                    break
+            }
+
+            if (success) {
+                toast({
+                    title: "Success",
+                    description: `Statement ${deleteType === 'file' ? 'and files' : 'entries'} deleted successfully`,
+                })
+                refreshData()
+            }
+        } catch (error) {
+            toast({
+                title: "Error",
+                description: "Failed to delete statement",
+                variant: "destructive"
+            })
         }
-        setDeleteConfirmationOpen(false);
-    };
+
+        setDeleteConfirmationOpen(false)
+        setActiveStatement(null)
+        setActiveBank(null)
+    }
 
     const formatCurrency = (amount: number | null | undefined, currency: string) => {
         if (amount === null || amount === undefined) return '-';
@@ -426,6 +582,8 @@ useEffect(() => {
                             <TableHead className="text-white font-semibold w-[130px] p-1">Bank</TableHead>
                             <TableHead className="text-white font-semibold w-[100px] p-1">Acc Number</TableHead>
                             <TableHead className="text-white font-semibold w-[60px] p-1">Curr</TableHead>
+                            {/* NEW PASSWORD COLUMN */}
+                            <TableHead className="text-white font-semibold w-[80px] p-1">Password</TableHead>
                             <TableHead className="text-white font-semibold w-[100px] p-1">Statement</TableHead>
                             <TableHead className="text-white font-semibold w-[100px] p-1">Closing Bal</TableHead>
                             <TableHead className="text-white font-semibold w-[100px] p-1">QB Balance</TableHead>
@@ -436,9 +594,9 @@ useEffect(() => {
                     </TableHeader>
                     <TableBody>
                         {loading ? (
-                            <TableRow><TableCell colSpan={11} className="text-center py-4"><Loader2 className="h-6 w-6 animate-spin mx-auto text-primary" /></TableCell></TableRow>
+                            <TableRow><TableCell colSpan={12} className="text-center py-4"><Loader2 className="h-6 w-6 animate-spin mx-auto text-primary" /></TableCell></TableRow>
                         ) : finalFilteredData.length === 0 ? (
-                            <TableRow><TableCell colSpan={11} className="text-center py-4">No banks found for the selected filters.</TableCell></TableRow>
+                            <TableRow><TableCell colSpan={12} className="text-center py-4">No banks found for the selected filters.</TableCell></TableRow>
                         ) : (
                             finalFilteredData.map((company, companyIndex) => (
                                 company.banks.length === 0 ? (
@@ -447,7 +605,7 @@ useEffect(() => {
                                         <TableCell className="font-medium border-r border-gray-200 p-1">
                                             <TooltipProvider><Tooltip><TooltipTrigger>{(company.company_name || 'Unknown Company').split(" ").slice(0, 2).join(" ")}</TooltipTrigger><TooltipContent>{company.company_name || 'Unknown Company'}</TooltipContent></Tooltip></TooltipProvider>
                                         </TableCell>
-                                        <TableCell colSpan={9} className="text-center text-red-500 font-bold p-1">No banks configured</TableCell>
+                                        <TableCell colSpan={10} className="text-center text-red-500 font-bold p-1">No banks configured</TableCell>
                                     </TableRow>
                                 ) : (
                                     company.banks.map((bank, bankIndex) => {
@@ -455,11 +613,12 @@ useEffect(() => {
                                             s.bank_id === bank.id &&
                                             s.statement_month === selectedMonth &&
                                             s.statement_year === selectedYear
-                                        ); // Find the statement specific to the selected month/year
+                                        )
 
-                                        const closingBalance = statement?.statement_extractions?.closing_balance;
-                                        const qbBalance = statement?.status?.quickbooks_balance;
-                                        const difference = (closingBalance != null && qbBalance != null) ? closingBalance - qbBalance : null;
+                                        const closingBalance = statement?.statement_extractions?.closing_balance
+                                        const qbBalance = statement?.status?.quickbooks_balance
+                                        const difference = (closingBalance != null && qbBalance != null) ? closingBalance - qbBalance : null
+
                                         return (
                                             <TableRow key={bank.id} className={`${bankIndex % 2 === 0 ? 'bg-blue-50 hover:bg-blue-100' : 'bg-white hover:bg-gray-50'} [&>td]:border-r [&>td]:border-gray-200 last:[&>td]:border-r-0`}>
                                                 {bankIndex === 0 && (
@@ -470,9 +629,23 @@ useEffect(() => {
                                                         </TableCell>
                                                     </>
                                                 )}
-                                                <TableCell className="border-r border-gray-200 p-1 truncate"><TooltipProvider><Tooltip><TooltipTrigger className="truncate">{bank.bank_name}</TooltipTrigger><TooltipContent>{bank.bank_name}</TooltipContent></Tooltip></TooltipProvider></TableCell>
+                                                <TableCell className="border-r border-gray-200 p-1 truncate">
+                                                    <TooltipProvider><Tooltip><TooltipTrigger className="truncate">{bank.bank_name}</TooltipTrigger><TooltipContent>{bank.bank_name}</TooltipContent></Tooltip></TooltipProvider>
+                                                </TableCell>
                                                 <TableCell className="border-r border-gray-200 font-mono text-xs p-1 truncate">{bank.account_number}</TableCell>
                                                 <TableCell className="border-r border-gray-200 p-1">{normalizeCurrencyCode(bank.bank_currency)}</TableCell>
+                                                {/* NEW PASSWORD CELL */}
+                                                <TableCell className="border-r border-gray-200 p-1">
+                                                    {bank.acc_password ? (
+                                                        <span className="text-green-700 font-bold text-xs">
+                                                            {bank.acc_password}
+                                                        </span>
+                                                    ) : (
+                                                        <span className="text-red-700 font-bold text-xs">
+                                                            Missing
+                                                        </span>
+                                                    )}
+                                                </TableCell>
                                                 <TableCell className="border-r border-gray-200 p-1">
                                                     {statement ? (
                                                         <Button
@@ -519,7 +692,9 @@ useEffect(() => {
                                                     </div>
                                                 </TableCell>
                                                 <TableCell className={`border-r border-gray-200 text-right p-1 ${difference !== null ? (Math.abs(difference) > 0.01 ? 'text-red-500 font-bold' : 'text-green-500 font-bold') : ''}`}>{formatCurrency(difference, bank.bank_currency)}</TableCell>
-                                                <TableCell className="border-r border-gray-200 p-1 truncate"><TooltipProvider><Tooltip><TooltipTrigger className="truncate">{statement?.status?.status || 'No Statement'}</TooltipTrigger><TooltipContent>{statement?.status?.status || 'No Statement'}</TooltipContent></Tooltip></TooltipProvider></TableCell>
+                                                <TableCell className="border-r border-gray-200 p-1 truncate">
+                                                    <TooltipProvider><Tooltip><TooltipTrigger className="truncate">{statement?.status?.status || 'No Statement'}</TooltipTrigger><TooltipContent>{statement?.status?.status || 'No Statement'}</TooltipContent></Tooltip></TooltipProvider>
+                                                </TableCell>
                                                 <TableCell className="p-1">
                                                     <DropdownMenu>
                                                         <DropdownMenuTrigger asChild><Button variant="ghost" size="sm" className="h-5 w-5 p-0"><MoreHorizontal className="h-3 w-3" /></Button></DropdownMenuTrigger>
@@ -614,12 +789,25 @@ useEffect(() => {
                     statement={activeStatement}
                 />
             )}
+
+            <EnhancedDeleteConfirmationDialog
+                isOpen={deleteConfirmationOpen}
+                onClose={() => {
+                    setDeleteConfirmationOpen(false)
+                    setActiveStatement(null)
+                    setActiveBank(null)
+                }}
+                onConfirm={confirmDelete}
+                statement={activeStatement}
+                bank={activeBank}
+            />
+{/* 
             <AlertDialog open={deleteConfirmationOpen} onOpenChange={setDeleteConfirmationOpen}>
                 <AlertDialogContent>
                     <AlertDialogHeader><AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle><AlertDialogDescription>This will permanently delete the statement and its associated files. This action cannot be undone.</AlertDialogDescription></AlertDialogHeader>
                     <AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={confirmDelete} className="bg-red-600 hover:bg-red-700">Delete Statement</AlertDialogAction></AlertDialogFooter>
                 </AlertDialogContent>
-            </AlertDialog>
+            </AlertDialog> */}
         </div>
     );
 }
