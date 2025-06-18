@@ -28,6 +28,10 @@ export interface ReceptionData {
     created_by: string;
     updated_at?: string;
     updated_by?: string;
+    version: number;
+    version_date: string;
+    version_notes?: string;
+    version_type: 'initial' | 'update' | 'correction';
 }
 
 export interface DeliveryData {
@@ -49,8 +53,7 @@ export interface DeliveryData {
 
 export interface FileRecord {
     id: string;
-    company_id: string | number;
-    company_name: string;
+    company_id: number;
     year: number;
     month: number;
     reception_data: ReceptionData[];
@@ -59,8 +62,6 @@ export interface FileRecord {
     is_urgent: boolean;
     created_at: string;
     updated_at: string;
-    created_by: string;
-    updated_by: string;
 }
 
 export interface FileManagementStats {

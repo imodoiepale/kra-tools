@@ -728,35 +728,130 @@ export class FileManagementService {
 
             // Handle general updates
             const { data: existing } = await supabase
-                .from('file_records')
+                .from('file_transactions')
                 .select('*')
-                .eq('company_id', companyId)
-                .eq('year', year)
-                .eq('month', month)
+                .eq('company_id', parseInt(companyId))
+                .eq('year', parseInt(year))
+                .eq('month', parseInt(month))
                 .maybeSingle();
 
             if (existing) {
-                return await this.updateFileRecord(existing.id, updates);
-            } else {
-                const company = await this.getCompanyById(companyId);
-                return await this.createFileRecord({
-                    company_id: companyId,
-                    company_name: company.company_name,
-                    year,
-                    month,
-                    receptions: [],
-                    deliveries: [],
-                    status: 'pending',
-                    is_nil: false,
-                    is_urgent: false,
-                    processing_status: 'pending',
-                    created_by: 'current_user',
-                    updated_by: 'current_user',
+                // Update existing record
+                const updateData = {
+                    company_id: parseInt(companyId),
+                    year: parseInt(year),
+                    month: parseInt(month),
+                    updated_at: getCurrentTimestamp(),
                     ...updates
-                });
+                };
+
+                // Handle reception data update
+                if (updates.reception_data) {
+                    updateData.reception_data = [...existing.reception_data, ...updates.reception_data];
+                }
+
+                // Handle delivery data update
+                if (updates.delivery_data) {
+                    updateData.delivery_data = [...existing.delivery_data, ...updates.delivery_data];
+                }
+
+                const { data, error } = await supabase
+                    .from('file_transactions')
+                    .update(updateData)
+                    .eq('id', existing.id)
+                    .select()
+                    .single();
+
+                if (error) throw error;
+                return data;
+            } else {
+                // Create new record
+                const newData = {
+                    company_id: parseInt(companyId),
+                    year: parseInt(year),
+                    month: parseInt(month),
+                    reception_data: updates.reception_data || [],
+                    delivery_data: updates.delivery_data || [],
+                    processing_status: updates.processing_status || 'pending',
+                    is_urgent: updates.is_urgent || false,
+                    created_at: getCurrentTimestamp(),
+                    updated_at: getCurrentTimestamp()
+                };
+
+                const { data, error } = await supabase
+                    .from('file_transactions')
+                    .insert(newData)
+                    .select()
+                    .single();
+
+                if (error) throw error;
+                return data;
             }
         } catch (error: any) {
             console.error('Error in upsertFileRecord:', error.message);
+            throw error;
+        }
+    }
+
+    static async updateFileRecord(id: string, data: Partial<FileRecord>): Promise<FileRecord> {
+        try {
+            // Get existing record to preserve version history
+            const { data: existingRecord, error: getError } = await supabase
+                .from('file_records')
+                .select('*')
+                .eq('id', id)
+                .single();
+
+            if (getError) throw new Error(`Failed to fetch existing record: ${getError.message}`);
+
+            // Update reception data with versioning
+            if (data.reception_data) {
+                const existingReceptions = existingRecord?.reception_data || [];
+                const newReceptions = data.reception_data.map(reception => {
+                    const maxVersion = existingReceptions.length > 0 
+                        ? Math.max(...existingReceptions.map(r => r.version || 1)) + 1
+                        : 1;
+                    
+                    return {
+                        ...reception,
+                        version: maxVersion,
+                        version_date: new Date().toISOString(),
+                        version_type: 'update',
+                        created_at: new Date().toISOString(),
+                        created_by: 'system',
+                        updated_at: new Date().toISOString(),
+                        updated_by: 'system'
+                    };
+                });
+
+                data.reception_data = [...existingReceptions, ...newReceptions];
+            }
+
+            // Update delivery data with versioning
+            if (data.delivery_data) {
+                const existingDeliveries = existingRecord?.delivery_data || [];
+                const newDeliveries = data.delivery_data.map(delivery => ({
+                    ...delivery,
+                    created_at: new Date().toISOString(),
+                    created_by: 'system',
+                    updated_at: new Date().toISOString(),
+                    updated_by: 'system'
+                }));
+
+                data.delivery_data = [...existingDeliveries, ...newDeliveries];
+            }
+
+            const { data: updatedData, error } = await supabase
+                .from('file_records')
+                .update(data)
+                .eq('id', id)
+                .select()
+                .single();
+
+            if (error) throw new Error(`Failed to update file record: ${error.message}`);
+            return updatedData;
+        } catch (error: any) {
+            console.error('Error in updateFileRecord:', error.message);
             throw error;
         }
     }
@@ -908,23 +1003,59 @@ export class FileManagementService {
         if (error) {
             console.error('Error getting file record:', error.message);
             throw error;
-        }
+    }
+}
 
-        return data;
+// Helper function to get a file record by company, year, and month
+static async getFileRecord(companyId: string, year: number, month: number) {
+    const { data, error } = await supabase
+        .from('file_transactions')
+        .select('*')
+        .eq('company_id', companyId)
+        .eq('year', year)
+        .eq('month', month)
+        .maybeSingle();
+
+    if (error) {
+        console.error('Error getting file record:', error.message);
+        throw error;
     }
 
-    // Helper function to upsert a file record
-    static async upsertFileRecord(record: any) {
-        const { data, error } = await supabase
+    return data;
+}
+
+// Helper function to upsert a file record
+static async upsertFileRecord(record: any) {
+    const { data: existingRecord } = await supabase
+        .from('file_transactions')
+        .select('*')
+        .eq('company_id', record.company_id)
+        .eq('year', record.year)
+        .eq('month', record.month)
+        .single();
+
+    if (existingRecord) {
+        const updateData = {
+            reception_data: record.reception_data || existingRecord.reception_data,
+            delivery_data: record.delivery_data || existingRecord.delivery_data,
+            processing_status: record.processing_status || existingRecord.processing_status,
+            updated_at: record.updated_at || new Date().toISOString(),
+        };
+
+        const { error: updateError } = await supabase
             .from('file_transactions')
-            .upsert(record, { onConflict: 'company_id,year,month' })
-            .select()
-            .single();
+            .update(updateData)
+            .eq('id', existingRecord.id);
 
-        if (error) {
-            console.error('Error upserting file record:', error);
-            throw error;
-        }
-        return data;
+        if (updateError) throw updateError;
+        return { ...existingRecord, ...updateData };
+    } else {
+        const { error: insertError } = await supabase
+            .from('file_transactions')
+            .insert([record]);
+
+        if (insertError) throw insertError;
+        return record;
     }
+}
 }

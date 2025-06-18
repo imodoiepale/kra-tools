@@ -3,15 +3,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
-import {
-    Dialog,
-    DialogContent,
-    DialogDescription,
-    DialogFooter,
-    DialogHeader,
-    DialogTitle,
-    DialogTrigger,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -24,11 +16,7 @@ import { Switch } from "@/components/ui/switch";
 import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { 
-    Calendar as CalendarIcon, CheckCircle, Clock, Edit3, Loader2, Mail, MapPin, Phone, 
-    Save, Truck, User, X, XCircle, AlertCircle, Building2, FileSignature, History,
-    Eye, EyeOff, Trash2, Plus, ChevronDown, ChevronRight
-} from "lucide-react";
+import { Calendar as CalendarIcon, CheckCircle, Clock, Edit3, Loader2, Mail, MapPin, Phone, Save, Truck, User, X, XCircle, AlertCircle, Building2, FileSignature, History,Eye, EyeOff, Trash2, Plus, ChevronDown, ChevronRight } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { toast } from "react-hot-toast";
@@ -81,21 +69,39 @@ export default function EnhancedDeliveryDialog({
 
     // Helper functions for delivery management
     const getAllDeliveries = (): DeliveryRecord[] => {
-        return existingData?.deliveries || [];
+        return existingData?.delivery_data?.map((d: any) => ({
+            ...d,
+            delivered_at: new Date(d.delivered_at),
+            id: d.id || crypto.randomUUID()
+        })) || [];
     };
 
     const getLatestDelivery = (): DeliveryRecord | null => {
         const deliveries = getAllDeliveries();
-        return deliveries.length > 0 ? deliveries[deliveries.length - 1] : null;
+        if (deliveries.length === 0) return null;
+        
+        // Sort by delivered_at in descending order and return the first one
+        return [...deliveries].sort((a, b) => 
+            new Date(b.delivered_at).getTime() - new Date(a.delivered_at).getTime()
+        )[0];
     };
 
     const getAllReceptions = (): ReceptionRecord[] => {
-        return existingData?.receptions || [];
+        return existingData?.reception_data?.map((r: any) => ({
+            ...r,
+            received_at: new Date(r.received_at),
+            id: r.id || crypto.randomUUID()
+        })) || [];
     };
 
     const getLatestReception = (): ReceptionRecord | null => {
         const receptions = getAllReceptions();
-        return receptions.length > 0 ? receptions[receptions.length - 1] : null;
+        if (receptions.length === 0) return null;
+        
+        // Sort by received_at in descending order and return the first one
+        return [...receptions].sort((a, b) => 
+            new Date(b.received_at).getTime() - new Date(a.received_at).getTime()
+        )[0];
     };
 
     const hasAnyDeliveries = (): boolean => {
@@ -107,7 +113,7 @@ export default function EnhancedDeliveryDialog({
     };
 
     const canDeliver = (): boolean => {
-        return hasAnyReceptions() && !existingData?.is_nil;
+        return hasAnyReceptions() && !existingData?.processing_status?.includes('nil');
     };
 
     // Fetch employees and directors for the company
@@ -354,39 +360,44 @@ export default function EnhancedDeliveryDialog({
  
     const upsertFileRecord = async (submissionData: any) => {
         const { data: existingRecord } = await supabase
-            .from('file_records')
+            .from('file_transactions')
             .select('*')
             .eq('company_id', submissionData.company_id)
             .eq('year', submissionData.year)
             .eq('month', submissionData.month)
             .single();
- 
-        if (existingRecord) {
-            let updatedDeliveries = [...(existingRecord.deliveries || [])];
-            
-            if (submissionData.is_editing) {
-                // Update existing delivery
-                const index = updatedDeliveries.findIndex(d => d.id === submissionData.delivery_record.id);
-                if (index !== -1) {
-                    updatedDeliveries[index] = submissionData.delivery_record;
-                }
-            } else {
-                // Add new delivery
-                updatedDeliveries.push(submissionData.delivery_record);
-            }
- 
-            await supabase
-                .from('file_records')
-                .update({
-                    deliveries: updatedDeliveries,
-                    status: submissionData.status,
-                    updated_at: submissionData.updated_at,
-                    updated_by: submissionData.updated_by
-                })
-                .eq('id', existingRecord.id);
-        } else {
+
+        if (!existingRecord) {
             throw new Error('No reception record found. Documents must be received before delivery.');
         }
+
+        let updatedDeliveryData = [...(existingRecord.delivery_data || [])];
+        
+        if (submissionData.is_editing) {
+            // Update existing delivery
+            const index = updatedDeliveryData.findIndex(d => d.id === submissionData.delivery_record.id);
+            if (index !== -1) {
+                updatedDeliveryData[index] = submissionData.delivery_record;
+            }
+        } else {
+            // Add new delivery
+            updatedDeliveryData.push(submissionData.delivery_record);
+        }
+
+        const updateData = {
+            delivery_data: updatedDeliveryData,
+            processing_status: submissionData.status,
+            updated_at: submissionData.updated_at,
+            updated_by: submissionData.updated_by
+        };
+
+        const { error } = await supabase
+            .from('file_transactions')
+            .update(updateData)
+            .eq('id', existingRecord.id);
+
+        if (error) throw error;
+
     };
  
     const handleDeleteDelivery = async (deliveryId: string) => {
