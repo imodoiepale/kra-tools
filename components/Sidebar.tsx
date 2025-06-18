@@ -114,7 +114,7 @@ const navItems = [
     icon: FileSignature,
     label: "Filed Income Tax Summary",
     category: "i-Tax Summaries",
-    available: false,
+    available: true,
   },
   {
     href: "/wh-vat",
