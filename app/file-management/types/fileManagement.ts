@@ -1,4 +1,4 @@
-// types/fileManagement.ts
+//@ts-nocheck
 export interface Company {
     id: string;
     company_name: string;
@@ -14,26 +14,54 @@ export interface Company {
     updated_at: string;
 }
 
-export interface FileRecord {
+export interface ReceptionData {
     id: string;
-    company_id: string;
-    company_name: string;
-    year: number;
-    month: number;
-    received_at?: string;
+    received_at: string;
     received_by: string;
+    brought_by: string;
     delivery_method: string;
     document_types: string[];
     files_count: number;
-    delivered_at?: string;
+    notes: string;
+    is_urgent: boolean;
+    created_at: string;
+    created_by: string;
+    updated_at?: string;
+    updated_by?: string;
+    version: number;
+    version_date: string;
+    version_notes?: string;
+    version_type: 'initial' | 'update' | 'correction';
+}
+
+export interface DeliveryData {
+    id: string;
+    reception_id?: string; 
+    delivered_at: string;
     delivered_to: string;
-    delivery_notes: string;
-    status: 'pending' | 'received' | 'processed' | 'delivered' | 'nil';
-    is_nil: boolean;
-    processing_notes: string;
+    picked_by: string;
+    delivery_method: string;
+    delivery_location: string;
+    notes: string;
+    status: 'delivered' | 'attempted' | 'pending' | 'returned' | 'cancelled';
+    requires_signature: boolean;
+    created_at: string;
+    created_by: string;
+    updated_at?: string;
+    updated_by?: string;
+}
+
+export interface FileRecord {
+    id: string;
+    company_id: number;
+    year: number;
+    month: number;
+    reception_data: ReceptionData[];
+    delivery_data: DeliveryData[];
+    processing_status: 'pending' | 'received' | 'processed' | 'delivered' | 'nil';
+    is_urgent: boolean;
     created_at: string;
     updated_at: string;
-    created_by: string;
 }
 
 export interface FileManagementStats {
@@ -58,3 +86,16 @@ export interface BulkOperation {
         is_urgent?: boolean;
     };
 }
+
+export interface Individual {
+    id: string;
+    full_name: string;
+    role?: string;
+    employment_history?: any[];
+    email?: string;
+    phone?: string;
+}
+
+// Legacy types for backward compatibility
+export type ReceptionRecord = ReceptionData;
+export type DeliveryRecord = DeliveryData;

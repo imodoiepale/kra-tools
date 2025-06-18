@@ -14,7 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuCheckboxItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Search, Download, Settings2, CalendarIcon, Send, Filter, MoreHorizontal, Archive, Mail, FileDown, ArrowUpDown } from "lucide-react";
+import { Search, Download, Settings2, CalendarIcon, Send, Filter, MoreHorizontal, Archive, Mail, FileDown, ArrowUpDown, Clock, Package, Loader2, CheckCircle, Ban, XCircle, User, FileText, ChevronDown, MapPin, ChevronRight } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from 'react-hot-toast';
 import { cn } from "@/lib/utils";
@@ -23,6 +23,19 @@ import EnhancedReceptionDialog from './EnhancedReceptionDialog';
 import EnhancedDeliveryDialog from './EnhancedDeliveryDialog';
 import BulkOperationsDialog from './BulkOperationsDialog';
 import { FileRecord } from '../types/fileManagement';
+
+const documentTypeOptions = [
+    { value: 'financial_statements', label: 'Financial Statements' },
+    { value: 'tax_returns', label: 'Tax Returns' },
+    { value: 'audit_documents', label: 'Audit Documents' },
+    { value: 'payroll_records', label: 'Payroll Records' },
+    { value: 'bank_statements', label: 'Bank Statements' },
+    { value: 'invoices', label: 'Invoices & Bills' },
+    { value: 'contracts', label: 'Contracts' },
+    { value: 'legal_documents', label: 'Legal Documents' },
+    { value: 'compliance_reports', label: 'Compliance Reports' },
+    { value: 'other', label: 'Other Documents' }
+];
 
 interface Company {
     id: number;
@@ -73,6 +86,7 @@ export default function EnhancedMonthlyTable({
     const [selectedRows, setSelectedRows] = useState<string[]>([]);
     const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
     const [sorting, setSorting] = useState<SortingState>([]);
+    const [expandedReceptionId, setExpandedReceptionId] = useState<string | null>(null);
     const [isCategoryFilterOpen, setIsCategoryFilterOpen] = useState(false);
     const [categoryFilters, setCategoryFilters] = useState<{
         categories: { [key: string]: boolean };
@@ -269,22 +283,58 @@ const applyCategoryFilters = (data: any[]) => {
 };
 
     // Get file record for a company in the selected month
-    const getCompanyRecord = (companyId: string) => {
-        return fileRecords.find(record =>
-            record.company_id === companyId &&
+    const getCompanyRecord = (companyId: string | number): FileRecord | null => {
+        const companyIdNum = typeof companyId === 'string' ? parseInt(companyId, 10) : companyId;
+        
+        return fileRecords.find(record => 
+            record.company_id === companyIdNum &&
             record.year === year &&
             record.month === month
-        );
+        ) || null;
     };
 
-    const formatDateTime = (dateTimeString?: string) => {
-        if (!dateTimeString) return { date: '-', time: '-' };
-        const date = new Date(dateTimeString);
-        return {
-            date: format(date, 'dd.MM.yyyy'),
-            time: format(date, 'HH:mm')
-        };
+    // Get latest reception for display
+    const getLatestReception = (record: FileRecord | null): ReceptionData | null => {
+        if (!record?.reception_data || record.reception_data.length === 0) return null;
+        
+        // Sort by received_at in descending order and get the first one
+        return [...record.reception_data]
+            .sort((a, b) => new Date(b.received_at).getTime() - new Date(a.received_at).getTime())[0];
     };
+
+    // Get total files received
+    const getTotalFilesReceived = (record: FileRecord | null): number => {
+        if (!record?.reception_data) return 0;
+        return record.reception_data.reduce((total, reception) => total + (reception.files_count || 0), 0);
+    };
+
+    // Check if has any receptions
+    const hasAnyReceptions = (record: FileRecord | null): boolean => {
+        return !!record?.reception_data?.length;
+    };
+    
+    // Get latest delivery for display
+    const getLatestDelivery = (record: FileRecord | null): DeliveryData | null => {
+        if (!record?.delivery_data || record.delivery_data.length === 0) return null;
+        
+        // Sort by delivered_at in descending order and get the first one
+        return [...record.delivery_data]
+            .sort((a, b) => new Date(b.delivered_at).getTime() - new Date(a.delivered_at).getTime())[0];
+    };
+    
+    // Check if has any deliveries
+    const hasAnyDeliveries = (record: FileRecord | null): boolean => {
+        return !!record?.delivery_data?.length;
+    };
+
+const formatDateTime = (dateTimeString?: string) => {
+    if (!dateTimeString) return { date: '-', time: '-' };
+    const date = new Date(dateTimeString);
+    return {
+        date: format(date, 'dd.MM.yyyy'),
+        time: format(date, 'HH:mm')
+    };
+};
 
     const handleSendReminder = async (companyName: string) => {
         try {
@@ -439,6 +489,10 @@ const applyCategoryFilters = (data: any[]) => {
             ),
             cell: ({ row }) => {
                 const record = getCompanyRecord(row.original.id);
+                const latestReception = getLatestReception(record);
+                const hasReception = hasAnyReceptions(record);
+                const isNil = record?.processing_status === 'nil';
+                
                 return (
                     <div className="flex items-center justify-center">
                         <EnhancedReceptionDialog
@@ -446,22 +500,33 @@ const applyCategoryFilters = (data: any[]) => {
                             companyId={row.original.id}
                             year={year}
                             month={month}
-                            onConfirm={(data) => onUpdateRecord(row.original.id, year, month, data)}
+                            onConfirm={async (data) => {
+                                await onUpdateRecord(row.original.id, year, month, data);
+                                // Refresh the table data after update
+                                // You might want to add a refetch function to your table props
+                            }}
+                            onClose={() => {
+                                // This will be called when the dialog is closed
+                                // You can add any cleanup logic here if needed
+                            }}
                             existingData={record}
                         />
-                        {record?.is_nil && (
-                            <Badge variant="destructive" className="ml-2 text-xs">NIL</Badge>
+                        {hasReception && (
+                            <CheckCircle className="h-4 w-4 ml-1 text-green-500" />
+                        )}
+                        {isNil && (
+                            <Badge variant="destructive" className="ml-1 text-xs">NIL</Badge>
                         )}
                         {record?.is_urgent && (
-                            <Badge variant="destructive" className="ml-2 text-xs animate-pulse">URGENT</Badge>
+                            <Badge variant="destructive" className="ml-1 text-xs animate-pulse">URGENT</Badge>
                         )}
                     </div>
                 );
             },
-            size: 120,
+            size: 140,
         }),
 
-        // Reception details
+        // Reception details with combined document types
         columnHelper.display({
             id: 'receptionDetails',
             header: ({ column }) => (
@@ -476,19 +541,122 @@ const applyCategoryFilters = (data: any[]) => {
             ),
             cell: ({ row }) => {
                 const record = getCompanyRecord(row.original.id);
-                const dateTime = formatDateTime(record?.received_at);
-
+                const latestReception = getLatestReception(record);
+                const totalReceptions = record?.reception_data?.length || 0;
+                const totalFiles = getTotalFilesReceived(record);
+                
+                if (!latestReception) {
+                    return <div className="text-xs text-gray-400">No receptions</div>;
+                }
+                
+                // Get all unique document types from all receptions
+                const allDocumentTypes = new Set<string>();
+                record?.reception_data?.forEach(reception => {
+                    reception.document_types?.forEach((type: string) => allDocumentTypes.add(type));
+                });
+                
+                const { date, time } = formatDateTime(latestReception.received_at);
+                
                 return (
-                    <div className="text-xs">
-                        <p className="font-medium">{dateTime.date}</p>
-                        <p className="text-gray-500">{dateTime.time}</p>
-                        {record?.brought_by && (
-                            <p className="text-blue-600 mt-1">By: {record.brought_by}</p>
+                    <div className="space-y-2">
+                        {/* Latest Reception Summary */}
+                        <div className="space-y-1 p-2 bg-gray-50 rounded">
+                            <div className="flex items-center">
+                                <CalendarIcon className="h-3.5 w-3.5 mr-1 text-gray-500" />
+                                <span className="text-sm font-medium">Latest: {date} at {time}</span>
+                            </div>
+                            <div className="flex items-center">
+                                <User className="h-3.5 w-3.5 mr-1 text-gray-500" />
+                                <span className="text-sm">Received by: {latestReception.received_by || 'N/A'}</span>
+                            </div>
+                            {latestReception.brought_by && (
+                                <div className="flex items-center">
+                                    <User className="h-3.5 w-3.5 mr-1 text-gray-500" />
+                                    <span className="text-sm">Brought by: {latestReception.brought_by}</span>
+                                </div>
+                            )}
+                            {totalFiles > 0 && (
+                                <div className="flex items-center">
+                                    <FileText className="h-3.5 w-3.5 mr-1 text-gray-500" />
+                                    <span className="text-sm">{totalFiles} file{totalFiles > 1 ? 's' : ''}</span>
+                                </div>
+                            )}
+                            
+                            {/* Combined Document Types from all receptions */}
+                            <div className="pt-2 mt-2 border-t">
+                                <div className="text-xs font-medium text-gray-500 mb-1">All Document Types:</div>
+                                <div className="flex flex-wrap gap-1">
+                                    {Array.from(allDocumentTypes).map((type, i) => {
+                                        const docType = documentTypeOptions.find(opt => opt.value === type)?.label || type;
+                                        return (
+                                            <Badge key={i} variant="outline" className="text-xs">
+                                                {docType}
+                                            </Badge>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        </div>
+                        
+                        {/* Reception History */}
+                        {totalReceptions > 1 && (
+                            <div className="mt-2">
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-6 text-xs text-blue-600 hover:text-blue-800 w-full justify-start"
+                                    onClick={() => {
+                                        setExpandedReceptionId(expandedReceptionId === row.original.id ? null : row.original.id);
+                                    }}
+                                >
+                                    {expandedReceptionId === row.original.id ? (
+                                        <ChevronDown className="h-3.5 w-3.5 mr-1" />
+                                    ) : (
+                                        <ChevronRight className="h-3.5 w-3.5 mr-1" />
+                                    )}
+                                    View History ({totalReceptions} {totalReceptions > 1 ? 'entries' : 'entry'})
+                                </Button>
+                                
+                                {expandedReceptionId === row.original.id && (
+                                    <div className="mt-2 space-y-2 max-h-48 overflow-y-auto">
+                                        {record?.reception_data?.map((reception, idx) => {
+                                            const { date, time } = formatDateTime(reception.received_at);
+                                            const isLatest = idx === 0;
+                                            return (
+                                                <div 
+                                                    key={reception.id || idx} 
+                                                    className={`p-2 text-xs border rounded ${isLatest ? 'bg-blue-50 border-blue-200' : 'bg-gray-50'}`}
+                                                >
+                                                    <div className="font-medium">{date} at {time}</div>
+                                                    <div className="text-gray-600">
+                                                        Received by: {reception.received_by || 'N/A'}
+                                                    </div>
+                                                    {reception.brought_by && (
+                                                        <div className="text-gray-600">
+                                                            Brought by: {reception.brought_by}
+                                                        </div>
+                                                    )}
+                                                    {reception.files_count > 0 && (
+                                                        <div className="text-gray-600">
+                                                            Files: {reception.files_count}
+                                                        </div>
+                                                    )}
+                                                    {reception.reception_notes && (
+                                                        <div className="mt-1 text-gray-500 italic">
+                                                            {reception.reception_notes}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
                         )}
                     </div>
                 );
             },
-            size: 140,
+            size: 300,
         }),
 
         // Delivery status
@@ -508,6 +676,11 @@ const applyCategoryFilters = (data: any[]) => {
             ),
             cell: ({ row }) => {
                 const record = getCompanyRecord(row.original.id);
+                const latestDelivery = getLatestDelivery(record);
+                const hasDeliveries = hasAnyDeliveries(record);
+                const totalDeliveries = record?.delivery_data?.length || 0;
+                const isNil = record?.processing_status === 'nil';
+                
                 return (
                     <div className="flex items-center justify-center">
                         <EnhancedDeliveryDialog
@@ -519,10 +692,31 @@ const applyCategoryFilters = (data: any[]) => {
                             existingData={record}
                             receptionData={record}
                         />
+                        {hasDeliveries && (
+                            <div className="flex items-center ml-1">
+                                <CheckCircle className={`h-4 w-4 ${
+                                    latestDelivery?.status === 'delivered' ? 'text-green-500' : 
+                                    latestDelivery?.status === 'attempted' ? 'text-yellow-500' : 
+                                    latestDelivery?.status === 'pending' ? 'text-blue-500' : 
+                                    'text-gray-500'
+                                }`} />
+                                {totalDeliveries > 1 && (
+                                    <Badge variant="outline" className="ml-1 text-xs">
+                                        {totalDeliveries}
+                                    </Badge>
+                                )}
+                            </div>
+                        )}
+                        {isNil && (
+                            <Badge variant="destructive" className="ml-1 text-xs">NIL</Badge>
+                        )}
+                        {record?.is_urgent && (
+                            <Badge variant="destructive" className="ml-1 text-xs animate-pulse">URGENT</Badge>
+                        )}
                     </div>
                 );
             },
-            size: 100,
+            size: 140,
         }),
 
         // Delivery details
@@ -540,19 +734,51 @@ const applyCategoryFilters = (data: any[]) => {
             ),
             cell: ({ row }) => {
                 const record = getCompanyRecord(row.original.id);
-                const dateTime = formatDateTime(record?.delivered_at);
-
+                const latestDelivery = getLatestDelivery(record);
+                const totalDeliveries = record?.delivery_data?.length || 0;
+                
+                if (!latestDelivery) {
+                    return <div className="text-xs text-gray-400">No deliveries</div>;
+                }
+                
+                const { date, time } = formatDateTime(latestDelivery.delivered_at);
+                
                 return (
-                    <div className="text-xs">
-                        <p className="font-medium">{dateTime.date}</p>
-                        <p className="text-gray-500">{dateTime.time}</p>
-                        {record?.picked_by && (
-                            <p className="text-green-600 mt-1">By: {record.picked_by}</p>
+                    <div className="space-y-1">
+                        <div className="flex items-center">
+                            <CalendarIcon className="h-3.5 w-3.5 mr-1 text-gray-500" />
+                            <span className="text-sm">{date} at {time}</span>
+                        </div>
+                        <div className="flex items-center">
+                            <User className="h-3.5 w-3.5 mr-1 text-gray-500" />
+                            <span className="text-sm">{latestDelivery.delivered_to}</span>
+                        </div>
+                        {latestDelivery.picked_by && (
+                            <div className="flex items-center">
+                                <User className="h-3.5 w-3.5 mr-1 text-gray-500" />
+                                <span className="text-sm">Picked by: {latestDelivery.picked_by}</span>
+                            </div>
+                        )}
+                        {latestDelivery.delivery_location && (
+                            <div className="flex items-center">
+                                <MapPin className="h-3.5 w-3.5 mr-1 text-gray-500" />
+                                <span className="text-sm">{latestDelivery.delivery_location}</span>
+                            </div>
+                        )}
+                        {latestDelivery.notes && (
+                            <div className="text-xs text-gray-500 truncate max-w-[200px]" title={latestDelivery.notes}>
+                                {latestDelivery.notes}
+                            </div>
+                        )}
+                        {totalDeliveries > 1 && (
+                            <div className="text-xs text-blue-600">
+                                +{totalDeliveries - 1} more delivery{totalDeliveries > 2 ? 's' : ''}
+                            </div>
                         )}
                     </div>
                 );
             },
-            size: 140,
+            size: 240,
         }),
 
         // Status
@@ -570,22 +796,59 @@ const applyCategoryFilters = (data: any[]) => {
             ),
             cell: ({ row }) => {
                 const record = getCompanyRecord(row.original.id);
-                const status = record?.status || 'pending';
+                
+                // Determine status based on record state
+                let status = 'pending';
+                if (record) {
+                    if (record.processing_status === 'nil') {
+                        status = 'nil';
+                    } else if (record.processing_status === 'delivered') {
+                        status = 'delivered';
+                    } else if (record.processing_status === 'received') {
+                        status = 'received';
+                    } else if (record.processing_status === 'processed') {
+                        status = 'processed';
+                    }
+                }
 
                 const statusConfig = {
-                    pending: { label: 'Pending', color: 'bg-gray-100 text-gray-800' },
-                    received: { label: 'Received', color: 'bg-blue-100 text-blue-800' },
-                    processed: { label: 'Processed', color: 'bg-yellow-100 text-yellow-800' },
-                    delivered: { label: 'Delivered', color: 'bg-green-100 text-green-800' },
-                    nil: { label: 'NIL', color: 'bg-red-100 text-red-800' }
+                    pending: { 
+                        label: 'Pending', 
+                        color: 'bg-gray-100 text-gray-800 border border-gray-200',
+                        icon: <Clock className="h-3 w-3 mr-1" />
+                    },
+                    received: { 
+                        label: 'Received', 
+                        color: 'bg-blue-50 text-blue-700 border border-blue-200',
+                        icon: <Package className="h-3 w-3 mr-1" />
+                    },
+                    processed: { 
+                        label: 'In Process', 
+                        color: 'bg-yellow-50 text-yellow-700 border border-yellow-200',
+                        icon: <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                    },
+                    delivered: { 
+                        label: 'Delivered', 
+                        color: 'bg-green-50 text-green-700 border border-green-200',
+                        icon: <CheckCircle className="h-3 w-3 mr-1" />
+                    },
+                    nil: { 
+                        label: 'NIL', 
+                        color: 'bg-red-50 text-red-700 border border-red-200',
+                        icon: <XCircle className="h-3 w-3 mr-1" />
+                    }
                 };
 
-                const config = statusConfig[status as keyof typeof statusConfig] || statusConfig.pending;
-
                 return (
-                    <Badge className={`text-xs ${config.color}`}>
-                        {config.label}
-                    </Badge>
+                    <div className="flex items-center">
+                        {statusConfig[status].icon}
+                        <Badge
+                            variant="outline"
+                            className={`${statusConfig[status].color} text-xs`}
+                        >
+                            {statusConfig[status].label}
+                        </Badge>
+                    </div>
                 );
             },
             size: 100,
@@ -664,16 +927,13 @@ const filteredCompanies = useMemo(() => {
             .filter(([category, isSelected]) => category && category !== 'All Categories' && isSelected)
             .map(([category]) => category);
 
-        console.log('Selected categories for filtering:', selectedCategories);
-        
-        // Debug: Log all date fields from the company
+        // Get date fields for the company
         const dateFields = Object.keys(company).filter(key => 
             key.endsWith('_client_effective_from') || 
             key.endsWith('_client_effective_to')
         );
-        console.log('All date fields in company:', dateFields);
         
-        // Log the actual values for the selected categories
+        // Get the actual values for the selected categories
         const categoryValues = selectedCategories.reduce((acc, cat) => {
             const prefix = cat.toLowerCase().slice(0, 3);
             return {
@@ -682,12 +942,10 @@ const filteredCompanies = useMemo(() => {
                 [`${prefix}_to`]: company[`${prefix}_client_effective_to`]
             };
         }, {});
-        
-        console.log('Company category values:', categoryValues);
 
         // If no categories selected or All Categories is selected, include all
         if (selectedCategories.length === 0 || categoryFilters.categories?.['All Categories']) {
-            console.log('No specific categories selected or All Categories is selected, including company');
+
             return true;
         }
 
@@ -701,19 +959,8 @@ const filteredCompanies = useMemo(() => {
             const fromDateStr = company[`${categoryId}_client_effective_from`] || company[fromField];
             const toDateStr = company[`${categoryId}_client_effective_to`] || company[toField];
 
-            console.log(`Checking category ${category} (${categoryId}) for ${company.company_name}:`, {
-                fromField,
-                toField,
-                fromDateStr,
-                toDateStr,
-                hasBothDates: !!(fromDateStr && toDateStr),
-                allCompanyKeys: Object.keys(company)
-            });
-
             // If no dates are set, this company doesn't belong to this category
             if (!fromDateStr || !toDateStr) {
-                console.log(`No dates found for ${company.company_name} in category ${category} (${categoryId})`);
-                console.log('Available fields:', Object.keys(company));
                 return false;
             }
 
@@ -726,14 +973,6 @@ const filteredCompanies = useMemo(() => {
             const effectiveFrom = new Date(fromYear, fromMonth - 1, fromDay);
             const effectiveTo = new Date(toYear, toMonth - 1, toDay);
             const currentStatus = today >= effectiveFrom && today <= effectiveTo ? 'active' : 'inactive';
-            
-            console.log(`Date check for ${company.company_name} (${category}):`, {
-                today: today.toISOString(),
-                effectiveFrom: effectiveFrom.toISOString(),
-                effectiveTo: effectiveTo.toISOString(),
-                currentStatus,
-                isActive: today >= effectiveFrom && today <= effectiveTo
-            });
 
             // Get selected statuses from filter
             const categorySettings = categoryFilters.categorySettings?.[category];
@@ -783,27 +1022,37 @@ const filteredCompanies = useMemo(() => {
     const getStatusCounts = () => {
         const rows = table.getFilteredRowModel().rows;
         const total = rows.length;
-
+    
         const receivedCount = rows.filter(row => {
             const record = getCompanyRecord(row.original.id);
-            return record?.received_at || record?.is_nil;
+            return hasAnyReceptions(record) || record?.is_nil;
         }).length;
-
+    
         const deliveredCount = rows.filter(row => {
             const record = getCompanyRecord(row.original.id);
-            return record?.delivered_at;
+            return record?.deliveries && record.deliveries.length > 0;
         }).length;
-
+    
         const nilCount = rows.filter(row => {
             const record = getCompanyRecord(row.original.id);
             return record?.is_nil;
         }).length;
-
+    
         const urgentCount = rows.filter(row => {
             const record = getCompanyRecord(row.original.id);
             return record?.is_urgent;
         }).length;
-
+    
+        const totalFilesReceived = rows.reduce((total, row) => {
+            const record = getCompanyRecord(row.original.id);
+            return total + getTotalFilesReceived(record);
+        }, 0);
+    
+        const totalReceptions = rows.reduce((total, row) => {
+            const record = getCompanyRecord(row.original.id);
+            return total + (record?.receptions?.length || 0);
+        }, 0);
+    
         return {
             total,
             receivedComplete: receivedCount,
@@ -811,10 +1060,11 @@ const filteredCompanies = useMemo(() => {
             deliveredComplete: deliveredCount,
             deliveredPending: total - deliveredCount,
             nilCount,
-            urgentCount
+            urgentCount,
+            totalFilesReceived,
+            totalReceptions
         };
     };
-
     const exportToExcel = async () => {
         try {
             // Implementation for Excel export
@@ -917,8 +1167,7 @@ const filteredCompanies = useMemo(() => {
                     {selectedRows.length > 0 && (
                         <BulkOperationsDialog
                             selectedCompanies={selectedRows}
-                            year={year}
-                            month={month}
+                            year={year}                            month={month}
                             onBulkOperation={onBulkOperation}
                             open={bulkDialogOpen}
                             onOpenChange={setBulkDialogOpen}

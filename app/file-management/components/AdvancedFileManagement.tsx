@@ -141,7 +141,14 @@ export default function AdvancedFileManagement() {
     // Handle file record updates (for reception/delivery dialogs)
     const handleUpdateFileRecord = async (companyId: string, year: number, month: number, updates: any) => {
         try {
-            const updatedRecord = await FileManagementService.upsertFileRecord(companyId, year, month, updates);
+            const submissionData = {
+                company_id: companyId,
+                year,
+                month,
+                ...updates
+            };
+            
+            const updatedRecord = await FileManagementService.upsertFileRecord(submissionData);
 
             // Update local state
             setFileRecords(prev => {
