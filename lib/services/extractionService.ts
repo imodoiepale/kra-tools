@@ -1,150 +1,128 @@
 // @ts-nocheck
-// lib/extractionService.ts
+import { performBankStatementExtraction } from '../bankExtractionUtils';
 
-import { performBankStatementExtraction } from './bankExtractionUtils';
+/**
+ * Service for handling bank statement extractions with caching and optimization
+ */
+export class ExtractionsService {
+    private static cache = new Map<string, any>();
+    private static readonly CACHE_EXPIRY = 5 * 60 * 1000; // 5 minutes
 
-interface ExtractionOptions {
-    month: number;
-    year: number;
-    password?: string | null;
-    extractPeriodOnly?: boolean;
-    forceAiExtraction?: boolean;
-    [key: string]: any;
-}
-
-interface ExtractionResult {
-    success: boolean;
-    extractedData: any;
-    error?: string;
-    requiresPassword?: boolean;
-}
-
-// In-memory cache for extraction results
-let extractionCache: Record<string, ExtractionResult> = {};
-
-export const ExtractionsService = {
     /**
-     * Get extraction from cache or perform new extraction
-     * @param fileOrUrl - File object or URL string
-     * @param options - Options for extraction
-     * @returns Extraction result
+     * Get extraction results with caching
      */
-    async getExtraction(fileOrUrl: File | string, options: ExtractionOptions = {} as ExtractionOptions): Promise<ExtractionResult> {
-        const cacheKey = this.generateCacheKey(fileOrUrl, options);
-        
-        // Skip cache if forceAiExtraction is true
-        const shouldSkipCache = options.forceAiExtraction === true;
-
-        // Check if result is in cache (unless force extraction is requested)
-        if (!shouldSkipCache && extractionCache[cacheKey]) {
-            console.log(`Using cached extraction for ${cacheKey}`);
-            return extractionCache[cacheKey];
-        }
-
-        console.log(`Performing ${shouldSkipCache ? 'forced' : 'new'} extraction for ${cacheKey}`, {
-            fileOrUrl: typeof fileOrUrl === 'string' ? fileOrUrl : fileOrUrl.name,
-            options
-        });
-
+    static async getExtraction(
+        file: File | string,
+        options: {
+            month?: number;
+            year?: number;
+            password?: string | null;
+            forceAiExtraction?: boolean;
+            statementId?: string;
+        } = {}
+    ) {
         try {
-            // Convert File to URL if needed
-            const url = typeof fileOrUrl === 'string'
-                ? fileOrUrl
-                : URL.createObjectURL(fileOrUrl);
+            // Generate cache key
+            const cacheKey = this.generateCacheKey(file, options);
 
-            // Perform the extraction
-            const result = await performBankStatementExtraction(url, options);
+            // Check cache if not forcing extraction
+            if (!options.forceAiExtraction) {
+                const cached = this.getCachedResult(cacheKey);
+                if (cached) {
+                    console.log('Using cached extraction result');
+                    return cached;
+                }
+            }
 
-            // Store in cache (even if it was a forced extraction)
-            extractionCache[cacheKey] = result;
+            // Create file URL if needed
+            let fileUrl = file;
+            if (file instanceof File) {
+                fileUrl = URL.createObjectURL(file);
+            }
+
+            // Perform extraction
+            const result = await performBankStatementExtraction(
+                fileUrl,
+                {
+                    month: options.month || 0,
+                    year: options.year || new Date().getFullYear(),
+                    password: options.password
+                },
+                (message) => console.log('Extraction progress:', message)
+            );
 
             // Clean up URL if we created it
-            if (typeof fileOrUrl !== 'string') {
-                URL.revokeObjectURL(url);
+            if (file instanceof File && typeof fileUrl === 'string') {
+                URL.revokeObjectURL(fileUrl);
+            }
+
+            // Cache successful results
+            if (result.success) {
+                this.setCachedResult(cacheKey, result);
             }
 
             return result;
+
         } catch (error) {
-            console.error('Extraction service error:', error);
-
-            // Return error result but don't cache errors
-            const errorResult = {
+            console.error('Error in ExtractionsService:', error);
+            return {
                 success: false,
-                extractedData: null,
-                error: error instanceof Error ? error.message : 'Unknown extraction error'
+                error: error.message,
+                requiresPassword: false,
+                extractedData: null
             };
-
-            return errorResult;
         }
-    },
+    }
 
     /**
-     * Generate a cache key based on file attributes and options
-     * @param fileOrUrl - File object or URL string
-     * @param options - Options used for extraction
-     * @returns Unique cache key
+     * Generate a cache key for the extraction
      */
-    generateCacheKey(fileOrUrl: File | string, options: ExtractionOptions): string {
-        if (typeof fileOrUrl === 'string') {
-            // For URLs, use the URL and options
-            return `url-${fileOrUrl}-${JSON.stringify(options)}`;
+    private static generateCacheKey(file: File | string, options: any): string {
+        const fileName = file instanceof File ? file.name : file;
+        const fileSize = file instanceof File ? file.size : 'unknown';
+        return `${fileName}_${fileSize}_${options.month}_${options.year}_${options.password || 'none'}`;
+    }
+
+    /**
+     * Get cached result if not expired
+     */
+    private static getCachedResult(key: string): any {
+        const cached = this.cache.get(key);
+        if (!cached) return null;
+
+        const now = Date.now();
+        if (now - cached.timestamp > this.CACHE_EXPIRY) {
+            this.cache.delete(key);
+            return null;
         }
 
-        // For files, use file metadata and options
-        return `file-${fileOrUrl.name}-${fileOrUrl.size}-${fileOrUrl.lastModified}-${JSON.stringify(options)}`;
-    },
+        return cached.result;
+    }
 
     /**
-     * Process multiple files in a batch
-     * @param files - Array of files to process
-     * @param options - Options for extraction
-     * @returns Array of extraction results
+     * Cache a result with timestamp
      */
-    async processBatch(files: File[], options: ExtractionOptions = {} as ExtractionOptions): Promise<ExtractionResult[]> {
-        console.log(`Processing batch of ${files.length} files`);
-
-        // Process files in parallel with Promise.all
-        const results = await Promise.all(
-            files.map(file => this.getExtraction(file, options))
-        );
-
-        return results;
-    },
+    private static setCachedResult(key: string, result: any): void {
+        this.cache.set(key, {
+            result,
+            timestamp: Date.now()
+        });
+    }
 
     /**
-     * Clear specific cache entry
-     * @param key - Cache key to clear
-     * @returns True if entry was found and cleared
+     * Clear cache
      */
-    clearCache(key: string): boolean {
-        if (extractionCache[key]) {
-            delete extractionCache[key];
-            console.log(`Cleared cache for key: ${key}`);
-            return true;
-        }
-        console.log(`No cache found for key: ${key}`);
-        return false;
-    },
+    static clearCache(): void {
+        this.cache.clear();
+    }
 
     /**
-     * Clear all cache entries
-     * @returns True after cache is cleared
+     * Get cache stats
      */
-    clearAllCache(): boolean {
-        const cacheSize = Object.keys(extractionCache).length;
-        extractionCache = {};
-        console.log(`Cleared all extraction cache (${cacheSize} entries)`);
-        return true;
-    },
-
-    /**
-     * Get cache statistics
-     * @returns Cache statistics
-     */
-    getCacheStats(): { size: number, keys: string[] } {
+    static getCacheStats(): { size: number; keys: string[] } {
         return {
-            size: Object.keys(extractionCache).length,
-            keys: Object.keys(extractionCache)
+            size: this.cache.size,
+            keys: Array.from(this.cache.keys())
         };
     }
-};
+}
