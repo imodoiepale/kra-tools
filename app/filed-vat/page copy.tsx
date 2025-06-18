@@ -13,6 +13,7 @@ import { FilingTrendsChart } from "@/components/data-viewer/filing-trends-chart"
 import { DataSummaryCards } from "@/components/data-viewer/data-summary-cards"
 
 export default function DashboardPage() {
+
   return (
     <div className="flex min-h-screen flex-col">
       <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b bg-background px-4 md:px-6">
