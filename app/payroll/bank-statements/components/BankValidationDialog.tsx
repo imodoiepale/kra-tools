@@ -99,6 +99,7 @@ export function BankValidationDialog({
         setIsProcessing(true);
         try {
             if (statementId) {
+                // For existing statements, just update validation status
                 const { data: updatedStatement, error } = await supabase
                     .from('acc_cycle_bank_statements')
                     .update({
@@ -128,6 +129,7 @@ export function BankValidationDialog({
                     await onProceed({ ...extractedData, statement: updatedStatement });
                 }
             } else {
+                // For new statements, pass the extracted data to be processed
                 await onProceed(extractedData);
             }
         } catch (error) {

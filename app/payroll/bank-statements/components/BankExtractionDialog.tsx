@@ -213,6 +213,7 @@ export default function BankExtractionDialog({
         try {
             const cycleId = statement.statement_cycle_id;
 
+            // Get all statements for this bank and cycle
             const { data: allStatements, error } = await supabase
                 .from('acc_cycle_bank_statements')
                 .select('*')
@@ -225,10 +226,11 @@ export default function BankExtractionDialog({
             let monthlyStatement = null;
             let rangeStatement = null;
 
+            // Separate statements by type
             statements.forEach(stmt => {
-                if (isRangeStatement(stmt)) {
+                if (stmt.statement_type === 'range') {
                     rangeStatement = stmt;
-                } else {
+                } else if (stmt.statement_type === 'monthly') {
                     monthlyStatement = stmt;
                 }
             });
@@ -241,19 +243,22 @@ export default function BankExtractionDialog({
                 hasMultipleTypes
             });
 
-            if (statement.id === monthlyStatement?.id) {
-                setCurrentStatement(monthlyStatement);
+            // Set current statement based on the one passed in
+            let currentStmt = statement;
+            if (statement.statement_type === 'monthly' && monthlyStatement) {
+                currentStmt = monthlyStatement;
                 setActiveStatementTab('monthly');
-            } else if (statement.id === rangeStatement?.id) {
-                setCurrentStatement(rangeStatement);
+            } else if (statement.statement_type === 'range' && rangeStatement) {
+                currentStmt = rangeStatement;
                 setActiveStatementTab('range');
             } else {
-                setCurrentStatement(statement);
+                // Fallback to determining type
                 setActiveStatementTab(isRangeStatement(statement) ? 'range' : 'monthly');
             }
 
-            await loadStatementFormData(currentStatement || statement);
-            await loadPdfDocument(currentStatement || statement);
+            setCurrentStatement(currentStmt);
+            await loadStatementFormData(currentStmt);
+            await loadPdfDocument(currentStmt);
 
         } catch (error) {
             console.error('Error loading statement data:', error);
@@ -583,13 +588,6 @@ export default function BankExtractionDialog({
                 periodDates.startYear !== periodDates.endYear
             );
 
-            console.log('Save operation details:', {
-                isMultiMonth,
-                periodDates,
-                statementPeriod: formData.statementPeriod,
-                monthlyBalancesCount: monthlyBalances.length
-            });
-
             const completeExtractionData = {
                 bank_name: formData.bank_name || null,
                 account_number: formData.account_number || null,
@@ -614,15 +612,13 @@ export default function BankExtractionDialog({
                 const { startMonth, startYear, endMonth, endYear } = periodDates;
                 const monthsInRange = generateMonthRange(startMonth, startYear, endMonth, endYear);
 
-                console.log('Months in range:', monthsInRange);
-
                 const cyclePromises = monthsInRange.map(({ month, year }) =>
                     getOrCreateStatementCycle(year, month - 1)
                 );
 
                 const cycleIds = await Promise.all(cyclePromises);
-                console.log('Created/retrieved cycle IDs:', cycleIds);
 
+                // Check for existing statements of the SAME TYPE only
                 const existingStatementsPromises = monthsInRange.map(({ month, year }) =>
                     supabase
                         .from('acc_cycle_bank_statements')
@@ -630,7 +626,7 @@ export default function BankExtractionDialog({
                         .eq('bank_id', bank.id)
                         .eq('statement_month', month - 1)
                         .eq('statement_year', year)
-                        .eq('statement_type', currentStatement.statement_type)
+                        .eq('statement_type', currentStatement.statement_type) // ADD THIS LINE
                         .maybeSingle()
                 );
 
@@ -638,7 +634,7 @@ export default function BankExtractionDialog({
                 const hasExistingStatements = existingResults.some(result => result.data !== null);
 
                 if (hasExistingStatements) {
-                    console.log('Found existing statements, showing confirmation...');
+                    console.log('Found existing statements of same type, showing confirmation...');
                     setPendingUpdates({
                         type: 'multi-month',
                         monthsInRange,
@@ -651,6 +647,7 @@ export default function BankExtractionDialog({
                     return;
                 }
 
+                // Process new multi-month statement
                 const insertPromises = monthsInRange.map(async ({ month, year }, index) => {
                     const cycleId = cycleIds[index];
 
@@ -679,7 +676,7 @@ export default function BankExtractionDialog({
                         statement_cycle_id: cycleId,
                         statement_month: month - 1,
                         statement_year: year,
-                        statement_type: currentStatement.statement_type,
+                        statement_type: currentStatement.statement_type, // Preserve type
                         statement_document: currentStatement.statement_document,
                         statement_extractions: {
                             ...completeExtractionData,
@@ -714,7 +711,8 @@ export default function BankExtractionDialog({
                     throw new Error(`Failed to create ${errorInserts.length} statement records`);
                 }
 
-                if (currentStatement.id) {
+                // Only delete the original if it was a combined range statement
+                if (currentStatement.id && isMultiMonth) {
                     console.log('Deleting original combined statement:', currentStatement.id);
                     await supabase
                         .from('acc_cycle_bank_statements')
@@ -733,25 +731,7 @@ export default function BankExtractionDialog({
             } else {
                 console.log('Processing single-month statement...');
 
-                const { data: existingStatement } = await supabase
-                    .from('acc_cycle_bank_statements')
-                    .select('id')
-                    .eq('id', currentStatement.id)
-                    .single();
-
-                if (existingStatement) {
-                    console.log('Found existing single statement, showing confirmation...');
-                    setPendingUpdates({
-                        type: 'single-month',
-                        extractionData: completeExtractionData,
-                        validationStatus,
-                        monthlyBalances,
-                        statementId: currentStatement.id
-                    });
-                    setShowUpdateConfirmation(true);
-                    return;
-                }
-
+                // For single-month, just update the current statement
                 const updatedStatus = {
                     ...currentStatement.status,
                     status: 'validated',
@@ -770,10 +750,7 @@ export default function BankExtractionDialog({
                     .select()
                     .single();
 
-                if (error) {
-                    console.error('Single month update error:', error);
-                    throw error;
-                }
+                if (error) throw error;
 
                 console.log('Successfully updated single statement:', updatedStatement.id);
 

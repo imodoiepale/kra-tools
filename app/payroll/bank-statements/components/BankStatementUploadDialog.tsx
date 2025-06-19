@@ -592,8 +592,27 @@ export function BankStatementUploadDialog({
 
             const determinedType = determineStatementType(currentValidationResult?.extractedData, selectedStatementType);
 
+            // FIX: Check for existing statements of the SAME TYPE only
+            const { data: existingStatementsOfSameType, error: existingError } = await supabase
+                .from('acc_cycle_bank_statements')
+                .select('*')
+                .eq('bank_id', bank.id)
+                .eq('statement_cycle_id', statementCycleId)
+                .eq('statement_month', cycleMonth)
+                .eq('statement_year', cycleYear)
+                .eq('statement_type', determinedType);
+
+            if (existingError) throw existingError;
+
+            let upsertId = existingStatement?.id;
+
+            // If there's an existing statement of the same type, use its ID for upserting
+            if (existingStatementsOfSameType && existingStatementsOfSameType.length > 0) {
+                upsertId = existingStatementsOfSameType[0].id;
+            }
+
             const dataToSave = {
-                id: existingStatement?.id,
+                id: upsertId, // Will be undefined for new statements
                 bank_id: bank.id,
                 company_id: bank.company_id,
                 statement_cycle_id: statementCycleId,
@@ -613,7 +632,10 @@ export function BankStatementUploadDialog({
                     mismatches: currentValidationResult.mismatches,
                     validation_date: new Date().toISOString()
                 } : (existingStatement?.validation_status || {}),
-                status: { ...existingStatement?.status, status: 'pending_validation' }
+                status: {
+                    ...existingStatement?.status,
+                    status: 'pending_validation'
+                }
             };
 
             const { data: upsertedStatement, error } = await supabase
@@ -623,7 +645,10 @@ export function BankStatementUploadDialog({
                 .single();
             if (error) throw error;
 
-            toast({ title: 'Success', description: 'Bank statement processed successfully.' });
+            toast({
+                title: 'Success',
+                description: `${determinedType} bank statement processed successfully.`
+            });
             onStatementUploaded(upsertedStatement);
 
             if (onOpenExtractionDialog && currentValidationResult?.extractedData) {
