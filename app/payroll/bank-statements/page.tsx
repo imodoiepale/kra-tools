@@ -343,15 +343,7 @@ export default function BankReconciliationPage() {
                                     variant="outline"
                                 >
                                     <UploadCloud className="h-4 w-4" /> Bulk Upload
-                                </Button>
-                                <Button
-                                    onClick={() => setShowDeleteAll(true)}
-                                    size="sm"
-                                    className="h-8 flex items-center gap-2"
-                                    variant="destructive"
-                                >
-                                    <Trash2 className="h-4 w-4" /> Delete All
-                                </Button>
+                                </Button> 
                             </div>
                         </div>
 
