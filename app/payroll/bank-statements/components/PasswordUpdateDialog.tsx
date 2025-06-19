@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
-import { Lock, Eye, EyeOff, Save } from 'lucide-react';
+import { Lock, Eye, EyeOff, Save, Loader2 } from 'lucide-react';
 
 interface Bank {
     id: number;

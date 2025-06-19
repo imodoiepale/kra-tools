@@ -27,18 +27,42 @@ const apiKeyStatus = new Map(API_KEYS.map(key => [key, {
 // API key management functions
 const getNextApiKey = () => {
   const now = Date.now();
+
+  // First, try to find a healthy API key
   for (let i = 0; i < API_KEYS.length; i++) {
     const key = API_KEYS[i];
     const status = apiKeyStatus.get(key);
-    if (!status || now < status.cooldownUntil) continue;
-    if (now - status.lastUsed > RATE_LIMIT_COOLDOWN) status.failureCount = 0;
+
+    // Skip if key doesn't exist in status map
+    if (!status) continue;
+
+    // Skip if key is in cooldown
+    if (now < status.cooldownUntil) continue;
+
+    // Reset failure count if enough time has passed since last use
+    if (now - status.lastUsed > RATE_LIMIT_COOLDOWN) {
+      status.failureCount = 0;
+    }
+
+    // Use this key if it hasn't exceeded failure threshold
     if (status.failureCount < MAX_FAILURES) {
       currentApiKeyIndex = API_KEYS.indexOf(key);
       genAI = new GoogleGenerativeAI(key);
+      status.lastUsed = now; // Update last used time
       return key;
     }
   }
-  API_KEYS.forEach(key => apiKeyStatus.set(key, { lastUsed: 0, failureCount: 0, cooldownUntil: 0 }));
+
+  // If all keys are in cooldown, reset all and use first key
+  console.warn('All API keys are in cooldown, resetting all keys');
+  API_KEYS.forEach(key => {
+    apiKeyStatus.set(key, {
+      lastUsed: now,
+      failureCount: 0,
+      cooldownUntil: 0
+    });
+  });
+
   currentApiKeyIndex = 0;
   genAI = new GoogleGenerativeAI(API_KEYS[0]);
   return API_KEYS[0];
