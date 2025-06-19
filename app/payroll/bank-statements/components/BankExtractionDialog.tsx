@@ -1069,10 +1069,18 @@ export default function BankExtractionDialog({
                                 </Button>
                             </div>
                         </div>
-                        <div className="text-base">
+                        {/* <div className="text-base">
                             Bank Statement - {bank?.bank_name || 'N/A'} {bank?.account_number || ''} |
                             {currentStatement?.statement_year && currentStatement?.statement_month !== undefined ?
                                 format(new Date(currentStatement.statement_year, currentStatement.statement_month), 'MMMM yyyy') : 'N/A'}
+                        </div> */}
+                        <div className="text-base flex flex-wrap items-center gap-4 text-gray-700">
+                            <span><span className="font-medium">Bank Name:</span> {bank.bank_name}</span> |
+                            <span><span className="font-medium">Account Number:</span> {bank.account_number}</span> |
+                            <span><span className="font-medium">Statement Period:</span> {format(new Date(statement.statement_year, statement.statement_month, 1), 'MMMM yyyy')}</span> |
+                            <span className="text-gray-500">
+                                <span className="font-medium">Password:</span> <span className="font-semibold text-blue-600">{bank.acc_password}</span>
+                            </span>
                         </div>
                     </DialogTitle>
                 </DialogHeader>
