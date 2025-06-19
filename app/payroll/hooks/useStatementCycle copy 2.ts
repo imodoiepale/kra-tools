@@ -1,9 +1,12 @@
-// app/payroll/hooks/useStatementCycle.ts
 // @ts-nocheck
 import { useState, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useToast } from '@/hooks/use-toast';
 
+/**
+ * A centralized hook to manage all data interactions for the Bank Statement Reconciliation cycle.
+ * This version is aligned with the provided database schema and calculates stats client-side.
+ */
 export const useStatementCycle = () => {
     const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
     const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
@@ -13,8 +16,9 @@ export const useStatementCycle = () => {
 
     const getOrCreateStatementCycle = useCallback(async (year: number, month: number): Promise<string | null> => {
         const monthYearStr = `${year}-${(month + 1).toString().padStart(2, '0')}`;
-
+        
         try {
+            // First, try to get the existing cycle
             const { data: existingCycle, error: fetchError } = await supabase
                 .from('statement_cycles')
                 .select('id')
@@ -22,44 +26,48 @@ export const useStatementCycle = () => {
                 .maybeSingle();
 
             if (existingCycle) return existingCycle.id;
-
+            
+            // If we get here, no cycle exists yet - try to create one
             try {
                 const { data: newCycle, error: createError } = await supabase
                     .from('statement_cycles')
-                    .insert({
-                        month_year: monthYearStr,
+                    .insert({ 
+                        month_year: monthYearStr, 
                         status: 'active',
                         created_at: new Date().toISOString()
                     })
                     .select('id')
                     .single();
-
+                    
                 if (newCycle) return newCycle.id;
                 if (createError) throw createError;
-
+                
             } catch (createError) {
-                if (createError.code === '23505') {
+                // If we get a unique constraint violation, it means another request created the cycle
+                if (createError.code === '23505') { // Unique violation
+                    // Try to fetch the cycle that was just created by another request
                     const { data: cycle, error: refetchError } = await supabase
                         .from('statement_cycles')
                         .select('id')
                         .eq('month_year', monthYearStr)
                         .single();
-
+                    
                     if (cycle) return cycle.id;
                     if (refetchError) throw refetchError;
                 }
                 throw createError;
             }
-
+            
             return null;
-
+            
         } catch (error) {
             console.error('Failed to get or create statement cycle:', error);
+            // Only show error toast if it's not a unique constraint violation
             if (error.code !== '23505') {
-                toast({
-                    title: 'Cycle Initialization Error',
+                toast({ 
+                    title: 'Cycle Initialization Error', 
                     description: `Could not initialize the statement cycle for ${monthYearStr}.`,
-                    variant: 'destructive'
+                    variant: 'destructive' 
                 });
             }
             return null;
@@ -74,7 +82,7 @@ export const useStatementCycle = () => {
 
             const [banksRes, statementsRes] = await Promise.all([
                 supabase.from('acc_portal_banks').select('*', { count: 'exact' }),
-                supabase.from('acc_cycle_bank_statements').select('statement_extractions, status, statement_type').eq('statement_cycle_id', cycleId)
+                supabase.from('acc_cycle_bank_statements').select('statement_extractions, status').eq('statement_cycle_id', cycleId)
             ]);
 
             if (banksRes.error) throw banksRes.error;
@@ -85,6 +93,7 @@ export const useStatementCycle = () => {
 
             const calculatedStats = statements.reduce((acc, statement) => {
                 const closingBal = parseFloat(statement.statement_extractions?.closing_balance);
+                // Correctly access quickbooks_balance from the status JSONB
                 const qbBal = parseFloat(statement.status?.quickbooks_balance);
 
                 if (!isNaN(closingBal) && !isNaN(qbBal)) {
@@ -119,7 +128,7 @@ export const useStatementCycle = () => {
     }, [getOrCreateStatementCycle, toast]);
 
     const fetchCoreData = useCallback(async (cycleId: string) => {
-        if (!cycleId) return { companies: [], banks: [], statements: [], banksWithMultipleTypes: [] };
+        if (!cycleId) return { companies: [], banks: [], statements: [] };
         setLoading(true);
         try {
             const [companiesRes, banksRes, statementsRes] = await Promise.all([
@@ -132,127 +141,18 @@ export const useStatementCycle = () => {
             if (banksRes.error) throw banksRes.error;
             if (statementsRes.error) throw statementsRes.error;
 
-            const statements = statementsRes.data || [];
-            const banksWithMultipleTypes = identifyBanksWithMultipleTypes(statements);
-
             return {
                 companies: companiesRes.data || [],
                 banks: banksRes.data || [],
-                statements: statements,
-                banksWithMultipleTypes
+                statements: statementsRes.data || [],
             };
         } catch (error) {
             toast({ title: 'Data Fetch Error', description: 'Failed to fetch reconciliation table data.', variant: 'destructive' });
-            return { companies: [], banks: [], statements: [], banksWithMultipleTypes: [] };
+            return { companies: [], banks: [], statements: [] };
         } finally {
             setLoading(false);
         }
     }, [toast]);
-
-    const identifyBanksWithMultipleTypes = useCallback((statements: any[]) => {
-        const bankGroups = new Map();
-        const banksWithMultipleTypes = [];
-
-        statements.forEach(statement => {
-            const bankId = statement.bank_id;
-
-            if (!bankGroups.has(bankId)) {
-                bankGroups.set(bankId, {
-                    bankId,
-                    monthly: null,
-                    range: null,
-                    allStatements: []
-                });
-            }
-
-            const group = bankGroups.get(bankId);
-            group.allStatements.push(statement);
-
-            if (statement.statement_type === 'monthly') {
-                group.monthly = statement;
-            } else if (statement.statement_type === 'range') {
-                group.range = statement;
-            }
-
-            bankGroups.set(bankId, group);
-        });
-
-        bankGroups.forEach((group, bankId) => {
-            if (group.monthly && group.range) {
-                banksWithMultipleTypes.push({
-                    bankId,
-                    monthly: group.monthly,
-                    range: group.range,
-                    hasMultipleTypes: true
-                });
-            }
-        });
-
-        return banksWithMultipleTypes;
-    }, []);
-
-    const fetchStatementsWithTypes = useCallback(async (cycleId: string) => {
-        if (!cycleId) return { statements: [], banksWithMultipleTypes: [] };
-
-        try {
-            const { data: statements, error } = await supabase
-                .from('acc_cycle_bank_statements')
-                .select(`
-                    *,
-                    acc_portal_banks!inner(*)
-                `)
-                .eq('statement_cycle_id', cycleId)
-                .order('statement_type', { ascending: true });
-
-            if (error) throw error;
-
-            const banksWithMultipleTypes = identifyBanksWithMultipleTypes(statements || []);
-
-            return {
-                statements: statements || [],
-                banksWithMultipleTypes
-            };
-
-        } catch (error) {
-            console.error('Error fetching statements with types:', error);
-            throw error;
-        }
-    }, [identifyBanksWithMultipleTypes]);
-
-    const getStatementByType = useCallback(async (
-        bankId: number,
-        cycleId: string,
-        statementType: 'monthly' | 'range'
-    ) => {
-        const { data, error } = await supabase
-            .from('acc_cycle_bank_statements')
-            .select('*')
-            .eq('bank_id', bankId)
-            .eq('statement_cycle_id', cycleId)
-            .eq('statement_type', statementType)
-            .maybeSingle();
-
-        if (error) throw error;
-        return data;
-    }, []);
-
-    const checkBankStatementTypes = useCallback(async (bankId: number, cycleId: string) => {
-        const { data, error } = await supabase
-            .from('acc_cycle_bank_statements')
-            .select('statement_type')
-            .eq('bank_id', bankId)
-            .eq('statement_cycle_id', cycleId);
-
-        if (error) throw error;
-
-        const types = data?.map(s => s.statement_type) || [];
-        return {
-            hasMonthly: types.includes('monthly'),
-            hasRange: types.includes('range'),
-            hasMultipleTypes: types.length > 1,
-            types
-        };
-    }, []);
 
     const deleteStatement = useCallback(async (statement) => {
         if (!statement?.id) return false;
@@ -291,10 +191,6 @@ export const useStatementCycle = () => {
         getOrCreateStatementCycle,
         fetchInitialData,
         fetchCoreData,
-        fetchStatementsWithTypes,
-        getStatementByType,
-        checkBankStatementTypes,
-        identifyBanksWithMultipleTypes,
         deleteStatement,
     };
 };

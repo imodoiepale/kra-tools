@@ -1,3 +1,4 @@
+// app/payroll/bank-statements/BankReconciliationTable.tsx (Updated)
 // @ts-nocheck
 'use client'
 
@@ -15,10 +16,11 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table'
-import { Loader2, UploadCloud, Edit, Eye, CheckCircle, AlertTriangle, MoreHorizontal, Trash, X, Lock } from 'lucide-react'
+import { Loader2, UploadCloud, Edit, Eye, CheckCircle, AlertTriangle, MoreHorizontal, Trash, X, Lock, Plus, Calendar, XCircle } from 'lucide-react'
 import { BankStatementUploadDialog } from './components/BankStatementUploadDialog'
 import BankExtractionDialog from './components/BankExtractionDialog'
 import { QuickbooksBalanceDialog } from './components/QuickbooksBalanceDialog'
+import { PasswordUpdateDialog } from './components/PasswordUpdateDialog'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import {
     DropdownMenu,
@@ -42,91 +44,6 @@ import { normalizeCurrencyCode } from './bankExtractionUtils'
 import { useStatementCycle } from '../hooks/useStatementCycle'
 import { Badge } from '@/components/ui/badge'
 
-// --- Interfaces (Ensure these are correctly defined in your project) ---
-// interface Bank {
-//     id: number
-//     bank_name: string
-//     account_number: string
-//     bank_currency: string
-//     company_id: number
-//     company_name: string
-//     acc_password?: string
-// }
-
-// interface BankStatement {
-//     id: string
-//     bank_id: number
-//     statement_month: number
-//     statement_year: number
-//     statement_document: {
-//         statement_pdf: string | null
-//         statement_excel: string | null
-//         document_size?: number; // Added this back as it was in previous code
-//     }
-//     statement_extractions: {
-//         bank_name: string | null
-//         account_number: string | null
-//         currency: string | null
-//         statement_period: string | null
-//         opening_balance: number | null
-//         closing_balance: number | null
-//         monthly_balances: Array<any>
-//     }
-//     validation_status: {
-//         is_validated: boolean
-//         validation_date: string | null
-//         validated_by: string | null
-//         mismatches: Array<string>
-//     }
-//     has_soft_copy: boolean
-//     has_hard_copy: boolean
-//     status: {
-//         status: string
-//         assigned_to: string | null
-//         verification_date: string | null
-//         quickbooks_balance?: number | null; // QB balance is part of the status object
-//     }
-// }
-
-// interface Company {
-//     id: number;
-//     company_name: string;
-//     acc_client_effective_from: string | null;
-//     acc_client_effective_to: string | null;
-//     audit_client_effective_from: string | null;
-//     audit_client_effective_to: string | null;
-//     sheria_client_effective_from: string | null;
-//     sheria_client_effective_to: string | null;
-//     imm_client_effective_from: string | null;
-//     imm_client_effective_to: string | null;
-// }
-//     sheria_client_effective_to: string | null;
-//     imm_client_effective_from: string | null;
-//     imm_client_effective_to: string | null;
-// // }
-
-interface BankReconciliationTableProps {
-    selectedYear: number;
-    selectedMonth: number;
-    searchTerm: string;
-    setSearchTerm: (term: string) => void;
-    onStatsChange: () => void;
-    selectedClientTypes: FilterWithStatus[];
-    selectedStatementStatuses: FilterWithStatus[];
-}
-
-const normalizeCurrencyCode = (code: string | null): string => {
-    if (!code) return 'USD';
-    const upperCode = code.toUpperCase().trim();
-    const currencyMap: Record<string, string> = {
-        'EURO': 'EUR', 'EUROS': 'EUR', 'US DOLLAR': 'USD', 'US DOLLARS': 'USD',
-        'USDOLLAR': 'USD', 'POUND': 'GBP', 'POUNDS': 'GBP', 'STERLING': 'GBP',
-        'KENYA SHILLING': 'KES', 'KENYA SHILLINGS': 'KES', 'KENYAN SHILLING': 'KES',
-        'KENYAN SHILLINGS': 'KES', 'KSH': 'KES', 'K.SH': 'KES', 'KSHS': 'KES',
-        'K.SHS': 'KES', 'SH': 'KES'
-    };
-    return currencyMap[upperCode] || upperCode;
-};
 function EnhancedDeleteConfirmationDialog({
     isOpen,
     onClose,
@@ -144,7 +61,6 @@ function EnhancedDeleteConfirmationDialog({
 
     if (!statement || !bank) return null
 
-    // Check if this is a multi-month statement
     const isMultiMonth = statement.statement_extractions?.statement_period &&
         statement.statement_extractions.statement_period.includes('-')
 
@@ -217,10 +133,10 @@ function EnhancedDeleteConfirmationDialog({
                     <AlertDialogAction
                         onClick={() => onConfirm(deleteType)}
                         className={`${deleteType === 'file'
-                                ? 'bg-red-600 hover:bg-red-700'
-                                : deleteType === 'all'
-                                    ? 'bg-amber-600 hover:bg-amber-700'
-                                    : 'bg-blue-600 hover:bg-blue-700'
+                            ? 'bg-red-600 hover:bg-red-700'
+                            : deleteType === 'all'
+                                ? 'bg-amber-600 hover:bg-amber-700'
+                                : 'bg-blue-600 hover:bg-blue-700'
                             }`}
                     >
                         {deleteType === 'file' ? 'Delete Everything' :
@@ -233,7 +149,6 @@ function EnhancedDeleteConfirmationDialog({
     )
 }
 
-
 export function BankReconciliationTable({
     selectedYear,
     selectedMonth,
@@ -242,39 +157,38 @@ export function BankReconciliationTable({
     selectedClientTypes = [],
     selectedStatementStatuses = []
 }: BankReconciliationTableProps) {
-    const { loading, getOrCreateStatementCycle, fetchCoreData, deleteStatement } = useStatementCycle();
+    const { loading, getOrCreateStatementCycle, fetchCoreData, deleteStatement, checkBankStatementTypes } = useStatementCycle();
     const { toast } = useToast();
 
-    // --- State Variables (Make sure all these are present) ---
     const [companies, setCompanies] = useState<Company[]>([]);
     const [allBanks, setAllBanks] = useState<Bank[]>([]);
     const [bankStatements, setBankStatements] = useState<BankStatement[]>([]);
     const [statementCycleId, setStatementCycleId] = useState<string | null>(null);
+    const [banksWithMultipleTypes, setBanksWithMultipleTypes] = useState<any[]>([]);
 
     const [activeBank, setActiveBank] = useState<Bank | null>(null);
     const [activeStatement, setActiveStatement] = useState<BankStatement | null>(null);
 
-    // FIX: Make sure these dialog state variables are defined
     const [uploadDialogOpen, setUploadDialogOpen] = useState<boolean>(false);
     const [extractionDialogOpen, setExtractionDialogOpen] = useState<boolean>(false);
     const [quickbooksDialogOpen, setQuickbooksDialogOpen] = useState<boolean>(false);
     const [deleteConfirmationOpen, setDeleteConfirmationOpen] = useState<boolean>(false);
+    const [passwordDialogOpen, setPasswordDialogOpen] = useState<boolean>(false);
 
-    // In BankReconciliationTable.tsx - Fix the refreshData function
     const refreshData = useCallback(async () => {
         console.log('Refreshing data for year:', selectedYear, 'month:', selectedMonth);
 
-        // FIX: Ensure correct parameter order (year, month where month is 0-indexed)
         const cycleId = await getOrCreateStatementCycle(selectedYear, selectedMonth);
         if (cycleId) {
             console.log('Got cycle ID:', cycleId);
             setStatementCycleId(cycleId);
-            const { companies, banks, statements } = await fetchCoreData(cycleId);
+            const { companies, banks, statements, banksWithMultipleTypes } = await fetchCoreData(cycleId);
 
             console.log('Fetched data:', {
                 companies: companies.length,
                 banks: banks.length,
                 statements: statements.length,
+                banksWithMultipleTypes: banksWithMultipleTypes.length,
                 selectedMonth,
                 selectedYear,
                 cycleId
@@ -283,6 +197,7 @@ export function BankReconciliationTable({
             setCompanies(companies);
             setAllBanks(banks);
             setBankStatements(statements);
+            setBanksWithMultipleTypes(banksWithMultipleTypes);
             onStatsChange();
         }
     }, [selectedYear, selectedMonth, getOrCreateStatementCycle, fetchCoreData, onStatsChange]);
@@ -291,17 +206,6 @@ export function BankReconciliationTable({
         refreshData();
     }, [selectedYear, selectedMonth, refreshData]);
 
-    // In BankReconciliationTable.tsx - Add debug logging
-useEffect(() => {
-    console.log('BankReconciliationTable state:', {
-        uploadDialogOpen,
-        extractionDialogOpen,
-        quickbooksDialogOpen,
-        activeBank: activeBank?.bank_name,
-        activeStatement: activeStatement?.id
-    });
-
-}, [uploadDialogOpen, extractionDialogOpen, quickbooksDialogOpen, activeBank, activeStatement]);
     const filteredCompanies = useMemo(() => {
         if (!selectedClientTypes || selectedClientTypes.length === 0) {
             return companies;
@@ -333,7 +237,7 @@ useEffect(() => {
     const organizedData = useMemo(() => {
         const companiesWithBanks = filteredCompanies.map(company => ({
             ...company,
-            banks: allBanks.filter(bank => bank.company_id === company.id) // Filter by company_id, not company_name string
+            banks: allBanks.filter(bank => bank.company_id === company.id)
         }));
         return companiesWithBanks.sort((a, b) => {
             if (a.banks.length === 0 && b.banks.length > 0) return 1;
@@ -355,7 +259,7 @@ useEffect(() => {
         }).map(company => ({
             ...company,
             banks: company.banks.filter(bank =>
-                company.company_name?.toLowerCase().includes(lowerSearchTerm) || // Company name still filters banks
+                company.company_name?.toLowerCase().includes(lowerSearchTerm) ||
                 bank.bank_name?.toLowerCase().includes(lowerSearchTerm) ||
                 bank.account_number?.includes(searchTerm)
             )
@@ -365,7 +269,7 @@ useEffect(() => {
     const getStatementFilterCondition = (statement: BankStatement, filterKey: string) => {
         switch (filterKey) {
             case 'validated': return !!statement.validation_status?.is_validated && (statement.validation_status?.mismatches?.length || 0) === 0;
-            case 'pending_validation': return !statement.validation_status?.is_validated && (statement.validation_status?.mismatches?.length || 0) === 0; // If not validated AND no issues
+            case 'pending_validation': return !statement.validation_status?.is_validated && (statement.validation_status?.mismatches?.length || 0) === 0;
             case 'has_issues': return (statement.validation_status?.mismatches?.length || 0) > 0;
             case 'reconciled':
                 const closingBal = statement.statement_extractions?.closing_balance ?? null;
@@ -374,22 +278,20 @@ useEffect(() => {
             case 'pending_reconciliation':
                 const closingBalance = statement.statement_extractions?.closing_balance ?? null;
                 const quickbooksBalance = statement.status?.quickbooks_balance ?? null;
-                if (closingBalance === null && quickbooksBalance === null) return false; // Not relevant for reconciliation if both are null
+                if (closingBalance === null && quickbooksBalance === null) return false;
                 return closingBalance !== null && quickbooksBalance !== null && Math.abs(closingBalance - quickbooksBalance) > 0.01;
-            case 'all': return true; // Default for 'all' status
+            case 'all': return true;
             default: return false;
         }
     };
 
     const statusFilteredStatements = useMemo(() => {
         if (!selectedStatementStatuses || selectedStatementStatuses.length === 0) {
-            return bankStatements; // If no filters selected, return all statements
+            return bankStatements;
         }
 
-        // Convert selected filters to a set of keys for quick lookup
         const activeFilterKeys = new Set(selectedStatementStatuses.map(f => f.key));
 
-        // If 'all' is explicitly selected, override other filters
         if (activeFilterKeys.has('all')) {
             return bankStatements;
         }
@@ -399,11 +301,23 @@ useEffect(() => {
         );
     }, [bankStatements, selectedStatementStatuses]);
 
-    // In BankReconciliationTable.tsx - Fix the handleOpenDialog function
-    const handleOpenDialog = (dialogType: string, bank: Bank) => {
-        const currentStatementForPeriod = bankStatements.find(
-            s => s.bank_id === bank.id && s.statement_month === selectedMonth && s.statement_year === selectedYear
-        );
+    const handleOpenDialog = (dialogType: string, bank: Bank, statementType?: 'monthly' | 'range') => {
+        let currentStatementForPeriod = null;
+
+        if (statementType) {
+            // Find specific statement type
+            currentStatementForPeriod = bankStatements.find(
+                s => s.bank_id === bank.id &&
+                    s.statement_month === selectedMonth &&
+                    s.statement_year === selectedYear &&
+                    s.statement_type === statementType
+            );
+        } else {
+            // Find any statement for the period
+            currentStatementForPeriod = bankStatements.find(
+                s => s.bank_id === bank.id && s.statement_month === selectedMonth && s.statement_year === selectedYear
+            );
+        }
 
         setActiveBank(bank);
         setActiveStatement(currentStatementForPeriod || null);
@@ -412,10 +326,10 @@ useEffect(() => {
             case 'upload':
                 setUploadDialogOpen(true);
                 break;
-            case 'view': 
+            case 'view':
             case 'extract':
                 if (currentStatementForPeriod) {
-                    setExtractionDialogOpen(true); // FIX: Use setExtractionDialogOpen, not setShowExtractionDialog
+                    setExtractionDialogOpen(true);
                 } else {
                     toast({
                         title: "No Statement",
@@ -443,48 +357,37 @@ useEffect(() => {
                     });
                 }
                 break;
+            case 'password':
+                setPasswordDialogOpen(true);
+                break;
         }
     };
 
-    // In BankReconciliationTable.tsx - Fix the handleDialogClose function
     const handleDialogClose = useCallback(() => {
         setUploadDialogOpen(false);
-        setExtractionDialogOpen(false); // FIX: Make sure this matches your state variable name
+        setExtractionDialogOpen(false);
         setQuickbooksDialogOpen(false);
         setDeleteConfirmationOpen(false);
+        setPasswordDialogOpen(false);
         setActiveBank(null);
         setActiveStatement(null);
-        refreshData(); // Refresh data after any dialog closes
+        refreshData();
     }, [refreshData]);
-
-    // const confirmDelete = async () => {
-    //     if (!activeStatement) return;
-    //     const success = await deleteStatement(activeStatement);
-    //     if (success) {
-    //         refreshData();
-    //     }
-    //     setDeleteConfirmationOpen(false);
-    // };
 
     const confirmDelete = async (deleteType: 'period' | 'all' | 'file') => {
         if (!activeStatement || !activeBank) return
 
         try {
-            // Here you would implement the different delete types
-            // This is a placeholder - implement based on your backend logic
             let success = false
 
             switch (deleteType) {
                 case 'period':
-                    // Delete only the current period entry
                     success = await deleteStatement(activeStatement, { preserveFiles: true, periodOnly: true })
                     break
                 case 'all':
-                    // Delete all periods but preserve files
                     success = await deleteStatement(activeStatement, { preserveFiles: true, allPeriods: true })
                     break
                 case 'file':
-                    // Delete everything including files
                     success = await deleteStatement(activeStatement, { preserveFiles: false, allPeriods: true })
                     break
             }
@@ -519,22 +422,19 @@ useEffect(() => {
     };
 
     const getValidationStatusIcon = (statement: BankStatement | null) => {
-        if (!statement?.statement_document?.statement_pdf) return null; // No PDF means no extraction/validation status
+        if (!statement?.statement_document?.statement_pdf) return null;
         if (statement.validation_status?.is_validated && (statement.validation_status?.mismatches?.length || 0) === 0) {
             return <CheckCircle className="h-4 w-4 text-green-500" />;
         }
         if ((statement.validation_status?.mismatches?.length || 0) > 0) {
             return <AlertTriangle className="h-4 w-4 text-amber-500" />;
         }
-        return null; // No icon if not validated and no explicit mismatches
+        return null;
     };
 
-    // Filter banks by selected statement statuses
     const finalFilteredData = useMemo(() => {
-        // Start with search-filtered data
         let companiesWithBanks = searchFilteredData;
 
-        // Then filter banks within each company by statement status
         return companiesWithBanks.map(company => ({
             ...company,
             banks: company.banks.filter(bank => {
@@ -544,32 +444,31 @@ useEffect(() => {
                     s.statement_year === selectedYear
                 );
 
-                // If no specific statement status filters are applied, or 'all' is selected, include the bank
                 if (!selectedStatementStatuses || selectedStatementStatuses.length === 0 || selectedStatementStatuses.some(f => f.key === 'all')) {
                     return true;
                 }
 
-                // If there's no statement for this month, check if a 'pending' or 'no_statement' filter applies
                 if (!statement) {
-                    return selectedStatementStatuses.some(f => f.key === 'no_statement'); // Assuming 'no_statement' filter key
+                    return selectedStatementStatuses.some(f => f.key === 'no_statement');
                 }
 
-                // Otherwise, check if the statement matches any of the selected status filters
                 return selectedStatementStatuses.some(filter => getStatementFilterCondition(statement, filter.key));
             })
-        })).filter(company => company.banks.length > 0); // Remove companies that have no matching banks after filtering
+        })).filter(company => company.banks.length > 0);
     }, [searchFilteredData, statusFilteredStatements, selectedMonth, selectedYear, selectedStatementStatuses]);
-    
-    const handleStatementUpdated = useCallback((updatedStatement: BankStatement | null) => {
-        console.log('Statement updated callback received:', updatedStatement);
 
-        // Update your local state
-        if (updatedStatement) {
-            // Refresh the statements list or update the specific statement
-            // This depends on your parent component's state management
-            fetchStatements(); // or whatever method you use to refresh data
-        }
-    }, []);
+    const getBankStatementTypes = (bankId: number) => {
+        const statements = bankStatements.filter(s =>
+            s.bank_id === bankId &&
+            s.statement_month === selectedMonth &&
+            s.statement_year === selectedYear
+        );
+
+        const hasMonthly = statements.some(s => s.statement_type === 'monthly');
+        const hasRange = statements.some(s => s.statement_type === 'range');
+
+        return { hasMonthly, hasRange, statements };
+    };
 
     return (
         <div className="space-y-4">
@@ -582,8 +481,9 @@ useEffect(() => {
                             <TableHead className="text-white font-semibold w-[130px] p-1">Bank</TableHead>
                             <TableHead className="text-white font-semibold w-[100px] p-1">Acc Number</TableHead>
                             <TableHead className="text-white font-semibold w-[60px] p-1">Curr</TableHead>
-                            {/* NEW PASSWORD COLUMN */}
                             <TableHead className="text-white font-semibold w-[80px] p-1">Password</TableHead>
+                            <TableHead className="text-white font-semibold w-[60px] p-1">Monthly</TableHead>
+                            <TableHead className="text-white font-semibold w-[60px] p-1">Range</TableHead>
                             <TableHead className="text-white font-semibold w-[100px] p-1">Statement</TableHead>
                             <TableHead className="text-white font-semibold w-[100px] p-1">Closing Bal</TableHead>
                             <TableHead className="text-white font-semibold w-[100px] p-1">QB Balance</TableHead>
@@ -609,11 +509,8 @@ useEffect(() => {
                                     </TableRow>
                                 ) : (
                                     company.banks.map((bank, bankIndex) => {
-                                        const statement = bankStatements.find(s =>
-                                            s.bank_id === bank.id &&
-                                            s.statement_month === selectedMonth &&
-                                            s.statement_year === selectedYear
-                                        )
+                                        const { hasMonthly, hasRange, statements } = getBankStatementTypes(bank.id);
+                                        const statement = statements[0]; // Use first statement for display
 
                                         const closingBalance = statement?.statement_extractions?.closing_balance
                                         const qbBalance = statement?.status?.quickbooks_balance
@@ -634,43 +531,98 @@ useEffect(() => {
                                                 </TableCell>
                                                 <TableCell className="border-r border-gray-200 font-mono text-xs p-1 truncate">{bank.account_number}</TableCell>
                                                 <TableCell className="border-r border-gray-200 p-1">{normalizeCurrencyCode(bank.bank_currency)}</TableCell>
-                                                {/* NEW PASSWORD CELL */}
                                                 <TableCell className="border-r border-gray-200 p-1">
-                                                    {bank.acc_password ? (
-                                                        <span className="text-green-700 font-bold text-xs">
-                                                            {bank.acc_password}
-                                                        </span>
+                                                    <div className="flex items-center gap-1">
+                                                        {bank.acc_password ? (
+                                                            <span className="text-green-700 font-bold text-xs">
+                                                                {bank.acc_password}
+                                                            </span>
+                                                        ) : (
+                                                            <span className="text-red-700 font-bold text-xs">
+                                                                Missing
+                                                            </span>
+                                                        )}
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            className="h-4 w-4 p-0"
+                                                            onClick={() => handleOpenDialog('password', bank)}
+                                                            aria-label="Edit password"
+                                                        >
+                                                            <Edit className="h-3 w-3" />
+                                                        </Button>
+                                                    </div>
+                                                </TableCell>
+                                                <TableCell className="border-r border-gray-200 p-1 text-center">
+                                                    {hasMonthly ? (
+                                                        <CheckCircle className="h-4 w-4 text-green-500 mx-auto" />
                                                     ) : (
-                                                        <span className="text-red-700 font-bold text-xs">
-                                                            Missing
-                                                        </span>
+                                                        <XCircle className="h-4 w-4 text-gray-400 mx-auto" />
+                                                    )}
+                                                </TableCell>
+                                                <TableCell className="border-r border-gray-200 p-1 text-center">
+                                                    {hasRange ? (
+                                                        <CheckCircle className="h-4 w-4 text-purple-500 mx-auto" />
+                                                    ) : (
+                                                        <XCircle className="h-4 w-4 text-gray-400 mx-auto" />
                                                     )}
                                                 </TableCell>
                                                 <TableCell className="border-r border-gray-200 p-1">
-                                                    {statement ? (
-                                                        <Button
-                                                            variant="outline"
-                                                            size="sm"
-                                                            className={`relative flex gap-1.5 items-center px-3 py-1.5 ${statement.statement_document?.statement_pdf ? 'border-green-300 bg-green-50/50 hover:bg-green-100/60' : 'border-blue-300 bg-blue-50/50 hover:bg-blue-100/60'}`}
-                                                            onClick={() => handleOpenDialog('view', bank)}
-                                                        >
-                                                            <Eye className="h-3.5 w-3.5" />
-                                                            <span>View</span>
-                                                            {getValidationStatusIcon(statement) && (
-                                                                <span className="ml-0.5">{getValidationStatusIcon(statement)}</span>
-                                                            )}
-                                                        </Button>
-                                                    ) : (
-                                                        <Button
-                                                            variant="outline"
-                                                            size="sm"
-                                                            className="relative flex gap-1.5 items-center px-3 py-1.5 border-dashed border-blue-300 bg-blue-50/50 hover:bg-blue-100/60"
-                                                            onClick={() => handleOpenDialog('upload', bank)}
-                                                        >
-                                                            <UploadCloud className="h-3.5 w-3.5" />
-                                                            <span>Upload</span>
-                                                        </Button>
-                                                    )}
+                                                    <div className="flex items-center gap-1">
+                                                        {statement ? (
+                                                            <div className="flex items-center gap-1">
+                                                                <Button
+                                                                    variant="outline"
+                                                                    size="sm"
+                                                                    className={`relative flex gap-1.5 items-center px-2 py-1 ${statement.statement_document?.statement_pdf ? 'border-green-300 bg-green-50/50 hover:bg-green-100/60' : 'border-blue-300 bg-blue-50/50 hover:bg-blue-100/60'}`}
+                                                                    onClick={() => handleOpenDialog('view', bank)}
+                                                                >
+                                                                    <Eye className="h-3 w-3" />
+                                                                    <span className="text-xs">View</span>
+                                                                    {getValidationStatusIcon(statement) && (
+                                                                        <span className="ml-0.5">{getValidationStatusIcon(statement)}</span>
+                                                                    )}
+                                                                </Button>
+
+                                                                {/* Statement Type Indicators */}
+                                                                <div className="flex flex-col gap-0.5">
+                                                                    {hasMonthly && (
+                                                                        <Badge variant="outline" className="h-4 text-xs px-1 py-0 bg-blue-50 text-blue-700 border-blue-300">
+                                                                            M
+                                                                        </Badge>
+                                                                    )}
+                                                                    {hasRange && (
+                                                                        <Badge variant="outline" className="h-4 text-xs px-1 py-0 bg-purple-50 text-purple-700 border-purple-300">
+                                                                            R
+                                                                        </Badge>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        ) : (
+                                                            <Button
+                                                                variant="outline"
+                                                                size="sm"
+                                                                className="relative flex gap-1.5 items-center px-3 py-1.5 border-dashed border-blue-300 bg-blue-50/50 hover:bg-blue-100/60"
+                                                                onClick={() => handleOpenDialog('upload', bank)}
+                                                            >
+                                                                <UploadCloud className="h-3.5 w-3.5" />
+                                                                <span>Upload</span>
+                                                            </Button>
+                                                        )}
+
+                                                        {/* Add Statement Type Button */}
+                                                        {(hasMonthly || hasRange) && !(hasMonthly && hasRange) && (
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="sm"
+                                                                className="h-6 w-6 p-0 border border-dashed border-gray-300 hover:border-blue-400"
+                                                                onClick={() => handleOpenDialog('upload', bank)}
+                                                                title={`Add ${hasMonthly ? 'Range' : 'Monthly'} Statement`}
+                                                            >
+                                                                <Plus className="h-3 w-3" />
+                                                            </Button>
+                                                        )}
+                                                    </div>
                                                 </TableCell>
                                                 <TableCell className="border-r border-gray-200 text-right p-1">{formatCurrency(closingBalance, bank.bank_currency)}</TableCell>
                                                 <TableCell className="border-r border-gray-200 p-1">
@@ -698,12 +650,36 @@ useEffect(() => {
                                                 <TableCell className="p-1">
                                                     <DropdownMenu>
                                                         <DropdownMenuTrigger asChild><Button variant="ghost" size="sm" className="h-5 w-5 p-0"><MoreHorizontal className="h-3 w-3" /></Button></DropdownMenuTrigger>
-                                                        <DropdownMenuContent align="end" className="w-44">
-                                                            <DropdownMenuItem onClick={() => handleOpenDialog('view', bank)} disabled={!statement} className="flex items-center gap-2 text-xs py-1.5"><Eye className="h-3.5 w-3.5" />View Statement</DropdownMenuItem>
+                                                        <DropdownMenuContent align="end" className="w-52">
+                                                            <DropdownMenuItem onClick={() => handleOpenDialog('view', bank)} disabled={!statement} className="flex items-center gap-2 text-xs py-1.5">
+                                                                <Eye className="h-3.5 w-3.5" />View Statement
+                                                            </DropdownMenuItem>
                                                             <DropdownMenuSeparator />
-                                                            <DropdownMenuItem onClick={() => handleOpenDialog('upload', bank)} className="flex items-center gap-2 text-xs py-1.5"><UploadCloud className="h-3.5 w-3.5" />{statement ? 'Replace' : 'Upload'}</DropdownMenuItem>
-                                                            <DropdownMenuItem onClick={() => handleOpenDialog('qb', bank)} disabled={!statement} className="flex items-center gap-2 text-xs py-1.5"><Edit className="h-3.5 w-3.5" />Update QB</DropdownMenuItem>
-                                                            <DropdownMenuItem onClick={() => handleOpenDialog('delete', bank)} disabled={!statement} className="flex items-center gap-2 text-xs py-1.5 text-red-600"><Trash className="h-3.5 w-3.5" />Delete</DropdownMenuItem>
+                                                            <DropdownMenuItem onClick={() => handleOpenDialog('upload', bank)} className="flex items-center gap-2 text-xs py-1.5">
+                                                                <UploadCloud className="h-3.5 w-3.5" />{statement ? 'Replace/Add' : 'Upload'}
+                                                            </DropdownMenuItem>
+
+                                                            {/* Statement Type Specific Actions */}
+                                                            {hasMonthly && (
+                                                                <DropdownMenuItem onClick={() => handleOpenDialog('view', bank, 'monthly')} className="flex items-center gap-2 text-xs py-1.5">
+                                                                    <Calendar className="h-3.5 w-3.5" />View Monthly
+                                                                </DropdownMenuItem>
+                                                            )}
+                                                            {hasRange && (
+                                                                <DropdownMenuItem onClick={() => handleOpenDialog('view', bank, 'range')} className="flex items-center gap-2 text-xs py-1.5">
+                                                                    <Calendar className="h-3.5 w-3.5" />View Range
+                                                                </DropdownMenuItem>
+                                                            )}
+
+                                                            <DropdownMenuItem onClick={() => handleOpenDialog('qb', bank)} disabled={!statement} className="flex items-center gap-2 text-xs py-1.5">
+                                                                <Edit className="h-3.5 w-3.5" />Update QB
+                                                            </DropdownMenuItem>
+                                                            <DropdownMenuItem onClick={() => handleOpenDialog('password', bank)} className="flex items-center gap-2 text-xs py-1.5">
+                                                                <Lock className="h-3.5 w-3.5" />Update Password
+                                                            </DropdownMenuItem>
+                                                            <DropdownMenuItem onClick={() => handleOpenDialog('delete', bank)} disabled={!statement} className="flex items-center gap-2 text-xs py-1.5 text-red-600">
+                                                                <Trash className="h-3.5 w-3.5" />Delete
+                                                            </DropdownMenuItem>
                                                         </DropdownMenuContent>
                                                     </DropdownMenu>
                                                 </TableCell>
@@ -717,7 +693,6 @@ useEffect(() => {
                 </Table>
             </div>
 
-            // In BankReconciliationTable.tsx - Fix the upload dialog
             {uploadDialogOpen && activeBank && (
                 <BankStatementUploadDialog
                     isOpen={uploadDialogOpen}
@@ -726,7 +701,7 @@ useEffect(() => {
                         console.log('Statement uploaded:', statement);
                         setActiveStatement(statement);
                         setUploadDialogOpen(false);
-                        setExtractionDialogOpen(true); // FIX: Use setExtractionDialogOpen
+                        setExtractionDialogOpen(true);
                         refreshData();
                     }}
                     bank={activeBank}
@@ -737,7 +712,7 @@ useEffect(() => {
                     onOpenExtractionDialog={(statement) => {
                         console.log('Auto-opening extraction dialog for:', statement);
                         setActiveStatement(statement);
-                        setExtractionDialogOpen(true); // FIX: Use setExtractionDialogOpen
+                        setExtractionDialogOpen(true);
                     }}
                 />
             )}
@@ -750,7 +725,6 @@ useEffect(() => {
                         setExtractionDialogOpen(false);
                         setActiveStatement(null);
                         setActiveBank(null);
-                        // Force refresh after a brief delay
                         setTimeout(() => {
                             refreshData();
                         }, 100);
@@ -760,7 +734,6 @@ useEffect(() => {
                         setExtractionDialogOpen(false);
                         setActiveStatement(null);
                         setActiveBank(null);
-                        // Force refresh after a brief delay
                         setTimeout(() => {
                             refreshData();
                         }, 100);
@@ -770,7 +743,6 @@ useEffect(() => {
                         setExtractionDialogOpen(false);
                         setActiveStatement(null);
                         setActiveBank(null);
-                        // Force refresh after a brief delay
                         setTimeout(() => {
                             refreshData();
                         }, 100);
@@ -783,10 +755,24 @@ useEffect(() => {
             {quickbooksDialogOpen && activeBank && activeStatement && (
                 <QuickbooksBalanceDialog
                     isOpen={quickbooksDialogOpen}
-                    onClose={handleDialogClose} // Use the combined close handler
-                    onBalanceUpdated={handleDialogClose} // Use the combined close handler
+                    onClose={handleDialogClose}
+                    onBalanceUpdated={handleDialogClose}
                     bank={activeBank}
                     statement={activeStatement}
+                />
+            )}
+
+            {passwordDialogOpen && activeBank && (
+                <PasswordUpdateDialog
+                    isOpen={passwordDialogOpen}
+                    onClose={() => setPasswordDialogOpen(false)}
+                    bank={activeBank}
+                    onPasswordUpdated={(updatedBank) => {
+                        // Update the bank in local state
+                        setAllBanks(prev => prev.map(b => b.id === updatedBank.id ? updatedBank : b));
+                        setPasswordDialogOpen(false);
+                        setActiveBank(null);
+                    }}
                 />
             )}
 
@@ -801,13 +787,6 @@ useEffect(() => {
                 statement={activeStatement}
                 bank={activeBank}
             />
-{/* 
-            <AlertDialog open={deleteConfirmationOpen} onOpenChange={setDeleteConfirmationOpen}>
-                <AlertDialogContent>
-                    <AlertDialogHeader><AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle><AlertDialogDescription>This will permanently delete the statement and its associated files. This action cannot be undone.</AlertDialogDescription></AlertDialogHeader>
-                    <AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={confirmDelete} className="bg-red-600 hover:bg-red-700">Delete Statement</AlertDialogAction></AlertDialogFooter>
-                </AlertDialogContent>
-            </AlertDialog> */}
         </div>
     );
 }

@@ -1,4 +1,3 @@
-// app/payroll/bank-statements/components/BankValidationDialog.tsx
 // @ts-nocheck
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
@@ -7,11 +6,12 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useMemo, useState } from "react"
-import { AlertTriangle, Check, Building, Calendar, CheckCircle, FileCheck, Loader2, RefreshCcw, XCircle } from "lucide-react"
+import { AlertTriangle, Check , Building, Calendar, CheckCircle, FileCheck, Loader2, RefreshCcw, XCircle } from "lucide-react"
 import { useToast } from '@/hooks/use-toast'
 import { supabase } from '@/lib/supabase';
 import { format } from 'date-fns'
 
+// --- Helper Functions ---
 const normalizeCurrencyCode = (code) => {
     if (!code) return '';
     const upperCode = code.toUpperCase().trim();
@@ -29,6 +29,7 @@ const formatDate = (year, month) => {
     return new Date(year, month).toLocaleString('default', { month: 'long', year: 'numeric' });
 };
 
+// --- Component Interfaces ---
 interface Bank {
     id: number
     bank_name: string
@@ -41,7 +42,7 @@ interface BankValidationDialogProps {
     isOpen: boolean
     onClose: () => void
     bank: Bank
-    extractedData: {
+    extractedData: { // This data is already available in the dialog props
         bank_name: string | null
         company_name: string | null
         account_number: string | null
@@ -51,19 +52,20 @@ interface BankValidationDialogProps {
         total_pages?: number;
     }
     mismatches: string[]
-    onProceed: (extractedData: any) => Promise<void> | void
+    onProceed: (extractedData: any) => Promise<void> | void // <--- Changed signature to pass data
     onCancel: () => void
-    cycleMonth: number
+    cycleMonth: number // 0-indexed
     cycleYear: number
     statementId?: string
     onOpenExtractionDialog?: (statement: any) => void
 }
 
+// --- Main Component ---
 export function BankValidationDialog({
     isOpen,
     onClose,
     bank,
-    extractedData,
+    extractedData, // This prop holds the data we need to pass back
     mismatches,
     onProceed,
     onCancel,
@@ -78,6 +80,7 @@ export function BankValidationDialog({
     const [isProcessing, setIsProcessing] = useState(false);
     const { toast } = useToast();
 
+    // Check matches
     const bankNameMatches = useMemo(() =>
         extractedData.bank_name && bank.bank_name && extractedData.bank_name.toLowerCase().includes(bank.bank_name.toLowerCase()),
         [extractedData.bank_name, bank.bank_name]
@@ -94,7 +97,6 @@ export function BankValidationDialog({
     );
 
     const totalPages = extractedData?.total_pages || 0;
-
     const handleProceedAction = async () => {
         setIsProcessing(true);
         try {
@@ -118,16 +120,20 @@ export function BankValidationDialog({
 
                 if (error) throw error;
 
+                // Close this dialog first
                 onClose();
 
+                // Auto-open extraction dialog after a brief delay
                 if (onOpenExtractionDialog && updatedStatement) {
                     setTimeout(() => {
                         onOpenExtractionDialog(updatedStatement);
                     }, 300);
                 } else {
+                    // Pass the updated statement and extracted data back
                     await onProceed({ ...extractedData, statement: updatedStatement });
                 }
             } else {
+                // Pass extractedData back to onProceed for new statements
                 await onProceed(extractedData);
             }
         } catch (error) {
@@ -143,36 +149,41 @@ export function BankValidationDialog({
     };
 
     const validateStatementPeriod = (extractedPeriod, pCycleMonth, pCycleYear) => {
-        if (!extractedPeriod) return {
-            isValid: false,
+        if (!extractedPeriod) return { 
+            isValid: false, 
             message: 'No statement period extracted.',
             startDate: null,
             endDate: null,
             monthsInRange: []
         };
-
+        
         try {
+            // First try to extract dates from common formats
             const datePattern = /(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{4})/g;
             const matches = [...extractedPeriod.matchAll(datePattern)];
-
+            
             if (matches.length >= 2) {
+                // First date (start date)
                 const [, startDay, startMonth, startYear] = matches[0];
+                // Last date (end date)
                 const [, endDay, endMonth, endYear] = matches[matches.length - 1];
 
                 if (!startDay || !startMonth || !startYear || !endDay || !endMonth || !endYear) {
-                    return {
-                        isValid: false,
-                        message: 'Could not parse statement period format.',
+                    return { 
+                        isValid: false, 
+                        message: 'Could not parse statement period format.' ,
                         startDate: null,
                         endDate: null,
                         monthsInRange: []
                     };
                 }
 
+                // Create date objects (using first of month to avoid day-of-month issues)
                 const extractedStartDate = new Date(Number(startYear), Number(startMonth) - 1, 1);
                 const extractedEndDate = new Date(Number(endYear), Number(endMonth) - 1, 1);
                 const cycleDate = new Date(Number(pCycleYear), Number(pCycleMonth), 1);
 
+                // Validate date ranges
                 if (isNaN(extractedStartDate.getTime()) || isNaN(extractedEndDate.getTime())) {
                     return {
                         isValid: false,
@@ -183,6 +194,8 @@ export function BankValidationDialog({
                     };
                 }
 
+
+                // Ensure the end date is after start date
                 if (extractedEndDate < extractedStartDate) {
                     return {
                         isValid: false,
@@ -193,12 +206,16 @@ export function BankValidationDialog({
                     };
                 }
 
-                const monthDiff = (extractedEndDate.getFullYear() - extractedStartDate.getFullYear()) * 12 +
-                    (extractedEndDate.getMonth() - extractedStartDate.getMonth()) + 1;
 
+                // Calculate the number of months between dates
+                const monthDiff = (extractedEndDate.getFullYear() - extractedStartDate.getFullYear()) * 12 + 
+                                (extractedEndDate.getMonth() - extractedStartDate.getMonth()) + 1;
+
+                // Limit to a reasonable number of months (e.g., 36 months)
                 if (monthDiff > 36) {
+                    // If the range is too large, default to just the cycle month
                     return {
-                        isValid: true,
+                        isValid: true, // Still consider valid but with adjusted months
                         message: 'Statement period is too long. Using cycle month only.',
                         startDate: cycleDate,
                         endDate: cycleDate,
@@ -209,9 +226,11 @@ export function BankValidationDialog({
                     };
                 }
 
+
+                // Generate all months in the extracted period
                 const monthsInRange = [];
                 let currentDate = new Date(extractedStartDate);
-
+                
                 while (currentDate <= extractedEndDate) {
                     monthsInRange.push({
                         month: currentDate.getMonth() + 1,
@@ -220,12 +239,14 @@ export function BankValidationDialog({
                     currentDate.setMonth(currentDate.getMonth() + 1);
                 }
 
+
+                // Check if the cycle date falls within the extracted period
                 const isInRange = cycleDate >= extractedStartDate && cycleDate <= extractedEndDate;
 
                 return {
                     isValid: isInRange,
-                    message: isInRange
-                        ? 'Period matches selected cycle.'
+                    message: isInRange 
+                        ? 'Period matches selected cycle.' 
                         : `Extracted period is ${format(extractedStartDate, 'MMM yyyy')} to ${format(extractedEndDate, 'MMM yyyy')}, not ${format(new Date(pCycleYear, pCycleMonth), 'MMM yyyy')}.`,
                     startDate: extractedStartDate,
                     endDate: extractedEndDate,
@@ -233,30 +254,32 @@ export function BankValidationDialog({
                 };
             }
 
+            // If we couldn't parse dates, try to extract just the month and year
             const monthYearPattern = /(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{4}/gi;
             const monthYearMatches = extractedPeriod.match(monthYearPattern);
-
+            
             if (monthYearMatches && monthYearMatches.length >= 2) {
                 const monthNames = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
-
+                
                 const startMatch = monthYearMatches[0].toLowerCase();
                 const endMatch = monthYearMatches[monthYearMatches.length - 1].toLowerCase();
-
+                
                 const startMonthStr = startMatch.substring(0, 3);
                 const startMonth = monthNames.indexOf(startMonthStr);
                 const startYear = parseInt(startMatch.match(/\d{4}/)?.[0] || '0');
-
+                
                 const endMonthStr = endMatch.substring(0, 3);
                 const endMonth = monthNames.indexOf(endMonthStr);
                 const endYear = parseInt(endMatch.match(/\d{4}/)?.[0] || '0');
-
+                
                 if (startMonth >= 0 && endMonth >= 0 && startYear && endYear) {
                     const extractedStartDate = new Date(startYear, startMonth, 1);
                     const extractedEndDate = new Date(endYear, endMonth, 1);
-
+                    
+                    // Generate months in range
                     const monthsInRange = [];
                     let currentDate = new Date(extractedStartDate);
-
+                    
                     while (currentDate <= extractedEndDate) {
                         monthsInRange.push({
                             month: currentDate.getMonth() + 1,
@@ -264,14 +287,14 @@ export function BankValidationDialog({
                         });
                         currentDate.setMonth(currentDate.getMonth() + 1);
                     }
-
+                    
                     const cycleDate = new Date(Number(pCycleYear), Number(pCycleMonth), 1);
                     const isInRange = cycleDate >= extractedStartDate && cycleDate <= extractedEndDate;
-
+                    
                     return {
                         isValid: isInRange,
-                        message: isInRange
-                            ? 'Period matches selected cycle.'
+                        message: isInRange 
+                            ? 'Period matches selected cycle.' 
                             : `Extracted period is ${format(extractedStartDate, 'MMM yyyy')} to ${format(extractedEndDate, 'MMM yyyy')}, not ${format(new Date(pCycleYear, pCycleMonth), 'MMM yyyy')}.`,
                         startDate: extractedStartDate,
                         endDate: extractedEndDate,
@@ -282,9 +305,9 @@ export function BankValidationDialog({
         } catch (error) {
             console.error('Error parsing statement period:', error);
         }
-
-        return {
-            isValid: false,
+        
+        return { 
+            isValid: false, 
             message: 'Could not parse statement period format.',
             startDate: null,
             endDate: null,
@@ -296,6 +319,7 @@ export function BankValidationDialog({
         return validateStatementPeriod(extractedData?.statement_period, cycleMonth, cycleYear);
     }, [extractedData?.statement_period, cycleMonth, cycleYear]);
 
+    // Use months from period validation if available, otherwise fall back to monthly_balances
     const statementMonths = useMemo(() => {
         if (periodValidation.monthsInRange?.length > 0) {
             return periodValidation.monthsInRange;
@@ -319,89 +343,47 @@ export function BankValidationDialog({
                 <div className="py-4 space-y-6">
                     <div className="grid grid-cols-2 gap-4">
                         <Card>
-                            <CardHeader className="py-3 bg-blue-50">
-                                <CardTitle className="text-base flex items-center">
-                                    <Building className="h-4 w-4 mr-2" />Bank Details
-                                </CardTitle>
-                            </CardHeader>
+                            <CardHeader className="py-3 bg-blue-50"><CardTitle className="text-base flex items-center"><Building className="h-4 w-4 mr-2" />Bank Details</CardTitle></CardHeader>
                             <CardContent className="pt-4">
                                 <Table>
                                     <TableHeader>
-                                        <TableRow>
-                                            <TableHead>Field</TableHead>
-                                            <TableHead>Expected Value</TableHead>
-                                            <TableHead>Extracted Value</TableHead>
-                                            <TableHead>Status</TableHead>
-                                        </TableRow>
+                                        <TableRow><TableHead>Field</TableHead><TableHead>Expected Value</TableHead><TableHead>Extracted Value</TableHead><TableHead>Status</TableHead></TableRow>
                                     </TableHeader>
                                     <TableBody>
                                         <TableRow>
-                                            <TableCell className="font-medium">Company Name</TableCell>
-                                            <TableCell>{bank.company_name}</TableCell>
-                                            <TableCell>{extractedData.company_name || 'N/A'}</TableCell>
+                                            <TableCell className="font-medium">Company Name</TableCell><TableCell>{bank.company_name}</TableCell><TableCell>{extractedData.company_name || 'N/A'}</TableCell>
                                             <TableCell>
-                                                {bank.company_name === extractedData.company_name ? (
-                                                    <Badge variant="outline" className="text-green-600 border-green-300 bg-green-50">
-                                                        <CheckCircle className="h-4 w-4 mr-1" />Match
-                                                    </Badge>
+                                                {bank.company_name === extractedData.company_name ? ( // Basic check for company name
+                                                    <Badge variant="outline" className="text-green-600 border-green-300 bg-green-50"><CheckCircle className="h-4 w-4 mr-1" />Match</Badge>
                                                 ) : (
-                                                    <Badge variant="destructive">
-                                                        <AlertTriangle className="h-4 w-4 mr-1" />Mismatch
-                                                    </Badge>
+                                                    <Badge variant="destructive"><AlertTriangle className="h-4 w-4 mr-1" />Mismatch</Badge>
                                                 )}
                                             </TableCell>
                                         </TableRow>
                                         <TableRow>
-                                            <TableCell className="font-medium">Bank Name</TableCell>
-                                            <TableCell>{bank.bank_name}</TableCell>
-                                            <TableCell>
-                                                <Input
-                                                    value={editableBankName}
-                                                    onChange={(e) => setEditableBankName(e.target.value)}
-                                                />
-                                            </TableCell>
+                                            <TableCell className="font-medium">Bank Name</TableCell><TableCell>{bank.bank_name}</TableCell>
+                                            <TableCell><Input value={editableBankName} onChange={(e) => setEditableBankName(e.target.value)} /></TableCell>
                                             <TableCell>
                                                 {bankNameMatches ? (
-                                                    <Badge variant="outline" className="text-green-600 border-green-300 bg-green-50">
-                                                        <CheckCircle className="h-4 w-4 mr-1" />Match
-                                                    </Badge>
+                                                    <Badge variant="outline" className="text-green-600 border-green-300 bg-green-50"><CheckCircle className="h-4 w-4 mr-1" />Match</Badge>
                                                 ) : (
-                                                    <Badge variant="destructive">
-                                                        <AlertTriangle className="h-4 w-4 mr-1" />Mismatch
-                                                    </Badge>
+                                                    <Badge variant="destructive"><AlertTriangle className="h-4 w-4 mr-1" />Mismatch</Badge>
                                                 )}
                                             </TableCell>
                                         </TableRow>
                                         <TableRow>
-                                            <TableCell className="font-medium">Account Number</TableCell>
-                                            <TableCell>{bank.account_number}</TableCell>
-                                            <TableCell>{extractedData.account_number || 'N/A'}</TableCell>
+                                            <TableCell className="font-medium">Account Number</TableCell><TableCell>{bank.account_number}</TableCell><TableCell>{extractedData.account_number || 'N/A'}</TableCell>
                                             <TableCell>
                                                 {accountNumberMatches ? (
-                                                    <Badge variant="outline" className="text-green-600 border-green-300 bg-green-50">
-                                                        <CheckCircle className="h-4 w-4 mr-1" />Match
-                                                    </Badge>
+                                                    <Badge variant="outline" className="text-green-600 border-green-300 bg-green-50"><CheckCircle className="h-4 w-4 mr-1" />Match</Badge>
                                                 ) : (
-                                                    <Badge variant="destructive">
-                                                        <AlertTriangle className="h-4 w-4 mr-1" />Mismatch
-                                                    </Badge>
+                                                    <Badge variant="destructive"><AlertTriangle className="h-4 w-4 mr-1" />Mismatch</Badge>
                                                 )}
                                             </TableCell>
                                         </TableRow>
                                         <TableRow>
-                                            <TableCell className="font-medium">Currency</TableCell>
-                                            <TableCell>{bank.bank_currency}</TableCell>
-                                            <TableCell>{extractedData.currency || 'N/A'}</TableCell>
-                                            <TableCell>
-                                                {currencyMatches ?
-                                                    <Badge variant="outline" className="text-green-600 border-green-300 bg-green-50">
-                                                        <CheckCircle className="h-4 w-4 mr-1" />Match
-                                                    </Badge> :
-                                                    <Badge variant="destructive">
-                                                        <AlertTriangle className="h-4 w-4 mr-1" />Mismatch
-                                                    </Badge>
-                                                }
-                                            </TableCell>
+                                            <TableCell className="font-medium">Currency</TableCell><TableCell>{bank.bank_currency}</TableCell><TableCell>{extractedData.currency || 'N/A'}</TableCell>
+                                            <TableCell>{currencyMatches ? <Badge variant="outline" className="text-green-600 border-green-300 bg-green-50"><CheckCircle className="h-4 w-4 mr-1" />Match</Badge> : <Badge variant="destructive"><AlertTriangle className="h-4 w-4 mr-1" />Mismatch</Badge>}</TableCell>
                                         </TableRow>
                                     </TableBody>
                                 </Table>
@@ -409,38 +391,20 @@ export function BankValidationDialog({
                         </Card>
                         <div className="space-y-4">
                             <Card>
-                                <CardHeader className="py-3 bg-blue-50">
-                                    <CardTitle className="text-base flex items-center">
-                                        <Calendar className="h-4 w-4 mr-2" />Statement Details
-                                    </CardTitle>
-                                </CardHeader>
+                                <CardHeader className="py-3 bg-blue-50"><CardTitle className="text-base flex items-center"><Calendar className="h-4 w-4 mr-2" />Statement Details</CardTitle></CardHeader>
                                 <CardContent className="pt-4 space-y-3">
                                     <div className="p-3 bg-blue-50 rounded-md border border-blue-100">
                                         <div className="grid grid-cols-2 gap-4">
-                                            <div>
-                                                <p className="text-xs text-muted-foreground">Selected Cycle Month</p>
-                                                <p className="font-medium">{formatDate(cycleYear, cycleMonth)}</p>
-                                            </div>
-                                            <div>
-                                                <p className="text-xs text-muted-foreground">Statement Period Extracted</p>
-                                                <p className="font-medium">{extractedData.statement_period || 'N/A'}</p>
-                                            </div>
+                                            <div><p className="text-xs text-muted-foreground">Selected Cycle Month</p><p className="font-medium">{formatDate(cycleYear, cycleMonth)}</p></div>
+                                            <div><p className="text-xs text-muted-foreground">Statement Period Extracted</p><p className="font-medium">{extractedData.statement_period || 'N/A'}</p></div>
                                         </div>
                                         <div className="mt-2 pt-2 border-t border-blue-200 flex justify-between items-center">
                                             <p className="text-sm font-medium">Period Validation</p>
-                                            {periodValidation.isValid ?
-                                                <Badge className="bg-green-100 text-green-700">Match</Badge> :
-                                                <Badge className="bg-red-100 text-red-700">Period Mismatch</Badge>
-                                            }
+                                            {periodValidation.isValid ? <Badge className="bg-green-100 text-green-700">Match</Badge> : <Badge className="bg-red-100 text-red-700">Period Mismatch</Badge>}
                                         </div>
                                     </div>
-                                    <Button
-                                        variant="outline"
-                                        className="w-full bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100"
-                                        onClick={onCancel}
-                                    >
-                                        <RefreshCcw className="h-4 w-4 mr-2" />Re-upload & Re-extract
-                                    </Button>
+                                    {/* Re-extract button might be removed or lead to full re-upload flow */}
+                                    <Button variant="outline" className="w-full bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100" onClick={onCancel}><RefreshCcw className="h-4 w-4 mr-2" />Re-upload & Re-extract</Button>
                                 </CardContent>
                             </Card>
                             <Card>
@@ -454,19 +418,19 @@ export function BankValidationDialog({
                                     {statementMonths.length > 0 ? (
                                         <div>
                                             <div className="mb-2 text-sm text-muted-foreground">
-                                                {statementMonths.length === 1 ?
-                                                    '1 month in statement:' :
+                                                {statementMonths.length === 1 ? 
+                                                    '1 month in statement:' : 
                                                     `${statementMonths.length} months in statement:`}
                                             </div>
                                             <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto p-1">
                                                 {statementMonths.map((month, idx) => {
                                                     const monthDate = new Date(month.year, month.month - 1);
-                                                    const isCurrentCycle =
-                                                        month.month - 1 === cycleMonth &&
+                                                    const isCurrentCycle = 
+                                                        month.month - 1 === cycleMonth && 
                                                         month.year === cycleYear;
                                                     return (
-                                                        <Badge
-                                                            key={`${month.year}-${month.month}`}
+                                                        <Badge 
+                                                            key={`${month.year}-${month.month}`} 
                                                             variant={isCurrentCycle ? 'default' : 'outline'}
                                                             className={`${isCurrentCycle ? 'bg-blue-100 text-blue-800 border-blue-200' : 'bg-gray-50'} flex items-center`}
                                                         >
@@ -502,16 +466,16 @@ export function BankValidationDialog({
                         <div>
                             <p className="font-medium">Review validation issues</p>
                             <p className="text-xs text-amber-700">
-                                {mismatches.length > 0
+                                {mismatches.length > 0 
                                     ? `${mismatches.length} issue${mismatches.length > 1 ? 's' : ''} found. Please review before proceeding.`
                                     : 'No critical issues found. You may proceed.'}
                             </p>
                         </div>
                     </div>
                     <div className="flex gap-2">
-                        <Button
-                            variant="outline"
-                            onClick={onCancel}
+                        <Button 
+                            variant="outline" 
+                            onClick={onCancel} 
                             disabled={isProcessing}
                             className="min-w-[100px]"
                         >

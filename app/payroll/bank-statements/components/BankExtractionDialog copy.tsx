@@ -1,4 +1,3 @@
-// app/payroll/bank-statements/components/BankExtractionDialog.tsx
 // @ts-nocheck
 "use client"
 
@@ -31,8 +30,9 @@ import {
     generateCompleteMonthRange
 } from '@/lib/bankExtractionUtils';
 import { useStatementCycle } from '@/app/payroll/hooks/useStatementCycle';
-import { AlertTriangle, Trash, Plus, X, Loader2, CheckCircle, Check, Calendar, XCircle, Save } from 'lucide-react';
-import { MonthlyBalancesTable } from './MonthlyBalancesTable';
+import { AlertTriangle, Trash,Plus,X, Loader2,CheckCircle,Check,Calendar,XCircle,Save } from 'lucide-react';
+
+// --- Interface Definitions ---
 
 interface ValidationStatus {
     is_validated: boolean;
@@ -42,10 +42,10 @@ interface ValidationStatus {
 }
 
 interface MonthlyBalance {
-    month: number;
+    month: number; // 1-indexed for consistency with generateMonthRange
     year: number;
-    closing_balance: number | null;
-    opening_balance: number | null;
+    closing_balance: number | null; // Can be null for empty input
+    opening_balance: number | null; // Can be null for empty input
     statement_page: number;
     closing_date: string | null;
     is_verified: boolean;
@@ -68,16 +68,14 @@ interface BankStatementExtraction {
 interface BankStatement {
     id: string;
     bank_id: number;
-    statement_month: number;
+    statement_month: number; // 0-indexed month (for DB column)
     statement_year: number;
-    statement_type: 'monthly' | 'range';
     quickbooks_balance: number | null;
     statement_document: {
         statement_pdf: string | null;
         statement_excel: string | null;
         document_size?: number;
         document_type?: string;
-        password?: string | null;
     };
     statement_extractions: BankStatementExtraction;
     has_soft_copy: boolean;
@@ -100,12 +98,6 @@ interface Bank {
     company_name: string;
 }
 
-interface StatementData {
-    monthly?: BankStatement;
-    range?: BankStatement;
-    hasMultipleTypes: boolean;
-}
-
 interface BankExtractionDialogProps {
     isOpen: boolean;
     onClose: () => void;
@@ -115,41 +107,7 @@ interface BankExtractionDialogProps {
     onStatementDeleted?: (statementId: string) => void;
 }
 
-const isRangeStatement = (statement: any): boolean => {
-    if (!statement) return false;
-
-    const statementType = statement.statement_type;
-    const monthlyBalances = statement.statement_extractions?.monthly_balances || [];
-    const statementPeriod = statement.statement_extractions?.statement_period;
-
-    // Explicit type check first
-    if (statementType === 'range') return true;
-    if (statementType === 'monthly') return false;
-
-    // Multiple monthly balances indicate a range statement
-    if (monthlyBalances.length > 1) return true;
-
-    // Parse statement period to check actual date span
-    if (statementPeriod) {
-        const periodCheck = parseStatementPeriodSafe(statementPeriod);
-        if (periodCheck) {
-            const { startMonth, startYear, endMonth, endYear } = periodCheck;
-
-            // Only consider it range if it spans multiple months or years
-            if (startYear !== endYear || startMonth !== endMonth) {
-                return true;
-            }
-            return false; // Same month = not range
-        }
-
-        // Fallback to keyword detection for edge cases
-        const period = statementPeriod.toLowerCase();
-        return period.includes('quarter') || /q[1-4]/i.test(period);
-    }
-
-    return false;
-};
-
+// --- Main Component ---
 export default function BankExtractionDialog({
     isOpen,
     onClose,
@@ -158,7 +116,7 @@ export default function BankExtractionDialog({
     onStatementUpdated,
     onStatementDeleted
 }: BankExtractionDialogProps) {
-    const { getOrCreateStatementCycle, getStatementByType, checkBankStatementTypes } = useStatementCycle();
+    const { getOrCreateStatementCycle, loading: cycleLoading, error: cycleError } = useStatementCycle();
 
     const { toast } = useToast();
     const [isLoading, setIsLoading] = useState(true);
@@ -177,14 +135,7 @@ export default function BankExtractionDialog({
     });
     const [activeTab, setActiveTab] = useState('overview');
     const [error, setError] = useState<Error | null>(null);
-
-    const [statementData, setStatementData] = useState<StatementData>({
-        monthly: undefined,
-        range: undefined,
-        hasMultipleTypes: false
-    });
-    const [activeStatementTab, setActiveStatementTab] = useState<'monthly' | 'range'>('monthly');
-    const [currentStatement, setCurrentStatement] = useState<BankStatement | null>(null);
+    const totalPages = statement.statement_extractions?.total_pages || 0;
 
     const [showUpdateConfirmation, setShowUpdateConfirmation] = useState(false);
     const [pendingUpdates, setPendingUpdates] = useState<{
@@ -196,166 +147,25 @@ export default function BankExtractionDialog({
         monthlyBalances: MonthlyBalance[];
         statementId?: string;
     } | null>(null);
-
-    const totalPages = currentStatement?.statement_extractions?.total_pages || 0;
-
+    
+    // --- Effects ---
     useEffect(() => {
         if (isOpen) {
             setError(null);
-            loadStatementData();
         }
     }, [isOpen]);
 
-    const loadStatementData = async () => {
-        if (!statement || !bank) return;
-
-        setIsLoading(true);
-        try {
-            const cycleId = statement.statement_cycle_id;
-
-            const { data: allStatements, error } = await supabase
-                .from('acc_cycle_bank_statements')
-                .select('*')
-                .eq('bank_id', bank.id)
-                .eq('statement_cycle_id', cycleId);
-
-            if (error) throw error;
-
-            const statements = allStatements || [];
-            let monthlyStatement = null;
-            let rangeStatement = null;
-
-            statements.forEach(stmt => {
-                if (isRangeStatement(stmt)) {
-                    rangeStatement = stmt;
-                } else {
-                    monthlyStatement = stmt;
-                }
-            });
-
-            const hasMultipleTypes = !!(monthlyStatement && rangeStatement);
-
-            setStatementData({
-                monthly: monthlyStatement,
-                range: rangeStatement,
-                hasMultipleTypes
-            });
-
-            if (statement.id === monthlyStatement?.id) {
-                setCurrentStatement(monthlyStatement);
-                setActiveStatementTab('monthly');
-            } else if (statement.id === rangeStatement?.id) {
-                setCurrentStatement(rangeStatement);
-                setActiveStatementTab('range');
-            } else {
-                setCurrentStatement(statement);
-                setActiveStatementTab(isRangeStatement(statement) ? 'range' : 'monthly');
-            }
-
-            await loadStatementFormData(currentStatement || statement);
-            await loadPdfDocument(currentStatement || statement);
-
-        } catch (error) {
-            console.error('Error loading statement data:', error);
-            setCurrentStatement(statement);
-            await loadStatementFormData(statement);
-            await loadPdfDocument(statement);
-        } finally {
-            setIsLoading(false);
-        }
-    };
-
-    const loadStatementFormData = async (stmt: BankStatement) => {
-        const extractions = stmt.statement_extractions || {};
-
-        setFormData({
-            bank_name: extractions.bank_name || '',
-            account_number: extractions.account_number || '',
-            currency: extractions.currency || '',
-            statementPeriod: extractions.statement_period || '',
-            quickbooks_balance: stmt.status?.quickbooks_balance || null
+    // In BankExtractionDialog.tsx - Add at the top of the component
+    useEffect(() => {
+        console.log('BankExtractionDialog - Props received:', {
+            isOpen,
+            statement: statement ? {
+                id: statement.id,
+                extractions: statement.statement_extractions
+            } : null,
+            bank
         });
-
-        const initializeMonthlyBalances = () => {
-            const extractedMonthlyBalances = extractions.monthly_balances || [];
-            const statementPeriodString = extractions.statement_period;
-
-            let compiledMonthlyBalances: MonthlyBalance[] = [];
-
-            if (statementPeriodString) {
-                const period = parseStatementPeriod(statementPeriodString);
-                if (period) {
-                    const allMonthsInPeriod = generateMonthRange(
-                        period.startMonth,
-                        period.startYear,
-                        period.endMonth,
-                        period.endYear
-                    );
-
-                    compiledMonthlyBalances = allMonthsInPeriod.map(monthInPeriod => {
-                        const foundBalance = extractedMonthlyBalances.find(
-                            eb => eb.month === monthInPeriod.month && eb.year === monthInPeriod.year
-                        );
-                        return foundBalance || {
-                            month: monthInPeriod.month,
-                            year: monthInPeriod.year,
-                            closing_balance: null,
-                            opening_balance: null,
-                            statement_page: 0,
-                            closing_date: null,
-                            is_verified: false,
-                            verified_by: null,
-                            verified_at: null,
-                            highlight_coordinates: null,
-                        };
-                    });
-                }
-            } else {
-                compiledMonthlyBalances = [{
-                    month: stmt.statement_month + 1,
-                    year: stmt.statement_year,
-                    closing_balance: extractions.closing_balance || null,
-                    opening_balance: extractions.opening_balance || null,
-                    statement_page: 0,
-                    closing_date: null,
-                    is_verified: false,
-                    verified_by: null,
-                    verified_at: null,
-                    highlight_coordinates: null,
-                }];
-            }
-
-            setMonthlyBalances(compiledMonthlyBalances);
-        };
-
-        initializeMonthlyBalances();
-    };
-
-    const loadPdfDocument = async (stmt: BankStatement) => {
-        if (!stmt?.statement_document?.statement_pdf) {
-            return;
-        }
-        try {
-            const { data, error } = await supabase.storage
-                .from('Statement-Cycle')
-                .createSignedUrl(stmt.statement_document.statement_pdf, 3600);
-            if (error) throw error;
-            setPdfUrl(data.signedUrl);
-        } catch (error) {
-            console.error('Error loading PDF:', error);
-            toast({ title: 'Error', description: 'Failed to load PDF document', variant: 'destructive' });
-        }
-    };
-
-    const handleStatementTabChange = (tab: 'monthly' | 'range') => {
-        setActiveStatementTab(tab);
-        const newStatement = tab === 'monthly' ? statementData.monthly : statementData.range;
-        if (newStatement) {
-            setCurrentStatement(newStatement);
-            loadStatementFormData(newStatement);
-            loadPdfDocument(newStatement);
-        }
-    };
+    }, [isOpen, statement, bank]);
 
     const parsedPeriod = useMemo(() => {
         if (formData.statementPeriod) {
@@ -364,6 +174,160 @@ export default function BankExtractionDialog({
         return null;
     }, [formData.statementPeriod]);
 
+    const loadPdfDocument = useCallback(async () => {
+        if (!statement?.statement_document?.statement_pdf) {
+            setIsLoading(false);
+            return;
+        }
+        try {
+            const { data, error } = await supabase.storage
+                .from('Statement-Cycle')
+                .createSignedUrl(statement.statement_document.statement_pdf, 3600); // 1 hour validity
+            if (error) throw error;
+            setPdfUrl(data.signedUrl);
+        } catch (error) {
+            console.error('Error loading PDF:', error);
+            toast({ title: 'Error', description: 'Failed to load PDF document', variant: 'destructive' });
+        } finally {
+            setIsLoading(false);
+        }
+    }, [statement, toast]);
+
+    const handleStatementRangeData = useCallback(async () => {
+        try {
+            const periodDates = parseStatementPeriod(formData.statementPeriod);
+            if (!periodDates) {
+                console.warn("Could not parse statement period:", formData.statementPeriod);
+                return;
+            }
+
+            const { startMonth, startYear, endMonth, endYear } = periodDates;
+
+            // Generate complete month range
+            const completeMonthRange = generateCompleteMonthRange(
+                startMonth,
+                startYear,
+                endMonth,
+                endYear
+            );
+
+            // Merge with existing monthly balances
+            const mergedBalances = completeMonthRange.map(rangeMonth => {
+                const existingBalance = monthlyBalances.find(
+                    b => b.month === rangeMonth.month && b.year === rangeMonth.year
+                );
+                return existingBalance || rangeMonth;
+            });
+
+            // Sort by year and month
+            mergedBalances.sort((a, b) => {
+                if (a.year !== b.year) return a.year - b.year;
+                return a.month - b.month;
+            });
+
+            // Update the monthly balances state
+            setMonthlyBalances(mergedBalances);
+
+            toast({
+                description: `Loaded ${mergedBalances.length} months from the statement period`,
+                variant: 'default'
+            });
+
+        } catch (error) {
+            console.error('Error handling statement range data:', error);
+            toast({
+                title: 'Error',
+                description: 'Failed to process statement period',
+                variant: 'destructive'
+            });
+        }
+    }, [formData.statementPeriod, monthlyBalances, toast]);
+
+    useEffect(() => {
+        if (isOpen && statement) {
+            setIsLoading(true);
+
+            const extractions = statement.statement_extractions || {};
+
+            setFormData({
+                bank_name: extractions.bank_name || '',
+                account_number: extractions.account_number || '',
+                currency: extractions.currency || '',
+                statementPeriod: extractions.statement_period || ''
+            });
+
+            // Initialize monthly balances ONCE
+            const initializeMonthlyBalances = () => {
+                const extractedMonthlyBalances = extractions.monthly_balances || [];
+                const statementPeriodString = extractions.statement_period;
+
+                let compiledMonthlyBalances: MonthlyBalance[] = [];
+
+                if (statementPeriodString) {
+                    const period = parseStatementPeriod(statementPeriodString);
+                    if (period) {
+                        const allMonthsInPeriod = generateMonthRange(
+                            period.startMonth,
+                            period.startYear,
+                            period.endMonth,
+                            period.endYear
+                        );
+
+                        compiledMonthlyBalances = allMonthsInPeriod.map(monthInPeriod => {
+                            const foundBalance = extractedMonthlyBalances.find(
+                                eb => eb.month === monthInPeriod.month && eb.year === monthInPeriod.year
+                            );
+
+                            return foundBalance || {
+                                month: monthInPeriod.month,
+                                year: monthInPeriod.year,
+                                closing_balance: null,
+                                qb_balance: null, // FIXED: Add qb_balance field
+                                statement_page: 0,
+                                closing_date: null,
+                                is_verified: false,
+                                verified_by: null,
+                                verified_at: null,
+                                highlight_coordinates: null,
+                            };
+                        });
+                    }
+                } else {
+                    // Single month fallback
+                    compiledMonthlyBalances = [{
+                        month: statement.statement_month + 1,
+                        year: statement.statement_year,
+                        closing_balance: extractions.closing_balance || null,
+                        statement_page: 0,
+                        closing_date: null,
+                        is_verified: false,
+                        verified_by: null,
+                        verified_at: null,
+                        highlight_coordinates: null,
+                    }];
+                }
+
+                setMonthlyBalances(compiledMonthlyBalances);
+            };
+
+            initializeMonthlyBalances();
+            loadPdfDocument();
+        } else {
+            setPdfUrl(null);
+        }
+    }, [isOpen, statement]);
+
+    // Automatically handle range data when statement period changes
+    // useEffect(() => {
+    //     if (statement?.statement_extractions?.statement_period && isOpen) {
+    //         const timer = setTimeout(() => {
+    //             handleStatementRangeData();
+    //         }, 500);
+    //         return () => clearTimeout(timer);
+    //     }
+    // }, [statement?.statement_extractions?.statement_period, isOpen, handleStatementRangeData]);
+
+    // --- Helper Functions ---
     const normalizeCurrencyCode = (code: string | null | undefined): string => {
         if (!code) return 'USD';
         const upperCode = code.toUpperCase().trim();
@@ -400,15 +364,16 @@ export default function BankExtractionDialog({
         } catch {
             return `${normalizedCurrency} ${formatNumberWithCommas(value)}`;
         }
-    };
+    }
 
+    // --- Validation & Data Update Functions ---
     const validateStatement = async (): Promise<boolean> => {
         setError(null);
-        if (!currentStatement) return false;
+        if (!statement) return false;
 
         setIsValidating(true);
         const mismatches: string[] = [];
-        const extractions = currentStatement.statement_extractions;
+        const extractions = statement.statement_extractions;
 
         try {
             if (!extractions?.bank_name || !extractions.bank_name.toLowerCase().includes(bank.bank_name.toLowerCase())) {
@@ -425,7 +390,7 @@ export default function BankExtractionDialog({
             }
 
             const updatedStatement = {
-                ...currentStatement,
+                ...statement,
                 validation_status: {
                     is_validated: mismatches.length === 0,
                     validation_date: new Date().toISOString(),
@@ -437,11 +402,10 @@ export default function BankExtractionDialog({
             const { error } = await supabase
                 .from('acc_cycle_bank_statements')
                 .update({ validation_status: updatedStatement.validation_status })
-                .eq('id', currentStatement.id);
+                .eq('id', statement.id);
 
             if (error) throw error;
 
-            setCurrentStatement(updatedStatement);
             onStatementUpdated(updatedStatement);
 
             toast({
@@ -461,11 +425,13 @@ export default function BankExtractionDialog({
         }
     };
 
+    // In BankExtractionDialog.tsx - Fix verifyBalance function
     const verifyBalance = async (balanceIndex: number): Promise<void> => {
-        if (!monthlyBalances[balanceIndex] || !currentStatement) return;
+        if (!monthlyBalances[balanceIndex]) return;
 
         setError(null);
         try {
+            // Update local state first
             const updatedBalances = [...monthlyBalances];
             updatedBalances[balanceIndex] = {
                 ...updatedBalances[balanceIndex],
@@ -474,26 +440,28 @@ export default function BankExtractionDialog({
                 verified_at: new Date().toISOString()
             };
 
+            // Update state immediately for UI responsiveness
             setMonthlyBalances(updatedBalances);
 
+            // Update database
             const updatedExtractions = {
-                ...currentStatement.statement_extractions,
+                ...statement.statement_extractions,
                 monthly_balances: updatedBalances
             };
 
             const { error, data } = await supabase
                 .from('acc_cycle_bank_statements')
                 .update({ statement_extractions: updatedExtractions })
-                .eq('id', currentStatement.id)
+                .eq('id', statement.id)
                 .select()
                 .single();
 
             if (error) {
+                // Revert local state on error
                 setMonthlyBalances(monthlyBalances);
                 throw error;
             }
 
-            setCurrentStatement(data);
             onStatementUpdated(data);
 
             toast({
@@ -511,11 +479,13 @@ export default function BankExtractionDialog({
         }
     };
 
+    // --- Event Handlers ---
     const handleFormChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const { name, value } = e.target;
         setFormData(prev => ({ ...prev, [name]: value }));
     };
 
+    // In BankExtractionDialog.tsx - Remove qb_balance handling
     const handleUpdateBalance = (index: number, field: string, value: string) => {
         const newBalances = [...monthlyBalances];
         const rawValue = String(value).replace(/,/g, '');
@@ -524,7 +494,7 @@ export default function BankExtractionDialog({
             [field]: field === 'closing_balance'
                 ? (rawValue ? parseFloat(rawValue) : null)
                 : value,
-            is_verified: false
+            is_verified: false // Reset verification when edited
         };
         setMonthlyBalances(newBalances);
     };
@@ -534,7 +504,7 @@ export default function BankExtractionDialog({
             const currentMonthDate = new Date(current.year, current.month - 1);
             const latestMonthDate = new Date(latest.year, latest.month - 1);
             return currentMonthDate > latestMonthDate ? current : latest;
-        }, { month: (currentStatement?.statement_month || 0) + 1, year: currentStatement?.statement_year || new Date().getFullYear() });
+        }, { month: statement.statement_month + 1, year: statement.statement_year });
 
         const nextDate = new Date(latestMonth.year, latestMonth.month);
         const newMonth = nextDate.getMonth() + 1;
@@ -563,7 +533,7 @@ export default function BankExtractionDialog({
     };
 
     const handleSave = async () => {
-        if (!currentStatement || !bank) {
+        if (!statement || !bank) {
             toast({
                 title: 'Error',
                 description: 'Missing required data to save statement',
@@ -577,6 +547,7 @@ export default function BankExtractionDialog({
         try {
             console.log('Starting save operation...');
 
+            // Parse statement period to determine if this is multi-month
             const periodDates = parseStatementPeriod(formData.statementPeriod);
             const isMultiMonth = periodDates && (
                 periodDates.startMonth !== periodDates.endMonth ||
@@ -590,17 +561,19 @@ export default function BankExtractionDialog({
                 monthlyBalancesCount: monthlyBalances.length
             });
 
+            // Prepare complete extraction data
             const completeExtractionData = {
                 bank_name: formData.bank_name || null,
                 account_number: formData.account_number || null,
                 currency: formData.currency || null,
                 statement_period: formData.statementPeriod || null,
-                opening_balance: currentStatement.statement_extractions?.opening_balance || null,
+                opening_balance: statement.statement_extractions?.opening_balance || null,
                 closing_balance: monthlyBalances[0]?.closing_balance || null,
                 monthly_balances: monthlyBalances,
-                total_pages: currentStatement.statement_extractions?.total_pages || 0
+                total_pages: statement.statement_extractions?.total_pages || 0
             };
 
+            // Prepare validation status
             const validationStatus = {
                 is_validated: true,
                 validation_date: new Date().toISOString(),
@@ -611,18 +584,21 @@ export default function BankExtractionDialog({
             if (isMultiMonth && periodDates) {
                 console.log('Processing multi-month statement...');
 
+                // Generate all months in the range
                 const { startMonth, startYear, endMonth, endYear } = periodDates;
                 const monthsInRange = generateMonthRange(startMonth, startYear, endMonth, endYear);
 
                 console.log('Months in range:', monthsInRange);
 
+                // Create statement cycles for all months
                 const cyclePromises = monthsInRange.map(({ month, year }) =>
-                    getOrCreateStatementCycle(year, month - 1)
+                    getOrCreateStatementCycle(year, month - 1) // Convert to 0-indexed
                 );
 
                 const cycleIds = await Promise.all(cyclePromises);
                 console.log('Created/retrieved cycle IDs:', cycleIds);
 
+                // Check for existing statements before proceeding
                 const existingStatementsPromises = monthsInRange.map(({ month, year }) =>
                     supabase
                         .from('acc_cycle_bank_statements')
@@ -630,7 +606,6 @@ export default function BankExtractionDialog({
                         .eq('bank_id', bank.id)
                         .eq('statement_month', month - 1)
                         .eq('statement_year', year)
-                        .eq('statement_type', currentStatement.statement_type)
                         .maybeSingle()
                 );
 
@@ -651,6 +626,7 @@ export default function BankExtractionDialog({
                     return;
                 }
 
+                // Process each month
                 const insertPromises = monthsInRange.map(async ({ month, year }, index) => {
                     const cycleId = cycleIds[index];
 
@@ -659,6 +635,7 @@ export default function BankExtractionDialog({
                         return null;
                     }
 
+                    // Find balance for this specific month
                     const monthBalance = monthlyBalances.find(
                         b => b.month === month && b.year === year
                     ) || {
@@ -673,27 +650,27 @@ export default function BankExtractionDialog({
                         verified_at: null
                     };
 
+                    // Create individual statement data for this month
                     const individualStatementData = {
                         bank_id: bank.id,
                         company_id: bank.company_id,
                         statement_cycle_id: cycleId,
-                        statement_month: month - 1,
+                        statement_month: month - 1, // Convert to 0-indexed
                         statement_year: year,
-                        statement_type: currentStatement.statement_type,
-                        statement_document: currentStatement.statement_document,
+                        statement_document: statement.statement_document,
                         statement_extractions: {
                             ...completeExtractionData,
                             monthly_balances: [monthBalance],
                             closing_balance: monthBalance.closing_balance,
                             opening_balance: monthBalance.opening_balance
                         },
-                        has_soft_copy: currentStatement.has_soft_copy || false,
-                        has_hard_copy: currentStatement.has_hard_copy || false,
+                        has_soft_copy: statement.has_soft_copy || false,
+                        has_hard_copy: statement.has_hard_copy || false,
                         validation_status: validationStatus,
                         status: {
                             status: 'validated',
                             verification_date: new Date().toISOString(),
-                            assigned_to: currentStatement.status?.assigned_to || null,
+                            assigned_to: statement.status?.assigned_to || null,
                             quickbooks_balance: null
                         }
                     };
@@ -714,12 +691,13 @@ export default function BankExtractionDialog({
                     throw new Error(`Failed to create ${errorInserts.length} statement records`);
                 }
 
-                if (currentStatement.id) {
-                    console.log('Deleting original combined statement:', currentStatement.id);
+                // Delete the original combined statement if it exists
+                if (statement.id) {
+                    console.log('Deleting original combined statement:', statement.id);
                     await supabase
                         .from('acc_cycle_bank_statements')
                         .delete()
-                        .eq('id', currentStatement.id);
+                        .eq('id', statement.id);
                 }
 
                 console.log(`Successfully created ${successfulInserts.length} individual statement records`);
@@ -733,10 +711,11 @@ export default function BankExtractionDialog({
             } else {
                 console.log('Processing single-month statement...');
 
+                // Check if statement already exists
                 const { data: existingStatement } = await supabase
                     .from('acc_cycle_bank_statements')
                     .select('id')
-                    .eq('id', currentStatement.id)
+                    .eq('id', statement.id)
                     .single();
 
                 if (existingStatement) {
@@ -746,17 +725,18 @@ export default function BankExtractionDialog({
                         extractionData: completeExtractionData,
                         validationStatus,
                         monthlyBalances,
-                        statementId: currentStatement.id
+                        statementId: statement.id
                     });
                     setShowUpdateConfirmation(true);
                     return;
                 }
 
+                // Update the existing statement
                 const updatedStatus = {
-                    ...currentStatement.status,
+                    ...statement.status,
                     status: 'validated',
                     verification_date: new Date().toISOString(),
-                    quickbooks_balance: monthlyBalances[0]?.quickbooks_balance || currentStatement.status?.quickbooks_balance || null
+                    quickbooks_balance: monthlyBalances[0]?.quickbooks_balance || statement.status?.quickbooks_balance || null
                 };
 
                 const { data: updatedStatement, error } = await supabase
@@ -766,7 +746,7 @@ export default function BankExtractionDialog({
                         status: updatedStatus,
                         validation_status: validationStatus
                     })
-                    .eq('id', currentStatement.id)
+                    .eq('id', statement.id)
                     .select()
                     .single();
 
@@ -782,10 +762,11 @@ export default function BankExtractionDialog({
                     description: 'Statement data saved successfully'
                 });
 
-                setCurrentStatement(updatedStatement);
+                // Update parent component
                 onStatementUpdated(updatedStatement);
             }
 
+            // Close dialog
             onClose();
 
         } catch (error) {
@@ -804,6 +785,7 @@ export default function BankExtractionDialog({
         try {
             setIsDeleting(true);
 
+            // Parse statement period to check if it's a range statement
             const periodDates = parseStatementPeriod(formData.statementPeriod);
             const isMultiMonth = periodDates && (
                 periodDates.startMonth !== periodDates.endMonth ||
@@ -811,6 +793,7 @@ export default function BankExtractionDialog({
             );
 
             if (isMultiMonth && periodDates) {
+                // For range statements, ask user which periods to delete
                 const { startMonth, startYear, endMonth, endYear } = periodDates;
                 const monthsInRange = generateMonthRange(startMonth, startYear, endMonth, endYear);
 
@@ -820,6 +803,7 @@ export default function BankExtractionDialog({
 
                 if (!confirmed) return;
 
+                // Delete entries for all months in range
                 let deletedCount = 0;
                 for (const { month, year } of monthsInRange) {
                     try {
@@ -827,9 +811,8 @@ export default function BankExtractionDialog({
                             .from('acc_cycle_bank_statements')
                             .delete()
                             .eq('bank_id', bank.id)
-                            .eq('statement_month', month - 1)
-                            .eq('statement_year', year)
-                            .eq('statement_type', currentStatement?.statement_type);
+                            .eq('statement_month', month - 1) // Convert to 0-indexed
+                            .eq('statement_year', year);
 
                         if (!deleteError) {
                             deletedCount++;
@@ -844,12 +827,13 @@ export default function BankExtractionDialog({
                         title: 'Success',
                         description: `Deleted statement entries for ${deletedCount} month(s). Statement file preserved.`
                     });
-                    onStatementDeleted?.(currentStatement?.id || '');
+                    onStatementDeleted(statement.id);
                     onClose();
                 } else {
                     throw new Error('Failed to delete any statement entries');
                 }
             } else {
+                // Single month deletion - only delete the database entry
                 const confirmed = window.confirm(
                     'Are you sure you want to delete this statement entry? The statement file will be preserved for other periods that may reference it.'
                 );
@@ -859,7 +843,7 @@ export default function BankExtractionDialog({
                 const { error: deleteError } = await supabase
                     .from('acc_cycle_bank_statements')
                     .delete()
-                    .eq('id', currentStatement?.id);
+                    .eq('id', statement.id);
 
                 if (deleteError) throw deleteError;
 
@@ -868,7 +852,7 @@ export default function BankExtractionDialog({
                     description: 'Statement entry deleted. File preserved.'
                 });
 
-                onStatementDeleted?.(currentStatement?.id || '');
+                onStatementDeleted(statement.id);
                 onClose();
             }
         } catch (error) {
@@ -882,6 +866,110 @@ export default function BankExtractionDialog({
             setIsDeleting(false);
         }
     };
+
+    const confirmDeleteStatement = async () => {
+        setIsDeleting(true);
+        try {
+            // Check if this is part of a multi-month statement
+            const periodDates = parseStatementPeriod(formData.statementPeriod);
+            const isMultiMonth = periodDates && (
+                periodDates.startMonth !== periodDates.endMonth ||
+                periodDates.startYear !== periodDates.endYear
+            );
+
+            if (isMultiMonth) {
+                // Check if other statements use the same files
+                const { data: relatedStatements } = await supabase
+                    .from('acc_cycle_bank_statements')
+                    .select('id, statement_month, statement_year')
+                    .eq('bank_id', bank.id)
+                    .neq('id', statement.id);
+
+                let hasSharedFiles = false;
+                if (relatedStatements && relatedStatements.length > 0) {
+                    for (const related of relatedStatements) {
+                        const { data: relatedFull } = await supabase
+                            .from('acc_cycle_bank_statements')
+                            .select('statement_document')
+                            .eq('id', related.id)
+                            .single();
+
+                        if (relatedFull) {
+                            const samePdf = relatedFull.statement_document?.statement_pdf ===
+                                statement.statement_document?.statement_pdf;
+                            const sameExcel = relatedFull.statement_document?.statement_excel ===
+                                statement.statement_document?.statement_excel;
+
+                            if (samePdf || sameExcel) {
+                                hasSharedFiles = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                // For multi-month statements, only delete the current entry
+                const { error } = await supabase
+                    .from('acc_cycle_bank_statements')
+                    .delete()
+                    .eq('id', statement.id);
+
+                if (error) throw error;
+
+                toast({
+                    title: 'Success',
+                    description: hasSharedFiles
+                        ? 'Statement entry deleted. Files preserved for other periods.'
+                        : 'Statement entry deleted.',
+                    variant: 'default'
+                });
+            } else {
+                // For single-month statements, delete both entry and files
+                if (statement.statement_document?.statement_pdf) {
+                    await supabase.storage
+                        .from('Statement-Cycle')
+                        .remove([statement.statement_document.statement_pdf]);
+                }
+
+                if (statement.statement_document?.statement_excel) {
+                    await supabase.storage
+                        .from('Statement-Cycle')
+                        .remove([statement.statement_document.statement_excel]);
+                }
+
+                const { error } = await supabase
+                    .from('acc_cycle_bank_statements')
+                    .delete()
+                    .eq('id', statement.id);
+
+                if (error) throw error;
+
+                toast({
+                    title: 'Success',
+                    description: 'Bank statement and files deleted successfully'
+                });
+            }
+
+            onClose();
+            if (onStatementDeleted) {
+                onStatementDeleted(statement.id);
+            }
+
+        } catch (error: any) {
+            console.error('Error deleting statement:', error);
+            toast({
+                title: 'Error',
+                description: 'Failed to delete statement',
+                variant: 'destructive'
+            });
+        } finally {
+            setIsDeleting(false);
+            setShowDeleteConfirmation(false);
+        }
+    };
+
+    if (!isOpen) return null;
+
 
     const processUpdates = async (updates: any) => {
         if (!updates) {
@@ -903,6 +991,7 @@ export default function BankExtractionDialog({
 
                 console.log('Processing multi-month updates...');
 
+                // Delete existing statements for these months
                 const deletePromises = monthsInRange.map(({ month, year }) =>
                     supabase
                         .from('acc_cycle_bank_statements')
@@ -910,12 +999,12 @@ export default function BankExtractionDialog({
                         .eq('bank_id', bank.id)
                         .eq('statement_month', month - 1)
                         .eq('statement_year', year)
-                        .eq('statement_type', currentStatement?.statement_type)
                 );
 
                 await Promise.all(deletePromises);
                 console.log('Deleted existing statements');
 
+                // Insert new statements
                 const insertPromises = monthsInRange.map(async ({ month, year }, index) => {
                     const cycleId = cycleIds[index];
 
@@ -944,21 +1033,20 @@ export default function BankExtractionDialog({
                         statement_cycle_id: cycleId,
                         statement_month: month - 1,
                         statement_year: year,
-                        statement_type: currentStatement?.statement_type,
-                        statement_document: currentStatement?.statement_document,
+                        statement_document: statement.statement_document,
                         statement_extractions: {
                             ...extractionData,
                             monthly_balances: [monthBalance],
                             closing_balance: monthBalance.closing_balance,
                             opening_balance: monthBalance.opening_balance
                         },
-                        has_soft_copy: currentStatement?.has_soft_copy || false,
-                        has_hard_copy: currentStatement?.has_hard_copy || false,
+                        has_soft_copy: statement.has_soft_copy || false,
+                        has_hard_copy: statement.has_hard_copy || false,
                         validation_status: validationStatus,
                         status: {
                             status: 'validated',
                             verification_date: new Date().toISOString(),
-                            assigned_to: currentStatement?.status?.assigned_to || null,
+                            assigned_to: statement.status?.assigned_to || null,
                             quickbooks_balance: null
                         }
                     };
@@ -979,11 +1067,12 @@ export default function BankExtractionDialog({
                     throw new Error(`Failed to create ${errorInserts.length} statement records`);
                 }
 
-                if (currentStatement?.id) {
+                // Delete the original combined statement
+                if (statement.id) {
                     await supabase
                         .from('acc_cycle_bank_statements')
                         .delete()
-                        .eq('id', currentStatement.id);
+                        .eq('id', statement.id);
                 }
 
                 console.log(`Successfully processed ${successfulInserts.length} multi-month records`);
@@ -1000,10 +1089,10 @@ export default function BankExtractionDialog({
                 console.log('Processing single-month update...');
 
                 const updatedStatus = {
-                    ...currentStatement?.status,
+                    ...statement.status,
                     status: 'validated',
                     verification_date: new Date().toISOString(),
-                    quickbooks_balance: monthlyBalances[0]?.quickbooks_balance || currentStatement?.status?.quickbooks_balance || null
+                    quickbooks_balance: monthlyBalances[0]?.quickbooks_balance || statement.status?.quickbooks_balance || null
                 };
 
                 const { data: updatedStatement, error } = await supabase
@@ -1029,10 +1118,11 @@ export default function BankExtractionDialog({
                     description: 'Statement data updated successfully'
                 });
 
-                setCurrentStatement(updatedStatement);
+                // Update parent component
                 onStatementUpdated(updatedStatement);
             }
 
+            // Close dialog and clear state
             onClose();
 
         } catch (error) {
@@ -1049,8 +1139,7 @@ export default function BankExtractionDialog({
         }
     };
 
-    if (!isOpen) return null;
-
+    // --- JSX Render ---
     return (
         <Dialog open={isOpen} onOpenChange={onClose}>
             <DialogContent className="w-[95vw] max-w-[1600px] max-h-[95vh] h-[95vh] p-6 flex flex-col overflow-hidden">
@@ -1059,14 +1148,8 @@ export default function BankExtractionDialog({
                         <div className="flex justify-between items-center">
                             <span className="font-semibold">{bank?.company_name || 'N/A'}</span>
                             <div className="flex items-center gap-3 pr-16">
-                                {statementData.hasMultipleTypes && (
-                                    <Badge variant="secondary" className="bg-blue-100 text-blue-800">
-                                        Multiple Statement Types Available
-                                    </Badge>
-                                )}
                                 <div className="text-sm text-muted-foreground">
-                                    Document Size: {currentStatement?.statement_document?.document_size ?
-                                        formatFileSize(currentStatement.statement_document.document_size) : 'N/A'}
+                                    Document Size: {statement?.statement_document?.document_size ? formatFileSize(statement.statement_document.document_size) : 'N/A'}
                                 </div>
                                 <Button
                                     variant="destructive"
@@ -1081,39 +1164,10 @@ export default function BankExtractionDialog({
                             </div>
                         </div>
                         <div className="text-base">
-                            Bank Statement - {bank?.bank_name || 'N/A'} {bank?.account_number || ''} |
-                            {currentStatement?.statement_year && currentStatement?.statement_month !== undefined ?
-                                format(new Date(currentStatement.statement_year, currentStatement.statement_month), 'MMMM yyyy') : 'N/A'}
+                            Bank Statement - {bank?.bank_name || 'N/A'} {bank?.account_number || ''} | {statement?.statement_year && statement?.statement_month !== undefined ? format(new Date(statement.statement_year, statement.statement_month), 'MMMM yyyy') : 'N/A'}
                         </div>
                     </DialogTitle>
                 </DialogHeader>
-
-                {statementData.hasMultipleTypes && (
-                    <div className="border-b">
-                        <Tabs value={activeStatementTab} onValueChange={handleStatementTabChange}>
-                            <TabsList className="grid w-full grid-cols-2 max-w-md">
-                                <TabsTrigger
-                                    value="monthly"
-                                    disabled={!statementData.monthly}
-                                    className="flex items-center gap-2"
-                                >
-                                    <Calendar className="h-4 w-4" />
-                                    Monthly Statement
-                                    {!statementData.monthly && <span className="text-xs">(None)</span>}
-                                </TabsTrigger>
-                                <TabsTrigger
-                                    value="range"
-                                    disabled={!statementData.range}
-                                    className="flex items-center gap-2"
-                                >
-                                    <Calendar className="h-4 w-4" />
-                                    Range Statement
-                                    {!statementData.range && <span className="text-xs">(None)</span>}
-                                </TabsTrigger>
-                            </TabsList>
-                        </Tabs>
-                    </div>
-                )}
 
                 <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
                     <TabsList className="grid w-full grid-cols-2">
@@ -1122,251 +1176,195 @@ export default function BankExtractionDialog({
                     </TabsList>
 
                     <TabsContent value="overview" className="flex-1 flex flex-col overflow-hidden pt-4">
-                        {currentStatement ? (
-                            <div className="grid grid-cols-5 gap-4 h-full overflow-hidden">
-                                {/* PDF Viewer */}
-                                <div className="col-span-3 flex flex-col h-full overflow-auto border rounded-md bg-muted p-2">
-                                    {isLoading ? (
-                                        <div className="flex items-center justify-center h-full">
-                                            <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                                        </div>
-                                    ) : pdfUrl ? (
-                                        <iframe src={pdfUrl} className="w-full h-full" title="Bank Statement PDF" />
-                                    ) : (
-                                        <div className="flex items-center justify-center h-full text-muted-foreground">
-                                            No PDF document available.
-                                        </div>
-                                    )}
-                                </div>
-
-                                {/* Right Panel with Statement Type Tabs */}
-                                <div className="col-span-2 flex flex-col h-full gap-4 overflow-hidden">
-                                    {/* Account Details */}
-                                    <Card className="shrink-0">
-                                        <CardHeader className="py-2">
-                                            <CardTitle className="text-base flex items-center justify-between">
-                                                Account & QB Details
-                                                <div className="flex gap-2">
-                                                    <Badge variant={activeStatementTab === 'range' ? "default" : "secondary"}>
-                                                        {activeStatementTab === 'range' ? 'Range Statement' : 'Monthly Statement'}
-                                                    </Badge>
-                                                    {currentStatement?.statement_type && (
-                                                        <Badge variant="outline">
-                                                            {currentStatement.statement_type}
-                                                        </Badge>
-                                                    )}
-                                                </div>
-                                            </CardTitle>
-                                        </CardHeader>
-                                        <CardContent className="space-y-3 pt-4">
-                                            <div className="space-y-1">
-                                                <Label htmlFor="bank_name">Bank Name</Label>
-                                                <div className="flex items-center gap-2">
-                                                    <Input
-                                                        id="bank_name"
-                                                        name="bank_name"
-                                                        value={formData.bank_name}
-                                                        onChange={handleFormChange}
-                                                        className={formData.bank_name && !formData.bank_name.toLowerCase().includes(bank.bank_name.toLowerCase()) ? "border-yellow-500" : ""}
-                                                    />
-                                                    {formData.bank_name && (
-                                                        formData.bank_name.toLowerCase().includes(bank.bank_name.toLowerCase()) ?
-                                                            <Badge variant="outline" className="bg-green-50 text-green-700 border-green-300">
-                                                                <Check className="h-3 w-3 mr-1" />Match
-                                                            </Badge> :
-                                                            <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-300">
-                                                                <AlertTriangle className="h-3 w-3 mr-1" />Mismatch
-                                                            </Badge>
-                                                    )}
-                                                </div>
-                                            </div>
-                                            <div className="space-y-1">
-                                                <Label htmlFor="account_number">Account Number</Label>
-                                                <div className="flex items-center gap-2">
-                                                    <Input
-                                                        id="account_number"
-                                                        name="account_number"
-                                                        value={formData.account_number}
-                                                        onChange={handleFormChange}
-                                                        className={formData.account_number && !formData.account_number.includes(bank.account_number) ? "border-yellow-500" : ""}
-                                                    />
-                                                    {formData.account_number && (
-                                                        formData.account_number.includes(bank.account_number) ?
-                                                            <Badge variant="outline" className="bg-green-50 text-green-700 border-green-300">
-                                                                <Check className="h-3 w-3 mr-1" />Match
-                                                            </Badge> :
-                                                            <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-300">
-                                                                <AlertTriangle className="h-3 w-3 mr-1" />Mismatch
-                                                            </Badge>
-                                                    )}
-                                                </div>
-                                            </div>
-                                            <div className="space-y-1">
-                                                <Label htmlFor="currency">Currency</Label>
-                                                <div className="flex items-center gap-2">
-                                                    <Input
-                                                        id="currency"
-                                                        name="currency"
-                                                        value={formData.currency}
-                                                        onChange={handleFormChange}
-                                                        className={formData.currency && normalizeCurrencyCode(formData.currency) !== normalizeCurrencyCode(bank.bank_currency) ? "border-yellow-500" : ""}
-                                                    />
-                                                    {formData.currency && (
-                                                        normalizeCurrencyCode(formData.currency) === normalizeCurrencyCode(bank.bank_currency) ?
-                                                            <Badge variant="outline" className="bg-green-50 text-green-700 border-green-300">
-                                                                <Check className="h-3 w-3 mr-1" />Match
-                                                            </Badge> :
-                                                            <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-300">
-                                                                <AlertTriangle className="h-3 w-3 mr-1" />Mismatch
-                                                            </Badge>
-                                                    )}
-                                                </div>
-                                            </div>
-                                            <div className="space-y-1">
-                                                <Label htmlFor="statementPeriod">Statement Period</Label>
+                        <div className="grid grid-cols-5 gap-4 h-full overflow-hidden">
+                            <div className="col-span-3 flex flex-col h-full overflow-auto border rounded-md bg-muted p-2">
+                                {isLoading ? (
+                                    <div className="flex items-center justify-center h-full">
+                                        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                                    </div>
+                                ) : pdfUrl ? (
+                                    <iframe src={pdfUrl} className="w-full h-full" title="Bank Statement PDF" />
+                                ) : (
+                                    <div className="flex items-center justify-center h-full text-muted-foreground">
+                                        No PDF document available.
+                                    </div>
+                                )}
+                            </div>
+                            <div className="col-span-2 flex flex-col h-full gap-4 overflow-hidden">
+                                <Card className="shrink-0">
+                                    <CardHeader className="py-2">
+                                        <CardTitle className="text-base">Account & QB Details</CardTitle>
+                                    </CardHeader>
+                                    <CardContent className="space-y-3 pt-4">
+                                        <div className="space-y-1">
+                                            <Label htmlFor="bank_name">Bank Name</Label>
+                                            <div className="flex items-center gap-2">
                                                 <Input
-                                                    id="statementPeriod"
-                                                    name="statementPeriod"
-                                                    value={formData.statementPeriod}
+                                                    id="bank_name"
+                                                    name="bank_name"
+                                                    value={formData.bank_name}
                                                     onChange={handleFormChange}
+                                                    className={formData.bank_name && !formData.bank_name.toLowerCase().includes(bank.bank_name.toLowerCase()) ? "border-yellow-500" : ""}
                                                 />
+                                                {formData.bank_name && (
+                                                    formData.bank_name.toLowerCase().includes(bank.bank_name.toLowerCase()) ?
+                                                        <Badge variant="outline" className="bg-green-50 text-green-700 border-green-300">
+                                                            <Check className="h-3 w-3 mr-1" />Match
+                                                        </Badge> :
+                                                        <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-300">
+                                                            <AlertTriangle className="h-3 w-3 mr-1" />Mismatch
+                                                        </Badge>
+                                                )}
                                             </div>
-                                            <div className="space-y-1">
-                                                <Label htmlFor="quickbooks_balance">QuickBooks Balance</Label>
+                                        </div>
+                                        <div className="space-y-1">
+                                            <Label htmlFor="account_number">Account Number</Label>
+                                            <div className="flex items-center gap-2">
                                                 <Input
-                                                    id="quickbooks_balance"
-                                                    name="quickbooks_balance"
-                                                    placeholder="Enter QB balance..."
-                                                    value={formData.quickbooks_balance !== null ? formatNumberWithCommas(formData.quickbooks_balance) : ''}
-                                                    onChange={(e) => {
-                                                        const value = e.target.value.replace(/[^0-9.]/g, '');
-                                                        setFormData(prev => ({
-                                                            ...prev,
-                                                            quickbooks_balance: value ? parseFloat(value) : null
-                                                        }));
-                                                    }}
+                                                    id="account_number"
+                                                    name="account_number"
+                                                    value={formData.account_number}
+                                                    onChange={handleFormChange}
+                                                    className={formData.account_number && !formData.account_number.includes(bank.account_number) ? "border-yellow-500" : ""}
                                                 />
+                                                {formData.account_number && (
+                                                    formData.account_number.includes(bank.account_number) ?
+                                                        <Badge variant="outline" className="bg-green-50 text-green-700 border-green-300">
+                                                            <Check className="h-3 w-3 mr-1" />Match
+                                                        </Badge> :
+                                                        <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-300">
+                                                            <AlertTriangle className="h-3 w-3 mr-1" />Mismatch
+                                                        </Badge>
+                                                )}
                                             </div>
-                                        </CardContent>
-                                    </Card>
-
-                                    {/* Statement Data with Tabs */}
-                                    <Card className="flex-1 flex flex-col overflow-hidden">
-                                        <CardHeader className="py-2">
-                                            <CardTitle className="text-base">Statement Data</CardTitle>
-                                        </CardHeader>
-                                        <CardContent className="p-0 flex-1 overflow-hidden">
-                                            {/* Check if we have multiple statement types for this bank/period */}
-                                            {statementData.hasMultipleTypes ? (
-                                                <Tabs value={activeStatementTab} onValueChange={handleStatementTabChange} className="h-full flex flex-col">
-                                                    <TabsList className="grid w-full grid-cols-2 mx-2 mt-2">
-                                                        <TabsTrigger
-                                                            value="monthly"
-                                                            disabled={!statementData.monthly}
-                                                            className="flex items-center gap-2"
-                                                        >
-                                                            <Calendar className="h-4 w-4" />
-                                                            Monthly
-                                                            {!statementData.monthly && <span className="text-xs">(None)</span>}
-                                                        </TabsTrigger>
-                                                        <TabsTrigger
-                                                            value="range"
-                                                            disabled={!statementData.range}
-                                                            className="flex items-center gap-2"
-                                                        >
-                                                            <Calendar className="h-4 w-4" />
-                                                            Range
-                                                            {!statementData.range && <span className="text-xs">(None)</span>}
-                                                        </TabsTrigger>
-                                                    </TabsList>
-
-                                                    <TabsContent value="monthly" className="flex-1 overflow-auto p-2 mt-2">
-                                                        {statementData.monthly ? (
-                                                            <MonthlyBalancesTable
-                                                                monthlyBalances={monthlyBalances}
-                                                                onUpdateBalance={handleUpdateBalance}
-                                                                onVerifyBalance={verifyBalance}
-                                                                onRemoveBalance={handleRemoveBalance}
-                                                                onAddBalance={handleAddBalance}
-                                                            />
-                                                        ) : (
-                                                            <div className="text-center py-8 text-muted-foreground">
-                                                                <Calendar className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                                                                <p>No monthly statement available</p>
-                                                                <p className="text-sm mt-1">Upload a monthly statement to view data here</p>
-                                                            </div>
-                                                        )}
-                                                    </TabsContent>
-
-                                                    <TabsContent value="range" className="flex-1 overflow-auto p-2 mt-2">
-                                                        {statementData.range ? (
-                                                            <div className="space-y-4">
-                                                                <div className="p-3 bg-purple-50 rounded-md border border-purple-200">
-                                                                    <h4 className="font-medium text-purple-800 mb-2">Range Statement Overview</h4>
-                                                                    <div className="grid grid-cols-2 gap-4 text-sm">
-                                                                        <div>
-                                                                            <p className="text-purple-600">Statement Period:</p>
-                                                                            <p className="font-medium">{formData.statementPeriod || 'Not specified'}</p>
-                                                                        </div>
-                                                                        <div>
-                                                                            <p className="text-purple-600">Total Months:</p>
-                                                                            <p className="font-medium">{monthlyBalances.length}</p>
-                                                                        </div>
+                                        </div>
+                                        <div className="space-y-1">
+                                            <Label htmlFor="currency">Currency</Label>
+                                            <div className="flex items-center gap-2">
+                                                <Input
+                                                    id="currency"
+                                                    name="currency"
+                                                    value={formData.currency}
+                                                    onChange={handleFormChange}
+                                                    className={formData.currency && normalizeCurrencyCode(formData.currency) !== normalizeCurrencyCode(bank.bank_currency) ? "border-yellow-500" : ""}
+                                                />
+                                                {formData.currency && (
+                                                    normalizeCurrencyCode(formData.currency) === normalizeCurrencyCode(bank.bank_currency) ?
+                                                        <Badge variant="outline" className="bg-green-50 text-green-700 border-green-300">
+                                                            <Check className="h-3 w-3 mr-1" />Match
+                                                        </Badge> :
+                                                        <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-300">
+                                                            <AlertTriangle className="h-3 w-3 mr-1" />Mismatch
+                                                        </Badge>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <div className="space-y-1">
+                                            <Label htmlFor="statementPeriod">Statement Period</Label>
+                                            <Input
+                                                id="statementPeriod"
+                                                name="statementPeriod"
+                                                value={formData.statementPeriod}
+                                                onChange={handleFormChange}
+                                            />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <Label htmlFor="quickbooks_balance">QuickBooks Balance</Label>
+                                            <Input
+                                                id="quickbooks_balance"
+                                                name="quickbooks_balance"
+                                                placeholder="Enter QB balance..."
+                                                value={formData.quickbooks_balance !== null ? formatNumberWithCommas(formData.quickbooks_balance) : ''}
+                                                onChange={(e) => {
+                                                    const value = e.target.value.replace(/[^0-9.]/g, '');
+                                                    setFormData(prev => ({
+                                                        ...prev,
+                                                        quickbooks_balance: value ? parseFloat(value) : null
+                                                    }));
+                                                }}
+                                            />
+                                        </div>
+                                    </CardContent>
+                                </Card>
+                                <Card className="flex-1 flex flex-col overflow-hidden">
+                                    <CardHeader className="py-2 flex flex-row items-center justify-between">
+                                        <CardTitle className="text-base">Monthly Balances</CardTitle>
+                                        <Button variant="outline" size="sm" onClick={handleAddBalance}>
+                                            <Plus className="h-4 w-4 mr-1" />Add
+                                        </Button>
+                                    </CardHeader>
+                                    <CardContent className="p-0 flex-1 overflow-auto">
+                                        <Table>
+                                            <TableHeader>
+                                                <TableRow>
+                                                    <TableHead>Period</TableHead>
+                                                    <TableHead>Closing Balance</TableHead>
+                                                    <TableHead>Actions</TableHead>
+                                                </TableRow>
+                                            </TableHeader>
+                                            <TableBody>
+                                                {monthlyBalances.length === 0 ? (
+                                                    <TableRow>
+                                                        <TableCell colSpan={3} className="text-center py-8 text-muted-foreground">
+                                                            <Calendar className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                                                            <p>No monthly balances found</p>
+                                                            <p className="text-sm mt-1">Click "Add" to add balance entries</p>
+                                                        </TableCell>
+                                                    </TableRow>
+                                                ) : (
+                                                    monthlyBalances
+                                                        .sort((a, b) => {
+                                                            if (a.year !== b.year) return a.year - b.year;
+                                                            return a.month - b.month;
+                                                        })
+                                                        .map((balance, index) => (
+                                                            <TableRow key={`${balance.year}-${balance.month}`}>
+                                                                <TableCell>
+                                                                    {format(new Date(balance.year, balance.month - 1), 'MMM yyyy')}
+                                                                </TableCell>
+                                                                <TableCell>
+                                                                    <Input
+                                                                        type="text"
+                                                                        value={formatNumberWithCommas(balance.closing_balance)}
+                                                                        onChange={(e) => handleUpdateBalance(index, 'closing_balance', e.target.value)}
+                                                                        placeholder="0.00"
+                                                                        className="w-full max-w-[200px]"
+                                                                    />
+                                                                </TableCell>
+                                                                <TableCell>
+                                                                    <div className="flex gap-2">
+                                                                        {balance.is_verified ? (
+                                                                            <Badge variant="outline" className="bg-green-50 text-green-700 border-green-300">
+                                                                                <Check className="h-3 w-3 mr-1" />Verified
+                                                                            </Badge>
+                                                                        ) : (
+                                                                            <Button
+                                                                                variant="outline"
+                                                                                size="sm"
+                                                                                onClick={() => verifyBalance(index)}
+                                                                            >
+                                                                                <CheckCircle className="h-4 w-4 mr-2" />
+                                                                                Verify
+                                                                            </Button>
+                                                                        )}
+                                                                        <Button
+                                                                            variant="ghost"
+                                                                            size="sm"
+                                                                            onClick={() => handleRemoveBalance(index)}
+                                                                        >
+                                                                            <X className="h-4 w-4" />
+                                                                        </Button>
                                                                     </div>
-                                                                </div>
-
-                                                                <MonthlyBalancesTable
-                                                                    monthlyBalances={monthlyBalances}
-                                                                    onUpdateBalance={handleUpdateBalance}
-                                                                    onVerifyBalance={verifyBalance}
-                                                                    onRemoveBalance={handleRemoveBalance}
-                                                                    onAddBalance={handleAddBalance}
-                                                                    isRangeView={true}
-                                                                />
-                                                            </div>
-                                                        ) : (
-                                                            <div className="text-center py-8 text-muted-foreground">
-                                                                <Calendar className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                                                                <p>No range statement available</p>
-                                                                <p className="text-sm mt-1">Upload a range statement to view data here</p>
-                                                            </div>
-                                                        )}
-                                                    </TabsContent>
-                                                </Tabs>
-                                            ) : (
-                                                // Single statement type - show without tabs
-                                                <div className="p-2 h-full overflow-auto">
-                                                    <div className="flex items-center justify-between mb-2">
-                                                        <span className="text-sm font-medium">
-                                                            {currentStatement?.statement_type === 'range' ? 'Range Balances' : 'Monthly Balances'}
-                                                        </span>
-                                                        <Button variant="outline" size="sm" onClick={handleAddBalance}>
-                                                            <Plus className="h-4 w-4 mr-1" />Add
-                                                        </Button>
-                                                    </div>
-                                                    <MonthlyBalancesTable
-                                                        monthlyBalances={monthlyBalances}
-                                                        onUpdateBalance={handleUpdateBalance}
-                                                        onVerifyBalance={verifyBalance}
-                                                        onRemoveBalance={handleRemoveBalance}
-                                                        onAddBalance={handleAddBalance}
-                                                        isRangeView={currentStatement?.statement_type === 'range'}
-                                                    />
-                                                </div>
-                                            )}
-                                        </CardContent>
-                                    </Card>
-                                </div>
+                                                                </TableCell>
+                                                            </TableRow>
+                                                        ))
+                                                )}
+                                            </TableBody>
+                                        </Table>
+                                    </CardContent>
+                                </Card>
                             </div>
-                        ) : (
-                            <div className="flex items-center justify-center h-full text-muted-foreground">
-                                <div className="text-center">
-                                    <AlertTriangle className="h-12 w-12 mb-4 opacity-50 mx-auto" />
-                                    <p>No statement available for {activeStatementTab} view</p>
-                                    <p className="text-sm mt-2">Upload a {activeStatementTab} statement to view data here</p>
-                                </div>
-                            </div>
-                        )}
+                        </div>
                     </TabsContent>
 
                     <TabsContent value="validation" className="flex-1 overflow-auto p-4 space-y-4">
@@ -1389,25 +1387,25 @@ export default function BankExtractionDialog({
                                         <div>
                                             <h4 className="font-medium text-sm text-muted-foreground">Validation Status</h4>
                                             <div className="mt-1 flex items-center">
-                                                {currentStatement?.validation_status?.is_validated ?
+                                                {statement.validation_status?.is_validated ?
                                                     <CheckCircle className="h-5 w-5 text-green-500 mr-2" /> :
                                                     <AlertTriangle className="h-5 w-5 text-yellow-500 mr-2" />
                                                 }
                                                 <span className="text-lg font-medium">
-                                                    {currentStatement?.validation_status?.is_validated ?
+                                                    {statement.validation_status?.is_validated ?
                                                         'All validations passed' :
-                                                        (currentStatement?.validation_status?.mismatches?.length > 0 ?
-                                                            `${currentStatement.validation_status.mismatches.length} issues found` :
+                                                        (statement.validation_status?.mismatches?.length > 0 ?
+                                                            `${statement.validation_status.mismatches.length} issues found` :
                                                             'Not validated yet'
                                                         )
                                                     }
                                                 </span>
                                             </div>
-                                            {currentStatement?.validation_status?.validation_date && (
+                                            {statement.validation_status?.validation_date && (
                                                 <p className="text-xs text-muted-foreground mt-1">
-                                                    Last validated: {format(new Date(currentStatement.validation_status.validation_date), 'PPpp')}
-                                                    {currentStatement.validation_status.validated_by && (
-                                                        <span> by {currentStatement.validation_status.validated_by}</span>
+                                                    Last validated: {format(new Date(statement.validation_status.validation_date), 'PPpp')}
+                                                    {statement.validation_status.validated_by && (
+                                                        <span> by {statement.validation_status.validated_by}</span>
                                                     )}
                                                 </p>
                                             )}
@@ -1415,39 +1413,39 @@ export default function BankExtractionDialog({
                                         <Button
                                             onClick={validateStatement}
                                             disabled={isValidating}
-                                            variant={currentStatement?.validation_status?.is_validated ? 'outline' : 'default'}
+                                            variant={statement.validation_status?.is_validated ? 'outline' : 'default'}
                                             className="gap-2"
                                         >
                                             {isValidating ?
                                                 <><Loader2 className="h-4 w-4 animate-spin" />Validating...</> :
-                                                <><CheckCircle className="h-4 w-4" />{currentStatement?.validation_status?.is_validated ? 'Re-validate' : 'Validate Statement'}</>
+                                                <><CheckCircle className="h-4 w-4" />{statement.validation_status?.is_validated ? 'Re-validate' : 'Validate Statement'}</>
                                             }
                                         </Button>
                                     </div>
                                     <div className="grid grid-cols-3 gap-4 text-sm">
                                         <div className="space-y-1">
                                             <p className="text-muted-foreground">Document Type</p>
-                                            <p className="font-medium">{currentStatement?.statement_document?.document_type || 'Bank Statement'}</p>
+                                            <p className="font-medium">{statement.statement_document?.document_type || 'Bank Statement'}</p>
                                         </div>
                                         <div className="space-y-1">
                                             <p className="text-muted-foreground">Document Size</p>
-                                            <p className="font-medium">{formatFileSize(currentStatement?.statement_document?.document_size || 0)}</p>
+                                            <p className="font-medium">{formatFileSize(statement.statement_document?.document_size || 0)}</p>
                                         </div>
                                         <div className="space-y-1">
                                             <p className="text-muted-foreground">Pages</p>
                                             <p className="font-medium">{totalPages || 'N/A'}</p>
                                         </div>
                                     </div>
-                                    {currentStatement?.validation_status?.mismatches?.length > 0 && (
+                                    {statement.validation_status?.mismatches?.length > 0 && (
                                         <div className="mt-2 pt-4 border-t">
                                             <div className="flex items-center justify-between mb-2">
                                                 <h5 className="text-sm font-medium text-muted-foreground">Issues to resolve</h5>
                                                 <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                                                    {currentStatement.validation_status.mismatches.length} issue{currentStatement.validation_status.mismatches.length !== 1 ? 's' : ''}
+                                                    {statement.validation_status.mismatches.length} issue{statement.validation_status.mismatches.length !== 1 ? 's' : ''}
                                                 </span>
                                             </div>
                                             <ul className="space-y-2">
-                                                {currentStatement.validation_status.mismatches.map((issue, idx) => (
+                                                {statement.validation_status.mismatches.map((issue, idx) => (
                                                     <li key={idx} className="flex items-start p-2 bg-red-50 rounded-md">
                                                         <XCircle className="h-4 w-4 text-red-500 mt-0.5 mr-2 flex-shrink-0" />
                                                         <div>
@@ -1481,18 +1479,18 @@ export default function BankExtractionDialog({
                                                 .map((balance, index) => (
                                                     <TableRow
                                                         key={index}
-                                                        className={balance.month === (currentStatement?.statement_month || 0) + 1 && balance.year === currentStatement?.statement_year ? "bg-blue-50" : ""}
+                                                        className={balance.month === statement.statement_month + 1 && balance.year === statement.statement_year ? "bg-blue-50" : ""}
                                                     >
                                                         <TableCell>
                                                             {format(new Date(balance.year, balance.month - 1), 'MMMM yyyy')}
-                                                            {balance.month === (currentStatement?.statement_month || 0) + 1 && balance.year === currentStatement?.statement_year && (
+                                                            {balance.month === statement.statement_month + 1 && balance.year === statement.statement_year && (
                                                                 <Badge variant="outline" className="ml-2 bg-blue-50 text-blue-500 border-blue-200">
                                                                     Current
                                                                 </Badge>
                                                             )}
                                                         </TableCell>
                                                         <TableCell>
-                                                            {formatCurrency(balance.closing_balance, currentStatement?.statement_extractions?.currency || bank.bank_currency)}
+                                                            {formatCurrency(balance.closing_balance, statement.statement_extractions?.currency || bank.bank_currency)}
                                                         </TableCell>
                                                         <TableCell>
                                                             {balance.is_verified ? (
@@ -1536,15 +1534,15 @@ export default function BankExtractionDialog({
                                         <p className="text-sm text-muted-foreground mb-1">Bank Statement</p>
                                         <p className="font-medium">
                                             {formatCurrency(
-                                                currentStatement?.statement_extractions?.closing_balance,
-                                                currentStatement?.statement_extractions?.currency || bank.bank_currency
+                                                statement.statement_extractions.closing_balance,
+                                                statement.statement_extractions.currency || bank.bank_currency
                                             )}
                                         </p>
                                     </div>
                                     <div className="p-3 bg-gray-50 rounded-md">
                                         <p className="text-sm text-muted-foreground mb-1">QuickBooks</p>
                                         <p className="font-medium">
-                                            {formatCurrency(currentStatement?.status?.quickbooks_balance, bank.bank_currency)}
+                                            {formatCurrency(statement.status?.quickbooks_balance, bank.bank_currency)}
                                         </p>
                                     </div>
                                 </div>
@@ -1557,33 +1555,28 @@ export default function BankExtractionDialog({
                     <Button variant="outline" onClick={onClose} disabled={isSaving || isDeleting}>
                         Close
                     </Button>
-                    <Button onClick={handleSave} disabled={isSaving || isDeleting || !currentStatement}>
+                    <Button onClick={handleSave} disabled={isSaving || isDeleting}>
                         {isSaving ?
                             <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Saving...</> :
-                            <><Save className="mr-2 h-4 w-4" />Save {activeStatementTab} Statement</>
+                            <><Save className="mr-2 h-4 w-4" />Save All Changes</>
                         }
                     </Button>
                 </DialogFooter>
-
 
                 <AlertDialog open={showUpdateConfirmation} onOpenChange={setShowUpdateConfirmation}>
                     <AlertDialogContent>
                         <AlertDialogHeader>
                             <AlertDialogTitle>Confirm Updates</AlertDialogTitle>
-                            <AlertDialogDescription asChild>
-                                <div className="space-y-3">
-                                    <span className="text-sm text-muted-foreground">
-                                        You are about to update existing bank statement records. Please review the changes carefully before proceeding.
-                                    </span>
+                            <AlertDialogDescription>
+                                You are about to update existing bank statement records. Please review the changes carefully before proceeding.
 
-                                    {pendingUpdates?.type === 'multi-month' && (
-                                        <div className="mt-4 bg-yellow-50 p-3 rounded-md">
-                                            <span className="text-sm text-yellow-700">
-                                                This will update {pendingUpdates.monthlyBalances.length} monthly records.
-                                            </span>
-                                        </div>
-                                    )}
-                                </div>
+                                {pendingUpdates?.isMultiMonth && (
+                                    <div className="mt-4 bg-yellow-50 p-3 rounded-md">
+                                        <p className="text-sm text-yellow-700">
+                                            This will update {pendingUpdates.monthlyBalances.length} monthly records.
+                                        </p>
+                                    </div>
+                                )}
                             </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
@@ -1598,36 +1591,39 @@ export default function BankExtractionDialog({
                     </AlertDialogContent>
                 </AlertDialog>
 
+
                 <AlertDialog open={showDeleteConfirmation} onOpenChange={setShowDeleteConfirmation}>
                     <AlertDialogContent>
                         <AlertDialogHeader>
                             <AlertDialogTitle>Delete Bank Statement</AlertDialogTitle>
-                            <AlertDialogDescription asChild>
-                                <div className="space-y-3">
-                                    <span className="text-sm text-muted-foreground">Are you sure you want to delete this bank statement?</span>
-                                    {(() => {
-                                        const periodDates = parseStatementPeriod(formData.statementPeriod);
-                                        const isMultiMonth = periodDates && (
-                                            periodDates.startMonth !== periodDates.endMonth ||
-                                            periodDates.startYear !== periodDates.endYear
-                                        );
+                            <AlertDialogDescription>
+                                {(() => {
+                                    const periodDates = parseStatementPeriod(formData.statementPeriod);
+                                    const isMultiMonth = periodDates && (
+                                        periodDates.startMonth !== periodDates.endMonth ||
+                                        periodDates.startYear !== periodDates.endYear
+                                    );
 
-                                        return isMultiMonth ? (
-                                            <div className="bg-amber-50 dark:bg-amber-950/20 p-3 rounded-md">
-                                                <span className="text-sm text-amber-800 dark:text-amber-200 flex items-center">
-                                                    <AlertTriangle className="h-4 w-4 inline mr-1" />
-                                                    This is part of a multi-month statement. Only the entry for {format(new Date((currentStatement?.statement_year || 0), (currentStatement?.statement_month || 0)), 'MMMM yyyy')} will be deleted. The statement file will be preserved for other months.
-                                                </span>
-                                            </div>
-                                        ) : null;
-                                    })()}
-                                </div>
+                                    return (
+                                        <div className="space-y-2">
+                                            <p>Are you sure you want to delete this bank statement?</p>
+                                            {isMultiMonth && (
+                                                <div className="bg-amber-50 dark:bg-amber-950/20 p-3 rounded-md">
+                                                    <p className="text-sm text-amber-800 dark:text-amber-200">
+                                                        <AlertTriangle className="h-4 w-4 inline mr-1" />
+                                                        This is part of a multi-month statement. Only the entry for {format(new Date(statement.statement_year, statement.statement_month), 'MMMM yyyy')} will be deleted. The statement file will be preserved for other months.
+                                                    </p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })()}
                             </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
                             <AlertDialogCancel>Cancel</AlertDialogCancel>
                             <AlertDialogAction
-                                onClick={handleDeleteStatement}
+                                onClick={confirmDeleteStatement}
                                 className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                             >
                                 Delete
@@ -1635,7 +1631,7 @@ export default function BankExtractionDialog({
                         </AlertDialogFooter>
                     </AlertDialogContent>
                 </AlertDialog>
-            </DialogContent>
-        </Dialog>
+            </DialogContent >
+        </Dialog >
     );
 }
