@@ -821,22 +821,22 @@ export function VatSectionViewer({ companyId, vatReturns }: VatSectionViewerProp
                     const amount = row.rates[rate]?.amount || 0;
                     const vat = row.rates[rate]?.vat || 0;
                     return (
-                      <>
+                      <React.Fragment key={`${row.id}-${rate}`}>
                         <td
-                          key={`${rate}-amount`}
+                          key={`${row.id}-${rate}-amount`}
                           // ADDED: Negative check for amount
                           className={`px-2 py-3 text-gray-900 border-r text-right whitespace-nowrap ${amount < 0 ? 'text-red-600 font-semibold' : ''}`}
                         >
                           {formatCurrency(amount)}
                         </td>
                         <td
-                          key={`${rate}-vat`}
+                          key={`${row.id}-${rate}-vat`}
                           // ADDED: Negative check for vat
                           className={`px-2 py-3 text-gray-900 text-right whitespace-nowrap ${rateIndex === allRatesN.length - 1 && totalHeaders.length === 0 ? '' : 'border-r'} ${vat < 0 ? 'text-red-600 font-semibold' : ''}`}
                         >
                           {formatCurrency(vat)}
                         </td>
-                      </>
+                      </React.Fragment>
                     );
                   })}
                   {totalHeaders.map((header, headerIndex) => {
