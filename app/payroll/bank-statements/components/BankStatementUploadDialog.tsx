@@ -308,9 +308,16 @@ export function BankStatementUploadDialog({
     };
 
     // Enhanced file selection with automatic password detection
+    // Enhanced file selection with automatic password detection
     const handleFileSelection = async (selectedFile: File, fileType: 'pdf' | 'excel') => {
         if (fileType === 'pdf') {
             setPdfFile(selectedFile);
+
+            // Reset password states
+            setAutoPasswordApplied(false);
+            setPdfNeedsPassword(false);
+            setPassword('');
+            setPasswordApplied(false);
 
             // Auto-detect file information
             const fileInfo = detectFileInfo(selectedFile.name);
@@ -332,51 +339,62 @@ export function BankStatementUploadDialog({
                 if (isProtected) {
                     console.log('PDF is password protected. Attempting automatic password application.');
 
-                    // Try bank password first
+                    // STEP 1: Try bank's stored password first (highest priority)
                     if (bank?.acc_password) {
-                        console.log('Trying bank stored password');
-                        const bankPassword = detectPasswordFromFilename(bank.acc_password);
-
-                        if (bankPassword) {
-                            setPassword(bankPassword);
-                            setPasswordApplied(true);
-                            setAutoPasswordApplied(true);
-                            setPdfNeedsPassword(false);
-                            toast({
-                                title: "Success",
-                                description: "Bank's stored password detected from filename",
-                            });
-                            return;
+                        console.log('Trying bank stored password:', bank.acc_password);
+                        try {
+                            const success = await applyPasswordToFiles(selectedFile, bank.acc_password);
+                            if (success) {
+                                setPassword(bank.acc_password);
+                                setPasswordApplied(true);
+                                setAutoPasswordApplied(true);
+                                setPdfNeedsPassword(false);
+                                toast({
+                                    title: "Success",
+                                    description: "Bank's stored password applied successfully",
+                                });
+                                return;
+                            }
+                        } catch (error) {
+                            console.error('Bank password failed:', error);
                         }
                     }
 
-                    // Try detected password if bank password failed
+                    // STEP 2: Try detected password from filename
                     if (fileInfo?.password) {
-                        console.log('Trying detected password:', fileInfo.password);
-                        const detectedPassword = detectPasswordFromFilename(fileInfo.password);
-
-                        if (detectedPassword) {
-                            setPassword(detectedPassword);
-                            setPasswordApplied(true);
-                            setAutoPasswordApplied(true);
-                            setPdfNeedsPassword(false);
-                            toast({
-                                title: "Success",
-                                description: "Password detected from filename",
-                            });
-                            return;
+                        console.log('Trying detected password from filename:', fileInfo.password);
+                        try {
+                            const success = await applyPasswordToFiles(selectedFile, fileInfo.password);
+                            if (success) {
+                                setPassword(fileInfo.password);
+                                setPasswordApplied(true);
+                                setAutoPasswordApplied(true);
+                                setPdfNeedsPassword(false);
+                                toast({
+                                    title: "Success",
+                                    description: "Password detected from filename and applied successfully",
+                                });
+                                return;
+                            }
+                        } catch (error) {
+                            console.error('Detected password failed:', error);
                         }
                     }
 
-                    // If no automatic password worked
+                    // STEP 3: If no automatic password worked, require manual input
                     toast({
                         title: "Password Required",
-                        description: "This PDF is password protected. Please enter the password manually.",
+                        description: "This PDF is password protected. Automatic detection failed. Please enter the password manually.",
                         variant: "warning"
                     });
                 }
             } catch (error) {
                 console.error('Error handling PDF password:', error);
+                toast({
+                    title: "Error",
+                    description: "Failed to analyze PDF protection. Please try again.",
+                    variant: "destructive"
+                });
             }
         } else if (fileType === 'excel') {
             setExcelFile(selectedFile);
@@ -558,6 +576,7 @@ export function BankStatementUploadDialog({
     };
 
     // Password checking functions (implement these based on your PDF library)
+    // Password checking functions
     const isPdfPasswordProtected = async (file: File): Promise<boolean> => {
         try {
             const result = await getPdfDocument(file);
