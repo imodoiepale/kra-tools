@@ -815,7 +815,7 @@ export default function BankExtractionDialog({
                 const monthsInRange = generateMonthRange(startMonth, startYear, endMonth, endYear);
 
                 const confirmed = window.confirm(
-                    `This statement covers ${monthsInRange.length} months. Do you want to delete the entry for all these months? The statement file will be preserved.`
+                    `This statement covers ${monthsInRange.length} months. Do you want to delete the ${currentStatement?.statement_type} entries for all these months? Other statement types will be preserved.`
                 );
 
                 if (!confirmed) return;
@@ -829,7 +829,7 @@ export default function BankExtractionDialog({
                             .eq('bank_id', bank.id)
                             .eq('statement_month', month - 1)
                             .eq('statement_year', year)
-                            .eq('statement_type', currentStatement?.statement_type);
+                            .eq('statement_type', currentStatement?.statement_type); // ADD THIS LINE
 
                         if (!deleteError) {
                             deletedCount++;
@@ -842,7 +842,7 @@ export default function BankExtractionDialog({
                 if (deletedCount > 0) {
                     toast({
                         title: 'Success',
-                        description: `Deleted statement entries for ${deletedCount} month(s). Statement file preserved.`
+                        description: `Deleted ${currentStatement?.statement_type} entries for ${deletedCount} month(s). Other statement types preserved.`
                     });
                     onStatementDeleted?.(currentStatement?.id || '');
                     onClose();
@@ -851,7 +851,7 @@ export default function BankExtractionDialog({
                 }
             } else {
                 const confirmed = window.confirm(
-                    'Are you sure you want to delete this statement entry? The statement file will be preserved for other periods that may reference it.'
+                    `Are you sure you want to delete this ${currentStatement?.statement_type} statement entry? Other statement types for this period will be preserved.`
                 );
 
                 if (!confirmed) return;
@@ -859,13 +859,13 @@ export default function BankExtractionDialog({
                 const { error: deleteError } = await supabase
                     .from('acc_cycle_bank_statements')
                     .delete()
-                    .eq('id', currentStatement?.id);
+                    .eq('id', currentStatement?.id); // This is fine since it's by ID
 
                 if (deleteError) throw deleteError;
 
                 toast({
                     title: 'Success',
-                    description: 'Statement entry deleted. File preserved.'
+                    description: `${currentStatement?.statement_type} statement entry deleted. Other types preserved.`
                 });
 
                 onStatementDeleted?.(currentStatement?.id || '');
@@ -903,6 +903,7 @@ export default function BankExtractionDialog({
 
                 console.log('Processing multi-month updates...');
 
+                // FIX: Only delete statements of the SAME TYPE, not all statements for the period
                 const deletePromises = monthsInRange.map(({ month, year }) =>
                     supabase
                         .from('acc_cycle_bank_statements')
@@ -910,12 +911,13 @@ export default function BankExtractionDialog({
                         .eq('bank_id', bank.id)
                         .eq('statement_month', month - 1)
                         .eq('statement_year', year)
-                        .eq('statement_type', currentStatement?.statement_type)
+                        .eq('statement_type', currentStatement?.statement_type) // ADD THIS LINE
                 );
 
                 await Promise.all(deletePromises);
-                console.log('Deleted existing statements');
+                console.log('Deleted existing statements of the same type');
 
+                // Rest of the insertion logic remains the same...
                 const insertPromises = monthsInRange.map(async ({ month, year }, index) => {
                     const cycleId = cycleIds[index];
 
@@ -944,7 +946,7 @@ export default function BankExtractionDialog({
                         statement_cycle_id: cycleId,
                         statement_month: month - 1,
                         statement_year: year,
-                        statement_type: currentStatement?.statement_type,
+                        statement_type: currentStatement?.statement_type, // Preserve the type
                         statement_document: currentStatement?.statement_document,
                         statement_extractions: {
                             ...extractionData,
@@ -979,11 +981,22 @@ export default function BankExtractionDialog({
                     throw new Error(`Failed to create ${errorInserts.length} statement records`);
                 }
 
+                // FIX: Only delete the original statement if we're replacing it entirely
                 if (currentStatement?.id) {
-                    await supabase
-                        .from('acc_cycle_bank_statements')
-                        .delete()
-                        .eq('id', currentStatement.id);
+                    // Check if this was a range statement that we're splitting
+                    const periodDates = parseStatementPeriod(extractionData.statement_period);
+                    const isOriginalMultiMonth = periodDates && (
+                        periodDates.startMonth !== periodDates.endMonth ||
+                        periodDates.startYear !== periodDates.endYear
+                    );
+
+                    if (isOriginalMultiMonth) {
+                        console.log('Deleting original range statement:', currentStatement.id);
+                        await supabase
+                            .from('acc_cycle_bank_statements')
+                            .delete()
+                            .eq('id', currentStatement.id);
+                    }
                 }
 
                 console.log(`Successfully processed ${successfulInserts.length} multi-month records`);
@@ -995,6 +1008,7 @@ export default function BankExtractionDialog({
                 });
 
             } else if (updates.type === 'single-month') {
+                // Single month updates - no deletion needed, just update
                 const { extractionData, validationStatus, monthlyBalances, statementId } = updates;
 
                 console.log('Processing single-month update...');
