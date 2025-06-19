@@ -21,13 +21,13 @@ import {
     List,
     Filter
 } from 'lucide-react'
-import { BankReconciliationTable } from './BankReconciliationTable'
+import { BankReconciliationTable } from './components/BankReconciliationTable'
 import { DetailedBankStatementsView } from './components/DetailedBankStatementsView'
 import { useStatementCycle } from '../hooks/useStatementCycle'
 import { BankStatementFilters } from './components/BankStatementFilters'
 import { BankStatementBulkUploadDialog } from './components/BankStatementBulkUploadDialog'
 import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog'
-import { deleteAllBankStatements } from './actions'
+import { deleteAllBankStatements } from './utils/actions'
 
 const CLIENT_TYPES = [
     { key: 'acc', label: 'Accounting' },
@@ -304,7 +304,7 @@ export default function BankReconciliationPage() {
                                 )}
 
                                 {/* Client Type Filter */}
-                                <Select
+                                {/* <Select
                                     value={selectedClientTypes[0]?.key || 'all'}
                                     onValueChange={(value) => {
                                         if (value === 'all') {
@@ -325,7 +325,7 @@ export default function BankReconciliationPage() {
                                             </SelectItem>
                                         ))}
                                     </SelectContent>
-                                </Select>
+                                </Select> */}
 
                                 <BankStatementFilters
                                     selectedStatementStatuses={selectedStatementStatuses}

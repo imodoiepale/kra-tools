@@ -23,7 +23,8 @@ import {
     generateMonthRange,
     parseStatementPeriod,
     getPdfDocument,
-    detectPasswordFromFilename
+    detectPasswordFromFilename,
+    getOrCreateStatementCycle
 } from '@/lib/bankExtractionUtils';
 import { detectFileInfo } from '../utils/fileDetectionUtils';
 import { ExtractionsService } from '@/lib/services/extractionService';
@@ -519,7 +520,8 @@ export function BankStatementUploadDialog({
         try {
             let currentValidationResult = validationResult;
 
-            if (pdfFile) {
+            // FIX: Only extract if we don't already have validation results or if this is first run
+            if (pdfFile && (!currentValidationResult || !forceProceed)) {
                 setStatusMessage('Extracting data...');
 
                 const extractionResults = await ExtractionsService.getExtraction(pdfFile, {
@@ -570,6 +572,12 @@ export function BankStatementUploadDialog({
                 setValidationResults(validationCheck);
             }
 
+            // FIX: If forceProceed is true, use existing validation result
+            if (forceProceed && validationResult) {
+                currentValidationResult = validationResult;
+                console.log('Using existing validation result after user approved:', currentValidationResult);
+            }
+
             if (currentValidationResult && !currentValidationResult.isValid && !forceProceed) {
                 setShowValidationDialog(true);
                 setIsProcessing(false);
@@ -592,30 +600,45 @@ export function BankStatementUploadDialog({
 
             const determinedType = determineStatementType(currentValidationResult?.extractedData, selectedStatementType);
 
-            // FIX: Check for existing statements of the SAME TYPE only
+            // FIX: Get or create appropriate cycle based on statement type
+            let targetCycleId = statementCycleId;
+
+            if (determinedType === 'range' && currentValidationResult?.extractedData?.statement_period) {
+                // For range statements, create a cycle based on the extracted period
+                const periodDates = parseStatementPeriodSafe(currentValidationResult.extractedData.statement_period);
+                if (periodDates) {
+                    // Use the utility function directly
+                    targetCycleId = await getOrCreateStatementCycle(
+                        periodDates.startYear,
+                        periodDates.startMonth - 1,
+                        'range' // Pass the statement type
+                    );
+                }
+            }
+
+            // Check for existing statements of the same type and cycle
             const { data: existingStatementsOfSameType, error: existingError } = await supabase
                 .from('acc_cycle_bank_statements')
                 .select('*')
                 .eq('bank_id', bank.id)
-                .eq('statement_cycle_id', statementCycleId)
-                .eq('statement_month', cycleMonth)
-                .eq('statement_year', cycleYear)
+                .eq('statement_cycle_id', targetCycleId)
                 .eq('statement_type', determinedType);
 
             if (existingError) throw existingError;
 
-            let upsertId = existingStatement?.id;
+            let upsertId = undefined;
 
             // If there's an existing statement of the same type, use its ID for upserting
             if (existingStatementsOfSameType && existingStatementsOfSameType.length > 0) {
                 upsertId = existingStatementsOfSameType[0].id;
+                console.log(`Found existing ${determinedType} statement, will update:`, upsertId);
             }
 
             const dataToSave = {
-                id: upsertId, // Will be undefined for new statements
+                id: upsertId,
                 bank_id: bank.id,
                 company_id: bank.company_id,
-                statement_cycle_id: statementCycleId,
+                statement_cycle_id: targetCycleId,
                 statement_month: cycleMonth,
                 statement_year: cycleYear,
                 statement_type: determinedType,

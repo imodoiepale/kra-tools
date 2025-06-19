@@ -129,7 +129,8 @@ export function BankValidationDialog({
                     await onProceed({ ...extractedData, statement: updatedStatement });
                 }
             } else {
-                // For new statements, pass the extracted data to be processed
+                // FIX: For new statements, pass the extracted data directly to avoid re-extraction
+                console.log('Proceeding with validation data:', extractedData);
                 await onProceed(extractedData);
             }
         } catch (error) {

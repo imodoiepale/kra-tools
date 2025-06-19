@@ -601,13 +601,18 @@ export async function performBankStatementExtraction(fileUrl, params, onProgress
 }
 
 // Enhanced statement cycle creation
-export const getOrCreateStatementCycle = async (year, month) => {
+export const getOrCreateStatementCycle = async (year: number, month: number, statementType?: 'monthly' | 'range') => {
   try {
     // month should be 0-indexed (0=January, 1=February, etc.)
     const monthStr = (month + 1).toString().padStart(2, '0'); // Convert to 1-indexed and pad
-    const monthYearStr = `${year}-${monthStr}`;
+    let monthYearStr = `${year}-${monthStr}`;
 
-    console.log('Creating/finding statement cycle for:', { year, month, monthYearStr });
+    // FIX: For range statements, create a different cycle identifier to avoid conflicts
+    if (statementType === 'range') {
+      monthYearStr = `${year}-${monthStr}-range`;
+    }
+
+    console.log('Creating/finding statement cycle for:', { year, month, monthYearStr, statementType });
 
     // 1. Try to find existing cycle
     const { data: existingCycle, error: findError } = await supabase
@@ -654,7 +659,8 @@ export const getOrCreateStatementCycle = async (year, month) => {
       error,
       message: error.message,
       year,
-      month
+      month,
+      statementType
     });
     throw error;
   }

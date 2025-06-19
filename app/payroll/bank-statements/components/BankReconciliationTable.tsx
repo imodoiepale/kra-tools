@@ -17,10 +17,10 @@ import {
     TableRow,
 } from '@/components/ui/table'
 import { Loader2, UploadCloud, Edit, Eye, CheckCircle, AlertTriangle, MoreHorizontal, Trash, X, Lock, Plus, Calendar, XCircle } from 'lucide-react'
-import { BankStatementUploadDialog } from './components/BankStatementUploadDialog'
-import BankExtractionDialog from './components/BankExtractionDialog'
-import { QuickbooksBalanceDialog } from './components/QuickbooksBalanceDialog'
-import { PasswordUpdateDialog } from './components/PasswordUpdateDialog'
+import { BankStatementUploadDialog } from './BankStatementUploadDialog'
+import BankExtractionDialog from './BankExtractionDialog'
+import { QuickbooksBalanceDialog } from './QuickbooksBalanceDialog'
+import { PasswordUpdateDialog } from './PasswordUpdateDialog'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import {
     DropdownMenu,
@@ -40,8 +40,8 @@ import {
     AlertDialogTitle
 } from "@/components/ui/alert-dialog"
 import { Bank, BankStatement, Company, BankReconciliationTableProps, FilterWithStatus } from './types'
-import { normalizeCurrencyCode } from './bankExtractionUtils'
-import { useStatementCycle } from '../hooks/useStatementCycle'
+import { normalizeCurrencyCode } from '../utils/bankExtractionUtils'
+import { useStatementCycle } from '../../hooks/useStatementCycle'
 import { Badge } from '@/components/ui/badge'
 
 function EnhancedDeleteConfirmationDialog({

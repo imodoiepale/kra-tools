@@ -211,14 +211,13 @@ export default function BankExtractionDialog({
 
         setIsLoading(true);
         try {
-            const cycleId = statement.statement_cycle_id;
-
-            // Get all statements for this bank and cycle
+            // FIX: Get all statements for this bank across all cycles for this period
             const { data: allStatements, error } = await supabase
                 .from('acc_cycle_bank_statements')
                 .select('*')
                 .eq('bank_id', bank.id)
-                .eq('statement_cycle_id', cycleId);
+                .eq('statement_month', statement.statement_month)
+                .eq('statement_year', statement.statement_year);
 
             if (error) throw error;
 
@@ -226,7 +225,7 @@ export default function BankExtractionDialog({
             let monthlyStatement = null;
             let rangeStatement = null;
 
-            // Separate statements by type
+            // Separate statements by type (they might be in different cycles)
             statements.forEach(stmt => {
                 if (stmt.statement_type === 'range') {
                     rangeStatement = stmt;
@@ -252,7 +251,6 @@ export default function BankExtractionDialog({
                 currentStmt = rangeStatement;
                 setActiveStatementTab('range');
             } else {
-                // Fallback to determining type
                 setActiveStatementTab(isRangeStatement(statement) ? 'range' : 'monthly');
             }
 
@@ -1327,14 +1325,6 @@ export default function BankExtractionDialog({
                                             ) : (
                                                 // Single statement type - show without tabs
                                                 <div className="p-2 h-full overflow-auto">
-                                                    <div className="flex items-center justify-between mb-2">
-                                                        <span className="text-sm font-medium">
-                                                            {currentStatement?.statement_type === 'range' ? 'Range Balances' : 'Monthly Balances'}
-                                                        </span>
-                                                        <Button variant="outline" size="sm" onClick={handleAddBalance}>
-                                                            <Plus className="h-4 w-4 mr-1" />Add
-                                                        </Button>
-                                                    </div>
                                                     <MonthlyBalancesTable
                                                         monthlyBalances={monthlyBalances}
                                                         onUpdateBalance={handleUpdateBalance}
