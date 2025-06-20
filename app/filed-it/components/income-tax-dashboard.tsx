@@ -26,24 +26,26 @@ import { useIncomeTaxReturns } from "../hooks/useIncomeTaxReturns"
 import { SectionDataTable } from "../components/SectionDataTable"
 
 const incomeTaxSections = [
-    { key: "sectionA", name: "Section A", fullName: "Basic Information" },
-    { key: "sectionB1", name: "Section B1", fullName: "Profit/Loss Account Details" },
-    { key: "sectionB", name: "Section B", fullName: "Profit/Loss Account" },
+    { key: "sectionA", name: "Section A", fullName: "Return Information" },
+    { key: "sectionB1", name: "Section B1", fullName: "Profit/Loss Account" },
+    { key: "sectionB", name: "Section B", fullName: "Profit/Surplus and Loss Account" },
+    { key: "sectionB2", name: "Section B2", fullName: "Related Party Transactions" },
     { key: "sectionC", name: "Section C", fullName: "Balance Sheet" },
     { key: "sectionD", name: "Section D", fullName: "Stock Details" },
-    { key: "sectionE1", name: "Section E1", fullName: "Capital Allowances Details" },
-    { key: "sectionE", name: "Section E", fullName: "Capital Allowances" },
+    { key: "sectionE1", name: "Section E1", fullName: "Capital Allowances Additions" },
+    { key: "sectionE2", name: "Section E2", fullName: "Wear and Tear Deductions" },
+    { key: "sectionE2Part3", name: "Section E2 Part 3", fullName: "Additional Wear and Tear" },
+    { key: "sectionE", name: "Section E", fullName: "Summary of Capital Allowance" },
     { key: "sectionF", name: "Section F", fullName: "Installment Tax Paid" },
-    { key: "sectionG1", name: "Section G1", fullName: "Tax Withheld Details" },
-    { key: "sectionG2", name: "Section G2", fullName: "Additional Tax Withheld" },
-    { key: "sectionH", name: "Section H", fullName: "Other Details" },
+    { key: "sectionG", name: "Section G", fullName: "Tax Withheld" },
+    { key: "sectionH", name: "Section H", fullName: "Advance Tax on Commercial Vehicles" },
     { key: "sectionI", name: "Section I", fullName: "Income Tax Paid" },
     { key: "sectionJ", name: "Section J", fullName: "Double Taxation Agreement" },
-    { key: "sectionK", name: "Section K", fullName: "Losses Carried Forward" },
+    { key: "sectionK", name: "Section K", fullName: "Losses" },
     { key: "sectionL", name: "Section L", fullName: "Partnership Income" },
     { key: "sectionM", name: "Section M", fullName: "Tax Computation" },
-    { key: "sectionN", name: "Section N", fullName: "Trust/Estate Income" },
-]
+    { key: "sectionN", name: "Section N", fullName: "Distribuatable Income" },
+  ]
 
 export default function IncomeTaxDashboard({ company }) {
     const [selectedSection, setSelectedSection] = useState("sectionA")

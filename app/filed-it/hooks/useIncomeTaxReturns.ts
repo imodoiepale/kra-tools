@@ -20,91 +20,152 @@ const fetchIncomeTaxReturns = async (companyId: number) => {
 };
 
 // Section mapping configuration
+// Updated section mapping with all new sections and parts
 const SECTION_MAPPING = {
   sectionA: {
     name: "Section A",
-    fullName: "Basic Information",
+    fullName: "Return Information",
     columns: ["section_a_1", "section_a_2", "section_a_3", "section_a_4", "section_a_5"],
+    parts: [
+      "Part 1 - Return Information",
+      "Part 2 - Bank Details", 
+      "Part 3 - Details of Auditor",
+      "Part 4 - Landlord Details",
+      "Part 5 - Tenant Details"
+    ]
   },
   sectionB1: {
     name: "Section B1",
-    fullName: "Profit/Loss Account Details",
+    fullName: "Profit/Loss Account",
     columns: ["section_b1_1", "section_b1_2"],
+    parts: [
+      "Part I - Other Expenses (Describe the Head of Expense)",
+      "Part II - Other Income (Describe the Head of Income)"
+    ]
   },
   sectionB: {
     name: "Section B",
-    fullName: "Profit/Loss Account",
-    columns: ["section_b_1", "section_b_2", "section_b_3", "section_b_4"],
+    fullName: "Profit/Surplus and Loss Account",
+    columns: ["section_b_1", "section_b_2"],
+    parts: [
+      "Part I - Other Expenses (Describe the Head of Expense)",
+      "Part II - Other Income (Describe the Head of Income)"
+    ]
+  },
+  sectionB2: {
+    name: "Section B2",
+    fullName: "Related Party Transactions",
+    columns: ["section_b2_1", "section_b2_2", "section_b2_3", "section_b2_4"],
+    parts: [
+      "Part 1 - Particulars of Related Party Transactions or Controlled Transactions",
+      "Part 2 - Financial Performance of the Local Entity vs Consolidated Performance",
+      "Part 3a - Controlled Transactions that give Rise to Taxable Income or Tax Deductible Expenses",
+      "Part 3b - Controlled Transactions of a Capital Nature"
+    ]
   },
   sectionC: {
     name: "Section C",
     fullName: "Balance Sheet",
     columns: ["section_c_1", "section_c_2", "section_c_3"],
+    parts: ["Balance Sheet"]
   },
   sectionD: {
     name: "Section D",
     fullName: "Stock Details",
     columns: ["section_d_1", "section_d_2"],
+    parts: [
+      "Part 1 - Quantitative Details of Stock/Inventory (Trading Concern)",
+      "Part 2 - Quantitative Details of Stock/Inventory (Raw Material Details)"
+    ]
   },
   sectionE1: {
     name: "Section E1",
-    fullName: "Capital Allowances Details",
+    fullName: "Capital Allowances Additions",
     columns: ["section_e1_1", "section_e1_2", "section_e1_3", "section_e1_4"],
+    parts: [
+      "Part 1 - Addition to Plant and Machinery and Investment Deduction",
+      "Part 2 - Addition to Building, Investment Deduction", 
+      "Part 3 - Deductions In Respect of Farm Works",
+      "Part 4 - Deductions in respect of Extractive Industries"
+    ]
+  },
+  sectionE2: {
+    name: "Section E2",
+    fullName: "Wear and Tear Deductions",
+    columns: ["section_e2_1", "section_e2_2"],
+    parts: ["Part A - Reducing Balance Method"]
+  },
+  sectionE2Part3: {
+    name: "Section E2 Part 3",
+    fullName: "Additional Wear and Tear Deductions",
+    columns: ["section_e2_3", "section_e2_4"],
+    parts: ["Part 3 - Additional Wear and Tear Deductions"]
   },
   sectionE: {
     name: "Section E",
-    fullName: "Capital Allowances",
+    fullName: "Summary of Capital Allowance",
     columns: ["section_e_1", "section_e_2"],
+    parts: ["Capital Allowance Summary"]
   },
   sectionF: {
     name: "Section F",
-    fullName: "Installment Tax Paid",
+    fullName: "Details of Installment Tax Paid",
     columns: ["section_f_1", "section_f_2"],
+    parts: ["Installment Tax Details"]
   },
-  sectionG1: {
-    name: "Section G1",
-    fullName: "Tax Withheld Details",
-    columns: ["section_g1_1", "section_g1_2"],
-  },
-  sectionG2: {
-    name: "Section G2",
-    fullName: "Additional Tax Withheld",
-    columns: ["section_h_1", "section_h_2"], // Note: mapped to section_h columns as per your script
+  sectionG: {
+    name: "Section G",
+    fullName: "Details of Tax Withheld",
+    columns: ["section_g_1", "section_g_2"],
+    parts: ["Tax Withheld Details"]
   },
   sectionH: {
     name: "Section H",
-    fullName: "Other Details",
+    fullName: "Details of Advance Tax on Commercial Vehicles",
     columns: ["section_h_1", "section_h_2"],
+    parts: ["Advance Tax on Commercial Vehicles"]
   },
   sectionI: {
     name: "Section I",
-    fullName: "Income Tax Paid",
+    fullName: "Details of Income Tax Paid",
     columns: ["section_i_1", "section_i_2"],
+    parts: [
+      "Section I1 - Advance Payment",
+      "Section I2 - Self Assessment Tax"
+    ]
   },
   sectionJ: {
     name: "Section J",
-    fullName: "Double Taxation Agreement",
+    fullName: "Details of Double Taxation Agreement",
     columns: ["section_j_1", "section_j_2"],
+    parts: ["Double Taxation Agreement"]
   },
   sectionK: {
     name: "Section K",
-    fullName: "Losses Carried Forward",
+    fullName: "Details of Losses",
     columns: ["section_k_1", "section_k_2"],
+    parts: ["Losses Brought Forward and Carried Forward"]
   },
   sectionL: {
     name: "Section L",
     fullName: "Partnership Income",
     columns: ["section_l_1", "section_l_2"],
+    parts: ["Partnership Income"]
   },
   sectionM: {
     name: "Section M",
     fullName: "Tax Computation",
-    columns: ["section_m_1", "section_m_2", "section_m_3", "section_m_4"],
+    columns: ["section_m_1", "section_m_2"],
+    parts: [
+      "Part I - Other Disallowable Deductions",
+      "Part II - Other Allowable Deductions"
+    ]
   },
   sectionN: {
     name: "Section N",
-    fullName: "Trust/Estate Income",
+    fullName: "Distribuatable Income Computation",
     columns: ["section_n_1", "section_n_2"],
+    parts: ["Distribuatable Income Computation"]
   },
 };
 
