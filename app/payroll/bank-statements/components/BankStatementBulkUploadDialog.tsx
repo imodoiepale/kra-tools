@@ -1,10 +1,11 @@
+// app/payroll/bank-statements/components/BankStatementBulkUploadDialog.tsx
 // @ts-nocheck
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import {
     Loader2, Upload, AlertTriangle, CheckCircle, UploadCloud,
     FileText, Building, Landmark, CreditCard, DollarSign,
     Calendar, X, ArrowRight, FileCheck, FilePlus, FileWarning,
-    ChevronDown, ChevronRight, Save, Eye, Lock
+    ChevronDown, ChevronRight, Save, Eye, Lock, Edit
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/hooks/use-toast'
@@ -22,7 +23,9 @@ import {
     getPdfDocument,
     processBulkExtraction,
     detectFileInfo,
-    getOrCreateStatementCycle
+    getOrCreateStatementCycle,
+    parseStatementPeriod,
+    generateMonthRange
 } from '@/lib/bankExtractionUtils'
 import {
     Table,
@@ -82,6 +85,8 @@ interface BulkUploadItem {
     appliedPassword?: string | null
     needsPassword?: boolean
     statementType?: 'monthly' | 'range'
+    userPeriodInput?: string
+    extractionAttempts?: number
 }
 
 interface CompanyGroup {
@@ -101,6 +106,24 @@ interface BankStatementBulkUploadDialogProps {
     statementCycleId: string
     onUploadsComplete: () => void
 }
+
+// Database connection management
+const withRetry = async (operation: () => Promise<any>, maxRetries: number = 3) => {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            return await operation();
+        } catch (error) {
+            console.log(`Database operation attempt ${attempt} failed:`, error);
+
+            if (attempt === maxRetries) {
+                throw error;
+            }
+
+            // Exponential backoff
+            await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
+        }
+    }
+};
 
 export function BankStatementBulkUploadDialog({
     isOpen,
@@ -123,23 +146,23 @@ export function BankStatementBulkUploadDialog({
     const [companyGroups, setCompanyGroups] = useState<CompanyGroup[]>([])
 
     // Validation/Extraction dialogs
-    const [showValidationDialog, setShowValidationDialog] = useState<boolean>(false)
     const [showExtractionDialog, setShowExtractionDialog] = useState<boolean>(false)
     const [currentProcessingItem, setCurrentProcessingItem] = useState<BulkUploadItem | null>(null)
     const [currentItemIndex, setCurrentItemIndex] = useState<number>(-1)
-    const [validationResult, setValidationResult] = useState<any>(null)
-    const [extractionResults, setExtractionResults] = useState<any>(null)
 
-    // Manual matching
+    // FIX: Add state to hold a temporary statement object for the dialog
+    const [currentStatementForDialog, setCurrentStatementForDialog] = useState<any>(null);
+
+    // Manual matching and period input
     const [currentManualMatchItem, setCurrentManualMatchItem] = useState<number | null>(null);
     const [showBankSelectorDialog, setShowBankSelectorDialog] = useState<boolean>(false);
+    const [showPeriodInputDialog, setShowPeriodInputDialog] = useState<boolean>(false);
+    const [selectedItemForPeriod, setSelectedItemForPeriod] = useState<number | null>(null);
+    const [manualPeriodInput, setManualPeriodInput] = useState<string>('');
 
     // Password handling
     const [passwordProtectedFiles, setPasswordProtectedFiles] = useState<any[]>([]);
     const [showPasswordDialog, setShowPasswordDialog] = useState(false);
-
-    // Batch processing
-    const [batchProcessingQueue, setBatchProcessingQueue] = useState<number[]>([]);
 
     const fileInputRef = useRef<HTMLInputElement>(null)
     const { toast } = useToast()
@@ -183,8 +206,8 @@ export function BankStatementBulkUploadDialog({
         return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
     }
 
-    const formatCurrency = (amount: number | null, currencyCode: string): string => {
-        if (amount === null || isNaN(amount)) return '-'
+    const formatCurrency = (amount: number | null | undefined, currencyCode: string): string => {
+        if (amount === null || amount === undefined || isNaN(amount)) return '-'
         try {
             return new Intl.NumberFormat('en-US', {
                 style: 'currency',
@@ -219,64 +242,133 @@ export function BankStatementBulkUploadDialog({
                 return <Badge variant="outline">Unknown</Badge>
         }
     }
+    
+    // NEW: Function to handle balance updates from the StatementRowComponent
+    const handleBalanceUpdate = (itemToUpdate: BulkUploadItem, field: string, value: number | null) => {
+        setUploadItems(prevItems => {
+            const itemIndex = prevItems.findIndex(item => item.file.name === itemToUpdate.file.name);
+            if (itemIndex === -1) {
+                console.warn("Could not find item to update balance for.");
+                return prevItems;
+            }
 
-    // OPTIMIZED: Batch file processing with enhanced password detection
+            const updatedItems = [...prevItems];
+            
+            // Create a deep copy of the item to ensure immutability
+            const updatedItem = JSON.parse(JSON.stringify(updatedItems[itemIndex]));
+
+            // Update the extractedData object
+            if (!updatedItem.extractedData) {
+                updatedItem.extractedData = {};
+            }
+            updatedItem.extractedData[field] = value;
+            
+            // If updating closing balance, also update the latest monthly balance if it exists
+            if (field === 'closing_balance' && Array.isArray(updatedItem.extractedData.monthly_balances) && updatedItem.extractedData.monthly_balances.length > 0) {
+                 const lastBalanceIndex = updatedItem.extractedData.monthly_balances.length - 1;
+                 updatedItem.extractedData.monthly_balances[lastBalanceIndex].closing_balance = value;
+            }
+
+            updatedItems[itemIndex] = updatedItem;
+
+            console.log(`Updated balance for ${itemToUpdate.file.name}: ${field} = ${value}`);
+            return updatedItems;
+        });
+    };
+
+    // NEW: Placeholder for editing period, can be expanded later
+    const handleEditPeriod = (item: BulkUploadItem) => {
+        const itemIndex = uploadItems.findIndex(i => i.file.name === item.file.name);
+        if (itemIndex > -1) {
+            setSelectedItemForPeriod(itemIndex);
+            setManualPeriodInput(item.extractedData?.statement_period || '');
+            setShowPeriodInputDialog(true);
+        }
+    };
+
+    const safeDetectFileInfo = (filename: string) => {
+        try {
+            if (!filename) return { password: null, accountNumber: null, bankName: null };
+
+            if (typeof detectFileInfo === 'function') {
+                const result = detectFileInfo(filename);
+                return result || { password: null, accountNumber: null, bankName: null };
+            }
+
+            return {
+                password: null,
+                accountNumber: null,
+                bankName: null
+            };
+        } catch (error) {
+            console.error('Error in file info detection:', error);
+            return { password: null, accountNumber: null, bankName: null };
+        }
+    };
+
     const processFileWithPasswordDetection = async (file: File, index: number): Promise<BulkUploadItem> => {
-        const fileInfo = detectFileInfo(file.name);
+        const fileInfo = safeDetectFileInfo(file.name);
 
-        // Enhanced bank matching with multiple criteria
         let matchedBank = null;
         let matchConfidence = 0;
 
-        // Try account number matching first (highest confidence)
-        if (fileInfo.accountNumber) {
-            matchedBank = safeBanks.find(bank =>
-                bank.account_number.includes(fileInfo.accountNumber) ||
-                fileInfo.accountNumber.includes(bank.account_number)
-            );
+        if (fileInfo?.accountNumber && safeBanks?.length > 0) {
+            matchedBank = safeBanks.find(bank => {
+                if (!bank?.account_number || !fileInfo.accountNumber) return false;
+                return bank.account_number.includes(fileInfo.accountNumber) ||
+                    fileInfo.accountNumber.includes(bank.account_number);
+            });
             if (matchedBank) matchConfidence = 0.9;
         }
 
-        // Try bank name matching if no account match
-        if (!matchedBank && fileInfo.bankName) {
-            matchedBank = safeBanks.find(bank =>
-                bank.bank_name.toLowerCase().includes(fileInfo.bankName.toLowerCase()) ||
-                fileInfo.bankName.toLowerCase().includes(bank.bank_name.toLowerCase())
-            );
+        if (!matchedBank && fileInfo?.bankName && safeBanks?.length > 0) {
+            matchedBank = safeBanks.find(bank => {
+                if (!bank?.bank_name || !fileInfo.bankName) return false;
+                const bankNameLower = bank.bank_name.toLowerCase();
+                const fileNameLower = fileInfo.bankName.toLowerCase();
+                return bankNameLower.includes(fileNameLower) ||
+                    fileNameLower.includes(bankNameLower);
+            });
             if (matchedBank) matchConfidence = 0.7;
         }
 
-        // Check password protection and auto-unlock
         let needsPassword = false;
         let passwordApplied = false;
         let appliedPassword = null;
 
         if (file.type === 'application/pdf') {
-            needsPassword = await isPdfPasswordProtected(file);
+            try {
+                needsPassword = await isPdfPasswordProtected(file);
 
-            if (needsPassword) {
-                // Priority: Bank password > Detected password
-                const passwordsToTry = [
-                    matchedBank?.acc_password,
-                    fileInfo.password
-                ].filter(Boolean);
+                if (needsPassword) {
+                    const passwordsToTry = [
+                        matchedBank?.acc_password,
+                        fileInfo?.password
+                    ].filter(Boolean);
 
-                for (const password of passwordsToTry) {
-                    if (await applyPasswordToFiles(file, password)) {
-                        passwordApplied = true;
-                        appliedPassword = password;
-                        needsPassword = false;
-                        break;
+                    for (const password of passwordsToTry) {
+                        try {
+                            if (await applyPasswordToFiles(file, password)) {
+                                passwordApplied = true;
+                                appliedPassword = password;
+                                needsPassword = false;
+                                break;
+                            }
+                        } catch (error) {
+                            console.error(`Error applying password "${password}":`, error);
+                            continue;
+                        }
                     }
                 }
+            } catch (error) {
+                console.error('Error checking PDF password protection:', error);
+                needsPassword = false;
             }
         }
 
-        // Preliminary statement type detection from filename
         let preliminaryType: 'monthly' | 'range' = 'monthly';
-        const fileName = file.name.toLowerCase();
+        const fileName = file.name?.toLowerCase() || '';
 
-        // Check filename for range indicators
         if (fileName.includes('quarter') || fileName.includes('q1') || fileName.includes('q2') ||
             fileName.includes('q3') || fileName.includes('q4') || fileName.includes('range') ||
             fileName.includes('multi') || fileName.includes('annual')) {
@@ -285,9 +377,9 @@ export function BankStatementBulkUploadDialog({
 
         return {
             file,
-            detectedPassword: fileInfo.password,
-            detectedAccountNumber: fileInfo.accountNumber,
-            detectedBankName: fileInfo.bankName,
+            detectedPassword: fileInfo?.password || null,
+            detectedAccountNumber: fileInfo?.accountNumber || null,
+            detectedBankName: fileInfo?.bankName || null,
             matchedBank,
             needsPassword,
             passwordApplied,
@@ -299,11 +391,12 @@ export function BankStatementBulkUploadDialog({
             uploadProgress: 0,
             hasSoftCopy: true,
             hasHardCopy: false,
-            statementType: preliminaryType // Will be updated after extraction
+            statementType: preliminaryType,
+            userPeriodInput: '',
+            extractionAttempts: 0
         };
     };
 
-    // OPTIMIZED: Faster file selection with parallel processing
     const handleFileSelection = async (event: React.ChangeEvent<HTMLInputElement>) => {
         const files = event.target.files;
         if (!files || files.length === 0) return;
@@ -312,7 +405,6 @@ export function BankStatementBulkUploadDialog({
         setUploading(true);
 
         try {
-            // Process files in parallel for faster detection
             const processingPromises = fileArray.map((file, i) =>
                 processFileWithPasswordDetection(file, uploadItems.length + i)
             );
@@ -320,7 +412,6 @@ export function BankStatementBulkUploadDialog({
             const newItems = await Promise.all(processingPromises);
             setUploadItems(prev => [...prev, ...newItems]);
 
-            // Show auto-detection summary
             const autoUnlocked = newItems.filter(item => item.passwordApplied).length;
             const matched = newItems.filter(item => item.matchedBank).length;
 
@@ -340,8 +431,161 @@ export function BankStatementBulkUploadDialog({
             setUploading(false);
         }
     };
+    
+    // FIX: This function now correctly updates the status after a successful DB operation
+    const handleVouchStatement = async (statementItem: BulkUploadItem, isVouched: boolean) => {
+        const itemIndex = uploadItems.findIndex(i => i.file.name === statementItem.file.name);
+        if (itemIndex < 0) return;
+        
+        // Optimistically update the UI
+        const updatedStatus = isVouched ? 'vouched' : 'uploaded';
+        setUploadItems(prev => {
+            const updated = [...prev];
+            updated[itemIndex] = { ...updated[itemIndex], isVouched, status: updatedStatus };
+            return updated;
+        });
 
-    // OPTIMIZED: Bulk extraction using the utility function
+        // If vouching, save to DB. If un-vouching, the parent component handles it.
+        if (isVouched) {
+            try {
+                await saveStatementToDatabase(uploadItems[itemIndex]);
+                toast({
+                    title: 'Statement Vouched',
+                    description: 'Statement has been successfully saved and vouched.',
+                });
+            } catch (error) {
+                // Revert UI on failure
+                setUploadItems(prev => {
+                    const updated = [...prev];
+                    updated[itemIndex] = { ...updated[itemIndex], isVouched: false, status: 'uploaded' };
+                    return updated;
+                });
+                toast({
+                    title: 'Vouching Error',
+                    description: `Failed to save statement: ${error.message}`,
+                    variant: 'destructive',
+                });
+            }
+        }
+    };
+
+    // Add this helper function to filter monthly balances properly
+    const filterMonthlyBalancesForPeriod = (monthlyBalances: any[], statementPeriod: string) => {
+        if (!statementPeriod || !monthlyBalances?.length) {
+            return monthlyBalances || [];
+        }
+
+        try {
+            const periodDates = parseStatementPeriod(statementPeriod);
+            if (!periodDates) {
+                return monthlyBalances;
+            }
+
+            // Filter to only include months within the actual statement period
+            return monthlyBalances.filter(monthData => {
+                const monthDate = new Date(monthData.year, monthData.month - 1);
+                const startDate = new Date(periodDates.startYear, periodDates.startMonth - 1);
+                const endDate = new Date(periodDates.endYear, periodDates.endMonth - 1);
+
+                const isWithinPeriod = monthDate >= startDate && monthDate <= endDate;
+
+                if (!isWithinPeriod) {
+                    console.log(`Filtering out month ${monthData.month}/${monthData.year} - outside statement period`);
+                }
+
+                return isWithinPeriod;
+            });
+        } catch (error) {
+            console.error('Error filtering monthly balances:', error);
+            return monthlyBalances;
+        }
+    };
+
+    // Enhanced batch processing with better error recovery
+    const processBatchWithRetry = async (batch: any[], batchIndex: number, totalBatches: number) => {
+        const maxRetries = 2;
+        let attempt = 0;
+
+        while (attempt < maxRetries) {
+            try {
+                const results = await Promise.all(batch.map(async (item, itemIndex) => {
+                    const globalIndex = uploadItems.indexOf(item);
+
+                    try {
+                        const statementType = item.statementType || 'monthly';
+                        const extractedData = item.extractedData;
+
+                        // Add retry logic for database conflicts
+                        if (statementType === 'range' && extractedData.monthly_balances?.length > 1) {
+                            return await handleRangeStatementUpload(item, globalIndex);
+                        } else {
+                            return await handleSingleStatementUpload(item, globalIndex);
+                        }
+                    } catch (error) {
+                        // If it's a duplicate key error, treat as success
+                        if (error.message?.includes('23505') || error.message?.includes('duplicate key')) {
+                            console.log(`Duplicate key handled gracefully for item ${globalIndex}`);
+                            setUploadItems(prev => {
+                                const updated = [...prev];
+                                updated[globalIndex] = {
+                                    ...updated[globalIndex],
+                                    status: 'uploaded',
+                                    uploadProgress: 100,
+                                    error: undefined
+                                };
+                                return updated;
+                            });
+                            return true;
+                        }
+                        throw error;
+                    }
+                }));
+
+                return results;
+            } catch (batchError) {
+                attempt++;
+                console.log(`Batch ${batchIndex + 1} attempt ${attempt} failed:`, batchError);
+
+                if (attempt >= maxRetries) {
+                    console.error(`Batch ${batchIndex + 1} failed after ${maxRetries} attempts`);
+                    return batch.map(() => false);
+                }
+
+                // Wait before retry
+                await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+            }
+        }
+    };
+
+    // Real-time progress broadcaster
+    const broadcastProgress = (current: number, total: number, message: string = '') => {
+        const percent = Math.round((current / total) * 100);
+        setOverallProgress(percent);
+
+        if (message) {
+            console.log(`Progress: ${percent}% - ${message}`);
+        }
+    };
+
+    // Enhanced debugging and verification
+    const logBulkUploadSummary = (items: BulkUploadItem[]) => {
+        const summary = {
+            total: items.length,
+            uploaded: items.filter(i => i.status === 'uploaded').length,
+            failed: items.filter(i => i.status === 'failed').length,
+            vouched: items.filter(i => i.status === 'vouched').length,
+            rangeStatements: items.filter(i => i.statementType === 'range').length,
+            monthlyStatements: items.filter(i => i.statementType === 'monthly').length,
+            autoUnlocked: items.filter(i => i.passwordApplied).length,
+            highConfidence: items.filter(i => i.extractedData?.extraction_confidence === 'HIGH').length,
+            duplicatesHandled: items.filter(i => i.error?.includes('duplicate') || i.error?.includes('23505')).length
+        };
+
+        console.log('📊 Bulk Upload Summary:', summary);
+        return summary;
+    };
+
+    // Enhanced bulk extraction with intelligent processing and proper progress display
     const handleBulkExtraction = async () => {
         const filesToProcess = uploadItems.filter(item =>
             item.status === 'pending' && item.matchedBank
@@ -358,9 +602,10 @@ export function BankStatementBulkUploadDialog({
 
         setUploading(true);
         setActiveTab('processing');
+        setOverallProgress(0);
 
         try {
-            // Prepare batch files for bulk extraction
+            // Prepare batch files for enhanced extraction
             const batchFiles = filesToProcess.map((item, index) => ({
                 file: item.file,
                 index: uploadItems.indexOf(item),
@@ -373,18 +618,26 @@ export function BankStatementBulkUploadDialog({
                 }
             }));
 
-            console.log(`Starting bulk extraction for ${batchFiles.length} files`);
+            console.log(`Starting enhanced bulk extraction for ${batchFiles.length} files`);
 
-            // Use the optimized bulk extraction from utils
+            // Use the enhanced bulk extraction with proper progress callback
             const results = await processBulkExtraction(
                 batchFiles,
                 { month: cycleMonth, year: cycleYear },
-                (progress) => {
-                    setOverallProgress(Math.round(progress * 100));
+                (progressValue, message) => {
+                    console.log('Progress update:', progressValue, message);
+                    if (typeof progressValue === 'number') {
+                        setOverallProgress(Math.round(progressValue * 100));
+                    } else if (typeof progressValue === 'string') {
+                        // Handle string progress messages
+                        console.log('Progress message:', progressValue);
+                    }
                 }
             );
 
-            // Process results with enhanced type detection
+            console.log('Bulk extraction results:', results);
+
+            // Process results with enhanced validation
             let matched = 0;
             let failed = 0;
             let monthlyCount = 0;
@@ -392,18 +645,21 @@ export function BankStatementBulkUploadDialog({
 
             results.forEach(result => {
                 const itemIndex = result.index;
+                console.log(`Processing result for index ${itemIndex}:`, result);
 
                 if (result.success && result.extractedData) {
                     // Enhanced statement type detection
-                    const detectedType = determineStatementType(result.extractedData);
-                    const periodAnalysis = result.extractedData.statement_period ?
-                        parseStatementPeriodAdvanced(result.extractedData.statement_period) : null;
+                    const detectedType = determineEnhancedStatementType(result.extractedData);
 
-                    console.log(`File ${itemIndex} detected as: ${detectedType}`, {
+                    console.log(`File ${itemIndex} enhanced analysis:`, {
                         fileName: uploadItems[itemIndex]?.file?.name,
                         statementPeriod: result.extractedData.statement_period,
+                        adjustedPeriod: result.extractedData.statement_period_adjusted,
                         monthlyBalancesCount: result.extractedData.monthly_balances?.length || 0,
-                        periodAnalysis: periodAnalysis?.reason
+                        extractionConfidence: result.extractedData.extraction_confidence,
+                        embeddingsConfirmed: result.extractedData.embeddings_confirmed,
+                        totalPagesAnalyzed: result.extractedData.total_pages_analyzed,
+                        detectedType: detectedType
                     });
 
                     if (detectedType === 'monthly') monthlyCount++;
@@ -411,25 +667,33 @@ export function BankStatementBulkUploadDialog({
 
                     setUploadItems(prev => {
                         const updated = [...prev];
-                        updated[itemIndex] = {
-                            ...updated[itemIndex],
-                            status: 'matched',
-                            extractedData: result.extractedData,
-                            statementType: detectedType,
-                            uploadProgress: 100
-                        };
+                        if (updated[itemIndex]) {
+                            updated[itemIndex] = {
+                                ...updated[itemIndex],
+                                status: 'matched',
+                                extractedData: result.extractedData,
+                                statementType: detectedType,
+                                uploadProgress: 100
+                            };
+                        }
                         return updated;
                     });
                     matched++;
                 } else {
+                    // Handle failed extractions - mark for manual review
+                    console.log(`Extraction failed for index ${itemIndex}:`, result.error);
+
                     setUploadItems(prev => {
                         const updated = [...prev];
-                        updated[itemIndex] = {
-                            ...updated[itemIndex],
-                            status: 'failed',
-                            error: result.error || 'Extraction failed',
-                            uploadProgress: 0
-                        };
+                        if (updated[itemIndex]) {
+                            updated[itemIndex] = {
+                                ...updated[itemIndex],
+                                status: 'unmatched', // Changed from 'failed' to allow manual review
+                                error: result.error || 'Enhanced extraction failed',
+                                uploadProgress: 0,
+                                extractionAttempts: (updated[itemIndex].extractionAttempts || 0) + 1
+                            };
+                        }
                         return updated;
                     });
                     failed++;
@@ -440,21 +704,25 @@ export function BankStatementBulkUploadDialog({
             setTotalUnmatched(failed);
 
             // Cleanup URLs
-            batchFiles.forEach(file => URL.revokeObjectURL(file.fileUrl));
-
-            toast({
-                title: 'Bulk Extraction Complete',
-                description: `${matched} successful (${monthlyCount} monthly, ${rangeCount} range), ${failed} failed`,
+            batchFiles.forEach(file => {
+                try {
+                    URL.revokeObjectURL(file.fileUrl);
+                } catch (e) {
+                    console.warn('Failed to revoke URL:', e);
+                }
             });
 
-            if (matched > 0) {
-                setActiveTab('vouching');
-            } else {
-                setActiveTab('review');
+            toast({
+                title: 'Enhanced Bulk Extraction Complete',
+                description: `${matched} successful (${monthlyCount} monthly, ${rangeCount} range), ${failed} need review`,
+            });
+
+            if (matched > 0 || failed > 0) {
+                setActiveTab('review'); // Always go to review to handle failed extractions
             }
 
         } catch (error) {
-            console.error('Bulk extraction error:', error);
+            console.error('Enhanced bulk extraction error:', error);
             toast({
                 title: 'Extraction Error',
                 description: error.message,
@@ -466,268 +734,307 @@ export function BankStatementBulkUploadDialog({
         }
     };
 
-    const getMonthNumber = (monthName: string): number | null => {
-        if (!monthName) return null;
+    // NEW: A fully functional StatementRowComponent
+    const StatementRowComponent = ({ statement, onVouchToggle, onViewStatement, onEditPeriod, onBalanceUpdate }) => {
+        const [editingBalance, setEditingBalance] = useState<string | null>(null);
+        const [tempBalance, setTempBalance] = useState('');
 
-        const monthLower = monthName.toLowerCase().trim();
-
-        const monthMap: { [key: string]: number } = {
-            // Full names
-            'january': 1, 'february': 2, 'march': 3, 'april': 4, 'may': 5, 'june': 6,
-            'july': 7, 'august': 8, 'september': 9, 'october': 10, 'november': 11, 'december': 12,
-            // Abbreviations
-            'jan': 1, 'feb': 2, 'mar': 3, 'apr': 4, 'may': 5, 'jun': 6,
-            'jul': 7, 'aug': 8, 'sep': 9, 'sept': 9, 'oct': 10, 'nov': 11, 'dec': 12,
-            // Alternative abbreviations
-            'january': 1, 'february': 2, 'march': 3, 'april': 4, 'june': 6,
-            'july': 7, 'august': 8, 'september': 9, 'october': 10, 'november': 11, 'december': 12
+        const formatNumberWithCommas = (value) => {
+             if (value === null || value === undefined || isNaN(value)) return '';
+             return value.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
         };
 
-        // Direct lookup
-        if (monthMap[monthLower]) {
-            return monthMap[monthLower];
-        }
+        const handleBalanceEdit = (field: string) => {
+            setEditingBalance(field);
+            const currentValue = statement.extractedData?.[field];
+            setTempBalance(formatNumberWithCommas(currentValue));
+        };
 
-        // Partial match (at least 3 characters)
-        if (monthLower.length >= 3) {
-            for (const [fullName, number] of Object.entries(monthMap)) {
-                if (fullName.startsWith(monthLower)) {
-                    return number;
-                }
-            }
-        }
+        const handleBalanceSave = (field: string) => {
+            const numericValue = parseFloat(tempBalance.replace(/,/g, ''));
+            onBalanceUpdate(field, isNaN(numericValue) ? null : numericValue);
+            setEditingBalance(null);
+            setTempBalance('');
+        };
 
-        return null;
+        const closingBalance = statement.extractedData?.closing_balance;
+        const qbBalance = statement.extractedData?.quickbooks_balance; // Assuming QB balance is stored here
+        const difference = (closingBalance !== null && qbBalance !== null) ? closingBalance - qbBalance : null;
+
+        return (
+            <TableRow className={statement.isVouched ? 'bg-green-50' : ''}>
+                <TableCell>
+                    <Checkbox
+                        checked={statement.isVouched || false}
+                        onCheckedChange={onVouchToggle}
+                    />
+                </TableCell>
+                <TableCell className="max-w-[150px] truncate">
+                    <div className="flex items-center gap-2">
+                        <FileText className="h-4 w-4 text-blue-600" />
+                        {statement.file.name}
+                    </div>
+                </TableCell>
+                <TableCell className="text-xs">
+                    {statement.extractedData?.statement_period || 'Unknown'}
+                </TableCell>
+                <TableCell>
+                    <Badge variant="outline" className="capitalize">
+                        {statement.statementType || 'monthly'}
+                    </Badge>
+                </TableCell>
+                <TableCell>
+                    {statement.extractedData?.extraction_confidence && (
+                        <Badge variant="outline" className={
+                            statement.extractedData.extraction_confidence === 'HIGH'
+                                ? 'bg-green-50 text-green-700'
+                                : 'bg-yellow-50 text-yellow-700'
+                        }>
+                            {statement.extractedData.extraction_confidence}
+                        </Badge>
+                    )}
+                </TableCell>
+                <TableCell>
+                    {editingBalance === 'closing_balance' ? (
+                        <div className="flex items-center gap-1">
+                            <Input
+                                value={tempBalance}
+                                onChange={(e) => setTempBalance(e.target.value)}
+                                className="w-28 h-7 text-xs"
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') handleBalanceSave('closing_balance');
+                                    if (e.key === 'Escape') setEditingBalance(null);
+                                }}
+                                autoFocus
+                            />
+                            <Button size="icon" className="h-7 w-7" onClick={() => handleBalanceSave('closing_balance')}>
+                                <Save className="h-3 w-3" />
+                            </Button>
+                        </div>
+                    ) : (
+                        <div
+                            className="cursor-pointer hover:bg-gray-100 p-1 rounded flex items-center justify-between"
+                            onClick={() => handleBalanceEdit('closing_balance')}
+                        >
+                            <span>{formatCurrency(closingBalance, statement.extractedData?.currency || 'USD')}</span>
+                            <Edit className="h-3 w-3 ml-2 text-gray-400" />
+                        </div>
+                    )}
+                </TableCell>
+                <TableCell>
+                    {/* Placeholder for editable QB Balance */}
+                    {formatCurrency(qbBalance, statement.extractedData?.currency || 'USD')}
+                </TableCell>
+                <TableCell className={difference !== 0 ? 'text-red-600 font-semibold' : ''}>
+                    {formatCurrency(difference, statement.extractedData?.currency || 'USD')}
+                </TableCell>
+                <TableCell>
+                    {statement.isVouched ? (
+                        <Badge className="bg-purple-100 text-purple-800">
+                            <CheckCircle className="h-3.5 w-3.5 mr-1" />
+                            Vouched
+                        </Badge>
+                    ) : (
+                        <Badge variant="outline" className="bg-amber-50 text-amber-700">
+                            Pending
+                        </Badge>
+                    )}
+                </TableCell>
+                <TableCell>
+                    <div className="flex gap-1">
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onViewStatement}>
+                            <Eye className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onEditPeriod}>
+                            <Calendar className="h-3.5 w-3.5" />
+                        </Button>
+                    </div>
+                </TableCell>
+            </TableRow>
+        );
     };
 
-    const parseStatementPeriodAdvanced = (periodString: string): {
-        isRange: boolean;
-        startMonth?: number;
-        startYear?: number;
-        endMonth?: number;
-        endYear?: number;
-        reason?: string;
-    } => {
-        if (!periodString) return { isRange: false, reason: 'No period string' };
-
-        const normalizedPeriod = periodString.trim().replace(/\s+/g, ' ').toLowerCase();
-        console.log('Parsing period:', normalizedPeriod);
-
-        // Pattern 1: Explicit range indicators
-        const rangeKeywords = [
-            'quarter', 'quarterly', 'q1', 'q2', 'q3', 'q4',
-            'half year', 'semi-annual', 'annual', 'yearly'
-        ];
-
-        for (const keyword of rangeKeywords) {
-            if (normalizedPeriod.includes(keyword)) {
-                return { isRange: true, reason: `Contains range keyword: ${keyword}` };
-            }
+    // Enhanced statement type determination with intelligent scenario handling
+    const determineEnhancedStatementType = (extractedData: any): 'monthly' | 'range' => {
+        if (!extractedData) {
+            console.log('No extracted data, defaulting to monthly');
+            return 'monthly';
         }
-
-        // Pattern 2: Date range formats "DD/MM/YYYY - DD/MM/YYYY"
-        const dateRangePattern = /(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})\s*(?:to|[-–—])\s*(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/;
-        const dateRangeMatch = normalizedPeriod.match(dateRangePattern);
-
-        if (dateRangeMatch) {
-            const [, startDay, startMonth, startYear, endDay, endMonth, endYear] = dateRangeMatch;
-
-            const startMonthNum = parseInt(startMonth, 10);
-            const startYearNum = parseInt(startYear, 10);
-            const endMonthNum = parseInt(endMonth, 10);
-            const endYearNum = parseInt(endYear, 10);
-
-            // Check if it spans multiple months or years
-            if (startYearNum !== endYearNum || startMonthNum !== endMonthNum) {
-                return {
-                    isRange: true,
-                    startMonth: startMonthNum,
-                    startYear: startYearNum,
-                    endMonth: endMonthNum,
-                    endYear: endYearNum,
-                    reason: 'Date range spans multiple months/years'
-                };
-            } else {
-                return {
-                    isRange: false,
-                    startMonth: startMonthNum,
-                    startYear: startYearNum,
-                    endMonth: endMonthNum,
-                    endYear: endYearNum,
-                    reason: 'Date range within same month'
-                };
-            }
-        }
-
-        // Pattern 3: Month name ranges "January - March 2024" or "Jan to Mar 2024"
-        const monthRangePattern = /(\w+)\s*(?:to|[-–—])\s*(\w+)\s+(\d{4})/;
-        const monthRangeMatch = normalizedPeriod.match(monthRangePattern);
-
-        if (monthRangeMatch) {
-            const [, startMonthName, endMonthName, year] = monthRangeMatch;
-            const startMonth = getMonthNumber(startMonthName.toLowerCase());
-            const endMonth = getMonthNumber(endMonthName.toLowerCase());
-
-            if (startMonth && endMonth && startMonth !== endMonth) {
-                return {
-                    isRange: true,
-                    startMonth,
-                    startYear: parseInt(year),
-                    endMonth,
-                    endYear: parseInt(year),
-                    reason: `Month range: ${startMonthName} to ${endMonthName}`
-                };
-            }
-        }
-
-        // Pattern 4: Cross-year ranges "December 2023 - February 2024"
-        const crossYearPattern = /(\w+)\s+(\d{4})\s*(?:to|[-–—])\s*(\w+)\s+(\d{4})/;
-        const crossYearMatch = normalizedPeriod.match(crossYearPattern);
-
-        if (crossYearMatch) {
-            const [, startMonthName, startYear, endMonthName, endYear] = crossYearMatch;
-            const startMonth = getMonthNumber(startMonthName.toLowerCase());
-            const endMonth = getMonthNumber(endMonthName.toLowerCase());
-
-            if (startMonth && endMonth) {
-                const startYearNum = parseInt(startYear);
-                const endYearNum = parseInt(endYear);
-
-                if (startYearNum !== endYearNum || startMonth !== endMonth) {
-                    return {
-                        isRange: true,
-                        startMonth,
-                        startYear: startYearNum,
-                        endMonth,
-                        endYear: endYearNum,
-                        reason: `Cross-year range: ${startMonthName} ${startYear} to ${endMonthName} ${endYear}`
-                    };
-                }
-            }
-        }
-
-        // Pattern 5: Single month "January 2024" or "Jan 2024"
-        const singleMonthPattern = /^(\w+)\s+(\d{4})$/;
-        const singleMonthMatch = normalizedPeriod.match(singleMonthPattern);
-
-        if (singleMonthMatch) {
-            const [, monthName, year] = singleMonthMatch;
-            const month = getMonthNumber(monthName.toLowerCase());
-
-            if (month) {
-                return {
-                    isRange: false,
-                    startMonth: month,
-                    startYear: parseInt(year),
-                    endMonth: month,
-                    endYear: parseInt(year),
-                    reason: `Single month: ${monthName} ${year}`
-                };
-            }
-        }
-
-        // Pattern 6: Same-month date ranges "01/01/2024 - 31/01/2024" (same month)
-        const sameDatePattern = /(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/g;
-        const allDates = [...normalizedPeriod.matchAll(sameDatePattern)];
-
-        if (allDates.length >= 2) {
-            const firstDate = allDates[0];
-            const lastDate = allDates[allDates.length - 1];
-
-            const firstMonth = parseInt(firstDate[2], 10);
-            const firstYear = parseInt(firstDate[3], 10);
-            const lastMonth = parseInt(lastDate[2], 10);
-            const lastYear = parseInt(lastDate[3], 10);
-
-            if (firstYear === lastYear && firstMonth === lastMonth) {
-                return {
-                    isRange: false,
-                    startMonth: firstMonth,
-                    startYear: firstYear,
-                    endMonth: lastMonth,
-                    endYear: lastYear,
-                    reason: 'Same month date range'
-                };
-            } else {
-                return {
-                    isRange: true,
-                    startMonth: firstMonth,
-                    startYear: firstYear,
-                    endMonth: lastMonth,
-                    endYear: lastYear,
-                    reason: 'Multi-month date range'
-                };
-            }
-        }
-
-        return { isRange: false, reason: 'No clear pattern detected, defaulting to monthly' };
-    };
-
-
-    // OPTIMIZED: Determine statement type from extracted data
-    const determineStatementType = (extractedData: any): 'monthly' | 'range' => {
-        if (!extractedData) return 'monthly';
 
         const monthlyBalances = extractedData.monthly_balances || [];
         const statementPeriod = extractedData.statement_period;
+        const adjustedPeriod = extractedData.statement_period_adjusted;
+        const embeddingsConfirmed = extractedData.embeddings_confirmed;
+        const extractionConfidence = extractedData.extraction_confidence;
 
-        console.log('Determining statement type:', {
-            statementPeriod,
+        console.log('Enhanced statement type determination:', {
             monthlyBalancesCount: monthlyBalances.length,
-            monthlyBalances: monthlyBalances.map(b => ({ month: b.month, year: b.year }))
+            statementPeriod,
+            adjustedPeriod,
+            embeddingsConfirmed,
+            extractionConfidence
         });
 
-        // 1. Check monthly balances count (most reliable indicator)
+        // Primary indicator: Multiple monthly balances
         if (monthlyBalances.length > 1) {
             console.log('Detected RANGE statement: Multiple monthly balances found');
             return 'range';
         }
 
-        // 2. Parse statement period for date range analysis
-        if (statementPeriod) {
-            const periodResult = parseStatementPeriodAdvanced(statementPeriod);
-            if (periodResult.isRange) {
-                console.log('Detected RANGE statement: Period spans multiple months');
-                return 'range';
+        // Secondary indicator: Parse statement period for date range analysis
+        const periodToAnalyze = adjustedPeriod || statementPeriod;
+        if (periodToAnalyze) {
+            try {
+                const periodResult = parseStatementPeriod(periodToAnalyze);
+                if (periodResult) {
+                    const monthRange = generateMonthRange(
+                        periodResult.startMonth,
+                        periodResult.startYear,
+                        periodResult.endMonth,
+                        periodResult.endYear
+                    );
+                    if (monthRange.length > 1) {
+                        console.log('Detected RANGE statement: Period spans multiple months');
+                        return 'range';
+                    }
+                }
+            } catch (error) {
+                console.warn('Error parsing statement period:', error);
             }
+        }
+
+        // Check for incomplete months scenario
+        if (extractedData.data_quality_issues?.includes('INCOMPLETE_MONTH')) {
+            console.log('Detected MONTHLY statement: Marked as incomplete month');
+            return 'monthly';
         }
 
         console.log('Detected MONTHLY statement: Single month or same-month period');
         return 'monthly';
     };
 
-    // OPTIMIZED: Fast validation
-    const validateExtractedData = (extracted: any, bank: Bank | null) => {
-        const mismatches: string[] = [];
+    // Handle manual period input
+    const handleManualPeriodInput = async (itemIndex: number, periodInput: string) => {
+        const item = uploadItems[itemIndex];
+        if (!item) return;
 
-        if (!bank) {
-            mismatches.push('No bank matched');
-            return { isValid: false, mismatches };
+        try {
+            setUploadItems(prev => {
+                const updated = [...prev];
+                updated[itemIndex] = {
+                    ...updated[itemIndex],
+                    status: 'processing',
+                    uploadProgress: 30,
+                    userPeriodInput: periodInput
+                };
+                return updated;
+            });
+
+            // Parse the manual period input
+            const periodResult = parseStatementPeriod(periodInput);
+            if (!periodResult) {
+                throw new Error('Invalid period format. Use DD/MM/YYYY - DD/MM/YYYY');
+            }
+
+            // Create mock extracted data with the manual period
+            const mockExtractedData = {
+                bank_name: item.matchedBank?.bank_name || 'Unknown Bank',
+                company_name: item.matchedBank?.company_name || 'Unknown Company',
+                account_number: item.matchedBank?.account_number || 'Unknown Account',
+                currency: item.matchedBank?.bank_currency || 'USD',
+                statement_period: periodInput,
+                statement_period_adjusted: null,
+                period_adjustment_reason: 'Manual period input by user',
+                last_transaction_date: null,
+                monthly_balances: generateMonthRange(
+                    periodResult.startMonth,
+                    periodResult.startYear,
+                    periodResult.endMonth,
+                    periodResult.endYear
+                ).map(({ month, year }) => ({
+                    month,
+                    year,
+                    opening_balance: null,
+                    closing_balance: null,
+                    closing_date: null,
+                    balance_scenario: 'MANUAL_INPUT',
+                    is_complete: false,
+                    statement_page: 1,
+                    notes: 'Manual period input - requires manual validation'
+                })),
+                extraction_confidence: 'LOW',
+                data_quality_issues: ['Manual period input'],
+                total_pages_analyzed: 0,
+                embeddings_confirmed: false,
+                processing_metadata: {
+                    extraction_date: new Date().toISOString(),
+                    extraction_version: '2.0-manual',
+                    scenarios_analyzed: false,
+                    all_pages_processed: false,
+                    manual_input: true
+                }
+            };
+
+            const detectedType = determineEnhancedStatementType(mockExtractedData);
+
+            setUploadItems(prev => {
+                const updated = [...prev];
+                updated[itemIndex] = {
+                    ...updated[itemIndex],
+                    status: 'matched',
+                    extractedData: mockExtractedData,
+                    statementType: detectedType,
+                    uploadProgress: 100
+                };
+                return updated;
+            });
+
+            toast({
+                title: 'Manual Period Set',
+                description: `Period ${periodInput} applied to statement`,
+            });
+
+        } catch (error) {
+            console.error('Error setting manual period:', error);
+            setUploadItems(prev => {
+                const updated = [...prev];
+                updated[itemIndex] = {
+                    ...updated[itemIndex],
+                    status: 'failed',
+                    error: error.message,
+                    uploadProgress: 0
+                };
+                return updated;
+            });
+
+            toast({
+                title: 'Period Input Error',
+                description: error.message,
+                variant: 'destructive'
+            });
         }
-
-        // Quick validation checks
-        if (extracted.bank_name && !extracted.bank_name.toLowerCase().includes(bank.bank_name.toLowerCase())) {
-            mismatches.push('Bank name mismatch');
-        }
-
-        if (extracted.account_number && !extracted.account_number.includes(bank.account_number)) {
-            mismatches.push('Account number mismatch');
-        }
-
-        if (extracted.currency && normalizeCurrencyCode(extracted.currency) !== normalizeCurrencyCode(bank.bank_currency)) {
-            mismatches.push('Currency mismatch');
-        }
-
-        return { isValid: mismatches.length === 0, mismatches };
     };
 
-    // OPTIMIZED: Bulk upload to database
     const handleBulkUpload = async () => {
         const itemsToUpload = uploadItems.filter(item =>
             item.status === 'matched' && item.matchedBank && item.extractedData
         );
 
+        console.log(`🚀 Starting bulk upload process:`, {
+            totalItems: itemsToUpload.length,
+            itemDetails: itemsToUpload.map((item, idx) => ({
+                index: idx,
+                fileName: item.file.name,
+                statementType: item.statementType,
+                companyId: item.matchedBank?.company_id,
+                bankId: item.matchedBank?.id,
+                hasExtractedData: !!item.extractedData,
+                extractionConfidence: item.extractedData?.extraction_confidence
+            }))
+        });
+
         if (itemsToUpload.length === 0) {
+            console.warn(`⚠️ No items to upload`);
             toast({
                 title: 'No items to upload',
                 description: 'No validated statements ready for upload',
@@ -737,124 +1044,327 @@ export function BankStatementBulkUploadDialog({
         }
 
         setUploading(true);
+        setOverallProgress(0);
 
         try {
-            // Get or create appropriate cycles
-            const cyclePromises = itemsToUpload.map(async (item) => {
+            console.log(`🔄 Processing ${itemsToUpload.length} statements in parallel`);
+
+            // Process all uploads in parallel with detailed logging
+            const uploadPromises = itemsToUpload.map(async (item, index) => {
+                const itemIndex = uploadItems.indexOf(item);
                 const statementType = item.statementType || 'monthly';
-                return await getOrCreateStatementCycle(cycleYear, cycleMonth, statementType);
-            });
 
-            const cycleIds = await Promise.all(cyclePromises);
+                console.log(`📝 Processing item ${index + 1}/${itemsToUpload.length}:`, {
+                    globalIndex: itemIndex,
+                    fileName: item.file.name,
+                    statementType,
+                    extractedData: {
+                        monthlyBalances: item.extractedData?.monthly_balances?.length || 0,
+                        statementPeriod: item.extractedData?.statement_period,
+                        confidence: item.extractedData?.extraction_confidence
+                    }
+                });
 
-            // Upload files in parallel batches
-            const BATCH_SIZE = 5;
-            const batches = [];
+                try {
+                    let result;
+                    if (statementType === 'range' && item.extractedData.monthly_balances?.length > 1) {
+                        console.log(`📅 Processing as RANGE statement (${item.extractedData.monthly_balances.length} months)`);
+                        result = await handleRangeStatementUpload(item, itemIndex);
+                    } else {
+                        console.log(`📄 Processing as MONTHLY statement`);
+                        result = await handleSingleStatementUpload(item, itemIndex);
+                    }
 
-            for (let i = 0; i < itemsToUpload.length; i += BATCH_SIZE) {
-                batches.push(itemsToUpload.slice(i, i + BATCH_SIZE));
-            }
+                    console.log(`✅ Upload completed for item ${index + 1}:`, {
+                        success: result,
+                        fileName: item.file.name,
+                        statementType
+                    });
 
-            let uploadedCount = 0;
+                    return result;
 
-            for (const batch of batches) {
-                const uploadPromises = batch.map(async (item, batchIndex) => {
-                    const itemIndex = uploadItems.indexOf(item);
-                    const globalIndex = batches.indexOf(batch) * BATCH_SIZE + batchIndex;
-                    const cycleId = cycleIds[globalIndex];
+                } catch (error) {
+                    console.error(`💥 Upload failed for item ${index + 1}:`, {
+                        fileName: item.file.name,
+                        error: error.message,
+                        stack: error.stack
+                    });
 
-                    try {
-                        // Upload file
-                        const fileName = `bulk_${item.matchedBank.company_id}_${item.matchedBank.id}_${cycleYear}_${cycleMonth}_${Date.now()}.pdf`;
-                        const filePath = `statement_documents/${cycleYear}/${cycleMonth + 1}/${item.matchedBank.company_id}/${fileName}`;
-
-                        const { data: uploadData, error: uploadError } = await supabase.storage
-                            .from('Statement-Cycle')
-                            .upload(filePath, item.file, { upsert: true });
-
-                        if (uploadError) throw uploadError;
-
-                        // Create statement record
-                        const statementData = {
-                            bank_id: item.matchedBank.id,
-                            company_id: item.matchedBank.company_id,
-                            statement_cycle_id: cycleId,
-                            statement_month: cycleMonth,
-                            statement_year: cycleYear,
-                            statement_type: item.statementType || 'monthly',
-                            has_soft_copy: item.hasSoftCopy || true,
-                            has_hard_copy: item.hasHardCopy || false,
-                            statement_document: {
-                                statement_pdf: uploadData.path,
-                                document_size: item.file.size,
-                                password: item.passwordApplied ? item.appliedPassword : null
-                            },
-                            statement_extractions: item.extractedData,
-                            validation_status: {
-                                is_validated: false,
-                                validation_date: null,
-                                validated_by: null,
-                                mismatches: []
-                            },
-                            status: {
-                                status: 'pending_validation',
-                                assigned_to: null,
-                                verification_date: null
-                            }
-                        };
-
-                        const { error: insertError } = await supabase
-                            .from('acc_cycle_bank_statements')
-                            .insert([statementData]);
-
-                        if (insertError) throw insertError;
-
-                        // Update status
+                    // Handle duplicate key gracefully
+                    if (error.message?.includes('23505') || error.message?.includes('duplicate key')) {
+                        console.log(`🔄 Duplicate key handled gracefully for item ${index + 1}`);
                         setUploadItems(prev => {
                             const updated = [...prev];
                             updated[itemIndex] = {
                                 ...updated[itemIndex],
                                 status: 'uploaded',
-                                uploadProgress: 100
+                                uploadProgress: 100,
+                                error: undefined
                             };
                             return updated;
                         });
-
                         return true;
-
-                    } catch (error) {
-                        console.error(`Error uploading item ${itemIndex}:`, error);
-                        setUploadItems(prev => {
-                            const updated = [...prev];
-                            updated[itemIndex] = {
-                                ...updated[itemIndex],
-                                status: 'failed',
-                                error: error.message,
-                                uploadProgress: 0
-                            };
-                            return updated;
-                        });
-                        return false;
                     }
-                });
 
-                const batchResults = await Promise.all(uploadPromises);
-                uploadedCount += batchResults.filter(Boolean).length;
+                    setUploadItems(prev => {
+                        const updated = [...prev];
+                        updated[itemIndex] = {
+                            ...updated[itemIndex],
+                            status: 'failed',
+                            error: error.message,
+                            uploadProgress: 0
+                        };
+                        return updated;
+                    });
+                    return false;
+                }
+            });
 
-                // Update progress
-                setOverallProgress(Math.round((uploadedCount / itemsToUpload.length) * 100));
-            }
+            // Enhanced vouching functions
+            const handleVouchAllCompanies = async () => {
+                setUploading(true);
+                let successCount = 0;
+                let errorCount = 0;
+
+                try {
+                    console.log('🔄 Starting vouch all companies process');
+                    const allStatementsToVouch = companyGroups.flatMap(group => group.statements.filter(s => !s.isVouched));
+                    console.log(`📊 Vouching ${allStatementsToVouch.length} statements across ${companyGroups.length} companies`);
+
+                    for (const statement of allStatementsToVouch) {
+                        try {
+                            await saveStatementToDatabase(statement);
+                            
+                            // Update UI state for this specific item
+                            const itemIndex = uploadItems.findIndex(i => i.file.name === statement.file.name);
+                            if (itemIndex > -1) {
+                                setUploadItems(prev => {
+                                    const updated = [...prev];
+                                    updated[itemIndex] = { ...updated[itemIndex], isVouched: true, status: 'vouched' };
+                                    return updated;
+                                });
+                            }
+                            successCount++;
+                        } catch (error) {
+                            console.error(`Failed to vouch statement ${statement.file.name}:`, error);
+                            errorCount++;
+                        }
+                    }
+
+                    // Update all company groups at the end
+                    setCompanyGroups(prev => prev.map(group => ({
+                        ...group,
+                        isVouched: true,
+                    })));
+
+                    toast({
+                        title: 'Vouching Complete',
+                        description: `Successfully vouched ${successCount} statements. ${errorCount} failed.`,
+                    });
+
+                    if (errorCount === 0) {
+                        window.dispatchEvent(new CustomEvent('bankStatementsUpdated'));
+                    }
+
+                } catch (error) {
+                    console.error('Error vouching all companies:', error);
+                    toast({
+                        title: 'Vouching Error',
+                        description: error.message,
+                        variant: 'destructive'
+                    });
+                } finally {
+                    setUploading(false);
+                }
+            };
+
+            const handleVouchCompany = async (companyId: number) => {
+                const group = companyGroups.find(g => g.companyId === companyId);
+                if (!group) return;
+
+                setUploading(true);
+                let successCount = 0;
+                let errorCount = 0;
+
+                try {
+                    console.log(`🔄 Vouching company: ${group.companyName}`);
+                    
+                    for (const statement of group.statements) {
+                         if (!statement.isVouched) {
+                            try {
+                                await saveStatementToDatabase(statement);
+                                
+                                const itemIndex = uploadItems.findIndex(i => i.file.name === statement.file.name);
+                                if (itemIndex > -1) {
+                                    setUploadItems(prev => {
+                                        const updated = [...prev];
+                                        updated[itemIndex] = { ...updated[itemIndex], isVouched: true, status: 'vouched' };
+                                        return updated;
+                                    });
+                                }
+                                successCount++;
+                            } catch(error) {
+                                console.error(`Error vouching statement ${statement.file.name}:`, error);
+                                errorCount++;
+                            }
+                         }
+                    }
+
+                    if (errorCount === 0) {
+                        setCompanyGroups(prev => prev.map(g =>
+                            g.companyId === companyId ? { ...g, isVouched: true } : g
+                        ));
+                    }
+                    
+                    toast({
+                        title: `Company Vouched`,
+                        description: `${group.companyName}: ${successCount} statements saved and vouched. ${errorCount} failed.`,
+                    });
+                } catch (error) {
+                    console.error(`Error vouching company ${companyId}:`, error);
+                    toast({
+                        title: 'Vouching Error',
+                        description: error.message,
+                        variant: 'destructive'
+                    });
+                } finally {
+                    setUploading(false);
+                }
+            };
+
+            // FIX: This function now correctly handles the data payload, including edited balances.
+            const saveStatementToDatabase = async (statement: BulkUploadItem) => {
+                if (!statement.matchedBank || !statement.extractedData) {
+                    throw new Error('Invalid statement data for saving.');
+                }
+
+                console.log(`💾 Saving statement to database: ${statement.file.name}`, statement.extractedData);
+
+                let actualMonth = cycleMonth;
+                let actualYear = cycleYear;
+
+                if (statement.extractedData.statement_period) {
+                    const periodResult = parseStatementPeriod(statement.extractedData.statement_period);
+                    if (periodResult) {
+                        actualMonth = periodResult.endMonth - 1;
+                        actualYear = periodResult.endYear;
+                    }
+                }
+
+                const cycleId = await getOrCreateStatementCycle(actualYear, actualMonth, statement.statementType || 'monthly');
+
+                const statementData = {
+                    bank_id: statement.matchedBank.id,
+                    company_id: statement.matchedBank.company_id,
+                    statement_cycle_id: cycleId,
+                    statement_month: actualMonth,
+                    statement_year: actualYear,
+                    statement_type: statement.statementType || 'monthly',
+                    has_soft_copy: true,
+                    has_hard_copy: false,
+                    // Assume document path already exists from upload step, or upload here if needed
+                    statement_document: {
+                        statement_pdf: statement.extractedData.pdf_path || `temp_path_${Date.now()}.pdf`, 
+                        document_size: statement.file.size,
+                        password: statement.appliedPassword,
+                    },
+                    statement_extractions: {
+                        ...statement.extractedData, // This will include the user-edited closing_balance
+                        verified_balances: true,
+                        vouched_at: new Date().toISOString()
+                    },
+                    validation_status: {
+                        is_validated: true,
+                        validation_date: new Date().toISOString(),
+                        validated_by: 'bulk_upload_user', // Replace with actual user
+                        mismatches: []
+                    },
+                    status: {
+                        status: 'vouched',
+                        assigned_to: null,
+                        verification_date: new Date().toISOString()
+                    }
+                };
+
+                const { error } = await supabase
+                    .from('acc_cycle_bank_statements')
+                    .upsert([statementData], {
+                        onConflict: 'bank_id,statement_cycle_id,statement_type'
+                    });
+
+                if (error) {
+                    console.error("Supabase upsert error:", error);
+                    throw error;
+                }
+
+                console.log(`✅ Statement saved successfully: ${statement.file.name}`);
+            };
+
+            const toggleCompanyExpansion = (companyId: number, forceOpen?: boolean) => {
+                setCompanyGroups(prev => prev.map(group => ({
+                    ...group,
+                    isExpanded: group.companyId === companyId
+                        ? (forceOpen ?? !group.isExpanded)
+                        : false // Close others
+                })));
+            };
+
+            // Execute all uploads in parallel
+            console.log(`⏱️ Executing ${uploadPromises.length} uploads in parallel...`);
+            const results = await Promise.all(uploadPromises);
+            const uploadedCount = results.filter(Boolean).length;
+            const failedCount = results.length - uploadedCount;
+
+            console.log(`📊 Bulk upload results:`, {
+                total: results.length,
+                successful: uploadedCount,
+                failed: failedCount,
+                successRate: `${Math.round((uploadedCount / results.length) * 100)}%`
+            });
+
+            // Set final progress
+            setOverallProgress(100);
+
+            // Enhanced logging summary
+            const finalSummary = {
+                uploadedItems: uploadItems.filter(i => i.status === 'uploaded'),
+                failedItems: uploadItems.filter(i => i.status === 'failed'),
+                vouchedItems: uploadItems.filter(i => i.status === 'vouched'),
+                timestamp: new Date().toISOString()
+            };
+
+            console.log(`📋 Final upload summary:`, finalSummary);
 
             toast({
                 title: 'Bulk Upload Complete',
-                description: `${uploadedCount} statements uploaded successfully`,
+                description: `${uploadedCount} statements uploaded successfully, ${failedCount} failed`,
             });
+            setTimeout(() => {
 
-            organizeByCompany();
-            setActiveTab('vouching');
+                window.dispatchEvent(new CustomEvent('bankStatementsUpdated', {
+                    detail: {
+                        timestamp: Date.now(),
+                        uploadedCount,
+                        failedCount,
+                        source: 'bulkUpload'
+                    }
+                }));
+            }, 500);
+
+
+            // Start sequential extraction
+            if (uploadedCount > 0) {
+                console.log(`🔄 Starting sequential extraction process for ${uploadedCount} uploaded statements`);
+                await startSequentialExtractionProcess();
+            }
 
         } catch (error) {
-            console.error('Bulk upload error:', error);
+            console.error(`💥 Bulk upload process failed:`, {
+                error: error.message,
+                stack: error.stack,
+                itemsToUpload: itemsToUpload.length
+            });
+
             toast({
                 title: 'Upload Error',
                 description: error.message,
@@ -862,11 +1372,577 @@ export function BankStatementBulkUploadDialog({
             });
         } finally {
             setUploading(false);
-            onUploadsComplete();
+            setOverallProgress(100);
+            console.log(`🏁 Bulk upload process completed`);
         }
     };
 
-    // Company organization for vouching
+    // Sequential extraction process - opens each statement for review and saving
+    const startSequentialExtractionProcess = async () => {
+        const uploadedItems = uploadItems.filter(item => item.status === 'uploaded');
+
+        if (uploadedItems.length === 0) {
+            organizeByCompany();
+            setActiveTab('vouching');
+            return;
+        }
+
+        toast({
+            title: 'Starting Sequential Review',
+            description: `${uploadedItems.length} statements uploaded. Starting individual review process...`,
+        });
+
+        // Set up sequential processing
+        setCurrentItemIndex(0);
+        setActiveTab('processing');
+
+        // Start with the first uploaded item
+        await openExtractionForItem(uploadedItems[0], 0, uploadedItems);
+    };
+
+    // Open extraction dialog for a specific item in the sequence
+    const openExtractionForItem = async (item: BulkUploadItem, currentIndex: number, allItems: BulkUploadItem[]) => {
+        try {
+            setCurrentProcessingItem(item);
+            setCurrentItemIndex(currentIndex);
+
+            // Create a temporary statement object for the extraction dialog
+            const bankForDialog = item.matchedBank || {
+                id: -1,
+                bank_name: item.detectedBankName || item.extractedData?.bank_name || 'Unknown Bank',
+                account_number: item.detectedAccountNumber || item.extractedData?.account_number || 'Unknown Account',
+                bank_currency: item.extractedData?.currency || 'USD',
+                company_id: -1,
+                company_name: item.extractedData?.company_name || 'Unknown Company',
+                acc_password: item.detectedPassword || ''
+            };
+
+            // Create mock statement object for the extraction dialog
+            const mockStatement = {
+                id: `uploaded-${item.file.name}-${currentIndex}`,
+                bank_id: bankForDialog.id,
+                statement_month: cycleMonth,
+                statement_year: cycleYear,
+                statement_type: item.statementType || 'monthly',
+                quickbooks_balance: null,
+                statement_document: {
+                    statement_pdf: URL.createObjectURL(item.file),
+                    document_size: item.file.size,
+                    password: item.appliedPassword,
+                },
+                statement_extractions: item.extractedData || {
+                    bank_name: bankForDialog.bank_name,
+                    account_number: bankForDialog.account_number,
+                    currency: bankForDialog.bank_currency,
+                    statement_period: '',
+                    opening_balance: null,
+                    closing_balance: null,
+                    monthly_balances: [],
+                },
+                has_soft_copy: true,
+                has_hard_copy: false,
+                validation_status: {
+                    is_validated: false,
+                    validation_date: null,
+                    validated_by: null,
+                    mismatches: [],
+                },
+                status: {
+                    status: 'uploaded',
+                    assigned_to: null,
+                    verification_date: null,
+                },
+                // Add metadata for sequential processing
+                _sequentialIndex: currentIndex,
+                _totalItems: allItems.length,
+                _nextItem: currentIndex < allItems.length - 1 ? allItems[currentIndex + 1] : null
+            };
+
+            setCurrentStatementForDialog(mockStatement);
+            setShowExtractionDialog(true);
+
+            toast({
+                title: `Reviewing Statement ${currentIndex + 1} of ${allItems.length}`,
+                description: `${item.file.name} - Please review and save to continue`,
+            });
+
+        } catch (error) {
+            console.error('Error opening extraction for sequential processing:', error);
+            toast({
+                title: 'Error Opening Statement',
+                description: `Failed to open statement: ${error.message}`,
+                variant: 'destructive'
+            });
+
+            // Move to next item on error
+            await proceedToNextItem(currentIndex, allItems);
+        }
+    };
+
+    // Proceed to the next item in the sequence
+    const proceedToNextItem = async (currentIndex: number, allItems: BulkUploadItem[]) => {
+        const nextIndex = currentIndex + 1;
+
+        if (nextIndex < allItems.length) {
+            // Open next item
+            setTimeout(() => {
+                openExtractionForItem(allItems[nextIndex], nextIndex, allItems);
+            }, 500); // Small delay for better UX
+        } else {
+            // All items processed, move to vouching
+            toast({
+                title: 'Sequential Review Complete',
+                description: 'All statements reviewed. Moving to vouching phase...',
+            });
+
+            setTimeout(() => {
+                organizeByCompany();
+                setActiveTab('vouching');
+                startSequentialVouchingProcess();
+            }, 1000);
+        }
+    };
+
+    // Start sequential vouching process
+    const startSequentialVouchingProcess = async () => {
+        organizeByCompany();
+
+        // Wait for company organization to complete
+        setTimeout(() => {
+            const unvouchedGroups = companyGroups.filter(group => !group.isVouched);
+
+            if (unvouchedGroups.length > 0) {
+                toast({
+                    title: 'Starting Vouching Process',
+                    description: `${unvouchedGroups.length} companies need vouching. Opening first company...`,
+                });
+
+                // Auto-expand first unvouched company
+                setCompanyGroups(groups => {
+                    return groups.map((group, index) => ({
+                        ...group,
+                        isExpanded: index === 0 && !group.isVouched
+                    }));
+                });
+            } else {
+                toast({
+                    title: 'All Companies Vouched',
+                    description: 'All statements have been vouched successfully!',
+                });
+            }
+        }, 500);
+    };
+
+    // Enhanced handleRangeStatementUpload with proper conflict resolution
+    const handleRangeStatementUpload = async (item: BulkUploadItem, itemIndex: number) => {
+        setUploadItems(prev => {
+            const updated = [...prev];
+            updated[itemIndex] = { ...updated[itemIndex], uploadProgress: 10 };
+            return updated;
+        });
+
+        const fileName = `range_${item.matchedBank.company_id}_${item.matchedBank.id}_${cycleYear}_${Date.now()}.pdf`;
+        const filePath = `statement_documents/${cycleYear}/${cycleMonth + 1}/${item.matchedBank.company_id}/${fileName}`;
+
+        try {
+            // Upload file once
+            const { data: uploadData, error: uploadError } = await supabase.storage
+                .from('Statement-Cycle')
+                .upload(filePath, item.file, { upsert: true });
+
+            if (uploadError) throw uploadError;
+
+            setUploadItems(prev => {
+                const updated = [...prev];
+                updated[itemIndex] = { ...updated[itemIndex], uploadProgress: 30 };
+                return updated;
+            });
+
+            // Filter monthly_balances to only include months within the statement period
+            const statementPeriod = item.extractedData.statement_period || item.extractedData.statement_period_adjusted;
+            const periodDates = parseStatementPeriod(statementPeriod);
+
+            let filteredMonthlyBalances = item.extractedData.monthly_balances || [];
+
+            if (periodDates) {
+                // Only include months that fall within the statement period
+                filteredMonthlyBalances = filteredMonthlyBalances.filter(monthData => {
+                    const monthDate = new Date(monthData.year, monthData.month - 1);
+                    const startDate = new Date(periodDates.startYear, periodDates.startMonth - 1);
+                    const endDate = new Date(periodDates.endYear, periodDates.endMonth - 1);
+
+                    return monthDate >= startDate && monthDate <= endDate;
+                });
+            }
+
+            console.log(`Creating statements for ${filteredMonthlyBalances.length} months within period:`,
+                filteredMonthlyBalances.map(m => `${m.month}/${m.year}`));
+
+            let successCount = 0;
+            const totalMonths = filteredMonthlyBalances.length;
+
+            // Create statement records for each month in the filtered range
+            for (let i = 0; i < filteredMonthlyBalances.length; i++) {
+                const monthData = filteredMonthlyBalances[i];
+
+                try {
+                    const cycleId = await getOrCreateStatementCycle(monthData.year, monthData.month - 1, 'range');
+
+                    // Enhanced conflict resolution - check for EXACT combination that causes the constraint violation
+                    const { data: existingStatement } = await supabase
+                        .from('acc_cycle_bank_statements')
+                        .select('id')
+                        .eq('bank_id', item.matchedBank.id)
+                        .eq('statement_cycle_id', cycleId)
+                        .eq('statement_type', 'range')
+                        .maybeSingle();
+
+                    // Also check if there's a monthly statement for this period that would conflict
+                    const { data: existingMonthlyStatement } = await supabase
+                        .from('acc_cycle_bank_statements')
+                        .select('id')
+                        .eq('bank_id', item.matchedBank.id)
+                        .eq('statement_cycle_id', cycleId)
+                        .eq('statement_type', 'monthly')
+                        .maybeSingle();
+
+                    // If there's a monthly statement, we need to decide: update it or skip
+                    if (existingMonthlyStatement && !existingStatement) {
+                        console.log(`Converting existing monthly statement to range for ${monthData.month}/${monthData.year}`);
+                        // Update the existing monthly statement to be a range statement
+                        const { error: updateError } = await supabase
+                            .from('acc_cycle_bank_statements')
+                            .update({
+                                statement_type: 'range',
+                                statement_document: {
+                                    statement_pdf: uploadData.path,
+                                    document_size: item.file.size,
+                                    password: item.passwordApplied ? item.appliedPassword : null,
+                                    extraction_metadata: item.extractedData.processing_metadata
+                                },
+                                statement_extractions: {
+                                    ...item.extractedData,
+                                    // Only include this specific month's balance
+                                    monthly_balances: [monthData],
+                                    period_specific: true
+                                }
+                            })
+                            .eq('id', existingMonthlyStatement.id);
+
+                        if (updateError) {
+                            if (updateError.code === '23505') {
+                                console.log(`Duplicate constraint hit for ${monthData.month}/${monthData.year}, skipping`);
+                            } else {
+                                throw updateError;
+                            }
+                        } else {
+                            console.log(`Converted monthly to range statement for ${monthData.month}/${monthData.year}`);
+                        }
+                        successCount++;
+                        continue; // Skip the insert below
+                    }
+
+                    const statementData = {
+                        bank_id: item.matchedBank.id,
+                        company_id: item.matchedBank.company_id,
+                        statement_cycle_id: cycleId,
+                        statement_month: monthData.month - 1,
+                        statement_year: monthData.year,
+                        statement_type: 'range',
+                        has_soft_copy: true,
+                        has_hard_copy: false,
+                        statement_document: {
+                            statement_pdf: uploadData.path,
+                            document_size: item.file.size,
+                            password: item.passwordApplied ? item.appliedPassword : null,
+                            extraction_metadata: item.extractedData.processing_metadata
+                        },
+                        statement_extractions: {
+                            ...item.extractedData,
+                            // Only include this specific month's balance
+                            monthly_balances: [monthData],
+                            period_specific: true
+                        },
+                        validation_status: {
+                            is_validated: false,
+                            validation_date: null,
+                            validated_by: null,
+                            mismatches: []
+                        },
+                        status: {
+                            status: 'pending_validation',
+                            assigned_to: null,
+                            verification_date: null
+                        }
+                    };
+
+                    if (existingStatement) {
+                        // Update existing statement
+                        const { error: updateError } = await supabase
+                            .from('acc_cycle_bank_statements')
+                            .update(statementData)
+                            .eq('id', existingStatement.id);
+
+                        if (updateError) throw updateError;
+                        console.log(`Updated existing statement for ${monthData.month}/${monthData.year}`);
+                    } else {
+                        // Insert new statement
+                        const { error: insertError } = await supabase
+                            .from('acc_cycle_bank_statements')
+                            .insert([statementData]);
+
+                        if (insertError) {
+                            // Handle duplicate key error gracefully
+                            if (insertError.code === '23505') {
+                                console.log(`Statement already exists for ${monthData.month}/${monthData.year}, skipping`);
+                            } else {
+                                throw insertError;
+                            }
+                        } else {
+                            console.log(`Created new statement for ${monthData.month}/${monthData.year}`);
+                        }
+                    }
+
+                    successCount++;
+
+                    // Update progress
+                    const monthProgress = 30 + (60 * (i + 1) / totalMonths);
+                    setUploadItems(prev => {
+                        const updated = [...prev];
+                        updated[itemIndex] = { ...updated[itemIndex], uploadProgress: Math.round(monthProgress) };
+                        return updated;
+                    });
+
+                } catch (monthError) {
+                    console.error(`Error creating statement for ${monthData.month}/${monthData.year}:`, monthError);
+                    // Continue with other months even if one fails
+                }
+            }
+
+            setUploadItems(prev => {
+                const updated = [...prev];
+                updated[itemIndex] = {
+                    ...updated[itemIndex],
+                    status: successCount > 0 ? 'uploaded' : 'failed',
+                    uploadProgress: 100,
+                    error: successCount === 0 ? 'Failed to create statement records' : undefined
+                };
+                return updated;
+            });
+
+            return successCount > 0;
+
+        } catch (error) {
+            console.error(`Error in range statement upload:`, error);
+            setUploadItems(prev => {
+                const updated = [...prev];
+                updated[itemIndex] = {
+                    ...updated[itemIndex],
+                    status: 'failed',
+                    error: error.message,
+                    uploadProgress: 0
+                };
+                return updated;
+            });
+            return false;
+        }
+    };
+
+    const handleSingleStatementUpload = async (item: BulkUploadItem, itemIndex: number) => {
+        console.log(`🔄 Starting single statement upload for item ${itemIndex}:`, {
+            fileName: item.file.name,
+            bankId: item.matchedBank?.id,
+            extractedPeriod: item.extractedData?.statement_period,
+            currentDialogPeriod: `${cycleYear}/${cycleMonth}`
+        });
+
+        setUploadItems(prev => {
+            const updated = [...prev];
+            updated[itemIndex] = { ...updated[itemIndex], uploadProgress: 10 };
+            return updated;
+        });
+
+        try {
+            // 🔧 FIX: Extract actual month/year from the statement period
+            let actualMonth = cycleMonth;
+            let actualYear = cycleYear;
+
+            if (item.extractedData?.statement_period) {
+                const periodResult = parseStatementPeriod(item.extractedData.statement_period);
+                if (periodResult) {
+                    actualMonth = periodResult.endMonth - 1; // Convert to 0-based month
+                    actualYear = periodResult.endYear;
+                    console.log(`📅 Using extracted period: ${actualMonth + 1}/${actualYear} from "${item.extractedData.statement_period}"`);
+                }
+            } else if (item.extractedData?.monthly_balances?.length > 0) {
+                // Fallback: use the month from monthly_balances
+                const lastBalance = item.extractedData.monthly_balances[item.extractedData.monthly_balances.length - 1];
+                actualMonth = lastBalance.month - 1; // Convert to 0-based month
+                actualYear = lastBalance.year;
+                console.log(`📅 Using balance period: ${actualMonth + 1}/${actualYear} from monthly_balances`);
+            }
+
+            const fileName = `single_${item.matchedBank.company_id}_${item.matchedBank.id}_${actualYear}_${actualMonth}_${Date.now()}.pdf`;
+            const filePath = `statement_documents/${actualYear}/${actualMonth + 1}/${item.matchedBank.company_id}/${fileName}`;
+
+            // 1. File Upload
+            console.log(`📁 Uploading file to path: ${filePath}`);
+            const { data: uploadData, error: uploadError } = await supabase.storage
+                .from('Statement-Cycle')
+                .upload(filePath, item.file, { upsert: true });
+
+            if (uploadError) {
+                console.error(`❌ File upload failed:`, uploadError);
+                throw uploadError;
+            }
+            console.log(`✅ File uploaded successfully:`, uploadData);
+            
+            // Store the path back into the item for later use
+            if(item.extractedData) item.extractedData.pdf_path = uploadData.path;
+
+            setUploadItems(prev => {
+                const updated = [...prev];
+                updated[itemIndex] = { ...updated[itemIndex], uploadProgress: 40 };
+                return updated;
+            });
+
+            // 2. Get or Create Statement Cycle with CORRECT month/year
+            console.log(`🔄 Getting/creating statement cycle for ${actualYear}/${actualMonth}`);
+            const cycleId = await getOrCreateStatementCycle(actualYear, actualMonth, 'monthly');
+            console.log(`✅ Statement cycle ID: ${cycleId}`);
+
+            setUploadItems(prev => {
+                const updated = [...prev];
+                updated[itemIndex] = { ...updated[itemIndex], uploadProgress: 60 };
+                return updated;
+            });
+
+            // 3. Check for existing statement with CORRECT cycle
+            console.log(`🔍 Checking for existing statement...`);
+            const { data: existingStatement } = await supabase
+                .from('acc_cycle_bank_statements')
+                .select('id')
+                .eq('bank_id', item.matchedBank.id)
+                .eq('statement_cycle_id', cycleId)
+                .eq('statement_type', 'monthly')
+                .maybeSingle();
+
+            console.log(`📋 Existing statement check:`, existingStatement);
+
+            // 4. Prepare statement data with CORRECT month/year
+            const statementData = {
+                bank_id: item.matchedBank.id,
+                company_id: item.matchedBank.company_id,
+                statement_cycle_id: cycleId,
+                statement_month: actualMonth,        // 🔧 FIX: Use actual month
+                statement_year: actualYear,          // 🔧 FIX: Use actual year
+                statement_type: 'monthly',
+                has_soft_copy: true,
+                has_hard_copy: false,
+                statement_document: {
+                    statement_pdf: uploadData.path,
+                    document_size: item.file.size,
+                    password: item.passwordApplied ? item.appliedPassword : null,
+                    extraction_metadata: item.extractedData.processing_metadata,
+                    user_period_input: item.userPeriodInput || null
+                },
+                statement_extractions: {
+                    ...item.extractedData,
+                    enhanced_processing: true,
+                    all_pages_analyzed: item.extractedData.total_pages_analyzed > 0
+                },
+                validation_status: {
+                    is_validated: false,
+                    validation_date: null,
+                    validated_by: null,
+                    mismatches: [],
+                    extraction_confidence: item.extractedData.extraction_confidence || 'MEDIUM'
+                },
+                status: {
+                    status: 'pending_validation',
+                    assigned_to: null,
+                    verification_date: null
+                }
+            };
+
+            console.log(`💾 Prepared statement data for database:`, {
+                ...statementData,
+                statement_document: { ...statementData.statement_document, statement_pdf: '[PATH]' },
+                statement_extractions: { ...statementData.statement_extractions, monthly_balances: `[${statementData.statement_extractions.monthly_balances?.length || 0} balances]` }
+            });
+
+            setUploadItems(prev => {
+                const updated = [...prev];
+                updated[itemIndex] = { ...updated[itemIndex], uploadProgress: 80 };
+                return updated;
+            });
+
+            // 5. Database operation
+            if (existingStatement) {
+                console.log(`🔄 Updating existing statement with ID: ${existingStatement.id}`);
+                const { data: updateResult, error: updateError } = await supabase
+                    .from('acc_cycle_bank_statements')
+                    .update(statementData)
+                    .eq('id', existingStatement.id)
+                    .select();
+
+                if (updateError) {
+                    console.error(`❌ Update failed:`, updateError);
+                    throw updateError;
+                }
+                console.log(`✅ Statement updated successfully:`, updateResult);
+            } else {
+                console.log(`➕ Inserting new statement for ${actualMonth + 1}/${actualYear}`);
+                const { data: insertResult, error: insertError } = await supabase
+                    .from('acc_cycle_bank_statements')
+                    .insert([statementData])
+                    .select();
+
+                if (insertError) {
+                    console.error(`❌ Insert failed:`, insertError);
+                    throw insertError;
+                } else {
+                    console.log(`✅ Statement inserted successfully:`, insertResult);
+                }
+            }
+
+            // 6. Final status update
+            setUploadItems(prev => {
+                const updated = [...prev];
+                updated[itemIndex] = {
+                    ...updated[itemIndex],
+                    status: 'uploaded',
+                    uploadProgress: 100
+                };
+                return updated;
+            });
+
+            console.log(`🎉 Single statement upload completed for item ${itemIndex}`);
+            return true;
+
+        } catch (error) {
+            console.error(`💥 Error in single statement upload for item ${itemIndex}:`, {
+                error: error.message,
+                stack: error.stack,
+                fileName: item.file.name,
+                bankId: item.matchedBank?.id
+            });
+
+            setUploadItems(prev => {
+                const updated = [...prev];
+                updated[itemIndex] = {
+                    ...updated[itemIndex],
+                    status: 'failed',
+                    error: error.message,
+                    uploadProgress: 0
+                };
+                return updated;
+            });
+            return false;
+        }
+    };
+
+    // Company organization for vouching with enhanced metadata
     const organizeByCompany = () => {
         const validItems = uploadItems.filter(item =>
             item.status === 'matched' || item.status === 'uploaded' || item.status === 'vouched'
@@ -878,25 +1954,39 @@ export function BankStatementBulkUploadDialog({
             const companyId = item.matchedBank.company_id;
             const companyName = item.matchedBank.company_name;
 
-            const existingGroup = groups.find(g => g.companyId === companyId);
+            let group = groups.find(g => g.companyId === companyId);
 
-            if (existingGroup) {
-                existingGroup.statements.push(item);
-                existingGroup.isVouched = existingGroup.statements.every(s => s.isVouched);
-            } else {
-                groups.push({
+            if (!group) {
+                 group = {
                     companyId,
                     companyName,
                     isExpanded: false,
-                    isVouched: item.isVouched || false,
-                    statements: [item]
-                });
+                    isVouched: false, // Will be calculated later
+                    statements: []
+                };
+                groups.push(group);
+            }
+            
+            // Avoid adding duplicates
+            if (!group.statements.some(s => s.file.name === item.file.name)) {
+                group.statements.push(item);
             }
 
             return groups;
         }, [] as CompanyGroup[]);
 
-        // Auto-expand first non-vouched group
+        // Now, calculate the `isVouched` status for each group and sort them
+        groupedByCompany.forEach(group => {
+            group.isVouched = group.statements.length > 0 && group.statements.every(s => s.isVouched);
+        });
+        
+        // Sort groups: unvouched first, then alphabetically
+        groupedByCompany.sort((a, b) => {
+            if (a.isVouched && !b.isVouched) return 1;
+            if (!a.isVouched && b.isVouched) return -1;
+            return a.companyName.localeCompare(b.companyName);
+        });
+
         const firstNonVouchedIndex = groupedByCompany.findIndex(g => !g.isVouched);
         if (firstNonVouchedIndex >= 0) {
             groupedByCompany[firstNonVouchedIndex].isExpanded = true;
@@ -905,18 +1995,42 @@ export function BankStatementBulkUploadDialog({
         setCompanyGroups(groupedByCompany);
     };
 
+    const handleDialogClose = useCallback(() => {
+        console.log(`🔄 Dialog closing - triggering comprehensive refresh`);
+
+        // Clear all temporary state
+        setUploadItems([]);
+        setCompanyGroups([]);
+        setCurrentStatementForDialog(null);
+        setShowExtractionDialog(false);
+
+        // Notify parent components
+        onUploadsComplete();
+        onClose();
+
+        // Force immediate refresh of all related components
+        setTimeout(() => {
+            console.log(`🔄 Triggering delayed refresh for all views`);
+            // onRefresh?.(); // If available   
+
+            // Trigger a custom refresh event
+            window.dispatchEvent(new CustomEvent('bankStatementsUpdated', {
+                detail: { timestamp: Date.now() }
+            }));
+        }, 100);
+    }, [onUploadsComplete, onClose]);
     // Event handlers
     const removeItem = (index: number) => {
         setUploadItems(items => items.filter((_, i) => i !== index))
     }
 
-    const toggleCompanyExpansion = (companyId: number) => {
-        setCompanyGroups(groups => {
-            return groups.map(group => ({
-                ...group,
-                isExpanded: group.companyId === companyId ? !group.isExpanded : false
-            }));
-        });
+    const toggleCompanyExpansion = (companyId: number, forceOpen?: boolean) => {
+        setCompanyGroups(prev => prev.map(group => ({
+            ...group,
+            isExpanded: group.companyId === companyId
+                ? (forceOpen ?? !group.isExpanded)
+                : false // Close others
+        })));
     };
 
     const markCompanyVouched = (companyId: number, isVouched: boolean) => {
@@ -951,12 +2065,84 @@ export function BankStatementBulkUploadDialog({
         });
     };
 
-    // Auto-organize by company when moving to vouching tab
+    // FIX: Rewritten function to correctly prepare and show the extraction dialog
+    const showStatementExtraction = (item: BulkUploadItem) => {
+        if (!item) {
+            toast({ title: 'Error', description: 'No item to view.', variant: 'destructive' });
+            return;
+        }
+
+        try {
+            setCurrentProcessingItem(item);
+
+            // For unmatched/failed items, we need a placeholder bank object for the dialog
+            const bankForDialog = item.matchedBank || {
+                id: -1,
+                bank_name: item.detectedBankName || item.extractedData?.bank_name || 'Unknown Bank',
+                account_number: item.detectedAccountNumber || item.extractedData?.account_number || 'Unknown Account',
+                bank_currency: item.extractedData?.currency || 'USD',
+                company_id: -1,
+                company_name: item.extractedData?.company_name || 'Unknown Company',
+                acc_password: item.detectedPassword || ''
+            };
+
+            // Construct a mock statement object that BankExtractionDialog expects
+            const mockStatement = {
+                id: `temp-${item.file.name}`,
+                bank_id: bankForDialog.id,
+                statement_month: cycleMonth,
+                statement_year: cycleYear,
+                statement_type: item.statementType || 'monthly',
+                quickbooks_balance: null,
+                statement_document: {
+                    statement_pdf: URL.createObjectURL(item.file), // Use a temporary blob URL
+                    document_size: item.file.size,
+                    password: item.appliedPassword,
+                },
+                statement_extractions: item.extractedData || {
+                    bank_name: bankForDialog.bank_name,
+                    account_number: bankForDialog.account_number,
+                    currency: bankForDialog.bank_currency,
+                    statement_period: '',
+                    opening_balance: null,
+                    closing_balance: null,
+                    monthly_balances: [],
+                },
+                has_soft_copy: true,
+                has_hard_copy: false,
+                validation_status: {
+                    is_validated: false,
+                    validation_date: null,
+                    validated_by: null,
+                    mismatches: [],
+                },
+                status: {
+                    status: item.status,
+                    assigned_to: null,
+                    verification_date: null,
+                },
+            };
+
+            setCurrentStatementForDialog(mockStatement);
+            setShowExtractionDialog(true);
+
+        } catch (error) {
+            console.error('Error in showStatementExtraction:', error);
+            toast({
+                title: 'Error Opening Statement',
+                description: `Failed to open statement: ${error.message}`,
+                variant: 'destructive'
+            });
+        }
+    };
+
+    // Auto-organize by company when moving to vouching tab or when items change
     useEffect(() => {
         if (activeTab === 'vouching') {
             organizeByCompany();
         }
     }, [activeTab, uploadItems]);
+
 
     return (
         <Dialog open={isOpen} onOpenChange={(open) => {
@@ -973,9 +2159,9 @@ export function BankStatementBulkUploadDialog({
                                 <UploadCloud className="h-7 w-7 text-blue-600" />
                             </div>
                         </div>
-                        <DialogTitle className="text-center text-xl text-blue-800">Bulk Upload Bank Statements</DialogTitle>
+                        <DialogTitle className="text-center text-xl text-blue-800">Enhanced Bulk Upload Bank Statements</DialogTitle>
                         <p className="text-center text-blue-600 text-sm mt-1">
-                            {format(new Date(cycleYear, cycleMonth, 1), 'MMMM yyyy')} - Optimized for Speed
+                            {format(new Date(cycleYear, cycleMonth, 1), 'MMMM yyyy')} - Intelligent Processing with All Pages Analysis
                         </p>
                     </div>
                 </DialogHeader>
@@ -1012,7 +2198,7 @@ export function BankStatementBulkUploadDialog({
                                     <div className="text-center">
                                         <UploadCloud className="mx-auto h-12 w-12 text-gray-400" />
                                         <p className="text-gray-500 mt-2">Drag and drop PDFs here, or click to select</p>
-                                        <p className="text-xs text-gray-400 mt-1">Auto-detection and parallel processing enabled</p>
+                                        <p className="text-xs text-gray-400 mt-1">Enhanced with all-pages processing, embeddings, and intelligent scenarios</p>
                                     </div>
                                 </div>
 
@@ -1023,7 +2209,7 @@ export function BankStatementBulkUploadDialog({
                                         className="bg-blue-600 hover:bg-blue-700"
                                     >
                                         <FileCheck className="h-4 w-4 mr-2" />
-                                        Extract All ({uploadItems.filter(i => i.matchedBank).length})
+                                        Enhanced Extract ({uploadItems.filter(i => i.matchedBank).length})
                                     </Button>
                                     <Button
                                         onClick={handleBulkUpload}
@@ -1036,7 +2222,7 @@ export function BankStatementBulkUploadDialog({
                                 </div>
                             </div>
 
-                            {/* File list table */}
+                            {/* Enhanced file list table */}
                             <div className="border rounded-md overflow-hidden max-h-[400px]">
                                 <div className="overflow-y-auto max-h-[350px]">
                                     <Table>
@@ -1047,14 +2233,15 @@ export function BankStatementBulkUploadDialog({
                                                 <TableHead>Size</TableHead>
                                                 <TableHead>Detection Status</TableHead>
                                                 <TableHead>Type</TableHead>
+                                                <TableHead>Confidence</TableHead>
                                                 <TableHead>Action</TableHead>
                                             </TableRow>
                                         </TableHeader>
                                         <TableBody>
                                             {uploadItems.length === 0 ? (
                                                 <TableRow>
-                                                    <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                                                        No files selected. Drop PDF files here for instant processing.
+                                                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                                                        No files selected. Drop PDF files here for enhanced intelligent processing.
                                                     </TableCell>
                                                 </TableRow>
                                             ) : (
@@ -1093,6 +2280,19 @@ export function BankStatementBulkUploadDialog({
                                                             </Badge>
                                                         </TableCell>
                                                         <TableCell>
+                                                            {item.extractedData?.extraction_confidence && (
+                                                                <Badge
+                                                                    variant="outline"
+                                                                    className={`text-xs ${item.extractedData.extraction_confidence === 'HIGH' ? 'bg-green-50 text-green-700' :
+                                                                        item.extractedData.extraction_confidence === 'MEDIUM' ? 'bg-yellow-50 text-yellow-700' :
+                                                                            'bg-red-50 text-red-700'
+                                                                        }`}
+                                                                >
+                                                                    {item.extractedData.extraction_confidence}
+                                                                </Badge>
+                                                            )}
+                                                        </TableCell>
+                                                        <TableCell>
                                                             <Button
                                                                 variant="ghost"
                                                                 size="icon"
@@ -1112,10 +2312,11 @@ export function BankStatementBulkUploadDialog({
 
                             <Alert>
                                 <FileText className="h-4 w-4" />
-                                <AlertTitle>Optimized Bulk Processing</AlertTitle>
+                                <AlertTitle>Enhanced Intelligent Processing</AlertTitle>
                                 <AlertDescription>
-                                    Parallel file processing, auto-password detection, smart bank matching, and bulk extraction for maximum speed.
-                                    Support for both monthly and range statements with automatic type detection.
+                                    All-pages analysis, document embeddings, intelligent scenario handling, smart bank matching,
+                                    and enhanced range statement support with conflict resolution.
+                                    Manual period input available for failed extractions.
                                 </AlertDescription>
                             </Alert>
                         </div>
@@ -1125,13 +2326,13 @@ export function BankStatementBulkUploadDialog({
                         <Card>
                             <CardHeader className="pb-2">
                                 <CardTitle className="flex items-center justify-between">
-                                    Processing Progress
+                                    Enhanced Processing Progress
                                     <Badge variant="outline">
-                                        {uploading ? 'Processing...' : 'Complete'}
+                                        {uploading ? `Processing... (${overallProgress}%)` : 'Complete'}
                                     </Badge>
                                 </CardTitle>
                                 <CardDescription>
-                                    Bulk processing {uploadItems.length} files with enhanced speed optimizations
+                                    Intelligent processing {uploadItems.length} files with conflict resolution
                                 </CardDescription>
                             </CardHeader>
                             <CardContent>
@@ -1142,113 +2343,78 @@ export function BankStatementBulkUploadDialog({
                                     </div>
                                     <Progress value={overallProgress} className="h-3" />
 
-                                    <div className="grid grid-cols-4 gap-4 text-center">
-                                        <div className="p-3 bg-green-50 rounded-lg">
-                                            <div className="text-2xl font-bold text-green-600">
-                                                {uploadItems.filter(i => i.status === 'matched' || i.status === 'uploaded').length}
+                                    {/* Real-time progress breakdown */}
+                                    <div className="grid grid-cols-6 gap-2 text-center">
+                                        <div className="p-2 bg-green-50 rounded-lg">
+                                            <div className="text-lg font-bold text-green-600">
+                                                {uploadItems.filter(i => i.status === 'uploaded').length}
                                             </div>
-                                            <div className="text-xs text-green-600">Successful</div>
+                                            <div className="text-xs text-green-600">Uploaded</div>
                                         </div>
-                                        <div className="p-3 bg-blue-50 rounded-lg">
-                                            <div className="text-2xl font-bold text-blue-600">
-                                                {uploadItems.filter(i => i.passwordApplied).length}
+                                        <div className="p-2 bg-blue-50 rounded-lg">
+                                            <div className="text-lg font-bold text-blue-600">
+                                                {uploadItems.filter(i => i.status === 'processing').length}
                                             </div>
-                                            <div className="text-xs text-blue-600">Auto-unlocked</div>
+                                            <div className="text-xs text-blue-600">Processing</div>
                                         </div>
-                                        <div className="p-3 bg-yellow-50 rounded-lg">
-                                            <div className="text-2xl font-bold text-yellow-600">
-                                                {uploadItems.filter(i => i.status === 'unmatched').length}
+                                        <div className="p-2 bg-yellow-50 rounded-lg">
+                                            <div className="text-lg font-bold text-yellow-600">
+                                                {uploadItems.filter(i => i.status === 'matched').length}
                                             </div>
-                                            <div className="text-xs text-yellow-600">Unmatched</div>
+                                            <div className="text-xs text-yellow-600">Ready</div>
                                         </div>
-                                        <div className="p-3 bg-red-50 rounded-lg">
-                                            <div className="text-2xl font-bold text-red-600">
+                                        <div className="p-2 bg-red-50 rounded-lg">
+                                            <div className="text-lg font-bold text-red-600">
                                                 {uploadItems.filter(i => i.status === 'failed').length}
                                             </div>
                                             <div className="text-xs text-red-600">Failed</div>
                                         </div>
+                                        <div className="p-2 bg-purple-50 rounded-lg">
+                                            <div className="text-lg font-bold text-purple-600">
+                                                {uploadItems.filter(i => i.passwordApplied).length}
+                                            </div>
+                                            <div className="text-xs text-purple-600">Unlocked</div>
+                                        </div>
+                                        <div className="p-2 bg-gray-50 rounded-lg">
+                                            <div className="text-lg font-bold text-gray-600">
+                                                {uploadItems.filter(i => i.status === 'pending').length}
+                                            </div>
+                                            <div className="text-xs text-gray-600">Pending</div>
+                                        </div>
                                     </div>
 
-                                    <div className="flex justify-between">
-                                        <Button
-                                            variant="outline"
-                                            onClick={() => setActiveTab('review')}
-                                            disabled={uploading}
-                                        >
-                                            Review Results
-                                        </Button>
-                                        <Button
-                                            onClick={() => setActiveTab('vouching')}
-                                            disabled={uploadItems.filter(i => i.status === 'matched' || i.status === 'uploaded').length === 0}
-                                            className="bg-purple-600 hover:bg-purple-700"
-                                        >
-                                            <ArrowRight className="h-4 w-4 mr-2" />
-                                            Start Vouching
-                                        </Button>
+                                    {/* Individual item progress */}
+                                    <div className="max-h-64 overflow-y-auto space-y-2">
+                                        {uploadItems.map((item, index) => (
+                                            <div key={index} className="flex items-center justify-between p-2 border rounded">
+                                                <div className="flex items-center space-x-2">
+                                                    <FileText className="h-4 w-4" />
+                                                    <span className="text-sm truncate max-w-48">
+                                                        {item.file.name}
+                                                    </span>
+                                                    <Badge variant={
+                                                        item.status === 'uploaded' ? 'default' :
+                                                            item.status === 'processing' ? 'secondary' :
+                                                                item.status === 'failed' ? 'destructive' : 'outline'
+                                                    }>
+                                                        {item.status}
+                                                    </Badge>
+                                                </div>
+                                                <div className="flex items-center space-x-2">
+                                                    <Progress
+                                                        value={item.uploadProgress || 0}
+                                                        className="h-2 w-20"
+                                                    />
+                                                    <span className="text-xs w-8">
+                                                        {item.uploadProgress || 0}%
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        ))}
                                     </div>
                                 </div>
                             </CardContent>
                         </Card>
-
-                        {/* Processing status table */}
-                        <div className="border rounded-md overflow-hidden flex-1">
-                            <div className="overflow-y-auto max-h-[300px]">
-                                <Table>
-                                    <TableHeader className="sticky top-0 bg-background z-10">
-                                        <TableRow>
-                                            <TableHead className="w-[40px]">#</TableHead>
-                                            <TableHead>File</TableHead>
-                                            <TableHead>Status</TableHead>
-                                            <TableHead>Type</TableHead>
-                                            <TableHead>Progress</TableHead>
-                                            <TableHead>Details</TableHead>
-                                        </TableRow>
-                                    </TableHeader>
-                                    <TableBody>
-                                        {uploadItems.map((item, index) => (
-                                            <TableRow key={index}>
-                                                <TableCell className="font-mono text-sm">{index + 1}</TableCell>
-                                                <TableCell className="font-medium truncate max-w-[200px]">
-                                                    {item.file.name}
-                                                </TableCell>
-                                                <TableCell>{getStatusBadge(item.status)}</TableCell>
-                                                <TableCell>
-                                                    <Badge variant="outline" className="text-xs">
-                                                        {item.statementType || 'Unknown'}
-                                                    </Badge>
-                                                </TableCell>
-                                                <TableCell>
-                                                    <div className="w-full bg-gray-200 rounded-full h-2">
-                                                        <div
-                                                            className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                                                            style={{ width: `${item.uploadProgress || 0}%` }}
-                                                        />
-                                                    </div>
-                                                </TableCell>
-                                                <TableCell className="text-xs">
-                                                    <div className="flex flex-wrap gap-1">
-                                                        {item.passwordApplied && (
-                                                            <Badge variant="outline" className="text-xs">
-                                                                <Lock className="h-3 w-3 mr-1" />
-                                                                Unlocked
-                                                            </Badge>
-                                                        )}
-                                                        {item.matchedBank && (
-                                                            <Badge variant="secondary" className="text-xs">
-                                                                {item.matchedBank.bank_name}
-                                                            </Badge>
-                                                        )}
-                                                        {item.error && (
-                                                            <span className="text-red-500 text-xs">{item.error}</span>
-                                                        )}
-                                                    </div>
-                                                </TableCell>
-                                            </TableRow>
-                                        ))}
-                                    </TableBody>
-                                </Table>
-                            </div>
-                        </div>
                     </TabsContent>
 
                     <TabsContent value="review" className="flex-1 flex flex-col overflow-hidden">
@@ -1262,6 +2428,7 @@ export function BankStatementBulkUploadDialog({
                                             <TableHead className="text-xs">Company</TableHead>
                                             <TableHead className="text-xs">Bank</TableHead>
                                             <TableHead className="text-xs">Type</TableHead>
+                                            <TableHead className="text-xs">Confidence</TableHead>
                                             <TableHead className="text-xs">Status</TableHead>
                                             <TableHead className="text-xs">Actions</TableHead>
                                         </TableRow>
@@ -1284,24 +2451,65 @@ export function BankStatementBulkUploadDialog({
                                                         {item.statementType || 'Auto'}
                                                     </Badge>
                                                 </TableCell>
+                                                <TableCell className="text-xs">
+                                                    {item.extractedData?.extraction_confidence && (
+                                                        <Badge
+                                                            variant="outline"
+                                                            className={`text-xs ${item.extractedData.extraction_confidence === 'HIGH' ? 'bg-green-50 text-green-700' :
+                                                                item.extractedData.extraction_confidence === 'MEDIUM' ? 'bg-yellow-50 text-yellow-700' :
+                                                                    'bg-red-50 text-red-700'
+                                                                }`}
+                                                        >
+                                                            {item.extractedData.extraction_confidence}
+                                                        </Badge>
+                                                    )}
+                                                </TableCell>
                                                 <TableCell className="text-xs">{getStatusBadge(item.status)}</TableCell>
                                                 <TableCell className="text-xs">
-                                                    {item.status === 'failed' && (
-                                                        <div className="text-red-500 text-xs">{item.error}</div>
-                                                    )}
-                                                    {item.status === 'unmatched' && (
+                                                    <div className="flex gap-1 flex-wrap">
+                                                        {item.status === 'failed' && (
+                                                            <div className="text-red-500 text-xs mb-1 w-full">{item.error}</div>
+                                                        )}
+
+                                                        {(item.status === 'unmatched' || item.status === 'failed') && (
+                                                            <>
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    size="sm"
+                                                                    className="bg-green-50 text-green-700 text-xs h-6"
+                                                                    onClick={() => {
+                                                                        setCurrentManualMatchItem(index);
+                                                                        setShowBankSelectorDialog(true);
+                                                                    }}
+                                                                >
+                                                                    Match Bank
+                                                                </Button>
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    size="sm"
+                                                                    className="bg-blue-50 text-blue-700 text-xs h-6"
+                                                                    onClick={() => {
+                                                                        setSelectedItemForPeriod(index);
+                                                                        setManualPeriodInput('');
+                                                                        setShowPeriodInputDialog(true);
+                                                                    }}
+                                                                >
+                                                                    Set Period
+                                                                </Button>
+                                                            </>
+                                                        )}
+
+                                                        {/* FIX: Always show View button to allow manual inspection */}
                                                         <Button
                                                             variant="ghost"
                                                             size="sm"
-                                                            className="bg-green-50 text-green-700 text-xs h-6"
-                                                            onClick={() => {
-                                                                setCurrentManualMatchItem(index);
-                                                                setShowBankSelectorDialog(true);
-                                                            }}
+                                                            className="bg-purple-50 text-purple-700 text-xs h-6"
+                                                            onClick={() => showStatementExtraction(item)}
                                                         >
-                                                            Match
+                                                            <Eye className="h-3 w-3 mr-1" />
+                                                            View
                                                         </Button>
-                                                    )}
+                                                    </div>
                                                 </TableCell>
                                             </TableRow>
                                         ))}
@@ -1344,6 +2552,7 @@ export function BankStatementBulkUploadDialog({
                         </div>
                     </TabsContent>
 
+                    {/* VOUCHING TAB: This is where the primary fix is applied */}
                     <TabsContent value="vouching" className="flex-1 flex flex-col overflow-hidden">
                         <div className="h-full overflow-y-auto p-1">
                             {companyGroups.length === 0 ? (
@@ -1355,168 +2564,183 @@ export function BankStatementBulkUploadDialog({
                                     </div>
                                 </div>
                             ) : (
-                                <div className="space-y-3">
-                                    {companyGroups.map((group) => (
-                                        <Collapsible
-                                            key={group.companyId}
-                                            open={group.isExpanded}
-                                            onOpenChange={() => toggleCompanyExpansion(group.companyId)}
-                                            className="border rounded-md shadow-sm"
-                                        >
-                                            <CollapsibleTrigger className="flex items-center justify-between w-full p-3 bg-slate-50 hover:bg-slate-100 rounded-t-md">
-                                                <div className="flex items-center gap-2">
-                                                    {group.isExpanded ?
-                                                        <ChevronDown className="h-4 w-4 text-slate-500" /> :
-                                                        <ChevronRight className="h-4 w-4 text-slate-500" />
-                                                    }
-                                                    <Building className="h-4 w-4 text-blue-600" />
-                                                    <span className="font-medium">{group.companyName}</span>
-                                                    <Badge variant="outline">
-                                                        {group.statements.length} statements
-                                                    </Badge>
-                                                    <Badge variant="secondary">
-                                                        {group.statements.filter(s => s.passwordApplied).length} auto-unlocked
-                                                    </Badge>
-                                                </div>
-                                                <div>
-                                                    {group.isVouched ? (
-                                                        <Badge className="bg-purple-100 text-purple-800">
-                                                            <CheckCircle className="h-3.5 w-3.5 mr-1" />
-                                                            Vouched
-                                                        </Badge>
-                                                    ) : (
-                                                        <Badge variant="outline" className="bg-amber-50 text-amber-700">
-                                                            Pending
-                                                        </Badge>
-                                                    )}
-                                                </div>
-                                            </CollapsibleTrigger>
-
-                                            <CollapsibleContent className="p-3">
-                                                <div className="grid gap-3">
-                                                    {group.statements.map((statement, idx) => (
-                                                        <div key={idx} className="border rounded-md p-3 bg-white">
-                                                            <div className="flex justify-between items-start mb-2">
-                                                                <div className="flex items-center gap-2">
-                                                                    <FileText className="h-4 w-4 text-blue-600" />
-                                                                    <span className="font-medium text-sm">{statement.file.name}</span>
-                                                                    <Badge variant="outline" className="text-xs">
-                                                                        {statement.statementType || 'monthly'}
-                                                                    </Badge>
-                                                                    {statement.passwordApplied && (
-                                                                        <Badge variant="outline" className="text-xs">
-                                                                            <Lock className="h-3 w-3 mr-1" />
-                                                                            Auto-unlocked
-                                                                        </Badge>
-                                                                    )}
-                                                                </div>
-                                                                {getStatusBadge(statement.status)}
-                                                            </div>
-
-                                                            <div className="grid grid-cols-2 gap-3 text-sm">
-                                                                <div>
-                                                                    <p><span className="font-medium">Bank:</span> {statement.extractedData?.bank_name || 'Not detected'}</p>
-                                                                    <p><span className="font-medium">Account:</span> {statement.extractedData?.account_number || 'Not detected'}</p>
-                                                                    <p><span className="font-medium">Period:</span> {statement.extractedData?.statement_period || 'Current month'}</p>
-                                                                </div>
-                                                                <div>
-                                                                    <p><span className="font-medium">Opening:</span> {formatCurrency(statement.extractedData?.opening_balance, statement.extractedData?.currency || 'USD')}</p>
-                                                                    <p><span className="font-medium">Closing:</span> {formatCurrency(statement.extractedData?.closing_balance, statement.extractedData?.currency || 'USD')}</p>
-                                                                    <p><span className="font-medium">Currency:</span> {statement.extractedData?.currency || 'USD'}</p>
-                                                                </div>
-                                                            </div>
-
-                                                            <div className="mt-3 flex justify-between items-center">
-                                                                <div className="flex items-center space-x-2">
-                                                                    <Checkbox
-                                                                        id={`vouched-${idx}`}
-                                                                        checked={statement.isVouched || false}
-                                                                        onCheckedChange={(checked) => {
-                                                                            const itemIndex = uploadItems.indexOf(statement);
-                                                                            setUploadItems(items => {
-                                                                                const updated = [...items];
-                                                                                updated[itemIndex] = {
-                                                                                    ...updated[itemIndex],
-                                                                                    isVouched: !!checked,
-                                                                                    status: checked ? 'vouched' : 'uploaded'
-                                                                                };
-                                                                                return updated;
-                                                                            });
-                                                                        }}
-                                                                    />
-                                                                    <Label htmlFor={`vouched-${idx}`} className="text-sm">
-                                                                        Verified and vouched
-                                                                    </Label>
-                                                                </div>
-
-                                                                <Button
-                                                                    variant="ghost"
-                                                                    size="sm"
-                                                                    onClick={() => {
-                                                                        toast({
-                                                                            title: "Statement Preview",
-                                                                            description: `Viewing ${statement.file.name}`,
-                                                                        });
-                                                                    }}
-                                                                >
-                                                                    <Eye className="h-3.5 w-3.5 mr-1" />
-                                                                    View
-                                                                </Button>
-                                                            </div>
-                                                        </div>
-                                                    ))}
-                                                </div>
-
-                                                <div className="flex justify-end pt-3 mt-3 border-t">
+                                <div className="space-y-4">
+                                    {/* Enhanced Global Vouch All Header */}
+                                    <Card className="border-2 border-blue-200 bg-blue-50">
+                                        <CardHeader className="pb-3">
+                                            <div className="flex items-center justify-between">
+                                                <CardTitle className="text-lg flex items-center gap-2">
+                                                    <Building className="h-5 w-5 text-blue-600" />
+                                                    Vouching Summary
+                                                </CardTitle>
+                                                <div className="flex items-center gap-4">
+                                                    <div className="text-sm text-blue-700">
+                                                        {companyGroups.filter(g => g.isVouched).length} / {companyGroups.length} companies vouched
+                                                    </div>
                                                     <Button
-                                                        variant={group.isVouched ? "outline" : "default"}
-                                                        onClick={() => markCompanyVouched(group.companyId, !group.isVouched)}
-                                                        className={group.isVouched ? "" : "bg-purple-600 hover:bg-purple-700"}
+                                                        onClick={() => handleVouchAllCompanies()}
+                                                        disabled={uploading || companyGroups.every(g => g.isVouched)}
+                                                        className="bg-blue-600 hover:bg-blue-700 gap-2"
+                                                        size="lg"
                                                     >
-                                                        {group.isVouched ? (
-                                                            <>
-                                                                <X className="h-4 w-4 mr-2" />
-                                                                Unmark as Vouched
-                                                            </>
+                                                        {uploading ? (
+                                                            <Loader2 className="h-4 w-4 animate-spin" />
                                                         ) : (
-                                                            <>
-                                                                <CheckCircle className="h-4 w-4 mr-2" />
-                                                                Mark All as Vouched
-                                                            </>
+                                                            <CheckCircle className="h-4 w-4" />
                                                         )}
+                                                        Vouch & Save All Companies
                                                     </Button>
                                                 </div>
-                                            </CollapsibleContent>
-                                        </Collapsible>
-                                    ))}
+                                            </div>
+                                            <div className="grid grid-cols-4 gap-4 text-sm mt-2">
+                                                <div className="bg-white p-2 rounded text-center">
+                                                    <div className="font-bold text-lg text-blue-600">
+                                                        {companyGroups.reduce((sum, g) => sum + g.statements.length, 0)}
+                                                    </div>
+                                                    <div className="text-blue-600">Total Statements</div>
+                                                </div>
+                                                <div className="bg-white p-2 rounded text-center">
+                                                    <div className="font-bold text-lg text-green-600">
+                                                        {companyGroups.reduce((sum, g) => sum + g.statements.filter(s => s.isVouched).length, 0)}
+                                                    </div>
+                                                    <div className="text-green-600">Vouched</div>
+                                                </div>
+                                                <div className="bg-white p-2 rounded text-center">
+                                                    <div className="font-bold text-lg text-purple-600">
+                                                        {companyGroups.reduce((sum, g) => sum + g.statements.filter(s => s.extractedData?.extraction_confidence === 'HIGH').length, 0)}
+                                                    </div>
+                                                    <div className="text-purple-600">High Confidence</div>
+                                                </div>
+                                                <div className="bg-white p-2 rounded text-center">
+                                                    <div className="font-bold text-lg text-orange-600">
+                                                        {companyGroups.reduce((sum, g) => sum + g.statements.filter(s => s.passwordApplied).length, 0)}
+                                                    </div>
+                                                    <div className="text-orange-600">Auto-Unlocked</div>
+                                                </div>
+                                            </div>
+                                        </CardHeader>
+                                    </Card>
+
+                                    {/* Enhanced Collapsible Company Groups */}
+                                    <div className="space-y-3">
+                                        {companyGroups.map((group) => (
+                                            <Collapsible
+                                                key={group.companyId}
+                                                open={group.isExpanded}
+                                                onOpenChange={(open) => toggleCompanyExpansion(group.companyId, open)}
+                                            >
+                                                <Card className={`transition-all duration-200 ${group.isVouched
+                                                    ? 'border-green-200 bg-green-50 shadow-sm'
+                                                    : 'border-amber-200 bg-amber-50 shadow-md'
+                                                    }`}>
+                                                    <CollapsibleTrigger asChild>
+                                                        <CardHeader className="cursor-pointer hover:bg-opacity-80 transition-colors pb-3">
+                                                            <div className="flex items-center justify-between">
+                                                                <div className="flex items-center gap-3">
+                                                                    <div className="flex items-center gap-2">
+                                                                        {group.isExpanded ? (
+                                                                            <ChevronDown className="h-4 w-4 text-gray-500" />
+                                                                        ) : (
+                                                                            <ChevronRight className="h-4 w-4 text-gray-500" />
+                                                                        )}
+                                                                        <Building className="h-5 w-5 text-blue-600" />
+                                                                    </div>
+                                                                    <div>
+                                                                        <CardTitle className="text-base">{group.companyName}</CardTitle>
+                                                                        <div className="text-sm text-muted-foreground mt-1">
+                                                                            {group.statements.length} statements •
+                                                                            {group.statements.filter(s => s.statementType === 'range').length} range •
+                                                                            {group.statements.filter(s => s.extractedData?.extraction_confidence === 'HIGH').length} high confidence
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+
+                                                                <div className="flex items-center gap-3">
+                                                                    <div className="text-sm text-right">
+                                                                        <div className="font-medium">
+                                                                            {group.statements.filter(s => s.isVouched).length} / {group.statements.length} vouched
+                                                                        </div>
+                                                                        <div className="text-xs text-muted-foreground">
+                                                                            Total Value: {formatCurrency(
+                                                                                group.statements.reduce((sum, s) =>
+                                                                                    sum + (s.extractedData?.closing_balance || 0), 0
+                                                                                ),
+                                                                                group.statements[0]?.extractedData?.currency || 'USD'
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+
+                                                                    {group.isVouched ? (
+                                                                        <Badge className="bg-green-100 text-green-800 gap-1">
+                                                                            <CheckCircle className="h-3.5 w-3.5" />
+                                                                            Vouched
+                                                                        </Badge>
+                                                                    ) : (
+                                                                        <Button
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                handleVouchCompany(group.companyId);
+                                                                            }}
+                                                                            disabled={uploading}
+                                                                            className="bg-amber-600 hover:bg-amber-700 gap-1"
+                                                                            size="sm"
+                                                                        >
+                                                                            <CheckCircle className="h-4 w-4" />
+                                                                            Vouch & Save All
+                                                                        </Button>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        </CardHeader>
+                                                    </CollapsibleTrigger>
+
+                                                    <CollapsibleContent>
+                                                        <CardContent className="pt-0 pb-4">
+                                                            <div className="border rounded-lg overflow-hidden">
+                                                                <Table>
+                                                                    <TableHeader className="bg-gray-50">
+                                                                        <TableRow>
+                                                                            <TableHead className="w-[50px]">
+                                                                                <Checkbox
+                                                                                    checked={group.statements.every(s => s.isVouched)}
+                                                                                    indeterminate={group.statements.some(s => s.isVouched) && !group.statements.every(s => s.isVouched)}
+                                                                                    onCheckedChange={(checked) => markCompanyVouched(group.companyId, !!checked)}
+                                                                                />
+                                                                            </TableHead>
+                                                                            <TableHead>File Name</TableHead>
+                                                                            <TableHead>Period</TableHead>
+                                                                            <TableHead>Type</TableHead>
+                                                                            <TableHead>Confidence</TableHead>
+                                                                            <TableHead>Closing Balance</TableHead>
+                                                                            <TableHead>QB Balance</TableHead>
+                                                                            <TableHead>Difference</TableHead>
+                                                                            <TableHead>Status</TableHead>
+                                                                            <TableHead>Actions</TableHead>
+                                                                        </TableRow>
+                                                                    </TableHeader>
+                                                                    <TableBody>
+                                                                        {group.statements.map((statement, idx) => (
+                                                                            // FIX: Connect the new handlers to the component props
+                                                                            <StatementRowComponent
+                                                                                key={`${group.companyId}-${idx}-${statement.file.name}`}
+                                                                                statement={statement}
+                                                                                onVouchToggle={(vouched) => handleVouchStatement(statement, !!vouched)}
+                                                                                onViewStatement={() => showStatementExtraction(statement)}
+                                                                                onEditPeriod={() => handleEditPeriod(statement)}
+                                                                                onBalanceUpdate={(field, value) => handleBalanceUpdate(statement, field, value)}
+                                                                            />
+                                                                        ))}
+                                                                    </TableBody>
+                                                                </Table>
+                                                            </div>
+                                                        </CardContent>
+                                                    </CollapsibleContent>
+                                                </Card>
+                                            </Collapsible>
+                                        ))}
+                                    </div>
                                 </div>
                             )}
-                        </div>
-
-                        <div className="mt-4 flex justify-between">
-                            <Button
-                                variant="outline"
-                                onClick={() => setActiveTab('review')}
-                            >
-                                Back to Review
-                            </Button>
-
-                            <Button
-                                variant="default"
-                                onClick={() => {
-                                    const vouchedCount = companyGroups.filter(g => g.isVouched).length;
-                                    toast({
-                                        title: 'Vouching Complete',
-                                        description: `${vouchedCount} companies vouched successfully`,
-                                    });
-                                    onUploadsComplete();
-                                    onClose();
-                                }}
-                                className="bg-green-600 hover:bg-green-700"
-                            >
-                                <CheckCircle className="h-4 w-4 mr-2" />
-                                Complete Vouching
-                            </Button>
                         </div>
                     </TabsContent>
                 </Tabs>
@@ -1543,7 +2767,7 @@ export function BankStatementBulkUploadDialog({
                                                 updated[currentManualMatchItem] = {
                                                     ...updated[currentManualMatchItem],
                                                     matchedBank: selectedBank,
-                                                    status: 'matched'
+                                                    status: 'pending'
                                                 };
                                                 return updated;
                                             });
@@ -1575,6 +2799,147 @@ export function BankStatementBulkUploadDialog({
                         </DialogFooter>
                     </DialogContent>
                 </Dialog>
+            )}
+
+            {/* Enhanced Manual Period Input Dialog */}
+            {showPeriodInputDialog && selectedItemForPeriod !== null && (
+                <Dialog open={showPeriodInputDialog} onOpenChange={setShowPeriodInputDialog}>
+                    <DialogContent className="sm:max-w-md">
+                        <DialogHeader>
+                            <DialogTitle>Enhanced Period Input</DialogTitle>
+                        </DialogHeader>
+                        <div className="space-y-4 py-3">
+                            <div>
+                                <Label>Statement Period (DD/MM/YYYY - DD/MM/YYYY):</Label>
+                                <Input
+                                    value={manualPeriodInput}
+                                    onChange={(e) => setManualPeriodInput(e.target.value)}
+                                    placeholder="01/01/2024 - 31/01/2024"
+                                    className="mt-2"
+                                />
+                                <p className="text-xs text-gray-500 mt-1">
+                                    Examples: "01/01/2024 - 31/01/2024" for monthly, "01/01/2024 - 31/03/2024" for quarterly
+                                </p>
+                                <Alert className="mt-2">
+                                    <AlertTriangle className="h-4 w-4" />
+                                    <AlertDescription className="text-xs">
+                                        Enhanced processing will apply intelligent scenario handling:
+                                        <br />• Incomplete months will be marked as null
+                                        <br />• Period adjustments will be tracked
+                                        <br />• Manual input will be flagged for validation
+                                    </AlertDescription>
+                                </Alert>
+                            </div>
+                        </div>
+                        <DialogFooter>
+                            <Button
+                                variant="outline"
+                                onClick={() => setShowPeriodInputDialog(false)}
+                            >
+                                Cancel
+                            </Button>
+                            <Button
+                                onClick={async () => {
+                                    if (manualPeriodInput.trim()) {
+                                        await handleManualPeriodInput(selectedItemForPeriod, manualPeriodInput.trim());
+                                        setShowPeriodInputDialog(false);
+                                    }
+                                }}
+                                disabled={!manualPeriodInput.trim()}
+                                className="bg-blue-600 hover:bg-blue-700"
+                            >
+                                Apply Enhanced Period
+                            </Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
+            )}
+
+            {/* Enhanced BankExtractionDialog with sequential processing */}
+            {showExtractionDialog && currentProcessingItem && currentStatementForDialog && (
+                <BankExtractionDialog
+                    isOpen={showExtractionDialog}
+                    onClose={() => {
+                        // Revoke the object URL to prevent memory leaks
+                        if (currentStatementForDialog?.statement_document?.statement_pdf?.startsWith('blob:')) {
+                            URL.revokeObjectURL(currentStatementForDialog.statement_document.statement_pdf);
+                        }
+                        setShowExtractionDialog(false);
+                        setCurrentStatementForDialog(null);
+                        setCurrentProcessingItem(null);
+                    }}
+                    bank={currentProcessingItem.matchedBank || {
+                        id: -1,
+                        bank_name: currentProcessingItem.detectedBankName || currentProcessingItem.extractedData?.bank_name || 'Unknown Bank',
+                        account_number: currentProcessingItem.detectedAccountNumber || currentProcessingItem.extractedData?.account_number || 'Unknown Account',
+                        bank_currency: currentProcessingItem.extractedData?.currency || 'USD',
+                        company_id: -1,
+                        company_name: currentProcessingItem.extractedData?.company_name || 'Unknown Company',
+                        acc_password: currentProcessingItem.detectedPassword || ''
+                    }}
+                    statement={currentStatementForDialog}
+                    onStatementUpdated={async (updatedStatement) => {
+                        // When the user saves in the dialog, update the BulkUploadItem in our state
+                        if (!updatedStatement) return;
+
+                        const itemIndex = uploadItems.findIndex(item =>
+                            item.file.name === currentProcessingItem?.file.name
+                        );
+
+                        if (itemIndex > -1) {
+                            setUploadItems(prev => {
+                                const newItems = [...prev];
+                                const oldItem = newItems[itemIndex];
+                                newItems[itemIndex] = {
+                                    ...oldItem,
+                                    extractedData: updatedStatement.statement_extractions,
+                                    status: 'vouched', // Mark as vouched after saving
+                                    isVouched: true
+                                };
+                                return newItems;
+                            });
+
+                            toast({
+                                title: 'Statement Saved',
+                                description: `${currentProcessingItem.file.name} has been reviewed and saved`,
+                            });
+                        }
+
+                        // Clean up current dialog
+                        if (currentStatementForDialog?.statement_document?.statement_pdf?.startsWith('blob:')) {
+                            URL.revokeObjectURL(currentStatementForDialog.statement_document.statement_pdf);
+                        }
+                        setShowExtractionDialog(false);
+                        setCurrentStatementForDialog(null);
+
+                        // Check if this is part of sequential processing
+                        if (currentStatementForDialog?._sequentialIndex !== undefined) {
+                            const uploadedItems = uploadItems.filter(item => item.status === 'uploaded');
+                            await proceedToNextItem(currentStatementForDialog._sequentialIndex, uploadedItems);
+                        } else {
+                            setCurrentProcessingItem(null);
+                        }
+                    }}
+                    onStatementDeleted={() => {
+                        // Handle deletion in sequential process
+                        if (currentStatementForDialog?._sequentialIndex !== undefined) {
+                            const uploadedItems = uploadItems.filter(item => item.status === 'uploaded');
+                            proceedToNextItem(currentStatementForDialog._sequentialIndex, uploadedItems);
+                        }
+                        setShowExtractionDialog(false);
+                    }}
+                />
+            )}
+
+            {currentItemIndex >= 0 && (
+                <Alert className="mt-4">
+                    <FileText className="h-4 w-4" />
+                    <AlertTitle>Sequential Processing Active</AlertTitle>
+                    <AlertDescription>
+                        Currently reviewing statement {currentItemIndex + 1} of {uploadItems.filter(i => i.status === 'uploaded').length}.
+                        Please complete the review to automatically proceed to the next statement.
+                    </AlertDescription>
+                </Alert>
             )}
         </Dialog>
     )

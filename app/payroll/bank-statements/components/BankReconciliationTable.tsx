@@ -234,6 +234,19 @@ export function BankReconciliationTable({
         });
     }, [companies, selectedClientTypes]);
 
+    useEffect(() => {
+    const handleBankStatementsUpdated = (event) => {
+        console.log('🔄 Bank reconciliation table refreshing due to update', event.detail);
+        refreshData();
+    };
+
+    window.addEventListener('bankStatementsUpdated', handleBankStatementsUpdated);
+    
+    return () => {
+        window.removeEventListener('bankStatementsUpdated', handleBankStatementsUpdated);
+    };
+    
+}, [refreshData]);
     const organizedData = useMemo(() => {
         const companiesWithBanks = filteredCompanies.map(company => ({
             ...company,
@@ -472,7 +485,7 @@ export function BankReconciliationTable({
 
     return (
         <div className="space-y-4">
-            <div className="rounded-md border h-[calc(100vh-280px)] overflow-auto mb-4">
+            <div className="rounded-md border h-[calc(100vh-380px)] overflow-auto mb-4">
                 <Table aria-label="Bank Reconciliation" className="border border-gray-200 text-sm">
                     <TableHeader className="sticky top-0 z-10">
                         <TableRow className="bg-blue-600 hover:bg-blue-600 [&>th]:border-r [&>th]:border-blue-500 last:[&>th]:border-r-0">
