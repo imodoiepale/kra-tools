@@ -220,29 +220,60 @@ export function BankStatementBulkUploadDialog({
         }
     }
 
-    // OPTIMIZED: Batch file processing with enhanced password detection
-    const processFileWithPasswordDetection = async (file: File, index: number): Promise<BulkUploadItem> => {
-        const fileInfo = detectFileInfo(file.name);
+    const safeDetectFileInfo = (filename: string) => {
+        try {
+            if (!filename) return { password: null, accountNumber: null, bankName: null };
 
-        // Enhanced bank matching with multiple criteria
+            // If detectFileInfo is available from utils, use it
+            if (typeof detectFileInfo === 'function') {
+                const result = detectFileInfo(filename);
+                return result || { password: null, accountNumber: null, bankName: null };
+            }
+
+            // Fallback basic detection
+            return {
+                password: null,
+                accountNumber: null,
+                bankName: null
+            };
+        } catch (error) {
+            console.error('Error in file info detection:', error);
+            return { password: null, accountNumber: null, bankName: null };
+        }
+    };
+
+    const processFileWithPasswordDetection = async (file: File, index: number): Promise<BulkUploadItem> => {
+        // Safe file info detection with null checks
+        const fileInfo = safeDetectFileInfo(file.name);
+
+        // Enhanced bank matching with null safety
         let matchedBank = null;
         let matchConfidence = 0;
 
-        // Try account number matching first (highest confidence)
-        if (fileInfo.accountNumber) {
-            matchedBank = safeBanks.find(bank =>
-                bank.account_number.includes(fileInfo.accountNumber) ||
-                fileInfo.accountNumber.includes(bank.account_number)
-            );
+        // Try account number matching first (highest confidence) - FIX: Add null checks
+        if (fileInfo?.accountNumber && safeBanks?.length > 0) {
+            matchedBank = safeBanks.find(bank => {
+                // FIX: Ensure both values exist before calling includes
+                if (!bank?.account_number || !fileInfo.accountNumber) return false;
+
+                return bank.account_number.includes(fileInfo.accountNumber) ||
+                    fileInfo.accountNumber.includes(bank.account_number);
+            });
             if (matchedBank) matchConfidence = 0.9;
         }
 
-        // Try bank name matching if no account match
-        if (!matchedBank && fileInfo.bankName) {
-            matchedBank = safeBanks.find(bank =>
-                bank.bank_name.toLowerCase().includes(fileInfo.bankName.toLowerCase()) ||
-                fileInfo.bankName.toLowerCase().includes(bank.bank_name.toLowerCase())
-            );
+        // Try bank name matching if no account match - FIX: Add null checks
+        if (!matchedBank && fileInfo?.bankName && safeBanks?.length > 0) {
+            matchedBank = safeBanks.find(bank => {
+                // FIX: Ensure both values exist before calling includes
+                if (!bank?.bank_name || !fileInfo.bankName) return false;
+
+                const bankNameLower = bank.bank_name.toLowerCase();
+                const fileNameLower = fileInfo.bankName.toLowerCase();
+
+                return bankNameLower.includes(fileNameLower) ||
+                    fileNameLower.includes(bankNameLower);
+            });
             if (matchedBank) matchConfidence = 0.7;
         }
 
@@ -252,29 +283,39 @@ export function BankStatementBulkUploadDialog({
         let appliedPassword = null;
 
         if (file.type === 'application/pdf') {
-            needsPassword = await isPdfPasswordProtected(file);
+            try {
+                needsPassword = await isPdfPasswordProtected(file);
 
-            if (needsPassword) {
-                // Priority: Bank password > Detected password
-                const passwordsToTry = [
-                    matchedBank?.acc_password,
-                    fileInfo.password
-                ].filter(Boolean);
+                if (needsPassword) {
+                    // Priority: Bank password > Detected password - FIX: Add null checks
+                    const passwordsToTry = [
+                        matchedBank?.acc_password,
+                        fileInfo?.password
+                    ].filter(Boolean); // This filters out null/undefined values
 
-                for (const password of passwordsToTry) {
-                    if (await applyPasswordToFiles(file, password)) {
-                        passwordApplied = true;
-                        appliedPassword = password;
-                        needsPassword = false;
-                        break;
+                    for (const password of passwordsToTry) {
+                        try {
+                            if (await applyPasswordToFiles(file, password)) {
+                                passwordApplied = true;
+                                appliedPassword = password;
+                                needsPassword = false;
+                                break;
+                            }
+                        } catch (error) {
+                            console.error(`Error applying password "${password}":`, error);
+                            continue;
+                        }
                     }
                 }
+            } catch (error) {
+                console.error('Error checking PDF password protection:', error);
+                needsPassword = false;
             }
         }
 
         // Preliminary statement type detection from filename
         let preliminaryType: 'monthly' | 'range' = 'monthly';
-        const fileName = file.name.toLowerCase();
+        const fileName = file.name?.toLowerCase() || '';
 
         // Check filename for range indicators
         if (fileName.includes('quarter') || fileName.includes('q1') || fileName.includes('q2') ||
@@ -285,9 +326,9 @@ export function BankStatementBulkUploadDialog({
 
         return {
             file,
-            detectedPassword: fileInfo.password,
-            detectedAccountNumber: fileInfo.accountNumber,
-            detectedBankName: fileInfo.bankName,
+            detectedPassword: fileInfo?.password || null,
+            detectedAccountNumber: fileInfo?.accountNumber || null,
+            detectedBankName: fileInfo?.bankName || null,
             matchedBank,
             needsPassword,
             passwordApplied,
@@ -299,7 +340,7 @@ export function BankStatementBulkUploadDialog({
             uploadProgress: 0,
             hasSoftCopy: true,
             hasHardCopy: false,
-            statementType: preliminaryType // Will be updated after extraction
+            statementType: preliminaryType
         };
     };
 

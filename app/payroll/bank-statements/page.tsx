@@ -1,4 +1,4 @@
-// app/payroll/bank-statements/page.tsx (Complete replacement)
+// app/payroll/bank-statements/page.tsx
 // @ts-nocheck
 'use client'
 
@@ -50,7 +50,7 @@ export default function BankReconciliationPage() {
     const [selectedStatementStatuses, setSelectedStatementStatuses] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
 
-    // Date range
+    // Date range for detailed view
     const [dateRange, setDateRange] = useState({
         fromMonth: new Date().getMonth(),
         fromYear: new Date().getFullYear(),
@@ -58,11 +58,17 @@ export default function BankReconciliationPage() {
         toYear: new Date().getFullYear()
     });
 
+    // Core state
     const [banks, setBanks] = useState([]);
     const [statementCycleId, setStatementCycleId] = useState(null);
     const [showBulkUpload, setShowBulkUpload] = useState(false);
     const [showDeleteAll, setShowDeleteAll] = useState(false);
     const [refreshKey, setRefreshKey] = useState(0);
+
+    // FIX: Add state for upload dialog context
+    const [selectedBankForUpload, setSelectedBankForUpload] = useState(null);
+    const [uploadDialogMonth, setUploadDialogMonth] = useState(null);
+    const [uploadDialogYear, setUploadDialogYear] = useState(null);
 
     const {
         loading,
@@ -86,12 +92,36 @@ export default function BankReconciliationPage() {
         refreshAllData();
     }, [selectedMonth, selectedYear, refreshAllData]);
 
+    // FIX: Proper month handling with 0-based indexing
+    const handleBulkUploadOpen = () => {
+        setSelectedBankForUpload(null);
+        setUploadDialogMonth(selectedMonth);
+        setUploadDialogYear(selectedYear);
+        setShowBulkUpload(true);
+    };
+
+    // FIX: Upload click handler with proper month/year passing
+    const handleUploadClick = (bank: any, month?: number, year?: number) => {
+        const adjustedMonth = typeof month === 'number' ? month : selectedMonth;
+        const adjustedYear = typeof year === 'number' ? year : selectedYear;
+
+        setSelectedBankForUpload(bank);
+        setUploadDialogMonth(adjustedMonth);
+        setUploadDialogYear(adjustedYear);
+        setShowBulkUpload(true);
+    };
+
+    // FIX: Month options with proper 0-based indexing
     const generateMonthOptions = () => {
         const months = [
             'January', 'February', 'March', 'April', 'May', 'June',
             'July', 'August', 'September', 'October', 'November', 'December'
         ];
-        return months.map((month, index) => ({ value: index, label: month }));
+        return months.map((month, index) => ({
+            value: index,  // 0-based index for internal use
+            label: month,  // Display name
+            monthNumber: index + 1  // 1-based for display/API if needed
+        }));
     };
 
     const generateYearOptions = () => {
@@ -103,8 +133,18 @@ export default function BankReconciliationPage() {
         return years;
     };
 
+    // FIX: Handle upload completion
+    const handleUploadsComplete = () => {
+        setShowBulkUpload(false);
+        setSelectedBankForUpload(null);
+        setUploadDialogMonth(null);
+        setUploadDialogYear(null);
+        refreshAllData();
+    };
+
     return (
         <div className="py-6 space-y-6 p-4">
+            {/* Header */}
             <div className="flex justify-between items-center">
                 <div>
                     <p className="text-xl font-bold tracking-tight">Bank Statements and Reconciliation</p>
@@ -201,7 +241,7 @@ export default function BankReconciliationPage() {
                                     className="w-60"
                                 />
 
-                                {/* Date Range Selectors */}
+                                {/* Date Range Selectors - FIX: Conditional rendering based on view */}
                                 {activeView === 'detailed' ? (
                                     <div className="flex items-center gap-2">
                                         <span className="text-sm font-medium">From:</span>
@@ -269,7 +309,9 @@ export default function BankReconciliationPage() {
                                         </Select>
                                     </div>
                                 ) : (
+                                    // FIX: Summary view month/year selectors
                                     <div className="flex items-center gap-2">
+                                        <span className="text-sm font-medium">Period:</span>
                                         <Select
                                             value={selectedMonth.toString()}
                                             onValueChange={(value) => setSelectedMonth(parseInt(value))}
@@ -303,30 +345,7 @@ export default function BankReconciliationPage() {
                                     </div>
                                 )}
 
-                                {/* Client Type Filter */}
-                                {/* <Select
-                                    value={selectedClientTypes[0]?.key || 'all'}
-                                    onValueChange={(value) => {
-                                        if (value === 'all') {
-                                            setSelectedClientTypes([]);
-                                        } else {
-                                            setSelectedClientTypes([{ key: value, status: 'active' }]);
-                                        }
-                                    }}
-                                >
-                                    <SelectTrigger className="w-40">
-                                        <SelectValue placeholder="Client Type" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="all">All Clients</SelectItem>
-                                        {CLIENT_TYPES.map(type => (
-                                            <SelectItem key={type.key} value={type.key}>
-                                                {type.label}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select> */}
-
+                                {/* Statement Filters */}
                                 <BankStatementFilters
                                     selectedStatementStatuses={selectedStatementStatuses}
                                     onStatementStatusChange={setSelectedStatementStatuses}
@@ -335,19 +354,32 @@ export default function BankReconciliationPage() {
                                 />
                             </div>
 
+                            {/* Action Buttons */}
                             <div className="flex items-center gap-2">
                                 <Button
-                                    onClick={() => setShowBulkUpload(true)}
+                                    onClick={handleBulkUploadOpen}
                                     size="sm"
                                     className="h-8 flex items-center gap-2"
                                     variant="outline"
                                 >
-                                    <UploadCloud className="h-4 w-4" /> Bulk Upload
-                                </Button> 
+                                    <UploadCloud className="h-4 w-4" />
+                                    Bulk Upload
+                                </Button>
+
+                                {/* FIX: Optional delete all button - uncomment if needed */}
+                                {/* <Button
+                                    onClick={() => setShowDeleteAll(true)}
+                                    size="sm"
+                                    className="h-8 flex items-center gap-2"
+                                    variant="destructive"
+                                >
+                                    <Trash2 className="h-4 w-4" />
+                                    Delete All
+                                </Button> */}
                             </div>
                         </div>
 
-                        {/* Main Content */}
+                        {/* Main Content - FIX: Pass proper props including upload handlers */}
                         {activeView === 'summary' ? (
                             <BankReconciliationTable
                                 selectedYear={selectedYear}
@@ -357,6 +389,8 @@ export default function BankReconciliationPage() {
                                 onStatsChange={refreshAllData}
                                 selectedClientTypes={selectedClientTypes}
                                 selectedStatementStatuses={selectedStatementStatuses}
+                                // FIX: Pass upload handler to summary view
+                                onUploadClick={handleUploadClick}
                             />
                         ) : (
                             <DetailedBankStatementsView
@@ -364,19 +398,31 @@ export default function BankReconciliationPage() {
                                 dateRange={dateRange}
                                 selectedClientTypes={selectedClientTypes}
                                 onRefresh={refreshAllData}
+                                // FIX: Pass additional props for detailed view
+                                banks={banks}
+                                refreshData={refreshAllData}
+                                selectedMonth={selectedMonth}
+                                selectedYear={selectedYear}
+                                cycleMonth={selectedMonth}
+                                cycleYear={selectedYear}
+                                statementCycleId={statementCycleId}
+                                onUploadClick={handleUploadClick}
                             />
                         )}
 
-                        {/* Dialogs */}
+                        {/* Dialogs - FIX: Proper props with correct month/year */}
                         {showBulkUpload && (
                             <BankStatementBulkUploadDialog
                                 isOpen={showBulkUpload}
                                 onClose={() => setShowBulkUpload(false)}
                                 banks={banks}
-                                cycleMonth={selectedMonth}
-                                cycleYear={selectedYear}
+                                // FIX: Use the upload dialog specific month/year or fallback to selected
+                                cycleMonth={uploadDialogMonth !== null ? uploadDialogMonth : selectedMonth}
+                                cycleYear={uploadDialogYear !== null ? uploadDialogYear : selectedYear}
                                 statementCycleId={statementCycleId}
-                                onUploadsComplete={refreshAllData}
+                                onUploadsComplete={handleUploadsComplete}
+                                // FIX: Pass selected bank if uploading for specific bank
+                                selectedBank={selectedBankForUpload}
                             />
                         )}
 
@@ -387,7 +433,7 @@ export default function BankReconciliationPage() {
                                 const result = await deleteAllBankStatements();
                                 if (result.success) {
                                     setRefreshKey(prev => prev + 1);
-                                    await fetchInitialData();
+                                    await refreshAllData();
                                 }
                                 return result;
                             }}
