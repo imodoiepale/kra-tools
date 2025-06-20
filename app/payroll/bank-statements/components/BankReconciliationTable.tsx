@@ -234,6 +234,19 @@ export function BankReconciliationTable({
         });
     }, [companies, selectedClientTypes]);
 
+    useEffect(() => {
+    const handleBankStatementsUpdated = (event) => {
+        console.log('🔄 Bank reconciliation table refreshing due to update', event.detail);
+        refreshData();
+    };
+
+    window.addEventListener('bankStatementsUpdated', handleBankStatementsUpdated);
+    
+    return () => {
+        window.removeEventListener('bankStatementsUpdated', handleBankStatementsUpdated);
+    };
+    
+}, [refreshData]);
     const organizedData = useMemo(() => {
         const companiesWithBanks = filteredCompanies.map(company => ({
             ...company,

@@ -161,7 +161,10 @@ export function DetailedBankStatementsView({
     // Load banks when company changes
     useEffect(() => {
         if (selectedCompany) {
-            loadBanks(selectedCompany.id)
+            // Immediately clear old bank data to prevent showing stale info
+            setBanks([]);
+            setSelectedBank(null);
+            loadBanks(selectedCompany.id);
         } else {
             setBanks([])
             setSelectedBank(null)
@@ -177,6 +180,68 @@ export function DetailedBankStatementsView({
         }
     }, [selectedBank, dateRange])
 
+    useEffect(() => {
+        const handleBankStatementsUpdated = () => {
+            console.log('🔄 Auto-refreshing due to bank statements update');
+            if (selectedBank) {
+                loadStatements(selectedBank.id, dateRange);
+            }
+        };
+
+        // Listen for custom refresh events
+        window.addEventListener('bankStatementsUpdated', handleBankStatementsUpdated);
+
+        return () => {
+            window.removeEventListener('bankStatementsUpdated', handleBankStatementsUpdated);
+        };
+    }, [selectedBank, dateRange]);
+
+    // Also add refresh on focus
+    useEffect(() => {
+        const handleFocus = () => {
+            if (document.visibilityState === 'visible' && selectedBank) {
+                console.log('🔄 Page focus detected - refreshing statements');
+                loadStatements(selectedBank.id, dateRange);
+            }
+        };
+
+        document.addEventListener('visibilitychange', handleFocus);
+        return () => document.removeEventListener('visibilitychange', handleFocus);
+    }, [selectedBank, dateRange]);
+
+    // Add a refresh function that properly reloads all data
+const forceRefresh = useCallback(() => {
+    console.log('🔄 Force refreshing detailed view data');
+    
+    // Clear existing data first to ensure fresh load
+    setStatements([]);
+    
+    // Reload statements if bank is selected
+    if (selectedBank) {
+        loadStatements(selectedBank.id, dateRange);
+    }
+    
+    // Also reload banks if company is selected
+    if (selectedCompany) {
+        loadBanks(selectedCompany.id);
+    }
+}, [selectedBank, selectedCompany, dateRange]);
+
+// Update the event listener effect
+useEffect(() => {
+    const handleBankStatementsUpdated = (event) => {
+        console.log('🔄 Auto-refreshing due to bank statements update', event.detail);
+        forceRefresh();
+    };
+
+    // Listen for custom refresh events
+    window.addEventListener('bankStatementsUpdated', handleBankStatementsUpdated);
+    
+    return () => {
+        window.removeEventListener('bankStatementsUpdated', handleBankStatementsUpdated);
+    };
+}, [forceRefresh]);
+    
     const loadCompanies = async () => {
         try {
             setLoading(true)
@@ -217,11 +282,14 @@ export function DetailedBankStatementsView({
                 throw error
             }
 
-            setBanks(data || [])
-
-            // Auto-select first bank if available
+            // FIX: Handle cases with and without banks found
             if (data && data.length > 0) {
-                setSelectedBank(data[0])
+                setBanks(data);
+                // Auto-select first bank if available
+                setSelectedBank(data[0]);
+            } else {
+                setBanks([]);
+                setSelectedBank(null);
             }
         } catch (error) {
             console.error('Error loading banks:', error)
@@ -230,7 +298,9 @@ export function DetailedBankStatementsView({
                 description: 'Failed to load banks. Please check your connection.',
                 variant: 'destructive'
             })
-            setBanks([]) // Ensure we have a fallback
+            // FIX: Ensure state is cleared on error
+            setBanks([]);
+            setSelectedBank(null);
         }
     }
 
@@ -629,8 +699,8 @@ export function DetailedBankStatementsView({
                                     key={company.id}
                                     onClick={() => setSelectedCompany(company)}
                                     className={`w-full text-left p-3 rounded-lg transition-colors flex items-center justify-between group ${selectedCompany?.id === company.id
-                                            ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                                            : 'hover:bg-gray-50 text-gray-700'
+                                        ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                                        : 'hover:bg-gray-50 text-gray-700'
                                         }`}
                                 >
                                     <div className="flex items-center gap-3">
@@ -660,62 +730,44 @@ export function DetailedBankStatementsView({
                                     <div className="text-xl font-semibold text-gray-900">
                                         {selectedCompany.company_name}
                                     </div>
-                                    {/* Metadata Row */}
-                                    <div className="flex flex-wrap items-center gap-6 text-md text-gray-700">
-                                        {/* Bank Name */}
-                                        <div className="flex items-center gap-1 font-medium text-primary">
-                                            <FileText className="h-4 w-4 text-primary" />
-                                            <span>{selectedBank.bank_name} Statements</span>
-                                        </div>
+                                    {/* FIX: Add guard to prevent crash when selectedBank is null */}
+                                    {selectedBank && (
+                                        <div className="flex flex-wrap items-center gap-6 text-md text-gray-700">
+                                            {/* Bank Name */}
+                                            <div className="flex items-center gap-1 font-medium text-primary">
+                                                <FileText className="h-4 w-4 text-primary" />
+                                                <span>{selectedBank.bank_name} Statements</span>
+                                            </div>
 
-                                        {/* Account Number */}
-                                        <div className="flex items-center gap-1">
-                                            <span className="text-gray-400">Account:</span>
-                                            <span className="font-mono">{selectedBank.account_number}</span>
-                                        </div>
+                                            {/* Account Number */}
+                                            <div className="flex items-center gap-1">
+                                                <span className="text-gray-400">Account:</span>
+                                                <span className="font-mono">{selectedBank.account_number}</span>
+                                            </div>
 
-                                        {/* Currency */}
-                                        <div className="flex items-center gap-1">
-                                            <span className="text-gray-400">Currency:</span>
-                                            <span>{selectedBank.bank_currency}</span>
-                                        </div>
+                                            {/* Currency */}
+                                            <div className="flex items-center gap-1">
+                                                <span className="text-gray-400">Currency:</span>
+                                                <span>{selectedBank.bank_currency || 'USD'}</span>
+                                            </div>
 
-                                        {/* Password Status */}
-                                        <div className="flex items-center gap-1">
-                                            <span className="text-gray-400">Password:</span>
-                                            <span className={`font-semibold ${selectedBank.acc_password ? 'text-green-600' : 'text-red-600'}`}>
-                                                {selectedBank.acc_password || 'Missing'}
-                                            </span>
-                                        </div>
+                                            {/* Password Status */}
+                                            <div className="flex items-center gap-1">
+                                                <span className="text-gray-400">Password:</span>
+                                                <span className={`font-semibold ${selectedBank.acc_password ? 'text-green-600' : 'text-red-600'}`}>
+                                                    {selectedBank.acc_password || 'Missing'}
+                                                </span>
+                                            </div>
 
-                                        {/* Statement Count */}
-                                        <div className="flex items-center gap-1">
-                                            <span className="text-gray-400">Statements:</span>
-                                            <span>{statements.length}</span>
-                                        </div>
+                                            {/* Statement Count */}
+                                            <div className="flex items-center gap-1">
+                                                <span className="text-gray-400">Statements:</span>
+                                                <span>{statements.length}</span>
+                                            </div>
 
-                                        {/* Company Start/End */}
-                                        <div className="flex items-center gap-1">
-                                            <span className="text-gray-400">Company Start:</span>
-                                            <span>{selectedCompany.start_date ? format(new Date(selectedCompany.start_date), 'dd MMM yyyy') : 'N/A'}</span>
+                                            {/* FIX: Removed fields that don't exist in the interfaces */}
                                         </div>
-
-                                        <div className="flex items-center gap-1">
-                                            <span className="text-gray-400">Company End:</span>
-                                            <span>{selectedCompany.end_date ? format(new Date(selectedCompany.end_date), 'dd MMM yyyy') : 'N/A'}</span>
-                                        </div>
-
-                                        {/* Account Start/End */}
-                                        <div className="flex items-center gap-1">
-                                            <span className="text-gray-400">Account Start:</span>
-                                            <span>{selectedBank.account_start ? format(new Date(selectedBank.account_start), 'dd MMM yyyy') : 'N/A'}</span>
-                                        </div>
-
-                                        <div className="flex items-center gap-1">
-                                            <span className="text-gray-400">Account End:</span>
-                                            <span>{selectedBank.account_end ? format(new Date(selectedBank.account_end), 'dd MMM yyyy') : 'N/A'}</span>
-                                        </div>
-                                    </div>
+                                    )}
                                     <div className="text-gray-500 text-sm">
                                         {format(new Date(dateRange.fromYear, dateRange.fromMonth), 'MMM yyyy')} – {format(new Date(dateRange.toYear, dateRange.toMonth), 'MMM yyyy')}
                                     </div>
@@ -732,8 +784,8 @@ export function DetailedBankStatementsView({
                                             key={bank.id}
                                             onClick={() => setSelectedBank(bank)}
                                             className={`px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${selectedBank?.id === bank.id
-                                                    ? 'border-blue-500 text-blue-600'
-                                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                                ? 'border-blue-500 text-blue-600'
+                                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                                                 }`}
                                         >
                                             {bank.bank_name} - {bank.account_number}
@@ -747,7 +799,7 @@ export function DetailedBankStatementsView({
                         <div className="flex-1 overflow-hidden p-4">
                             {selectedBank ? (
                                 <div className="h-full flex flex-col space-y-4">
-                                    
+
 
                                     {/* Statement Type Tabs */}
                                     <div className="flex-1 overflow-hidden">
@@ -805,19 +857,19 @@ export function DetailedBankStatementsView({
                                                                                 <TableCell>
                                                                                     {formatCurrency(
                                                                                         statement?.statement_extractions?.opening_balance,
-                                                                                        selectedBank.bank_currency
+                                                                                        selectedBank?.bank_currency || 'USD'
                                                                                     )}
                                                                                 </TableCell>
                                                                                 <TableCell>
                                                                                     {formatCurrency(
                                                                                         statement?.statement_extractions?.closing_balance,
-                                                                                        selectedBank.bank_currency
+                                                                                        selectedBank?.bank_currency || 'USD'
                                                                                     )}
                                                                                 </TableCell>
                                                                                 <TableCell>
                                                                                     {formatCurrency(
                                                                                         statement?.status?.quickbooks_balance,
-                                                                                        selectedBank.bank_currency
+                                                                                        selectedBank?.bank_currency || 'USD'
                                                                                     )}
                                                                                 </TableCell>
                                                                                 <TableCell>
@@ -829,7 +881,7 @@ export function DetailedBankStatementsView({
                                                                                         const diff = closing - qb;
                                                                                         return (
                                                                                             <span className={Math.abs(diff) > 0.01 ? 'text-red-600 font-bold' : 'text-green-600 font-bold'}>
-                                                                                                {formatCurrency(diff, selectedBank.bank_currency)}
+                                                                                                {formatCurrency(diff, selectedBank?.bank_currency || 'USD')}
                                                                                             </span>
                                                                                         );
                                                                                     })()}
@@ -923,13 +975,13 @@ export function DetailedBankStatementsView({
                                                                                 <TableCell>
                                                                                     {formatCurrency(
                                                                                         statement?.statement_extractions?.closing_balance,
-                                                                                        selectedBank.bank_currency
+                                                                                        selectedBank?.bank_currency || 'USD'
                                                                                     )}
                                                                                 </TableCell>
                                                                                 <TableCell>
                                                                                     {formatCurrency(
                                                                                         statement?.status?.quickbooks_balance,
-                                                                                        selectedBank.bank_currency
+                                                                                        selectedBank?.bank_currency || 'USD'
                                                                                     )}
                                                                                 </TableCell>
                                                                                 <TableCell>
@@ -1111,19 +1163,19 @@ export function DetailedBankStatementsView({
 
                                                                             {/* Monthly Closing Balance */}
                                                                             <TableCell className={data.monthlyClosingBalance === null ? 'text-gray-400' : ''}>
-                                                                                {formatCurrency(data.monthlyClosingBalance, selectedBank.bank_currency)}
+                                                                                {formatCurrency(data.monthlyClosingBalance, selectedBank?.bank_currency || 'USD')}
                                                                             </TableCell>
 
                                                                             {/* Monthly QB Balance */}
                                                                             <TableCell className={data.monthlyQBBalance === null ? 'text-gray-400' : ''}>
-                                                                                {formatCurrency(data.monthlyQBBalance, selectedBank.bank_currency)}
+                                                                                {formatCurrency(data.monthlyQBBalance, selectedBank?.bank_currency || 'USD')}
                                                                             </TableCell>
 
                                                                             {/* Monthly Difference */}
                                                                             <TableCell>
                                                                                 {data.monthlyDifference !== null ? (
                                                                                     <span className={Math.abs(data.monthlyDifference) > 0.01 ? 'text-red-600 font-bold' : 'text-green-600 font-bold'}>
-                                                                                        {formatCurrency(data.monthlyDifference, selectedBank.bank_currency)}
+                                                                                        {formatCurrency(data.monthlyDifference, selectedBank?.bank_currency || 'USD')}
                                                                                     </span>
                                                                                 ) : '-'}
                                                                             </TableCell>
@@ -1139,19 +1191,19 @@ export function DetailedBankStatementsView({
 
                                                                             {/* Range Closing Balance */}
                                                                             <TableCell className={data.rangeClosingBalance === null ? 'text-gray-400' : ''}>
-                                                                                {formatCurrency(data.rangeClosingBalance, selectedBank.bank_currency)}
+                                                                                {formatCurrency(data.rangeClosingBalance, selectedBank?.bank_currency || 'USD')}
                                                                             </TableCell>
 
                                                                             {/* Range QB Balance */}
                                                                             <TableCell className={data.rangeQBBalance === null ? 'text-gray-400' : ''}>
-                                                                                {formatCurrency(data.rangeQBBalance, selectedBank.bank_currency)}
+                                                                                {formatCurrency(data.rangeQBBalance, selectedBank?.bank_currency || 'USD')}
                                                                             </TableCell>
 
                                                                             {/* Range Difference */}
                                                                             <TableCell>
                                                                                 {data.rangeDifference !== null ? (
                                                                                     <span className={Math.abs(data.rangeDifference) > 0.01 ? 'text-red-600 font-bold' : 'text-green-600 font-bold'}>
-                                                                                        {formatCurrency(data.rangeDifference, selectedBank.bank_currency)}
+                                                                                        {formatCurrency(data.rangeDifference, selectedBank?.bank_currency || 'USD')}
                                                                                     </span>
                                                                                 ) : '-'}
                                                                             </TableCell>
