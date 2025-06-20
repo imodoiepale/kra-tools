@@ -30,6 +30,7 @@ import { detectFileInfo } from '../utils/fileDetectionUtils';
 import { ExtractionsService } from '@/lib/services/extractionService';
 import { Bank, BankStatement, ValidationResult } from '../../types';
 
+
 interface BankStatementUploadDialogProps {
     isOpen: boolean;
     onClose: () => void;
@@ -270,6 +271,115 @@ const isRangePeriod = (statementPeriod: string): boolean => {
         (period.includes('oct') && period.includes('dec'));
 };
 
+const DragDropZone = ({ onFileSelect, onFileRemove, fileType, selectedFile }) => {
+    const [isDragOver, setIsDragOver] = useState(false);
+    const fileInputRef = useRef(null);
+
+    const handleDragEnter = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDragOver(true);
+    };
+
+    const handleDragLeave = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDragOver(false);
+    };
+
+    const handleDragOver = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+    };
+
+    const handleDrop = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDragOver(false);
+        const files = e.dataTransfer.files;
+        if (files && files.length > 0) {
+            onFileSelect(files[0], fileType);
+        }
+    };
+
+    const handleFileClick = () => {
+        if (fileInputRef.current) {
+            fileInputRef.current.click();
+        }
+    };
+
+    const handleFileChange = (e) => {
+        const files = e.target.files;
+        if (files && files.length > 0) {
+            onFileSelect(files[0], fileType);
+        }
+    };
+
+    const handleRemoveClick = (e) => {
+        e.stopPropagation();
+        onFileRemove(fileType);
+    };
+
+    const baseClasses = "relative flex flex-col items-center justify-center w-full h-40 border-2 border-dotted rounded-xl cursor-pointer transition-colors duration-200 ease-in-out";
+    const idleClasses = "border-gray-200 bg-white hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:hover:bg-gray-700";
+    const dragOverClasses = "border-blue-400 bg-blue-50/50 dark:bg-blue-900/20";
+    const fileSelectedClasses = "border-green-400 bg-green-50/50 dark:bg-green-900/20";
+
+    const containerClasses = [
+        baseClasses,
+        isDragOver ? dragOverClasses : (selectedFile ? fileSelectedClasses : idleClasses)
+    ].join(' ');
+
+    const fileTypeText = fileType === 'pdf' ? 'PDFs' : 'Excel files';
+    const secondaryText = fileType === 'pdf' ? 'Bank Statement as a PDF file' : 'Bank Statement as an Excel file';
+
+    return (
+        <div
+            className={containerClasses.trim()}
+            onDragEnter={handleDragEnter}
+            onDragLeave={handleDragLeave}
+            onDragOver={handleDragOver}
+            onDrop={handleDrop}
+            onClick={handleFileClick}
+        >
+            <input
+                type="file"
+                ref={fileInputRef}
+                className="hidden"
+                onChange={handleFileChange}
+                accept={fileType === 'pdf' ? '.pdf' : '.xlsx, .xls'}
+            />
+            {selectedFile ? (
+                <div className="flex items-center justify-center w-full h-full p-4 text-center">
+                    <div className="flex items-center gap-3">
+                        <FileText className="h-10 w-10 text-green-600" />
+                        <div className="text-left">
+                            <p className="font-semibold text-gray-700 truncate max-w-[150px] sm:max-w-[200px]">{selectedFile.name}</p>
+                            <p className="text-sm text-gray-500">{(selectedFile.size / 1024).toFixed(2)} KB</p>
+                        </div>
+                    </div>
+                    <button
+                        onClick={handleRemoveClick}
+                        className="absolute top-2 right-2 p-1 rounded-full bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-700 transition-colors"
+                    >
+                        <X className="h-4 w-4" />
+                    </button>
+                </div>
+            ) : (
+                <div className="flex flex-col items-center justify-center text-center">
+                    <UploadCloud className="w-10 h-10 mb-4 text-gray-400" />
+                    <p className="mb-2 text-sm text-gray-500 dark:text-gray-400">
+                        Drag and drop {fileTypeText} here, or <span className="font-semibold text-blue-500 cursor-pointer">click to select</span>
+                    </p>
+                    <p className="text-xs text-gray-400 dark:text-gray-500">
+                        {secondaryText}
+                    </p>
+                </div>
+            )}
+        </div>
+    );
+};
+
 export function BankStatementUploadDialog({
     isOpen,
     onClose,
@@ -389,6 +499,22 @@ export function BankStatementUploadDialog({
         } catch (error) {
             console.error('Error in checkStatementPeriod:', error);
             return { isValid: true, message: 'Error validating period, proceeding anyway' };
+        }
+    };
+
+    const handleFileRemove = (fileType: 'pdf' | 'excel') => {
+        if (fileType === 'pdf') {
+            setPdfFile(null);
+            setValidationResult(null);
+            setDetectedPassword('');
+            setDetectedAccountNumber('');
+            setAutoPasswordApplied(false);
+            setPdfNeedsPassword(false);
+            setPassword('');
+            setPasswordApplied(false);
+            if (pdfInputRef.current) pdfInputRef.current.value = '';
+        } else if (fileType === 'excel') {
+            setExcelFile(null);
         }
     };
 
@@ -713,7 +839,7 @@ export function BankStatementUploadDialog({
     return (
         <>
             <Dialog open={isOpen} onOpenChange={onClose}>
-                <DialogContent className="sm:max-w-3xl">
+                <DialogContent className="max-w-6xl">
                     <DialogHeader>
                         <div className="bg-gradient-to-r from-blue-50 via-blue-100 to-blue-50 -mx-6 -mt-6 p-6 rounded-t-lg border-b border-blue-200">
                             <div className="mb-2 flex justify-center">
@@ -728,7 +854,7 @@ export function BankStatementUploadDialog({
 
                     <div className="space-y-4 py-4 mt-2">
                         <div className="bg-gradient-to-r from-blue-50/80 to-blue-50/40 rounded-md p-4 border border-blue-100 shadow-sm">
-                            <div className="grid grid-cols-3 gap-x-6 gap-y-3">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 <div className="col-span-3">
                                     <h3 className="text-sm font-medium text-blue-800 border-b border-blue-100 pb-1 mb-2">Company Information</h3>
                                     <div className="flex items-center gap-2">
@@ -786,46 +912,20 @@ export function BankStatementUploadDialog({
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div className="space-y-2">
-                                <Label htmlFor="pdf-file" className="flex items-center gap-1.5">
-                                    <FileText className="h-4 w-4 text-blue-600" />
+                                <Label htmlFor="pdf-file" className="flex items-center">
+                                    <FileText className="h-4 w-4 mr-2" />
                                     Bank Statement PDF
                                 </Label>
-                                <Input
-                                    id="pdf-file"
-                                    ref={pdfInputRef}
-                                    type="file"
-                                    accept=".pdf"
-                                    onChange={(e) => {
-                                        const file = e.target.files?.[0];
-                                        if (file) {
-                                            handleFileSelection(file, 'pdf');
-                                        }
-                                        setValidationResult(null);
-                                    }}
-                                    disabled={isProcessing}
-                                    className="cursor-pointer file:bg-blue-50 file:text-blue-700 file:border-blue-200 hover:file:bg-blue-100"
-                                />
+                                <DragDropZone onFileSelect={handleFileSelection} onFileRemove={handleFileRemove} fileType="pdf" selectedFile={pdfFile} />
                             </div>
                             <div className="space-y-2">
-                                <Label htmlFor="excel-file" className="flex items-center gap-1.5">
-                                    <Sheet className="h-4 w-4 text-emerald-600" />
+                                <Label htmlFor="excel-file" className="flex items-center">
+                                    <Sheet className="h-4 w-4 mr-2" />
                                     Bank Statement Excel (Optional)
                                 </Label>
-                                <Input
-                                    id="excel-file"
-                                    type="file"
-                                    accept=".xlsx,.xls,.csv"
-                                    onChange={(e) => {
-                                        const file = e.target.files?.[0];
-                                        if (file) {
-                                            handleFileSelection(file, 'excel');
-                                        }
-                                    }}
-                                    disabled={isProcessing}
-                                    className="cursor-pointer file:bg-emerald-50 file:text-emerald-700 file:border-emerald-200 hover:file:bg-emerald-100"
-                                />
+                                <DragDropZone onFileSelect={handleFileSelection} onFileRemove={handleFileRemove} fileType="excel" selectedFile={excelFile} />
                             </div>
                         </div>
 
