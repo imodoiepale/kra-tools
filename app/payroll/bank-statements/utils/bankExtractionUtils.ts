@@ -1,7 +1,8 @@
 // @ts-nocheck
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
 import * as pdfjsLib from 'pdfjs-dist';
-import { API_KEYS } from './apiKeys';
+import { API_KEYS } from '@/lib/apiKeys';
+import { supabase } from "@/lib/supabase";
 
 // FIX: This is the critical line that resolves the "fake worker failed" error.
 // It must be at the top level of the file to configure pdf.js before it's used.
@@ -9,7 +10,6 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.j
 
 // Constants
 const EMBEDDING_MODEL = "gemini-embedding-exp-03-07";
-// const EXTRACTION_MODEL = "gemini-2.5-flash-preview-05-20";
 const EXTRACTION_MODEL = "gemini-2.0-flash";
 const RATE_LIMIT_COOLDOWN = 60000;
 const MAX_FAILURES = 5;
@@ -27,18 +27,42 @@ const apiKeyStatus = new Map(API_KEYS.map(key => [key, {
 // API key management functions
 const getNextApiKey = () => {
   const now = Date.now();
+
+  // First, try to find a healthy API key
   for (let i = 0; i < API_KEYS.length; i++) {
     const key = API_KEYS[i];
     const status = apiKeyStatus.get(key);
-    if (!status || now < status.cooldownUntil) continue;
-    if (now - status.lastUsed > RATE_LIMIT_COOLDOWN) status.failureCount = 0;
+
+    // Skip if key doesn't exist in status map
+    if (!status) continue;
+
+    // Skip if key is in cooldown
+    if (now < status.cooldownUntil) continue;
+
+    // Reset failure count if enough time has passed since last use
+    if (now - status.lastUsed > RATE_LIMIT_COOLDOWN) {
+      status.failureCount = 0;
+    }
+
+    // Use this key if it hasn't exceeded failure threshold
     if (status.failureCount < MAX_FAILURES) {
       currentApiKeyIndex = API_KEYS.indexOf(key);
       genAI = new GoogleGenerativeAI(key);
+      status.lastUsed = now; // Update last used time
       return key;
     }
   }
-  API_KEYS.forEach(key => apiKeyStatus.set(key, { lastUsed: 0, failureCount: 0, cooldownUntil: 0 }));
+
+  // If all keys are in cooldown, reset all and use first key
+  console.warn('All API keys are in cooldown, resetting all keys');
+  API_KEYS.forEach(key => {
+    apiKeyStatus.set(key, {
+      lastUsed: now,
+      failureCount: 0,
+      cooldownUntil: 0
+    });
+  });
+
   currentApiKeyIndex = 0;
   genAI = new GoogleGenerativeAI(API_KEYS[0]);
   return API_KEYS[0];
@@ -57,6 +81,91 @@ const markApiKeyFailure = (key) => {
 
 // Helper functions
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+// Enhanced date validation and parsing functions
+const isValidDate = (dateValue) => {
+  if (!dateValue) return false;
+
+  if (dateValue instanceof Date) {
+    return !isNaN(dateValue.getTime());
+  }
+
+  if (typeof dateValue === 'string') {
+    const parsed = new Date(dateValue);
+    return !isNaN(parsed.getTime());
+  }
+
+  return false;
+};
+
+const createSafeDate = (year, month, day = 1) => {
+  try {
+    // Validate inputs
+    if (!year || !month || year < 1900 || year > 2100 || month < 1 || month > 12) {
+      console.error('Invalid date parameters:', { year, month, day });
+      return null;
+    }
+
+    // Create date (month is 0-indexed in Date constructor)
+    const date = new Date(year, month - 1, day);
+
+    // Verify the date was created correctly
+    if (date.getFullYear() !== year || date.getMonth() !== (month - 1)) {
+      console.error('Date creation resulted in different values:', {
+        expected: { year, month, day },
+        actual: { year: date.getFullYear(), month: date.getMonth() + 1, day: date.getDate() }
+      });
+      return null;
+    }
+
+    return date;
+  } catch (error) {
+    console.error('Error creating date:', error, { year, month, day });
+    return null;
+  }
+};
+
+// Enhanced month name to number conversion
+const getMonthNumber = (monthName) => {
+  if (!monthName) return null;
+
+  const monthLower = monthName.toLowerCase().trim();
+
+  const fullMonths = [
+    'january', 'february', 'march', 'april', 'may', 'june',
+    'july', 'august', 'september', 'october', 'november', 'december'
+  ];
+
+  const abbrevMonths = [
+    'jan', 'feb', 'mar', 'apr', 'may', 'jun',
+    'jul', 'aug', 'sep', 'oct', 'nov', 'dec'
+  ];
+
+  // Check full names first
+  const fullIndex = fullMonths.indexOf(monthLower);
+  if (fullIndex !== -1) {
+    return fullIndex + 1;
+  }
+
+  // Check abbreviated names
+  const abbrevIndex = abbrevMonths.indexOf(monthLower);
+  if (abbrevIndex !== -1) {
+    return abbrevIndex + 1;
+  }
+
+  // Try partial matches for full names (at least 3 characters)
+  if (monthLower.length >= 3) {
+    for (let i = 0; i < fullMonths.length; i++) {
+      if (fullMonths[i].startsWith(monthLower)) {
+        return i + 1;
+      }
+    }
+  }
+
+  return null;
+};
+
+// Currency normalization
 const normalizeCurrencyCode = (code) => {
   if (!code) return 'USD';
   const upperCode = code.toUpperCase().trim();
@@ -69,6 +178,7 @@ const normalizeCurrencyCode = (code) => {
   return currencyMap[upperCode] || upperCode;
 };
 
+// Currency amount parsing
 function parseCurrencyAmount(amount) {
   if (amount === null || amount === undefined) return null;
   const amountStr = String(amount).replace(/[^\d.-]/g, '');
@@ -76,8 +186,267 @@ function parseCurrencyAmount(amount) {
   return isNaN(parsedAmount) ? null : parsedAmount;
 }
 
-// PDF processing functions
-async function getPdfDocument(fileUrl, password = null) {
+// Enhanced statement period parsing with comprehensive error handling
+export function parseStatementPeriod(periodString) {
+  if (!periodString || typeof periodString !== 'string') {
+    return null;
+  }
+
+  console.log('Parsing statement period:', periodString);
+
+  try {
+    // Clean and normalize the period string
+    const normalizedPeriod = periodString.trim().replace(/\s+/g, ' ');
+
+    // Pattern 1: Date range format "01/01/2024 - 30/07/2024" or "DD/MM/YYYY - DD/MM/YYYY"
+    const dateRangePattern = /(\d{1,2})\/(\d{1,2})\/(\d{4})\s*[-–—]\s*(\d{1,2})\/(\d{1,2})\/(\d{4})/;
+    const dateRangeMatch = normalizedPeriod.match(dateRangePattern);
+
+    if (dateRangeMatch) {
+      const [, startDay, startMonth, startYear, endDay, endMonth, endYear] = dateRangeMatch;
+
+      console.log('Date range match found:', {
+        startDay, startMonth, startYear,
+        endDay, endMonth, endYear
+      });
+
+      const startMonthNum = parseInt(startMonth, 10);
+      const startYearNum = parseInt(startYear, 10);
+      const endMonthNum = parseInt(endMonth, 10);
+      const endYearNum = parseInt(endYear, 10);
+
+      // Validate the parsed dates
+      if (startMonthNum >= 1 && startMonthNum <= 12 &&
+        endMonthNum >= 1 && endMonthNum <= 12 &&
+        startYearNum > 1900 && endYearNum > 1900) {
+
+        return {
+          startMonth: startMonthNum,
+          startYear: startYearNum,
+          endMonth: endMonthNum,
+          endYear: endYearNum
+        };
+      }
+    }
+
+    // Pattern 2: Alternative date formats "1/1/2024 to 30/7/2024", "01-01-2024 to 30-07-2024"
+    const altDateRangePattern = /(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})\s*(?:to|[-–—])\s*(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/i;
+    const altDateRangeMatch = normalizedPeriod.match(altDateRangePattern);
+
+    if (altDateRangeMatch) {
+      const [, startDay, startMonth, startYear, endDay, endMonth, endYear] = altDateRangeMatch;
+
+      const startMonthNum = parseInt(startMonth, 10);
+      const startYearNum = parseInt(startYear, 10);
+      const endMonthNum = parseInt(endMonth, 10);
+      const endYearNum = parseInt(endYear, 10);
+
+      if (startMonthNum >= 1 && startMonthNum <= 12 &&
+        endMonthNum >= 1 && endMonthNum <= 12 &&
+        startYearNum > 1900 && endYearNum > 1900) {
+
+        return {
+          startMonth: startMonthNum,
+          startYear: startYearNum,
+          endMonth: endMonthNum,
+          endYear: endYearNum
+        };
+      }
+    }
+
+    // Pattern 3: Month name format "January 2024" (single month)
+    const singleMonthMatch = normalizedPeriod.match(/^(\w+)\s+(\d{4})$/i);
+    if (singleMonthMatch) {
+      const monthName = singleMonthMatch[1].toLowerCase();
+      const year = parseInt(singleMonthMatch[2], 10);
+
+      const monthNumber = getMonthNumber(monthName);
+      if (monthNumber && year > 1900) {
+        return {
+          startMonth: monthNumber,
+          startYear: year,
+          endMonth: monthNumber,
+          endYear: year
+        };
+      }
+    }
+
+    // Pattern 4: Month range same year "January - March 2024" or "January to March 2024"
+    const sameYearMatch = normalizedPeriod.match(/(\w+)\s*(?:[-–—]|to)\s*(\w+)\s+(\d{4})/i);
+    if (sameYearMatch) {
+      const startMonthName = sameYearMatch[1].toLowerCase();
+      const endMonthName = sameYearMatch[2].toLowerCase();
+      const year = parseInt(sameYearMatch[3], 10);
+
+      const startMonth = getMonthNumber(startMonthName);
+      const endMonth = getMonthNumber(endMonthName);
+
+      if (startMonth && endMonth && year > 1900) {
+        return {
+          startMonth,
+          startYear: year,
+          endMonth,
+          endYear: year
+        };
+      }
+    }
+
+    // Pattern 5: Month range different years "January 2024 - March 2025" or "January 2024 to March 2025"
+    const differentYearMatch = normalizedPeriod.match(/(\w+)\s+(\d{4})\s*(?:[-–—]|to)\s*(\w+)\s+(\d{4})/i);
+    if (differentYearMatch) {
+      const startMonthName = differentYearMatch[1].toLowerCase();
+      const startYear = parseInt(differentYearMatch[2], 10);
+      const endMonthName = differentYearMatch[3].toLowerCase();
+      const endYear = parseInt(differentYearMatch[4], 10);
+
+      const startMonth = getMonthNumber(startMonthName);
+      const endMonth = getMonthNumber(endMonthName);
+
+      if (startMonth && endMonth && startYear > 1900 && endYear > 1900) {
+        return {
+          startMonth,
+          startYear,
+          endMonth,
+          endYear
+        };
+      }
+    }
+
+    // Pattern 6: Abbreviated month format "Jan 2024 - Mar 2024"
+    const abbreviatedMatch = normalizedPeriod.match(/(\w{3})\s+(\d{4})\s*(?:[-–—]|to)\s*(\w{3})\s+(\d{4})/i);
+    if (abbreviatedMatch) {
+      const startMonthAbbr = abbreviatedMatch[1].toLowerCase();
+      const startYear = parseInt(abbreviatedMatch[2], 10);
+      const endMonthAbbr = abbreviatedMatch[3].toLowerCase();
+      const endYear = parseInt(abbreviatedMatch[4], 10);
+
+      const startMonth = getMonthNumber(startMonthAbbr);
+      const endMonth = getMonthNumber(endMonthAbbr);
+
+      if (startMonth && endMonth && startYear > 1900 && endYear > 1900) {
+        return {
+          startMonth,
+          startYear,
+          endMonth,
+          endYear
+        };
+      }
+    }
+
+    // Pattern 7: Try to extract any dates from the string as fallback
+    const allDatesPattern = /(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/g;
+    const allDates = [...normalizedPeriod.matchAll(allDatesPattern)];
+
+    if (allDates.length >= 2) {
+      // Take first and last date
+      const firstDate = allDates[0];
+      const lastDate = allDates[allDates.length - 1];
+
+      const startMonth = parseInt(firstDate[2], 10); // Assuming DD/MM/YYYY format
+      const startYear = parseInt(firstDate[3], 10);
+      const endMonth = parseInt(lastDate[2], 10);
+      const endYear = parseInt(lastDate[3], 10);
+
+      if (startMonth >= 1 && startMonth <= 12 &&
+        endMonth >= 1 && endMonth <= 12 &&
+        startYear > 1900 && endYear > 1900) {
+
+        return {
+          startMonth,
+          startYear,
+          endMonth,
+          endYear
+        };
+      }
+    }
+
+    console.warn('Could not parse statement period:', periodString);
+    return null;
+
+  } catch (error) {
+    console.error('Error parsing statement period:', error, periodString);
+    return null;
+  }
+}
+
+// Enhanced month range generation with validation
+export function generateMonthRange(startMonth, startYear, endMonth, endYear) {
+  console.log(`Generating month range from ${startMonth}/${startYear} to ${endMonth}/${endYear}`);
+
+  // Validate inputs
+  if (!startMonth || !startYear || !endMonth || !endYear) {
+    console.warn("Invalid inputs to generateMonthRange:", { startMonth, startYear, endMonth, endYear });
+    return [];
+  }
+
+  // Ensure all inputs are numbers and within valid ranges
+  startMonth = Math.max(1, Math.min(12, Number(startMonth)));
+  startYear = Number(startYear);
+  endMonth = Math.max(1, Math.min(12, Number(endMonth)));
+  endYear = Number(endYear);
+
+  // Validate years
+  if (startYear < 1900 || endYear < 1900 || startYear > 2100 || endYear > 2100) {
+    console.error("Invalid year range:", { startYear, endYear });
+    return [{ month: startMonth, year: startYear }];
+  }
+
+  // Handle case where end date is before start date
+  if (endYear < startYear || (endYear === startYear && endMonth < startMonth)) {
+    console.warn("End date is before start date, swapping:", { startMonth, startYear, endMonth, endYear });
+    [startMonth, endMonth] = [endMonth, startMonth];
+    [startYear, endYear] = [endYear, startYear];
+  }
+
+  const months = [];
+  let currentYear = startYear;
+  let currentMonth = startMonth;
+
+  // Generate the range with safety limits to prevent infinite loops
+  let iterations = 0;
+  const maxIterations = 1000; // Safety limit
+
+  while ((currentYear < endYear || (currentYear === endYear && currentMonth <= endMonth)) && iterations < maxIterations) {
+    months.push({
+      month: currentMonth,
+      year: currentYear
+    });
+
+    currentMonth++;
+    if (currentMonth > 12) {
+      currentMonth = 1;
+      currentYear++;
+    }
+    iterations++;
+  }
+
+  if (iterations >= maxIterations) {
+    console.error("Month range generation hit safety limit");
+  }
+
+  console.log(`Generated ${months.length} months:`, months);
+  return months;
+}
+
+// Enhanced complete month range with default balance structure
+export function generateCompleteMonthRange(startMonth, startYear, endMonth, endYear) {
+  const basicRange = generateMonthRange(startMonth, startYear, endMonth, endYear);
+
+  return basicRange.map(({ month, year }) => ({
+    month,
+    year,
+    opening_balance: null,
+    closing_balance: null,
+    is_verified: false,
+    statement_page: 1,
+    closing_date: null,
+    verified_by: null,
+    verified_at: null
+  }));
+}
+
+// PDF processing functions with enhanced error handling
+export async function getPdfDocument(fileUrl, password = null) {
   try {
     const loadingTaskOptions = { password };
     if (typeof fileUrl === 'string') {
@@ -91,7 +460,9 @@ async function getPdfDocument(fileUrl, password = null) {
     const pdf = await pdfjsLib.getDocument(loadingTaskOptions).promise;
     return { success: true, pdf };
   } catch (error) {
-    if (error.name === 'PasswordException') return { success: false, error: "PDF is password protected", requiresPassword: true };
+    if (error.name === 'PasswordException') {
+      return { success: false, error: "PDF is password protected", requiresPassword: true };
+    }
     console.error('Error getting PDF document:', error);
     return { success: false, error: error.message };
   }
@@ -195,12 +566,23 @@ async function processExtraction(pageTextContent, params, onProgress) {
   }
 }
 
-// Main extraction function
-export async function performBankStatementExtraction(fileUrl, params, onProgress = (message) => console.log(message)) {
+// Main extraction function with enhanced error handling
+async function performBankStatementExtraction(fileUrl, params, onProgress = (message) => console.log(message)) {
   try {
     onProgress('Starting bank statement extraction...');
-    const docResult = await getPdfDocument(fileUrl);
+    const docResult = await getPdfDocument(fileUrl, params.password);
     if (!docResult.success) {
+      if (docResult.requiresPassword) {
+        return {
+          success: false,
+          requiresPassword: true,
+          message: docResult.error,
+          extractedData: {
+            bank_name: null, company_name: null, account_number: null, currency: null,
+            statement_period: null, closing_balance: null, monthly_balances: []
+          }
+        };
+      }
       throw new Error(docResult.error);
     }
     const pdf = docResult.pdf;
@@ -242,6 +624,221 @@ export async function performBankStatementExtraction(fileUrl, params, onProgress
   }
 }
 
+// Enhanced statement cycle creation
+ const getOrCreateStatementCycle = async (year: number, month: number, statementType?: 'monthly' | 'range') => {
+  try {
+    // month should be 0-indexed (0=January, 1=February, etc.)
+    const monthStr = (month + 1).toString().padStart(2, '0'); // Convert to 1-indexed and pad
+    let monthYearStr = `${year}-${monthStr}`;
+
+    // FIX: For range statements, create a different cycle identifier to avoid conflicts
+    if (statementType === 'range') {
+      monthYearStr = `${year}-${monthStr}-range`;
+    }
+
+    console.log('Creating/finding statement cycle for:', { year, month, monthYearStr, statementType });
+
+    // 1. Try to find existing cycle
+    const { data: existingCycle, error: findError } = await supabase
+      .from('statement_cycles')
+      .select('id')
+      .eq('month_year', monthYearStr)
+      .maybeSingle();
+
+    if (findError && findError.code !== 'PGRST116') {
+      console.error('Error finding statement cycle:', findError);
+      throw findError;
+    }
+
+    if (existingCycle) {
+      console.log('Using existing cycle:', existingCycle.id, 'for', monthYearStr);
+      return existingCycle.id;
+    }
+
+    // 2. Create new cycle if not found
+    console.log('Creating new statement cycle for:', monthYearStr);
+    const { data: newCycle, error: createError } = await supabase
+      .from('statement_cycles')
+      .insert({
+        month_year: monthYearStr,
+        status: 'active',
+        created_at: new Date().toISOString()
+      })
+      .select('id')
+      .single();
+
+    if (createError) {
+      console.error('Error creating statement cycle:', createError);
+      throw createError;
+    }
+
+    if (!newCycle) {
+      throw new Error('Failed to create new statement cycle');
+    }
+
+    console.log('Created new cycle:', newCycle.id, 'for', monthYearStr);
+    return newCycle.id;
+  } catch (error) {
+    console.error('Error in getOrCreateStatementCycle:', {
+      error,
+      message: error.message,
+      year,
+      month,
+      statementType
+    });
+    throw error;
+  }
+};
+
+// Enhanced utility for creating statement cycles for a period
+ async function createStatementCyclesForPeriod(statementPeriod) {
+  const periodDates = parseStatementPeriod(statementPeriod);
+  if (!periodDates) return [];
+
+  const { startMonth, startYear, endMonth, endYear } = periodDates;
+  const monthsInRange = generateMonthRange(startMonth, startYear, endMonth, endYear);
+  const createdCycles = [];
+
+  for (const { month, year } of monthsInRange) {
+    try {
+      const cycleId = await getOrCreateStatementCycle(year, month - 1); // Convert to 0-indexed
+      if (cycleId) {
+        createdCycles.push({
+          id: cycleId,
+          month_year: `${year}-${month.toString().padStart(2, '0')}`
+        });
+      }
+    } catch (error) {
+      console.error(`Error creating cycle for ${month}/${year}:`, error);
+    }
+  }
+
+  return createdCycles;
+}
+
+// Enhanced range checking for validation
+ function validateStatementPeriodRange(extractedPeriod, selectedMonth, selectedYear) {
+  if (!extractedPeriod) {
+    return { isValid: false, message: 'No statement period found' };
+  }
+
+  const periodDates = parseStatementPeriod(extractedPeriod);
+  if (!periodDates) {
+    return { isValid: false, message: 'Could not parse statement period' };
+  }
+
+  const { startMonth, startYear, endMonth, endYear } = periodDates;
+  const monthsInRange = generateMonthRange(startMonth, startYear, endMonth, endYear);
+
+  // Check if selected month/year is within the range
+  const isIncluded = monthsInRange.some(
+    m => m.month === (selectedMonth + 1) && m.year === selectedYear
+  );
+
+  return {
+    isValid: isIncluded,
+    message: isIncluded
+      ? `Statement period covers ${monthsInRange.length} months including selected month`
+      : `Statement period does not include selected month`,
+    monthsInRange
+  };
+}
+
+// Enhanced password detection patterns
+ function detectPasswordFromFilename(filename) {
+  if (!filename) return null;
+
+  const passwordPatterns = [
+    /pass(?:word)?[_\-\s]*[:\=]?\s*(\w+)/i,
+    /pwd[_\-\s]*[:\=]?\s*(\w+)/i,
+    /p[_\-\s]*[:\=]?\s*(\d{4,})/i,
+    /pw[_\-\s]*[:\=]?\s*(\w+)/i,
+    /\b(\d{4})\b/  // Simple 4-digit fallback
+  ];
+
+  for (const pattern of passwordPatterns) {
+    const match = filename.match(pattern);
+    if (match && match[1]) {
+      console.log("Detected password from filename:", match[1]);
+      return match[1];
+    }
+  }
+
+  return null;
+}
+
+// Enhanced file info detection
+ function detectFileInfoFromFilename(filename) {
+  const fileInfo = detectFileInfo(filename);
+  return {
+    accountNumber: fileInfo.accountNumber,
+    bankName: fileInfo.bankName,
+    password: fileInfo.password
+  };
+}
+
+// File info detection utility (implement based on your needs)
+ function detectFileInfo(filename) {
+  if (!filename) return { accountNumber: null, bankName: null, password: null };
+
+  // Account number patterns
+  const accountPatterns = [
+    /acc(?:ount)?[_\-\s]*(?:no|number)?[_\-\s]*[:\=]?\s*(\d+)/i,
+    /a\/c[_\-\s]*[:\=]?\s*(\d+)/i,
+    /\b(\d{8,16})\b/, // General account number pattern
+  ];
+  // Bank name patterns
+  const bankPatterns = [
+    /equity/i,
+    /kcb/i,
+    /kenya\s+commercial\s+bank/i,
+    /cooperative/i,
+    /coop/i,
+    /standard\s+chartered/i,
+    /stanchart/i,
+    /barclays/i,
+    /absa/i,
+    /dtb/i,
+    /diamond\s+trust/i,
+    /family/i,
+    /ncba/i,
+    /guaranty/i,
+    /trust/i,
+  ];
+
+  let detectedAccountNumber = null;
+  let detectedBankName = null;
+  let detectedPassword = null;
+
+  // Extract account number
+  for (const pattern of accountPatterns) {
+    const match = filename.match(pattern);
+    if (match && match[1]) {
+      detectedAccountNumber = match[1];
+      break;
+    }
+  }
+
+  // Extract bank name
+  for (const pattern of bankPatterns) {
+    const match = filename.match(pattern);
+    if (match) {
+      detectedBankName = match[0];
+      break;
+    }
+  }
+
+  // Extract password using existing function
+  detectedPassword = detectPasswordFromFilename(filename);
+
+  return {
+    accountNumber: detectedAccountNumber,
+    bankName: detectedBankName,
+    password: detectedPassword
+  };
+}
+
+// Multi-month statement handling
 async function handleMultiMonthStatement(
   statementData,
   bank,
@@ -304,7 +901,7 @@ async function handleMultiMonthStatement(
         .from('acc_cycle_bank_statements')
         .select('id')
         .eq('bank_id', bank.id)
-        .eq('statement_month', month)
+        .eq('statement_month', month - 1) // Convert to 0-indexed
         .eq('statement_year', year)
         .single();
 
@@ -329,7 +926,7 @@ async function handleMultiMonthStatement(
         bank_id: bank.id,
         company_id: bank.company_id,
         statement_cycle_id: cyclePeriod.id,
-        statement_month: month,
+        statement_month: month - 1, // Convert to 0-indexed
         statement_year: year,
         statement_document: documentPaths, // Same document for all periods
         statement_extractions: {
@@ -367,6 +964,7 @@ async function handleMultiMonthStatement(
   }
 }
 
+// Enhanced bulk extraction processing
 export async function processBulkExtraction(batchFiles, params, onProgress) {
   try {
     console.log(`Starting bulk extraction for ${batchFiles.length} files`);
@@ -457,37 +1055,36 @@ ${Object.entries(textResult.textByPage).map(([pageNum, text]) =>
     }
 
     const extractionPrompt = `
-    You are analyzing multiple bank statements (indexed from 0). For each document:
-    1. Identify which document index you're analyzing
-    2. Extract these details:
-      - Bank Name: The official name of the bank
-      - Account Number: The full account number
-      - Company Name: The name of the account holder
-      - Currency: The currency code used
-      - Statement Period: The date range covered in dd/mm/yyyy format strictly 
-      - Monthly Balances: Any balances for each month
+   You are analyzing multiple bank statements (indexed from 0). For each document:
+   1. Identify which document index you're analyzing
+   2. Extract these details:
+     - Bank Name: The official name of the bank
+     - Account Number: The full account number
+     - Company Name: The name of the account holder
+     - Currency: The currency code used
+     - Statement Period: The date range covered in dd/mm/yyyy format strictly 
+     - Monthly Balances: Any balances for each month
 
-    FORMAT YOUR RESPONSE as valid, parseable JSON objects, ONE OBJECT PER DOCUMENT:
+   FORMAT YOUR RESPONSE as valid, parseable JSON objects, ONE OBJECT PER DOCUMENT:
 
-      {
-        "document_index": 0,
-        "bank_name": "Example Bank",
-        "company_name": "Example Company",
-        "account_number": "123456789",
-        "currency": "USD",
-        "statement_period": "Jan 2024 - Feb 2024",
-        "monthly_balances": []
-      }
+     {
+       "document_index": 0,
+       "bank_name": "Example Bank",
+       "company_name": "Example Company",
+       "account_number": "123456789",
+       "currency": "USD",
+       "statement_period": "Jan 2024 - Feb 2024",
+       "monthly_balances": []
+     }
 
-      {
-        "document_index": 1,
-        "bank_name": "Another Bank",
-        ...
-      }
+     {
+       "document_index": 1,
+       "bank_name": "Another Bank",
+       ...
+     }
 
-      IMPORTANT: Each JSON object must be complete and valid. Do not include any text outside of the JSON objects.
-      `;
-
+     IMPORTANT: Each JSON object must be complete and valid. Do not include any text outside of the JSON objects.
+     `;
 
     // Process each chunk
     for (let i = 0; i < textChunks.length; i++) {
@@ -500,9 +1097,6 @@ ${Object.entries(textResult.textByPage).map(([pageNum, text]) =>
             topP: 0.8,
             topK: 40,
             maxOutputTokens: 8192,
-            thinkingConfig: {
-              thinkingBudget: 0,
-            },
           },
           safetySettings: [
             {
@@ -523,9 +1117,6 @@ ${Object.entries(textResult.textByPage).map(([pageNum, text]) =>
             },
           ],
         });
-
-        // Define extraction prompt if not already defined
-
 
         // Use extraction API with the extractionModel
         const extractionResult = await extractionModel.generateContent([extractionPrompt, textChunks[i]]);
@@ -564,6 +1155,7 @@ ${Object.entries(textResult.textByPage).map(([pageNum, text]) =>
   }
 }
 
+// Enhanced extraction results parsing
 function parseExtractionResults(responseText, batchFiles) {
   const results = [];
 
@@ -685,6 +1277,7 @@ function parseExtractionResults(responseText, batchFiles) {
   }
 }
 
+// JSON repair utility
 function repairJsonString(jsonStr) {
   try {
     // Check if already valid
@@ -739,7 +1332,19 @@ function repairJsonString(jsonStr) {
   }
 }
 
-
+// PDF page count utility
+async function getPdfPageCount(fileUrl, password = null) {
+  try {
+    const docResult = await getPdfDocument(fileUrl, password);
+    if (!docResult.success) {
+      return docResult;
+    }
+    return { success: true, numPages: docResult.pdf.numPages };
+  } catch (error) {
+    console.error('Error getting PDF page count:', error);
+    return { success: false, error: error.message };
+  }
+}
 
 // Function to handle batch document extraction
 async function batchExtractDocuments(files, prompt) {
@@ -863,68 +1468,55 @@ async function batchExtractDocuments(files, prompt) {
   }
 }
 
-// Helper functions for multi-month statements
-export function parseStatementPeriod(periodString) {
-  if (!periodString) return null;
+// Validation helper function
+function validateParsedPeriod(result) {
+  if (!result) return null;
 
-  // Try to match various date formats
-  // Format: "January 2024" (single month)
-  const singleMonthMatch = periodString.match(/(\w+)\s+(\d{4})/i);
-  if (singleMonthMatch) {
-    const month = new Date(`${singleMonthMatch[1]} 1, 2000`).getMonth() + 1;
-    const year = parseInt(singleMonthMatch[2]);
+  const { startMonth, startYear, endMonth, endYear } = result;
+
+  // Basic validation
+  if (!startMonth || !startYear || !endMonth || !endYear) return null;
+  if (startMonth < 1 || startMonth > 12) return null;
+  if (endMonth < 1 || endMonth > 12) return null;
+  if (startYear < 1900 || endYear < 1900) return null;
+
+  // Ensure end date is not before start date
+  const startDate = new Date(startYear, startMonth - 1);
+  const endDate = new Date(endYear, endMonth - 1);
+
+  if (endDate < startDate) {
+    console.warn('End date is before start date, swapping...');
     return {
-      startMonth: month,
-      startYear: year,
-      endMonth: month,
-      endYear: year
+      startMonth: endMonth,
+      startYear: endYear,
+      endMonth: startMonth,
+      endYear: startYear
     };
   }
 
-  // Format: "January - March 2024" or "January to March 2024"
-  const sameYearMatch = periodString.match(/(\w+)\s*(?:-|to)\s*(\w+)\s+(\d{4})/i);
-  if (sameYearMatch) {
-    const startMonth = new Date(`${sameYearMatch[1]} 1, 2000`).getMonth() + 1;
-    const endMonth = new Date(`${sameYearMatch[2]} 1, 2000`).getMonth() + 1;
-    const year = parseInt(sameYearMatch[3]);
-    return {
-      startMonth,
-      startYear: year,
-      endMonth,
-      endYear: year
-    };
-  }
-
-  // Format: "January 2024 - March 2024" or "January 2024 to March 2024"
-  const differentYearMatch = periodString.match(/(\w+)\s+(\d{4})\s*(?:-|to)\s*(\w+)\s+(\d{4})/i);
-  if (differentYearMatch) {
-    const startMonth = new Date(`${differentYearMatch[1]} 1, 2000`).getMonth() + 1;
-    const startYear = parseInt(differentYearMatch[2]);
-    const endMonth = new Date(`${differentYearMatch[3]} 1, 2000`).getMonth() + 1;
-    const endYear = parseInt(differentYearMatch[4]);
-    return {
-      startMonth,
-      startYear,
-      endMonth,
-      endYear
-    };
-  }
-
-  return null;
+  return result;
 }
 
-// Helper function to generate month range from start to end
-export function generateMonthRange(startMonth, startYear, endMonth, endYear) {
-  const months = [];
-
-  for (let year = startYear; year <= endYear; year++) {
-    const start = year === startYear ? startMonth : 1;
-    const end = year === endYear ? endMonth : 12;
-
-    for (let month = start; month <= end; month++) {
-      months.push({ month, year });
-    }
-  }
-
-  return months;
-}
+// Export all the utility functions
+export {
+  createSafeDate,
+  isValidDate,
+  getMonthNumber,
+  normalizeCurrencyCode,
+  parseCurrencyAmount,
+  normalizeExtractedData,
+  processExtraction,
+  performBankStatementExtraction,
+  extractTextFromPdfPages,
+  handleMultiMonthStatement,
+  batchExtractDocuments,
+  validateParsedPeriod,
+  parseExtractionResults,
+  repairJsonString,
+  getPdfPageCount,
+  getOrCreateStatementCycle,
+  createStatementCyclesForPeriod,
+  validateStatementPeriodRange,
+  detectPasswordFromFilename,
+  detectFileInfo
+};
