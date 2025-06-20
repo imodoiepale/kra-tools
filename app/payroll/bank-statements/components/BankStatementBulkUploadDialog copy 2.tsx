@@ -1,4 +1,3 @@
-// app/payroll/bank-statements/components/BankStatementBulkUploadDialog.tsx
 // @ts-nocheck
 import { useState, useRef, useEffect } from 'react'
 import {
@@ -128,12 +127,12 @@ export function BankStatementBulkUploadDialog({
     const [companyGroups, setCompanyGroups] = useState<CompanyGroup[]>([])
 
     // Validation/Extraction dialogs
+    const [showValidationDialog, setShowValidationDialog] = useState<boolean>(false)
     const [showExtractionDialog, setShowExtractionDialog] = useState<boolean>(false)
     const [currentProcessingItem, setCurrentProcessingItem] = useState<BulkUploadItem | null>(null)
     const [currentItemIndex, setCurrentItemIndex] = useState<number>(-1)
-
-    // FIX: Add state to hold a temporary statement object for the dialog
-    const [currentStatementForDialog, setCurrentStatementForDialog] = useState<any>(null);
+    const [validationResult, setValidationResult] = useState<any>(null)
+    const [extractionResults, setExtractionResults] = useState<any>(null)
 
     // Manual matching and period input
     const [currentManualMatchItem, setCurrentManualMatchItem] = useState<number | null>(null);
@@ -371,7 +370,7 @@ export function BankStatementBulkUploadDialog({
         }
     };
 
-    // Enhanced bulk extraction with intelligent processing and proper progress display
+    // Fixed bulk extraction with proper PDF document handling
     const handleBulkExtraction = async () => {
         const filesToProcess = uploadItems.filter(item =>
             item.status === 'pending' && item.matchedBank
@@ -388,127 +387,122 @@ export function BankStatementBulkUploadDialog({
 
         setUploading(true);
         setActiveTab('processing');
-        setOverallProgress(0);
 
         try {
-            // Prepare batch files for enhanced extraction
-            const batchFiles = filesToProcess.map((item, index) => ({
-                file: item.file,
-                index: uploadItems.indexOf(item),
-                fileUrl: URL.createObjectURL(item.file),
-                password: item.passwordApplied ? item.appliedPassword : null,
-                originalItem: item,
-                params: {
-                    month: cycleMonth,
-                    year: cycleYear
-                }
-            }));
+            const results = [];
+            let processed = 0;
 
-            console.log(`Starting enhanced bulk extraction for ${batchFiles.length} files`);
+            // Process files individually to avoid the getPage error
+            for (const item of filesToProcess) {
+                const itemIndex = uploadItems.indexOf(item);
+                
+                setUploadItems(prev => {
+                    const updated = [...prev];
+                    updated[itemIndex] = {
+                        ...updated[itemIndex],
+                        status: 'processing',
+                        uploadProgress: 30
+                    };
+                    return updated;
+                });
 
-            // Use the enhanced bulk extraction with proper progress callback
-            const results = await processBulkExtraction(
-                batchFiles,
-                { month: cycleMonth, year: cycleYear },
-                (progressValue, message) => {
-                    console.log('Progress update:', progressValue, message);
-                    if (typeof progressValue === 'number') {
-                        setOverallProgress(Math.round(progressValue * 100));
-                    } else if (typeof progressValue === 'string') {
-                        // Handle string progress messages
-                        console.log('Progress message:', progressValue);
-                    }
-                }
-            );
+                try {
+                    // Use individual extraction instead of bulk to avoid PDF document issues
+                    const extractionOptions = {
+                        month: cycleMonth,
+                        year: cycleYear,
+                        password: item.passwordApplied ? item.appliedPassword : null
+                    };
 
-            console.log('Bulk extraction results:', results);
+                    const extractionResult = await ExtractionsService.getExtraction(item.file, extractionOptions);
+                    
+                    if (extractionResult.success && extractionResult.extractedData) {
+                        const detectedType = determineStatementType(extractionResult.extractedData);
+                        
+                        results.push({
+                            index: itemIndex,
+                            success: true,
+                            extractedData: extractionResult.extractedData,
+                            statementType: detectedType,
+                            originalItem: item
+                        });
 
-            // Process results with enhanced validation
-            let matched = 0;
-            let failed = 0;
-            let monthlyCount = 0;
-            let rangeCount = 0;
-
-            results.forEach(result => {
-                const itemIndex = result.index;
-                console.log(`Processing result for index ${itemIndex}:`, result);
-
-                if (result.success && result.extractedData) {
-                    // Enhanced statement type detection
-                    const detectedType = determineEnhancedStatementType(result.extractedData);
-
-                    console.log(`File ${itemIndex} enhanced analysis:`, {
-                        fileName: uploadItems[itemIndex]?.file?.name,
-                        statementPeriod: result.extractedData.statement_period,
-                        adjustedPeriod: result.extractedData.statement_period_adjusted,
-                        monthlyBalancesCount: result.extractedData.monthly_balances?.length || 0,
-                        extractionConfidence: result.extractedData.extraction_confidence,
-                        embeddingsConfirmed: result.extractedData.embeddings_confirmed,
-                        totalPagesAnalyzed: result.extractedData.total_pages_analyzed,
-                        detectedType: detectedType
-                    });
-
-                    if (detectedType === 'monthly') monthlyCount++;
-                    else rangeCount++;
-
-                    setUploadItems(prev => {
-                        const updated = [...prev];
-                        if (updated[itemIndex]) {
+                        setUploadItems(prev => {
+                            const updated = [...prev];
                             updated[itemIndex] = {
                                 ...updated[itemIndex],
                                 status: 'matched',
-                                extractedData: result.extractedData,
+                                extractedData: extractionResult.extractedData,
                                 statementType: detectedType,
                                 uploadProgress: 100
                             };
-                        }
-                        return updated;
-                    });
-                    matched++;
-                } else {
-                    // Handle failed extractions - mark for manual review
-                    console.log(`Extraction failed for index ${itemIndex}:`, result.error);
+                            return updated;
+                        });
+                    } else {
+                        // Try with manual period input if extraction failed
+                        results.push({
+                            index: itemIndex,
+                            success: false,
+                            error: 'Extraction failed - manual period input may be needed',
+                            originalItem: item
+                        });
 
-                    setUploadItems(prev => {
-                        const updated = [...prev];
-                        if (updated[itemIndex]) {
+                        setUploadItems(prev => {
+                            const updated = [...prev];
                             updated[itemIndex] = {
                                 ...updated[itemIndex],
-                                status: 'unmatched', // Changed from 'failed' to allow manual review
-                                error: result.error || 'Enhanced extraction failed',
+                                status: 'unmatched',
+                                error: 'Extraction failed - try manual period input',
                                 uploadProgress: 0,
                                 extractionAttempts: (updated[itemIndex].extractionAttempts || 0) + 1
                             };
-                        }
+                            return updated;
+                        });
+                    }
+                } catch (error) {
+                    console.error(`Error processing file ${itemIndex}:`, error);
+                    results.push({
+                        index: itemIndex,
+                        success: false,
+                        error: error.message || 'Unknown error',
+                        originalItem: item
+                    });
+
+                    setUploadItems(prev => {
+                        const updated = [...prev];
+                        updated[itemIndex] = {
+                            ...updated[itemIndex],
+                            status: 'failed',
+                            error: error.message || 'Unknown error',
+                            uploadProgress: 0
+                        };
                         return updated;
                     });
-                    failed++;
                 }
-            });
+
+                processed++;
+                setOverallProgress(Math.round((processed / filesToProcess.length) * 100));
+            }
+
+            const matched = results.filter(r => r.success).length;
+            const failed = results.filter(r => !r.success).length;
 
             setTotalMatched(matched);
             setTotalUnmatched(failed);
 
-            // Cleanup URLs
-            batchFiles.forEach(file => {
-                try {
-                    URL.revokeObjectURL(file.fileUrl);
-                } catch (e) {
-                    console.warn('Failed to revoke URL:', e);
-                }
-            });
-
             toast({
-                title: 'Enhanced Bulk Extraction Complete',
-                description: `${matched} successful (${monthlyCount} monthly, ${rangeCount} range), ${failed} need review`,
+                title: 'Bulk Extraction Complete',
+                description: `${matched} successful, ${failed} failed`,
             });
 
-            if (matched > 0 || failed > 0) {
-                setActiveTab('review'); // Always go to review to handle failed extractions
+            if (matched > 0) {
+                setActiveTab('vouching');
+            } else {
+                setActiveTab('review');
             }
 
         } catch (error) {
-            console.error('Enhanced bulk extraction error:', error);
+            console.error('Bulk extraction error:', error);
             toast({
                 title: 'Extraction Error',
                 description: error.message,
@@ -520,62 +514,32 @@ export function BankStatementBulkUploadDialog({
         }
     };
 
-    // Enhanced statement type determination with intelligent scenario handling
-    const determineEnhancedStatementType = (extractedData: any): 'monthly' | 'range' => {
-        if (!extractedData) {
-            console.log('No extracted data, defaulting to monthly');
-            return 'monthly';
-        }
+    // Enhanced statement type determination
+    const determineStatementType = (extractedData: any): 'monthly' | 'range' => {
+        if (!extractedData) return 'monthly';
 
         const monthlyBalances = extractedData.monthly_balances || [];
         const statementPeriod = extractedData.statement_period;
-        const adjustedPeriod = extractedData.statement_period_adjusted;
-        const embeddingsConfirmed = extractedData.embeddings_confirmed;
-        const extractionConfidence = extractedData.extraction_confidence;
 
-        console.log('Enhanced statement type determination:', {
-            monthlyBalancesCount: monthlyBalances.length,
-            statementPeriod,
-            adjustedPeriod,
-            embeddingsConfirmed,
-            extractionConfidence
-        });
-
-        // Primary indicator: Multiple monthly balances
         if (monthlyBalances.length > 1) {
-            console.log('Detected RANGE statement: Multiple monthly balances found');
             return 'range';
         }
 
-        // Secondary indicator: Parse statement period for date range analysis
-        const periodToAnalyze = adjustedPeriod || statementPeriod;
-        if (periodToAnalyze) {
-            try {
-                const periodResult = parseStatementPeriod(periodToAnalyze);
-                if (periodResult) {
-                    const monthRange = generateMonthRange(
-                        periodResult.startMonth,
-                        periodResult.startYear,
-                        periodResult.endMonth,
-                        periodResult.endYear
-                    );
-                    if (monthRange.length > 1) {
-                        console.log('Detected RANGE statement: Period spans multiple months');
-                        return 'range';
-                    }
+        if (statementPeriod) {
+            const periodResult = parseStatementPeriod(statementPeriod);
+            if (periodResult) {
+                const monthRange = generateMonthRange(
+                    periodResult.startMonth,
+                    periodResult.startYear,
+                    periodResult.endMonth,
+                    periodResult.endYear
+                );
+                if (monthRange.length > 1) {
+                    return 'range';
                 }
-            } catch (error) {
-                console.warn('Error parsing statement period:', error);
             }
         }
 
-        // Check for incomplete months scenario
-        if (extractedData.data_quality_issues?.includes('INCOMPLETE_MONTH')) {
-            console.log('Detected MONTHLY statement: Marked as incomplete month');
-            return 'monthly';
-        }
-
-        console.log('Detected MONTHLY statement: Single month or same-month period');
         return 'monthly';
     };
 
@@ -609,9 +573,6 @@ export function BankStatementBulkUploadDialog({
                 account_number: item.matchedBank?.account_number || 'Unknown Account',
                 currency: item.matchedBank?.bank_currency || 'USD',
                 statement_period: periodInput,
-                statement_period_adjusted: null,
-                period_adjustment_reason: 'Manual period input by user',
-                last_transaction_date: null,
                 monthly_balances: generateMonthRange(
                     periodResult.startMonth,
                     periodResult.startYear,
@@ -622,26 +583,11 @@ export function BankStatementBulkUploadDialog({
                     year,
                     opening_balance: null,
                     closing_balance: null,
-                    closing_date: null,
-                    balance_scenario: 'MANUAL_INPUT',
-                    is_complete: false,
-                    statement_page: 1,
-                    notes: 'Manual period input - requires manual validation'
-                })),
-                extraction_confidence: 'LOW',
-                data_quality_issues: ['Manual period input'],
-                total_pages_analyzed: 0,
-                embeddings_confirmed: false,
-                processing_metadata: {
-                    extraction_date: new Date().toISOString(),
-                    extraction_version: '2.0-manual',
-                    scenarios_analyzed: false,
-                    all_pages_processed: false,
-                    manual_input: true
-                }
+                    statement_page: 1
+                }))
             };
 
-            const detectedType = determineEnhancedStatementType(mockExtractedData);
+            const detectedType = determineStatementType(mockExtractedData);
 
             setUploadItems(prev => {
                 const updated = [...prev];
@@ -707,7 +653,7 @@ export function BankStatementBulkUploadDialog({
 
                 const uploadPromises = batch.map(async (item, batchIndex) => {
                     const itemIndex = uploadItems.indexOf(item);
-
+                    
                     try {
                         // Create statement cycles for the period
                         const statementType = item.statementType || 'monthly';
@@ -743,15 +689,15 @@ export function BankStatementBulkUploadDialog({
             }
 
             toast({
-                title: 'Enhanced Bulk Upload Complete',
-                description: `${uploadedCount} statements uploaded successfully with intelligent processing`,
+                title: 'Bulk Upload Complete',
+                description: `${uploadedCount} statements uploaded successfully`,
             });
 
             organizeByCompany();
             setActiveTab('vouching');
 
         } catch (error) {
-            console.error('Enhanced bulk upload error:', error);
+            console.error('Bulk upload error:', error);
             toast({
                 title: 'Upload Error',
                 description: error.message,
@@ -763,7 +709,7 @@ export function BankStatementBulkUploadDialog({
         }
     };
 
-    // Handle range statement upload (creates multiple DB records with conflict resolution)
+    // Handle range statement upload (creates multiple DB records)
     const handleRangeStatementUpload = async (item: BulkUploadItem, itemIndex: number) => {
         const fileName = `range_${item.matchedBank.company_id}_${item.matchedBank.id}_${cycleYear}_${Date.now()}.pdf`;
         const filePath = `statement_documents/${cycleYear}/${cycleMonth + 1}/${item.matchedBank.company_id}/${fileName}`;
@@ -775,21 +721,21 @@ export function BankStatementBulkUploadDialog({
 
         if (uploadError) throw uploadError;
 
-        // Create statement records for each month in the range with enhanced conflict resolution
+        // Create statement records for each month in the range
         const monthlyBalances = item.extractedData.monthly_balances || [];
         const insertPromises = monthlyBalances.map(async (monthData) => {
             const cycleId = await getOrCreateStatementCycle(monthData.year, monthData.month - 1, 'range');
 
-            // Enhanced conflict resolution: Check for existing statement
+            // Check for existing statement (upsert logic)
             const { data: existingStatement } = await supabase
                 .from('acc_cycle_bank_statements')
-                .select('id, statement_extractions, statement_document')
+                .select('id, statement_extractions')
                 .eq('bank_id', item.matchedBank.id)
                 .eq('statement_month', monthData.month - 1)
                 .eq('statement_year', monthData.year)
                 .maybeSingle();
 
-            const enhancedStatementData = {
+            const statementData = {
                 bank_id: item.matchedBank.id,
                 company_id: item.matchedBank.company_id,
                 statement_cycle_id: cycleId,
@@ -801,21 +747,17 @@ export function BankStatementBulkUploadDialog({
                 statement_document: {
                     statement_pdf: uploadData.path,
                     document_size: item.file.size,
-                    password: item.passwordApplied ? item.appliedPassword : null,
-                    extraction_metadata: item.extractedData.processing_metadata
+                    password: item.passwordApplied ? item.appliedPassword : null
                 },
                 statement_extractions: {
                     ...item.extractedData,
-                    // Only include relevant month in monthly_balances
-                    monthly_balances: [monthData],
-                    conflict_resolution: existingStatement ? 'merged_with_existing' : 'new_record'
+                    monthly_balances: [monthData] // Only this month's data
                 },
                 validation_status: {
                     is_validated: false,
                     validation_date: null,
                     validated_by: null,
-                    mismatches: [],
-                    extraction_confidence: item.extractedData.extraction_confidence || 'MEDIUM'
+                    mismatches: []
                 },
                 status: {
                     status: 'pending_validation',
@@ -825,59 +767,34 @@ export function BankStatementBulkUploadDialog({
             };
 
             if (existingStatement) {
-                // Enhanced merging logic for conflicting range statements
+                // Merge monthly balances for conflicting range statements
                 const existingBalances = existingStatement.statement_extractions?.monthly_balances || [];
                 const mergedBalances = [...existingBalances];
-
+                
                 const existingIndex = mergedBalances.findIndex(
                     b => b.month === monthData.month && b.year === monthData.year
                 );
-
+                
                 if (existingIndex >= 0) {
-                    // Replace with new data but preserve any manually validated information
-                    const existingBalance = mergedBalances[existingIndex];
-                    mergedBalances[existingIndex] = {
-                        ...monthData,
-                        // Preserve manual validations
-                        verified_by: existingBalance.verified_by || null,
-                        verified_at: existingBalance.verified_at || null,
-                        is_verified: existingBalance.is_verified || false,
-                        // Add conflict resolution metadata
-                        previous_value: existingBalance.closing_balance,
-                        updated_at: new Date().toISOString(),
-                        conflict_resolved: true
-                    };
+                    mergedBalances[existingIndex] = monthData; // Replace with new data
                 } else {
                     mergedBalances.push(monthData); // Add new month
                 }
 
-                // Update existing record with merged data
                 await supabase
                     .from('acc_cycle_bank_statements')
                     .update({
                         statement_extractions: {
-                            ...enhancedStatementData.statement_extractions,
-                            monthly_balances: mergedBalances,
-                            last_updated: new Date().toISOString(),
-                            update_reason: 'range_statement_conflict_resolution'
+                            ...statementData.statement_extractions,
+                            monthly_balances: mergedBalances
                         },
-                        statement_document: enhancedStatementData.statement_document,
-                        validation_status: {
-                            ...enhancedStatementData.validation_status,
-                            requires_revalidation: true,
-                            previous_validation_invalidated: true
-                        }
+                        statement_document: statementData.statement_document
                     })
                     .eq('id', existingStatement.id);
-
-                console.log(`Updated existing statement for ${monthData.month}/${monthData.year} with conflict resolution`);
             } else {
-                // Insert new record
                 await supabase
                     .from('acc_cycle_bank_statements')
-                    .insert([enhancedStatementData]);
-
-                console.log(`Created new statement record for ${monthData.month}/${monthData.year}`);
+                    .insert([statementData]);
             }
         });
 
@@ -896,7 +813,7 @@ export function BankStatementBulkUploadDialog({
         return true;
     };
 
-    // Handle single statement upload with enhanced metadata
+    // Handle single statement upload
     const handleSingleStatementUpload = async (item: BulkUploadItem, itemIndex: number) => {
         const fileName = `single_${item.matchedBank.company_id}_${item.matchedBank.id}_${cycleYear}_${cycleMonth}_${Date.now()}.pdf`;
         const filePath = `statement_documents/${cycleYear}/${cycleMonth + 1}/${item.matchedBank.company_id}/${fileName}`;
@@ -909,7 +826,7 @@ export function BankStatementBulkUploadDialog({
 
         const cycleId = await getOrCreateStatementCycle(cycleYear, cycleMonth, 'monthly');
 
-        const enhancedStatementData = {
+        const statementData = {
             bank_id: item.matchedBank.id,
             company_id: item.matchedBank.company_id,
             statement_cycle_id: cycleId,
@@ -921,22 +838,14 @@ export function BankStatementBulkUploadDialog({
             statement_document: {
                 statement_pdf: uploadData.path,
                 document_size: item.file.size,
-                password: item.passwordApplied ? item.appliedPassword : null,
-                extraction_metadata: item.extractedData.processing_metadata,
-                user_period_input: item.userPeriodInput || null
+                password: item.passwordApplied ? item.appliedPassword : null
             },
-            statement_extractions: {
-                ...item.extractedData,
-                enhanced_processing: true,
-                all_pages_analyzed: item.extractedData.total_pages_analyzed > 0
-            },
+            statement_extractions: item.extractedData,
             validation_status: {
                 is_validated: false,
                 validation_date: null,
                 validated_by: null,
-                mismatches: [],
-                extraction_confidence: item.extractedData.extraction_confidence || 'MEDIUM',
-                embeddings_confirmed: item.extractedData.embeddings_confirmed || false
+                mismatches: []
             },
             status: {
                 status: 'pending_validation',
@@ -947,7 +856,7 @@ export function BankStatementBulkUploadDialog({
 
         const { error: insertError } = await supabase
             .from('acc_cycle_bank_statements')
-            .insert([enhancedStatementData]);
+            .insert([statementData]);
 
         if (insertError) throw insertError;
 
@@ -964,7 +873,7 @@ export function BankStatementBulkUploadDialog({
         return true;
     };
 
-    // Company organization for vouching with enhanced metadata
+    // Company organization for vouching
     const organizeByCompany = () => {
         const validItems = uploadItems.filter(item =>
             item.status === 'matched' || item.status === 'uploaded' || item.status === 'vouched'
@@ -1048,75 +957,14 @@ export function BankStatementBulkUploadDialog({
         });
     };
 
-    // FIX: Rewritten function to correctly prepare and show the extraction dialog
+    // Show extraction dialog for individual statements
     const showStatementExtraction = (item: BulkUploadItem) => {
-        if (!item) {
-            toast({ title: 'Error', description: 'No item to view.', variant: 'destructive' });
-            return;
-        }
-
-        try {
-            setCurrentProcessingItem(item);
-
-            // For unmatched/failed items, we need a placeholder bank object for the dialog
-            const bankForDialog = item.matchedBank || {
-                id: -1,
-                bank_name: item.detectedBankName || item.extractedData?.bank_name || 'Unknown Bank',
-                account_number: item.detectedAccountNumber || item.extractedData?.account_number || 'Unknown Account',
-                bank_currency: item.extractedData?.currency || 'USD',
-                company_id: -1,
-                company_name: item.extractedData?.company_name || 'Unknown Company',
-                acc_password: item.detectedPassword || ''
-            };
-
-            // Construct a mock statement object that BankExtractionDialog expects
-            const mockStatement = {
-                id: `temp-${item.file.name}`,
-                bank_id: bankForDialog.id,
-                statement_month: cycleMonth,
-                statement_year: cycleYear,
-                statement_type: item.statementType || 'monthly',
-                quickbooks_balance: null,
-                statement_document: {
-                    statement_pdf: URL.createObjectURL(item.file), // Use a temporary blob URL
-                    document_size: item.file.size,
-                    password: item.appliedPassword,
-                },
-                statement_extractions: item.extractedData || {
-                    bank_name: bankForDialog.bank_name,
-                    account_number: bankForDialog.account_number,
-                    currency: bankForDialog.bank_currency,
-                    statement_period: '',
-                    opening_balance: null,
-                    closing_balance: null,
-                    monthly_balances: [],
-                },
-                has_soft_copy: true,
-                has_hard_copy: false,
-                validation_status: {
-                    is_validated: false,
-                    validation_date: null,
-                    validated_by: null,
-                    mismatches: [],
-                },
-                status: {
-                    status: item.status,
-                    assigned_to: null,
-                    verification_date: null,
-                },
-            };
-
-            setCurrentStatementForDialog(mockStatement);
-            setShowExtractionDialog(true);
-
-        } catch (error) {
-            console.error('Error in showStatementExtraction:', error);
-            toast({
-                title: 'Error Opening Statement',
-                description: `Failed to open statement: ${error.message}`,
-                variant: 'destructive'
-            });
-        }
+        setCurrentProcessingItem(item);
+        setExtractionResults({
+            success: true,
+            extractedData: item.extractedData
+        });
+        setShowExtractionDialog(true);
     };
 
     // Auto-organize by company when moving to vouching tab
@@ -1141,9 +989,9 @@ export function BankStatementBulkUploadDialog({
                                 <UploadCloud className="h-7 w-7 text-blue-600" />
                             </div>
                         </div>
-                        <DialogTitle className="text-center text-xl text-blue-800">Enhanced Bulk Upload Bank Statements</DialogTitle>
+                        <DialogTitle className="text-center text-xl text-blue-800">Bulk Upload Bank Statements</DialogTitle>
                         <p className="text-center text-blue-600 text-sm mt-1">
-                            {format(new Date(cycleYear, cycleMonth, 1), 'MMMM yyyy')} - Intelligent Processing with All Pages Analysis
+                            {format(new Date(cycleYear, cycleMonth, 1), 'MMMM yyyy')} - Enhanced Processing
                         </p>
                     </div>
                 </DialogHeader>
@@ -1180,7 +1028,7 @@ export function BankStatementBulkUploadDialog({
                                     <div className="text-center">
                                         <UploadCloud className="mx-auto h-12 w-12 text-gray-400" />
                                         <p className="text-gray-500 mt-2">Drag and drop PDFs here, or click to select</p>
-                                        <p className="text-xs text-gray-400 mt-1">Enhanced with all-pages processing, embeddings, and intelligent scenarios</p>
+                                        <p className="text-xs text-gray-400 mt-1">Auto-detection and enhanced processing enabled</p>
                                     </div>
                                 </div>
 
@@ -1191,7 +1039,7 @@ export function BankStatementBulkUploadDialog({
                                         className="bg-blue-600 hover:bg-blue-700"
                                     >
                                         <FileCheck className="h-4 w-4 mr-2" />
-                                        Enhanced Extract ({uploadItems.filter(i => i.matchedBank).length})
+                                        Extract All ({uploadItems.filter(i => i.matchedBank).length})
                                     </Button>
                                     <Button
                                         onClick={handleBulkUpload}
@@ -1204,7 +1052,7 @@ export function BankStatementBulkUploadDialog({
                                 </div>
                             </div>
 
-                            {/* Enhanced file list table */}
+                            {/* File list table */}
                             <div className="border rounded-md overflow-hidden max-h-[400px]">
                                 <div className="overflow-y-auto max-h-[350px]">
                                     <Table>
@@ -1215,15 +1063,14 @@ export function BankStatementBulkUploadDialog({
                                                 <TableHead>Size</TableHead>
                                                 <TableHead>Detection Status</TableHead>
                                                 <TableHead>Type</TableHead>
-                                                <TableHead>Confidence</TableHead>
                                                 <TableHead>Action</TableHead>
                                             </TableRow>
                                         </TableHeader>
                                         <TableBody>
                                             {uploadItems.length === 0 ? (
                                                 <TableRow>
-                                                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                                                        No files selected. Drop PDF files here for enhanced intelligent processing.
+                                                    <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                                                        No files selected. Drop PDF files here for instant processing.
                                                     </TableCell>
                                                 </TableRow>
                                             ) : (
@@ -1262,19 +1109,6 @@ export function BankStatementBulkUploadDialog({
                                                             </Badge>
                                                         </TableCell>
                                                         <TableCell>
-                                                            {item.extractedData?.extraction_confidence && (
-                                                                <Badge
-                                                                    variant="outline"
-                                                                    className={`text-xs ${item.extractedData.extraction_confidence === 'HIGH' ? 'bg-green-50 text-green-700' :
-                                                                        item.extractedData.extraction_confidence === 'MEDIUM' ? 'bg-yellow-50 text-yellow-700' :
-                                                                            'bg-red-50 text-red-700'
-                                                                        }`}
-                                                                >
-                                                                    {item.extractedData.extraction_confidence}
-                                                                </Badge>
-                                                            )}
-                                                        </TableCell>
-                                                        <TableCell>
                                                             <Button
                                                                 variant="ghost"
                                                                 size="icon"
@@ -1294,10 +1128,9 @@ export function BankStatementBulkUploadDialog({
 
                             <Alert>
                                 <FileText className="h-4 w-4" />
-                                <AlertTitle>Enhanced Intelligent Processing</AlertTitle>
+                                <AlertTitle>Enhanced Bulk Processing</AlertTitle>
                                 <AlertDescription>
-                                    All-pages analysis, document embeddings, intelligent scenario handling, smart bank matching,
-                                    and enhanced range statement support with conflict resolution.
+                                    Individual file processing, auto-password detection, smart bank matching, and enhanced range statement support.
                                     Manual period input available for failed extractions.
                                 </AlertDescription>
                             </Alert>
@@ -1308,13 +1141,13 @@ export function BankStatementBulkUploadDialog({
                         <Card>
                             <CardHeader className="pb-2">
                                 <CardTitle className="flex items-center justify-between">
-                                    Enhanced Processing Progress
+                                    Processing Progress
                                     <Badge variant="outline">
                                         {uploading ? 'Processing...' : 'Complete'}
                                     </Badge>
                                 </CardTitle>
                                 <CardDescription>
-                                    Intelligent processing {uploadItems.length} files with all-pages analysis and embeddings
+                                    Enhanced processing {uploadItems.length} files with individual extraction
                                 </CardDescription>
                             </CardHeader>
                             <CardContent>
@@ -1325,7 +1158,7 @@ export function BankStatementBulkUploadDialog({
                                     </div>
                                     <Progress value={overallProgress} className="h-3" />
 
-                                    <div className="grid grid-cols-5 gap-4 text-center">
+                                    <div className="grid grid-cols-4 gap-4 text-center">
                                         <div className="p-3 bg-green-50 rounded-lg">
                                             <div className="text-2xl font-bold text-green-600">
                                                 {uploadItems.filter(i => i.status === 'matched' || i.status === 'uploaded').length}
@@ -1338,23 +1171,17 @@ export function BankStatementBulkUploadDialog({
                                             </div>
                                             <div className="text-xs text-blue-600">Auto-unlocked</div>
                                         </div>
-                                        <div className="p-3 bg-purple-50 rounded-lg">
-                                            <div className="text-2xl font-bold text-purple-600">
-                                                {uploadItems.filter(i => i.extractedData?.embeddings_confirmed).length}
-                                            </div>
-                                            <div className="text-xs text-purple-600">Embeddings OK</div>
-                                        </div>
                                         <div className="p-3 bg-yellow-50 rounded-lg">
                                             <div className="text-2xl font-bold text-yellow-600">
-                                                {uploadItems.filter(i => i.status === 'unmatched' || i.status === 'failed').length}
+                                                {uploadItems.filter(i => i.status === 'unmatched').length}
                                             </div>
-                                            <div className="text-xs text-yellow-600">Need Review</div>
+                                            <div className="text-xs text-yellow-600">Needs Manual Input</div>
                                         </div>
-                                        <div className="p-3 bg-orange-50 rounded-lg">
-                                            <div className="text-2xl font-bold text-orange-600">
-                                                {uploadItems.filter(i => i.statementType === 'range').length}
+                                        <div className="p-3 bg-red-50 rounded-lg">
+                                            <div className="text-2xl font-bold text-red-600">
+                                                {uploadItems.filter(i => i.status === 'failed').length}
                                             </div>
-                                            <div className="text-xs text-orange-600">Range Statements</div>
+                                            <div className="text-xs text-red-600">Failed</div>
                                         </div>
                                     </div>
 
@@ -1379,7 +1206,7 @@ export function BankStatementBulkUploadDialog({
                             </CardContent>
                         </Card>
 
-                        {/* Enhanced processing status table */}
+                        {/* Processing status table */}
                         <div className="border rounded-md overflow-hidden flex-1">
                             <div className="overflow-y-auto max-h-[300px]">
                                 <Table>
@@ -1389,8 +1216,6 @@ export function BankStatementBulkUploadDialog({
                                             <TableHead>File</TableHead>
                                             <TableHead>Status</TableHead>
                                             <TableHead>Type</TableHead>
-                                            <TableHead>Pages</TableHead>
-                                            <TableHead>Confidence</TableHead>
                                             <TableHead>Progress</TableHead>
                                             <TableHead>Details</TableHead>
                                         </TableRow>
@@ -1408,22 +1233,6 @@ export function BankStatementBulkUploadDialog({
                                                         {item.statementType || 'Unknown'}
                                                     </Badge>
                                                 </TableCell>
-                                                <TableCell className="text-xs">
-                                                    {item.extractedData?.total_pages_analyzed || '-'}
-                                                </TableCell>
-                                                <TableCell>
-                                                    {item.extractedData?.extraction_confidence && (
-                                                        <Badge
-                                                            variant="outline"
-                                                            className={`text-xs ${item.extractedData.extraction_confidence === 'HIGH' ? 'bg-green-50 text-green-700' :
-                                                                item.extractedData.extraction_confidence === 'MEDIUM' ? 'bg-yellow-50 text-yellow-700' :
-                                                                    'bg-red-50 text-red-700'
-                                                                }`}
-                                                        >
-                                                            {item.extractedData.extraction_confidence}
-                                                        </Badge>
-                                                    )}
-                                                </TableCell>
                                                 <TableCell>
                                                     <div className="w-full bg-gray-200 rounded-full h-2">
                                                         <div
@@ -1438,11 +1247,6 @@ export function BankStatementBulkUploadDialog({
                                                             <Badge variant="outline" className="text-xs">
                                                                 <Lock className="h-3 w-3 mr-1" />
                                                                 Unlocked
-                                                            </Badge>
-                                                        )}
-                                                        {item.extractedData?.embeddings_confirmed && (
-                                                            <Badge variant="outline" className="text-xs bg-purple-50">
-                                                                Embeddings
                                                             </Badge>
                                                         )}
                                                         {item.matchedBank && (
@@ -1474,7 +1278,6 @@ export function BankStatementBulkUploadDialog({
                                             <TableHead className="text-xs">Company</TableHead>
                                             <TableHead className="text-xs">Bank</TableHead>
                                             <TableHead className="text-xs">Type</TableHead>
-                                            <TableHead className="text-xs">Confidence</TableHead>
                                             <TableHead className="text-xs">Status</TableHead>
                                             <TableHead className="text-xs">Actions</TableHead>
                                         </TableRow>
@@ -1497,27 +1300,13 @@ export function BankStatementBulkUploadDialog({
                                                         {item.statementType || 'Auto'}
                                                     </Badge>
                                                 </TableCell>
-                                                <TableCell className="text-xs">
-                                                    {item.extractedData?.extraction_confidence && (
-                                                        <Badge
-                                                            variant="outline"
-                                                            className={`text-xs ${item.extractedData.extraction_confidence === 'HIGH' ? 'bg-green-50 text-green-700' :
-                                                                item.extractedData.extraction_confidence === 'MEDIUM' ? 'bg-yellow-50 text-yellow-700' :
-                                                                    'bg-red-50 text-red-700'
-                                                                }`}
-                                                        >
-                                                            {item.extractedData.extraction_confidence}
-                                                        </Badge>
-                                                    )}
-                                                </TableCell>
                                                 <TableCell className="text-xs">{getStatusBadge(item.status)}</TableCell>
                                                 <TableCell className="text-xs">
                                                     <div className="flex gap-1 flex-wrap">
                                                         {item.status === 'failed' && (
-                                                            <div className="text-red-500 text-xs mb-1 w-full">{item.error}</div>
+                                                            <div className="text-red-500 text-xs">{item.error}</div>
                                                         )}
-
-                                                        {(item.status === 'unmatched' || item.status === 'failed') && (
+                                                        {item.status === 'unmatched' && (
                                                             <>
                                                                 <Button
                                                                     variant="ghost"
@@ -1544,17 +1333,17 @@ export function BankStatementBulkUploadDialog({
                                                                 </Button>
                                                             </>
                                                         )}
-
-                                                        {/* FIX: Always show View button to allow manual inspection */}
-                                                        <Button
-                                                            variant="ghost"
-                                                            size="sm"
-                                                            className="bg-purple-50 text-purple-700 text-xs h-6"
-                                                            onClick={() => showStatementExtraction(item)}
-                                                        >
-                                                            <Eye className="h-3 w-3 mr-1" />
-                                                            View
-                                                        </Button>
+                                                        {item.status === 'matched' && (
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="sm"
+                                                                className="bg-blue-50 text-blue-700 text-xs h-6"
+                                                                onClick={() => showStatementExtraction(item)}
+                                                            >
+                                                                <Eye className="h-3 w-3 mr-1" />
+                                                                View
+                                                            </Button>
+                                                        )}
                                                     </div>
                                                 </TableCell>
                                             </TableRow>
@@ -1610,7 +1399,7 @@ export function BankStatementBulkUploadDialog({
                                 </div>
                             ) : (
                                 <div className="space-y-4">
-                                    {/* Enhanced Vouching Table Format */}
+                                    {/* Vouching Table Format */}
                                     <div className="border rounded-lg overflow-hidden">
                                         <Table>
                                             <TableHeader>
@@ -1630,7 +1419,6 @@ export function BankStatementBulkUploadDialog({
                                                     <TableHead>File Name</TableHead>
                                                     <TableHead>Type</TableHead>
                                                     <TableHead>Period</TableHead>
-                                                    <TableHead>Confidence</TableHead>
                                                     <TableHead>Currency</TableHead>
                                                     <TableHead>Closing Balance</TableHead>
                                                     <TableHead>Status</TableHead>
@@ -1683,22 +1471,7 @@ export function BankStatementBulkUploadDialog({
                                                                 </Badge>
                                                             </TableCell>
                                                             <TableCell className="text-sm">
-                                                                {statement.extractedData?.statement_period_adjusted ||
-                                                                    statement.extractedData?.statement_period ||
-                                                                    statement.userPeriodInput || 'Current month'}
-                                                            </TableCell>
-                                                            <TableCell>
-                                                                {statement.extractedData?.extraction_confidence && (
-                                                                    <Badge
-                                                                        variant="outline"
-                                                                        className={`text-xs ${statement.extractedData.extraction_confidence === 'HIGH' ? 'bg-green-50 text-green-700' :
-                                                                            statement.extractedData.extraction_confidence === 'MEDIUM' ? 'bg-yellow-50 text-yellow-700' :
-                                                                                'bg-red-50 text-red-700'
-                                                                            }`}
-                                                                    >
-                                                                        {statement.extractedData.extraction_confidence}
-                                                                    </Badge>
-                                                                )}
+                                                                {statement.extractedData?.statement_period || statement.userPeriodInput || 'Current month'}
                                                             </TableCell>
                                                             <TableCell>
                                                                 <Badge variant="secondary" className="text-xs">
@@ -1734,13 +1507,13 @@ export function BankStatementBulkUploadDialog({
                                                                         <Eye className="h-3.5 w-3.5 mr-1" />
                                                                         View
                                                                     </Button>
-                                                                    {(statement.userPeriodInput || statement.extractedData?.statement_period_adjusted) && (
+                                                                    {statement.userPeriodInput && (
                                                                         <Button
                                                                             variant="ghost"
                                                                             size="sm"
                                                                             onClick={() => {
                                                                                 setSelectedItemForPeriod(uploadItems.indexOf(statement));
-                                                                                setManualPeriodInput(statement.userPeriodInput || statement.extractedData?.statement_period_adjusted || '');
+                                                                                setManualPeriodInput(statement.userPeriodInput);
                                                                                 setShowPeriodInputDialog(true);
                                                                             }}
                                                                             className="h-8 px-2"
@@ -1758,7 +1531,7 @@ export function BankStatementBulkUploadDialog({
                                         </Table>
                                     </div>
 
-                                    {/* Enhanced Company Summary Cards */}
+                                    {/* Company Summary Cards */}
                                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                                         {companyGroups.map((group) => (
                                             <Card key={group.companyId} className={`${group.isVouched ? 'border-purple-200 bg-purple-50' : 'border-amber-200 bg-amber-50'}`}>
@@ -1788,14 +1561,6 @@ export function BankStatementBulkUploadDialog({
                                                         <div className="flex justify-between text-xs">
                                                             <span>Auto-unlocked:</span>
                                                             <span>{group.statements.filter(s => s.passwordApplied).length}</span>
-                                                        </div>
-                                                        <div className="flex justify-between text-xs">
-                                                            <span>High Confidence:</span>
-                                                            <span>{group.statements.filter(s => s.extractedData?.extraction_confidence === 'HIGH').length}</span>
-                                                        </div>
-                                                        <div className="flex justify-between text-xs">
-                                                            <span>Embeddings OK:</span>
-                                                            <span>{group.statements.filter(s => s.extractedData?.embeddings_confirmed).length}</span>
                                                         </div>
                                                         <div className="flex justify-between text-xs">
                                                             <span>Vouched:</span>
@@ -1843,27 +1608,24 @@ export function BankStatementBulkUploadDialog({
                                         const vouchedCount = companyGroups.filter(g => g.isVouched).length;
                                         const totalStatements = companyGroups.reduce((sum, g) => sum + g.statements.length, 0);
                                         const vouchedStatements = companyGroups.reduce((sum, g) => sum + g.statements.filter(s => s.isVouched).length, 0);
-                                        const highConfidence = companyGroups.reduce((sum, g) => sum + g.statements.filter(s => s.extractedData?.extraction_confidence === 'HIGH').length, 0);
-                                        const embeddingsOk = companyGroups.reduce((sum, g) => sum + g.statements.filter(s => s.extractedData?.embeddings_confirmed).length, 0);
 
                                         toast({
-                                            title: 'Enhanced Vouching Summary',
-                                            description: `${vouchedCount}/${companyGroups.length} companies • ${vouchedStatements}/${totalStatements} statements • ${highConfidence} high confidence • ${embeddingsOk} with embeddings`,
+                                            title: 'Vouching Summary',
+                                            description: `${vouchedCount}/${companyGroups.length} companies vouched • ${vouchedStatements}/${totalStatements} statements vouched`,
                                         });
                                     }}
                                 >
                                     <FileText className="h-4 w-4 mr-2" />
-                                    Enhanced Summary
+                                    Summary
                                 </Button>
 
                                 <Button
                                     variant="default"
                                     onClick={() => {
                                         const vouchedCount = companyGroups.filter(g => g.isVouched).length;
-                                        const totalProcessed = uploadItems.filter(i => i.extractedData?.total_pages_analyzed > 0).length;
                                         toast({
-                                            title: 'Enhanced Vouching Complete',
-                                            description: `${vouchedCount} companies vouched with intelligent processing (${totalProcessed} files fully analyzed)`,
+                                            title: 'Vouching Complete',
+                                            description: `${vouchedCount} companies vouched successfully`,
                                         });
                                         onUploadsComplete();
                                         onClose();
@@ -1871,7 +1633,7 @@ export function BankStatementBulkUploadDialog({
                                     className="bg-green-600 hover:bg-green-700"
                                 >
                                     <CheckCircle className="h-4 w-4 mr-2" />
-                                    Complete Enhanced Vouching
+                                    Complete Vouching
                                 </Button>
                             </div>
                         </div>
@@ -1934,12 +1696,12 @@ export function BankStatementBulkUploadDialog({
                 </Dialog>
             )}
 
-            {/* Enhanced Manual Period Input Dialog */}
+            {/* Manual Period Input Dialog */}
             {showPeriodInputDialog && selectedItemForPeriod !== null && (
                 <Dialog open={showPeriodInputDialog} onOpenChange={setShowPeriodInputDialog}>
                     <DialogContent className="sm:max-w-md">
                         <DialogHeader>
-                            <DialogTitle>Enhanced Period Input</DialogTitle>
+                            <DialogTitle>Manual Period Input</DialogTitle>
                         </DialogHeader>
                         <div className="space-y-4 py-3">
                             <div>
@@ -1953,15 +1715,6 @@ export function BankStatementBulkUploadDialog({
                                 <p className="text-xs text-gray-500 mt-1">
                                     Examples: "01/01/2024 - 31/01/2024" for monthly, "01/01/2024 - 31/03/2024" for quarterly
                                 </p>
-                                <Alert className="mt-2">
-                                    <AlertTriangle className="h-4 w-4" />
-                                    <AlertDescription className="text-xs">
-                                        Enhanced processing will apply intelligent scenario handling:
-                                        <br />• Incomplete months will be marked as null
-                                        <br />• Period adjustments will be tracked
-                                        <br />• Manual input will be flagged for validation
-                                    </AlertDescription>
-                                </Alert>
                             </div>
                         </div>
                         <DialogFooter>
@@ -1979,66 +1732,29 @@ export function BankStatementBulkUploadDialog({
                                     }
                                 }}
                                 disabled={!manualPeriodInput.trim()}
-                                className="bg-blue-600 hover:bg-blue-700"
                             >
-                                Apply Enhanced Period
+                                Apply Period
                             </Button>
                         </DialogFooter>
                     </DialogContent>
                 </Dialog>
             )}
 
-            {/* FIX: Correctly call BankExtractionDialog with the right props */}
-            {showExtractionDialog && currentProcessingItem && currentStatementForDialog && (
+            {/* Extraction Dialog */}
+            {showExtractionDialog && currentProcessingItem && extractionResults && (
                 <BankExtractionDialog
                     isOpen={showExtractionDialog}
-                    onClose={() => {
-                        // Revoke the object URL to prevent memory leaks
-                        if (currentStatementForDialog?.statement_document?.statement_pdf?.startsWith('blob:')) {
-                            URL.revokeObjectURL(currentStatementForDialog.statement_document.statement_pdf);
-                        }
-                        setShowExtractionDialog(false);
-                        setCurrentStatementForDialog(null);
-                        setCurrentProcessingItem(null);
+                    onClose={() => setShowExtractionDialog(false)}
+                    extractionResults={extractionResults}
+                    statementFile={{
+                        name: currentProcessingItem.file.name,
+                        size: currentProcessingItem.file.size,
+                        type: currentProcessingItem.file.type
                     }}
-                    bank={currentProcessingItem.matchedBank || {
-                        id: -1,
-                        bank_name: currentProcessingItem.detectedBankName || currentProcessingItem.extractedData?.bank_name || 'Unknown Bank',
-                        account_number: currentProcessingItem.detectedAccountNumber || currentProcessingItem.extractedData?.account_number || 'Unknown Account',
-                        bank_currency: currentProcessingItem.extractedData?.currency || 'USD',
-                        company_id: -1,
-                        company_name: currentProcessingItem.extractedData?.company_name || 'Unknown Company',
-                        acc_password: currentProcessingItem.detectedPassword || ''
-                    }}
-                    statement={currentStatementForDialog}
-                    onStatementUpdated={(updatedStatement) => {
-                        // When the user saves in the dialog, update the BulkUploadItem in our state
-                        if (!updatedStatement) return;
-                        const itemIndex = uploadItems.findIndex(item => `temp-${item.file.name}` === updatedStatement.id);
-
-                        if (itemIndex > -1) {
-                            setUploadItems(prev => {
-                                const newItems = [...prev];
-                                const oldItem = newItems[itemIndex];
-                                newItems[itemIndex] = {
-                                    ...oldItem,
-                                    extractedData: updatedStatement.statement_extractions,
-                                    status: updatedStatement.validation_status?.is_validated ? 'matched' : oldItem.status,
-                                };
-                                return newItems;
-                            });
-                        }
-
-                        // Close the dialog
-                        if (currentStatementForDialog?.statement_document?.statement_pdf?.startsWith('blob:')) {
-                            URL.revokeObjectURL(currentStatementForDialog.statement_document.statement_pdf);
-                        }
-                        setShowExtractionDialog(false);
-                        setCurrentStatementForDialog(null);
-                        setCurrentProcessingItem(null);
-                    }}
-                    onStatementDeleted={() => {
-                        // Deleting doesn't make sense here, just close the dialog
+                    cycleMonth={cycleMonth}
+                    cycleYear={cycleYear}
+                    onExtractionComplete={(results) => {
+                        console.log('Extraction completed in bulk dialog:', results);
                         setShowExtractionDialog(false);
                     }}
                 />

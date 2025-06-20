@@ -654,14 +654,71 @@ export function DetailedBankStatementsView({
                     <>
                         {/* Header */}
                         <div className="bg-white border-b border-gray-200 p-4">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <h2 className="text-xl font-bold text-gray-900">
+                            <div className="flex flex-col gap-2">
+                                {/* Title and Duration */}
+                                <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+                                    <div className="text-xl font-semibold text-gray-900">
                                         {selectedCompany.company_name}
-                                    </h2>
-                                    <p className="text-gray-600">
-                                        {format(new Date(dateRange.fromYear, dateRange.fromMonth), 'MMM yyyy')} - {format(new Date(dateRange.toYear, dateRange.toMonth), 'MMM yyyy')}
-                                    </p>
+                                    </div>
+                                    {/* Metadata Row */}
+                                    <div className="flex flex-wrap items-center gap-6 text-md text-gray-700">
+                                        {/* Bank Name */}
+                                        <div className="flex items-center gap-1 font-medium text-primary">
+                                            <FileText className="h-4 w-4 text-primary" />
+                                            <span>{selectedBank.bank_name} Statements</span>
+                                        </div>
+
+                                        {/* Account Number */}
+                                        <div className="flex items-center gap-1">
+                                            <span className="text-gray-400">Account:</span>
+                                            <span className="font-mono">{selectedBank.account_number}</span>
+                                        </div>
+
+                                        {/* Currency */}
+                                        <div className="flex items-center gap-1">
+                                            <span className="text-gray-400">Currency:</span>
+                                            <span>{selectedBank.bank_currency}</span>
+                                        </div>
+
+                                        {/* Password Status */}
+                                        <div className="flex items-center gap-1">
+                                            <span className="text-gray-400">Password:</span>
+                                            <span className={`font-semibold ${selectedBank.acc_password ? 'text-green-600' : 'text-red-600'}`}>
+                                                {selectedBank.acc_password || 'Missing'}
+                                            </span>
+                                        </div>
+
+                                        {/* Statement Count */}
+                                        <div className="flex items-center gap-1">
+                                            <span className="text-gray-400">Statements:</span>
+                                            <span>{statements.length}</span>
+                                        </div>
+
+                                        {/* Company Start/End */}
+                                        <div className="flex items-center gap-1">
+                                            <span className="text-gray-400">Company Start:</span>
+                                            <span>{selectedCompany.start_date ? format(new Date(selectedCompany.start_date), 'dd MMM yyyy') : 'N/A'}</span>
+                                        </div>
+
+                                        <div className="flex items-center gap-1">
+                                            <span className="text-gray-400">Company End:</span>
+                                            <span>{selectedCompany.end_date ? format(new Date(selectedCompany.end_date), 'dd MMM yyyy') : 'N/A'}</span>
+                                        </div>
+
+                                        {/* Account Start/End */}
+                                        <div className="flex items-center gap-1">
+                                            <span className="text-gray-400">Account Start:</span>
+                                            <span>{selectedBank.account_start ? format(new Date(selectedBank.account_start), 'dd MMM yyyy') : 'N/A'}</span>
+                                        </div>
+
+                                        <div className="flex items-center gap-1">
+                                            <span className="text-gray-400">Account End:</span>
+                                            <span>{selectedBank.account_end ? format(new Date(selectedBank.account_end), 'dd MMM yyyy') : 'N/A'}</span>
+                                        </div>
+                                    </div>
+                                    <div className="text-gray-500 text-sm">
+                                        {format(new Date(dateRange.fromYear, dateRange.fromMonth), 'MMM yyyy')} – {format(new Date(dateRange.toYear, dateRange.toMonth), 'MMM yyyy')}
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -690,50 +747,7 @@ export function DetailedBankStatementsView({
                         <div className="flex-1 overflow-hidden p-4">
                             {selectedBank ? (
                                 <div className="h-full flex flex-col space-y-4">
-                                    {/* Bank Info Card */}
-                                    <Card>
-                                        <CardHeader>
-                                            <CardTitle className="flex flex-wrap items-center gap-6 text-sm font-medium px-2 py-1">
-                                                {/* Main Title */}
-                                                <div className="flex items-center gap-2 text-lg font-semibold text-primary">
-                                                    <FileText className="h-5 w-5" />
-                                                    <span>{selectedBank.bank_name} Statements</span>
-                                                </div>
-
-                                                {/* Metadata Row */}
-                                                <div className="flex flex-wrap items-center gap-6">
-                                                    <div className="flex flex-col">
-                                                        <span className="text-muted-foreground text-xs">Account Number</span>
-                                                        <span className="font-mono">{selectedBank.account_number}</span>
-                                                    </div>
-
-                                                    <div className="flex flex-col">
-                                                        <span className="text-muted-foreground text-xs">Currency</span>
-                                                        <span>{selectedBank.bank_currency}</span>
-                                                    </div>
-
-                                                    <div className="flex flex-col">
-                                                        <span className="text-muted-foreground text-xs">Password Status</span>
-                                                        {selectedBank.acc_password ? (
-                                                            <span className="font-bold text-green-600">{selectedBank.acc_password}</span>
-                                                        ) : (
-                                                            <span className="font-bold text-red-600">Missing</span>
-                                                        )}
-                                                    </div>
-
-                                                    <div className="flex flex-col">
-                                                        <span className="text-muted-foreground text-xs">Total Statements</span>
-                                                        <span>{statements.length}</span>
-                                                    </div>
-                                                </div>
-                                            </CardTitle>
-
-
-                                        </CardHeader>
-                                        <CardContent>
-                                            
-                                        </CardContent>
-                                    </Card>
+                                    
 
                                     {/* Statement Type Tabs */}
                                     <div className="flex-1 overflow-hidden">

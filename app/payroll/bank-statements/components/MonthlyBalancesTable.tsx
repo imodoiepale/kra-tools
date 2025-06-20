@@ -49,7 +49,7 @@ export function MonthlyBalancesTable({
         <div className="space-y-2">
             <div className="flex items-center justify-between">
                 <span className="text-sm font-medium">
-                    {isRangeView ? 'Period Breakdown' : 'Monthly Balances'}
+                    {/* {isRangeView ? 'Period Breakdown' : 'Monthly Balances'} */}
                 </span>
                 <Button variant="outline" size="sm" onClick={onAddBalance}>
                     <Plus className="h-4 w-4 mr-1" />Add

@@ -24,12 +24,6 @@ import {
     AlertDialogHeader,
     AlertDialogTitle
 } from "@/components/ui/alert-dialog";
-import {
-    Accordion,
-    AccordionContent,
-    AccordionItem,
-    AccordionTrigger,
-} from "@/components/ui/accordion";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
     parseStatementPeriod,
@@ -398,7 +392,7 @@ export default function BankExtractionDialog({
             currency: formData.currency || null,
             statement_period: formData.statementPeriod || null,
             opening_balance: currentStatement.statement_extractions?.opening_balance || null,
-            closing_balance: monthlyBalances.length > 0 ? monthlyBalances[monthlyBalances.length - 1].closing_balance : null,
+            closing_balance: monthlyBalances[0]?.closing_balance || null,
             monthly_balances: monthlyBalances,
             total_pages: currentStatement.statement_extractions?.total_pages || 0
         };
@@ -489,7 +483,7 @@ export default function BankExtractionDialog({
     };
 
     const validateStatement = async (): Promise<boolean> => {
-        if (!currentStatement || !bank) return false;
+        if (!currentStatement) return false;
         setIsValidating(true);
         const mismatches: string[] = [];
         const extractions = currentStatement.statement_extractions;
@@ -510,15 +504,12 @@ export default function BankExtractionDialog({
         };
         const updatedStatement = { ...currentStatement, validation_status: updatedValidationStatus };
         setCurrentStatement(updatedStatement);
-
         if (!isTemporaryStatement) {
             await supabase.from('acc_cycle_bank_statements').update({ validation_status: updatedValidationStatus }).eq('id', currentStatement.id);
         }
         onStatementUpdated(updatedStatement);
-
         toast({
             title: mismatches.length === 0 ? 'Validation Successful' : 'Validation Completed with Issues',
-            description: mismatches.length === 0 ? 'All validations passed.' : `Found ${mismatches.length} issue(s).`,
             variant: mismatches.length === 0 ? 'default' : 'destructive'
         });
         setIsValidating(false);
@@ -537,12 +528,10 @@ export default function BankExtractionDialog({
         setMonthlyBalances(updatedBalances);
         const updatedStatement = { ...currentStatement, statement_extractions: { ...currentStatement.statement_extractions, monthly_balances: updatedBalances } };
         setCurrentStatement(updatedStatement);
-
         if (!isTemporaryStatement) {
             await supabase.from('acc_cycle_bank_statements').update({ statement_extractions: updatedStatement.statement_extractions }).eq('id', currentStatement.id);
         }
         onStatementUpdated(updatedStatement);
-
         toast({ title: 'Balance Verified' });
     };
 
@@ -550,7 +539,7 @@ export default function BankExtractionDialog({
 
     return (
         <Dialog open={isOpen} onOpenChange={onClose}>
-            <DialogContent className="w-[95vw] max-w-[1720px] max-h-[95vh] h-[95vh] p-6 flex flex-col overflow-hidden">
+            <DialogContent className="w-[95vw] max-w-[1600px] max-h-[95vh] h-[95vh] p-6 flex flex-col overflow-hidden">
                 <DialogHeader>
                     <DialogTitle className="text-xl flex flex-col gap-2">
                         <div className="flex justify-between items-center">
@@ -574,7 +563,7 @@ export default function BankExtractionDialog({
                                     title={isTemporaryStatement ? "Cannot delete an unsaved statement" : "Delete Statement"}
                                 >
                                     {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash className="h-4 w-4" />}
-                                    Delete Statement
+                                    Delete
                                 </Button>
                             </div>
                         </div>
@@ -593,24 +582,8 @@ export default function BankExtractionDialog({
                     <div className="border-b">
                         <Tabs value={activeStatementTab} onValueChange={handleStatementTabChange}>
                             <TabsList className="grid w-full grid-cols-2 max-w-md">
-                                <TabsTrigger
-                                    value="monthly"
-                                    disabled={!statementData.monthly}
-                                    className="flex items-center gap-2"
-                                >
-                                    <Calendar className="h-4 w-4" />
-                                    Monthly Statement
-                                    {!statementData.monthly && <span className="text-xs">(None)</span>}
-                                </TabsTrigger>
-                                <TabsTrigger
-                                    value="range"
-                                    disabled={!statementData.range}
-                                    className="flex items-center gap-2"
-                                >
-                                    <Calendar className="h-4 w-4" />
-                                    Range Statement
-                                    {!statementData.range && <span className="text-xs">(None)</span>}
-                                </TabsTrigger>
+                                <TabsTrigger value="monthly" disabled={!statementData.monthly}>Monthly Statement</TabsTrigger>
+                                <TabsTrigger value="range" disabled={!statementData.range}>Range Statement</TabsTrigger>
                             </TabsList>
                         </Tabs>
                     </div>
@@ -634,141 +607,108 @@ export default function BankExtractionDialog({
                                         <div className="flex items-center justify-center h-full text-muted-foreground">No PDF document available.</div>
                                     )}
                                 </div>
-                                    <div className="col-span-2 flex flex-col h-full overflow-hidden">
-                                        <Accordion type="multiple" defaultValue={["details"]} className="w-full space-y-4">
-                                            {/* First Accordion Item: Account & QB Details */}
-                                            <AccordionItem value="details" className="border rounded-lg">
-                                                <AccordionTrigger className="px-4 py-2 hover:no-underline">
-                                                    <div className="flex items-center justify-between w-full pr-2">
-                                                        <span className="text-base font-semibold">Account & QB Details</span>
-                                                        <div className="flex gap-2">
-                                                            <Badge variant={isRangeStatement(currentStatement) ? "default" : "secondary"}>
-                                                                {isRangeStatement(currentStatement) ? 'Range Statement' : 'Monthly Statement'}
-                                                            </Badge>
-                                                            {currentStatement?.statement_type && (
-                                                                <Badge variant="outline">
-                                                                    {currentStatement.statement_type}
-                                                                </Badge>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                </AccordionTrigger>
-                                                <AccordionContent className="px-4 pt-2 pb-4">
-                                                    <div className="space-y-3">
-                                                        <div className="space-y-1">
-                                                            <Label htmlFor="bank_name">Bank Name</Label>
-                                                            <div className="flex items-center gap-2">
-                                                                <Input
-                                                                    id="bank_name"
-                                                                    name="bank_name"
-                                                                    value={formData.bank_name}
-                                                                    onChange={handleFormChange}
-                                                                    className={formData.bank_name && bank && !formData.bank_name.toLowerCase().includes(bank.bank_name.toLowerCase()) ? "border-yellow-500" : ""}
-                                                                />
-                                                                {formData.bank_name && bank && (
-                                                                    formData.bank_name.toLowerCase().includes(bank.bank_name.toLowerCase()) ?
-                                                                        <Badge variant="outline" className="bg-green-50 text-green-700 border-green-300"><Check className="h-3 w-3 mr-1" />Match</Badge> :
-                                                                        <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-300"><AlertTriangle className="h-3 w-3 mr-1" />Mismatch</Badge>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                        <div className="space-y-1">
-                                                            <Label htmlFor="account_number">Account Number</Label>
-                                                            <div className="flex items-center gap-2">
-                                                                <Input
-                                                                    id="account_number"
-                                                                    name="account_number"
-                                                                    value={formData.account_number}
-                                                                    onChange={handleFormChange}
-                                                                    className={formData.account_number && bank && !formData.account_number.includes(bank.account_number) ? "border-yellow-500" : ""}
-                                                                />
-                                                                {formData.account_number && bank && (
-                                                                    formData.account_number.includes(bank.account_number) ?
-                                                                        <Badge variant="outline" className="bg-green-50 text-green-700 border-green-300"><Check className="h-3 w-3 mr-1" />Match</Badge> :
-                                                                        <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-300"><AlertTriangle className="h-3 w-3 mr-1" />Mismatch</Badge>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                        <div className="space-y-1">
-                                                            <Label htmlFor="currency">Currency</Label>
-                                                            <div className="flex items-center gap-2">
-                                                                <Input
-                                                                    id="currency"
-                                                                    name="currency"
-                                                                    value={formData.currency}
-                                                                    onChange={handleFormChange}
-                                                                    className={formData.currency && bank && normalizeCurrencyCode(formData.currency) !== normalizeCurrencyCode(bank.bank_currency) ? "border-yellow-500" : ""}
-                                                                />
-                                                                {formData.currency && bank && (
-                                                                    normalizeCurrencyCode(formData.currency) === normalizeCurrencyCode(bank.bank_currency) ?
-                                                                        <Badge variant="outline" className="bg-green-50 text-green-700 border-green-300"><Check className="h-3 w-3 mr-1" />Match</Badge> :
-                                                                        <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-300"><AlertTriangle className="h-3 w-3 mr-1" />Mismatch</Badge>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                        <div className="space-y-1">
-                                                            <Label htmlFor="statementPeriod">Statement Period</Label>
-                                                            <Input id="statementPeriod" name="statementPeriod" value={formData.statementPeriod} onChange={handleFormChange} />
-                                                        </div>
-                                                        <div className="space-y-1">
-                                                            <Label htmlFor="quickbooks_balance">QuickBooks Balance</Label>
-                                                            <Input
-                                                                id="quickbooks_balance"
-                                                                name="quickbooks_balance"
-                                                                placeholder="Enter QB balance..."
-                                                                value={formData.quickbooks_balance !== null ? formatNumberWithCommas(formData.quickbooks_balance) : ''}
-                                                                onChange={(e) => {
-                                                                    const value = e.target.value.replace(/[^0-9.]/g, '');
-                                                                    setFormData(prev => ({ ...prev, quickbooks_balance: value ? parseFloat(value) : null }));
-                                                                }}
-                                                            />
-                                                        </div>
-                                                    </div>
-                                                </AccordionContent>
-                                            </AccordionItem>
-
-                                            {/* Second Accordion Item: Statement Data */}
-                                            <AccordionItem value="data" className="border rounded-lg flex-1 flex flex-col overflow-hidden">
-                                                <AccordionTrigger className="px-4 py-3 hover:no-underline font-semibold text-base">
-                                                    Statement Data
-                                                </AccordionTrigger>
-                                                <AccordionContent className="p-0 flex-1 overflow-hidden">
-                                                    {statementData.hasMultipleTypes && !isTemporaryStatement ? (
-                                                        <Tabs value={activeStatementTab} onValueChange={handleStatementTabChange} className="h-full flex flex-col">
-                                                            <TabsList className="grid w-full grid-cols-2 mx-2 mt-2">
-                                                                <TabsTrigger value="monthly" disabled={!statementData.monthly} className="flex items-center gap-2"><Calendar className="h-4 w-4" />Monthly</TabsTrigger>
-                                                                <TabsTrigger value="range" disabled={!statementData.range} className="flex items-center gap-2"><Calendar className="h-4 w-4" />Range</TabsTrigger>
-                                                            </TabsList>
-                                                            <TabsContent value="monthly" className="flex-1 overflow-auto p-2 mt-2">
-                                                                {statementData.monthly ? <MonthlyBalancesTable monthlyBalances={monthlyBalances} onUpdateBalance={handleUpdateBalance} onVerifyBalance={verifyBalance} onRemoveBalance={handleRemoveBalance} onAddBalance={handleAddBalance} /> : <div className="text-center py-8 text-muted-foreground"><Calendar className="h-12 w-12 mx-auto mb-2 opacity-50" /><p>No monthly statement available</p></div>}
-                                                            </TabsContent>
-                                                            <TabsContent value="range" className="flex-1 overflow-auto p-2 mt-2">
-                                                                {statementData.range ? <MonthlyBalancesTable monthlyBalances={monthlyBalances} onUpdateBalance={handleUpdateBalance} onVerifyBalance={verifyBalance} onRemoveBalance={handleRemoveBalance} onAddBalance={handleAddBalance} isRangeView={true} /> : <div className="text-center py-8 text-muted-foreground"><Calendar className="h-12 w-12 mx-auto mb-2 opacity-50" /><p>No range statement available</p></div>}
-                                                            </TabsContent>
-                                                        </Tabs>
-                                                    ) : (
-                                                        <div className="p-2 h-full overflow-auto">
-                                                            <MonthlyBalancesTable
-                                                                monthlyBalances={monthlyBalances}
-                                                                onUpdateBalance={handleUpdateBalance}
-                                                                onVerifyBalance={verifyBalance}
-                                                                onRemoveBalance={handleRemoveBalance}
-                                                                onAddBalance={handleAddBalance}
-                                                                isRangeView={isRangeStatement(currentStatement)}
-                                                            />
-                                                        </div>
+                                <div className="col-span-2 flex flex-col h-full gap-4 overflow-hidden">
+                                    <Card className="shrink-0">
+                                        <CardHeader className="py-2">
+                                            <CardTitle className="text-base flex items-center justify-between">
+                                                Account & QB Details
+                                                <Badge variant={isRangeStatement(currentStatement) ? "default" : "secondary"}>
+                                                    {isRangeStatement(currentStatement) ? 'Range Statement' : 'Monthly Statement'}
+                                                </Badge>
+                                            </CardTitle>
+                                        </CardHeader>
+                                        <CardContent className="space-y-3 pt-4">
+                                            <div className="space-y-1">
+                                                <Label htmlFor="bank_name">Bank Name</Label>
+                                                <div className="flex items-center gap-2">
+                                                    <Input
+                                                        id="bank_name"
+                                                        name="bank_name"
+                                                        value={formData.bank_name}
+                                                        onChange={handleFormChange}
+                                                        className={formData.bank_name && bank && !formData.bank_name.toLowerCase().includes(bank.bank_name.toLowerCase()) ? "border-yellow-500" : ""}
+                                                    />
+                                                    {formData.bank_name && bank && (
+                                                        formData.bank_name.toLowerCase().includes(bank.bank_name.toLowerCase()) ?
+                                                            <Badge variant="outline" className="bg-green-50 text-green-700 border-green-300"><Check className="h-3 w-3 mr-1" />Match</Badge> :
+                                                            <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-300"><AlertTriangle className="h-3 w-3 mr-1" />Mismatch</Badge>
                                                     )}
-                                                </AccordionContent>
-                                            </AccordionItem>
-                                        </Accordion>
-                                    </div>
+                                                </div>
+                                            </div>
+                                            <div className="space-y-1">
+                                                <Label htmlFor="account_number">Account Number</Label>
+                                                <div className="flex items-center gap-2">
+                                                    <Input
+                                                        id="account_number"
+                                                        name="account_number"
+                                                        value={formData.account_number}
+                                                        onChange={handleFormChange}
+                                                        className={formData.account_number && bank && !formData.account_number.includes(bank.account_number) ? "border-yellow-500" : ""}
+                                                    />
+                                                    {formData.account_number && bank && (
+                                                        formData.account_number.includes(bank.account_number) ?
+                                                            <Badge variant="outline" className="bg-green-50 text-green-700 border-green-300"><Check className="h-3 w-3 mr-1" />Match</Badge> :
+                                                            <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-300"><AlertTriangle className="h-3 w-3 mr-1" />Mismatch</Badge>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            <div className="space-y-1">
+                                                <Label htmlFor="currency">Currency</Label>
+                                                <div className="flex items-center gap-2">
+                                                    <Input
+                                                        id="currency"
+                                                        name="currency"
+                                                        value={formData.currency}
+                                                        onChange={handleFormChange}
+                                                        className={formData.currency && bank && normalizeCurrencyCode(formData.currency) !== normalizeCurrencyCode(bank.bank_currency) ? "border-yellow-500" : ""}
+                                                    />
+                                                    {formData.currency && bank && (
+                                                        normalizeCurrencyCode(formData.currency) === normalizeCurrencyCode(bank.bank_currency) ?
+                                                            <Badge variant="outline" className="bg-green-50 text-green-700 border-green-300"><Check className="h-3 w-3 mr-1" />Match</Badge> :
+                                                            <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-300"><AlertTriangle className="h-3 w-3 mr-1" />Mismatch</Badge>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            <div className="space-y-1">
+                                                <Label htmlFor="statementPeriod">Statement Period</Label>
+                                                <Input id="statementPeriod" name="statementPeriod" value={formData.statementPeriod} onChange={handleFormChange} />
+                                            </div>
+                                            <div className="space-y-1">
+                                                <Label htmlFor="quickbooks_balance">QuickBooks Balance</Label>
+                                                <Input
+                                                    id="quickbooks_balance"
+                                                    name="quickbooks_balance"
+                                                    placeholder="Enter QB balance..."
+                                                    value={formData.quickbooks_balance !== null ? formatNumberWithCommas(formData.quickbooks_balance) : ''}
+                                                    onChange={(e) => {
+                                                        const value = e.target.value.replace(/[^0-9.]/g, '');
+                                                        setFormData(prev => ({ ...prev, quickbooks_balance: value ? parseFloat(value) : null }));
+                                                    }}
+                                                />
+                                            </div>
+                                        </CardContent>
+                                    </Card>
+                                    <Card className="flex-1 flex flex-col overflow-hidden">
+                                        <CardHeader className="py-2">
+                                            <CardTitle className="text-base">Statement Data</CardTitle>
+                                        </CardHeader>
+                                        <CardContent className="p-0 flex-1 overflow-auto">
+                                            <MonthlyBalancesTable
+                                                monthlyBalances={monthlyBalances}
+                                                onUpdateBalance={handleUpdateBalance}
+                                                onVerifyBalance={verifyBalance}
+                                                onRemoveBalance={handleRemoveBalance}
+                                                onAddBalance={handleAddBalance}
+                                                isRangeView={isRangeStatement(currentStatement)}
+                                            />
+                                        </CardContent>
+                                    </Card>
+                                </div>
                             </div>
                         ) : (
                             <div className="flex items-center justify-center h-full text-muted-foreground">
-                                <div className="text-center">
-                                    <AlertTriangle className="h-12 w-12 mb-4 opacity-50 mx-auto" />
-                                    <p>No statement available for {activeStatementTab} view</p>
-                                </div>
+                                <AlertTriangle className="h-12 w-12 opacity-50" />
+                                <p className="ml-4">No statement data to display.</p>
                             </div>
                         )}
                     </TabsContent>
@@ -871,30 +811,6 @@ export default function BankExtractionDialog({
                                 </Table>
                             </CardContent>
                         </Card>
-                        <Card>
-                            <CardHeader className="py-3 bg-blue-50">
-                                <CardTitle className="text-base">QuickBooks Reconciliation</CardTitle>
-                            </CardHeader>
-                            <CardContent className="py-4">
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div className="p-3 bg-gray-50 rounded-md">
-                                        <p className="text-sm text-muted-foreground mb-1">Bank Statement</p>
-                                        <p className="font-medium">
-                                            {formatCurrency(
-                                                currentStatement?.statement_extractions?.closing_balance,
-                                                currentStatement?.statement_extractions?.currency || bank?.bank_currency
-                                            )}
-                                        </p>
-                                    </div>
-                                    <div className="p-3 bg-gray-50 rounded-md">
-                                        <p className="text-sm text-muted-foreground mb-1">QuickBooks</p>
-                                        <p className="font-medium">
-                                            {formatCurrency(currentStatement?.status?.quickbooks_balance, bank?.bank_currency)}
-                                        </p>
-                                    </div>
-                                </div>
-                            </CardContent>
-                        </Card>
                     </TabsContent>
                 </Tabs>
 
@@ -917,24 +833,6 @@ export default function BankExtractionDialog({
                         </AlertDialogFooter>
                     </AlertDialogContent>
                 </AlertDialog>
-
-                <AlertDialog open={showUpdateConfirmation} onOpenChange={setShowUpdateConfirmation}>
-                    <AlertDialogContent>
-                        <AlertDialogHeader>
-                            <AlertDialogTitle>Confirm Updates</AlertDialogTitle>
-                            <AlertDialogDescription>
-                                You are about to update existing bank statement records. Please review the changes carefully before proceeding.
-                            </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                            <AlertDialogCancel>Cancel</AlertDialogCancel>
-                            <AlertDialogAction onClick={() => pendingUpdates && processUpdates(pendingUpdates)}>
-                                Confirm
-                            </AlertDialogAction>
-                        </AlertDialogFooter>
-                    </AlertDialogContent>
-                </AlertDialog>
-
             </DialogContent>
         </Dialog>
     );
