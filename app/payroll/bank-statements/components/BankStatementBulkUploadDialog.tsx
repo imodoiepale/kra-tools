@@ -87,6 +87,8 @@ interface BulkUploadItem {
     statementType?: 'monthly' | 'range'
     userPeriodInput?: string
     extractionAttempts?: number
+    isFallbackMatch?: boolean
+    matchConfidence?: number
 }
 
 interface CompanyGroup {
@@ -275,24 +277,24 @@ export function BankStatementBulkUploadDialog({
         setUploadItems(prevItems => {
             const itemIndex = prevItems.findIndex(item => item.file.name === itemToUpdate.file.name);
             if (itemIndex === -1) return prevItems;
-    
+
             const updatedItems = [...prevItems];
             const updatedItem = { ...updatedItems[itemIndex] };
-    
+
             if (!updatedItem.extractedData) {
                 updatedItem.extractedData = {};
             }
-    
+
             // Update the main field
             updatedItem.extractedData[field] = value;
-    
+
             // FIX: Handle both closing_balance and quickbooks_balance
             if (field === 'closing_balance' && Array.isArray(updatedItem.extractedData.monthly_balances)) {
                 const actualPeriod = extractActualPeriod(updatedItem.extractedData);
                 const balanceIndex = updatedItem.extractedData.monthly_balances.findIndex(
                     balance => balance.month === (actualPeriod.month + 1) && balance.year === actualPeriod.year
                 );
-                
+
                 if (balanceIndex !== -1) {
                     updatedItem.extractedData.monthly_balances[balanceIndex] = {
                         ...updatedItem.extractedData.monthly_balances[balanceIndex],
@@ -300,16 +302,16 @@ export function BankStatementBulkUploadDialog({
                     };
                 }
             }
-    
+
             // FIX: Add QuickBooks balance handling
             if (field === 'quickbooks_balance') {
                 updatedItem.extractedData.quickbooks_balance = value;
             }
-    
+
             updatedItems[itemIndex] = updatedItem;
             return updatedItems;
         });
-    
+
         // Trigger immediate UI refresh
         window.dispatchEvent(new CustomEvent('balanceUpdated', {
             detail: { fileName: itemToUpdate.file.name, field, value }
@@ -347,12 +349,33 @@ export function BankStatementBulkUploadDialog({
         }
     };
 
+    const enhanceFallbackBankWithExtractionData = (item: BulkUploadItem, extractedData: any) => {
+        if (!item.isFallbackMatch || !extractedData) return item;
+
+        // Enhance the fallback bank with extracted data
+        const enhancedBank = {
+            ...item.matchedBank,
+            bank_name: extractedData.bank_name || item.matchedBank.bank_name,
+            account_number: extractedData.account_number || item.matchedBank.account_number,
+            bank_currency: extractedData.currency || item.matchedBank.bank_currency,
+            company_name: extractedData.company_name || item.matchedBank.company_name
+        };
+
+        console.log(`🔄 Enhanced fallback bank with extracted data:`, enhancedBank);
+
+        return {
+            ...item,
+            matchedBank: enhancedBank
+        };
+    };
+
     const processFileWithPasswordDetection = async (file: File, index: number): Promise<BulkUploadItem> => {
         const fileInfo = safeDetectFileInfo(file.name);
 
         let matchedBank = null;
         let matchConfidence = 0;
 
+        // Try to match with existing banks first
         if (fileInfo?.accountNumber && safeBanks?.length > 0) {
             matchedBank = safeBanks.find(bank => {
                 if (!bank?.account_number || !fileInfo.accountNumber) return false;
@@ -373,6 +396,7 @@ export function BankStatementBulkUploadDialog({
             if (matchedBank) matchConfidence = 0.7;
         }
 
+        // Password handling
         let needsPassword = false;
         let passwordApplied = false;
         let appliedPassword = null;
@@ -407,6 +431,7 @@ export function BankStatementBulkUploadDialog({
             }
         }
 
+        // Statement type detection
         let preliminaryType: 'monthly' | 'range' = 'monthly';
         const fileName = file.name?.toLowerCase() || '';
 
@@ -416,12 +441,30 @@ export function BankStatementBulkUploadDialog({
             preliminaryType = 'range';
         }
 
+        // FIX: Create a fallback "extracted bank" when no match is found
+        let effectiveBank = matchedBank;
+
+        if (!matchedBank) {
+            // Create a mock bank from file info for processing
+            effectiveBank = {
+                id: -1, // Temporary ID to indicate it's not a real bank match
+                bank_name: fileInfo?.bankName || 'Unknown Bank',
+                account_number: fileInfo?.accountNumber || 'Unknown Account',
+                bank_currency: 'USD', // Default currency
+                company_id: -1, // Will be determined from extraction
+                company_name: 'Unknown Company', // Will be determined from extraction
+                acc_password: fileInfo?.password || null
+            };
+
+            console.log(`📋 No bank matched for ${file.name}, created fallback bank:`, effectiveBank);
+        }
+
         return {
             file,
             detectedPassword: fileInfo?.password || null,
             detectedAccountNumber: fileInfo?.accountNumber || null,
             detectedBankName: fileInfo?.bankName || null,
-            matchedBank,
+            matchedBank: effectiveBank, // Always provide a bank (real or fallback)
             needsPassword,
             passwordApplied,
             appliedPassword,
@@ -434,7 +477,10 @@ export function BankStatementBulkUploadDialog({
             hasHardCopy: false,
             statementType: preliminaryType,
             userPeriodInput: '',
-            extractionAttempts: 0
+            extractionAttempts: 0,
+            // FIX: Add flag to indicate this is a fallback match
+            isFallbackMatch: !matchedBank,
+            matchConfidence: matchConfidence
         };
     };
 
@@ -692,25 +738,17 @@ export function BankStatementBulkUploadDialog({
                     // Enhanced statement type detection
                     const detectedType = determineEnhancedStatementType(result.extractedData);
 
-                    console.log(`File ${itemIndex} enhanced analysis:`, {
-                        fileName: uploadItems[itemIndex]?.file?.name,
-                        statementPeriod: result.extractedData.statement_period,
-                        adjustedPeriod: result.extractedData.statement_period_adjusted,
-                        monthlyBalancesCount: result.extractedData.monthly_balances?.length || 0,
-                        extractionConfidence: result.extractedData.extraction_confidence,
-                        embeddingsConfirmed: result.extractedData.embeddings_confirmed,
-                        totalPagesAnalyzed: result.extractedData.total_pages_analyzed,
-                        detectedType: detectedType
-                    });
-
-                    if (detectedType === 'monthly') monthlyCount++;
-                    else rangeCount++;
-
                     setUploadItems(prev => {
                         const updated = [...prev];
                         if (updated[itemIndex]) {
+                            // FIX: Enhance fallback banks with extracted data
+                            const enhancedItem = enhanceFallbackBankWithExtractionData(
+                                updated[itemIndex],
+                                result.extractedData
+                            );
+
                             updated[itemIndex] = {
-                                ...updated[itemIndex],
+                                ...enhancedItem,
                                 status: 'matched',
                                 extractedData: result.extractedData,
                                 statementType: detectedType,
@@ -721,15 +759,13 @@ export function BankStatementBulkUploadDialog({
                     });
                     matched++;
                 } else {
-                    // Handle failed extractions - mark for manual review
-                    console.log(`Extraction failed for index ${itemIndex}:`, result.error);
-
+                    // Handle failed extractions
                     setUploadItems(prev => {
                         const updated = [...prev];
                         if (updated[itemIndex]) {
                             updated[itemIndex] = {
                                 ...updated[itemIndex],
-                                status: 'unmatched', // Changed from 'failed' to allow manual review
+                                status: 'unmatched',
                                 error: result.error || 'Enhanced extraction failed',
                                 uploadProgress: 0,
                                 extractionAttempts: (updated[itemIndex].extractionAttempts || 0) + 1
@@ -863,32 +899,32 @@ export function BankStatementBulkUploadDialog({
                     )}
                 </TableCell>
                 <TableCell>
-    {editingBalance === 'quickbooks_balance' ? (
-        <div className="flex items-center gap-1">
-            <Input
-                value={tempBalance}
-                onChange={(e) => setTempBalance(e.target.value)}
-                className="w-28 h-7 text-xs"
-                onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleBalanceSave('quickbooks_balance');
-                    if (e.key === 'Escape') setEditingBalance(null);
-                }}
-                autoFocus
-            />
-            <Button size="icon" className="h-7 w-7" onClick={() => handleBalanceSave('quickbooks_balance')}>
-                <Save className="h-3 w-3" />
-            </Button>
-        </div>
-    ) : (
-        <div
-            className="cursor-pointer hover:bg-gray-100 p-1 rounded flex items-center justify-between"
-            onClick={() => handleBalanceEdit('quickbooks_balance')}
-        >
-            <span>{formatCurrency(qbBalance, statement.extractedData?.currency || 'USD')}</span>
-            <Edit className="h-3 w-3 ml-2 text-gray-400" />
-        </div>
-    )}
-</TableCell>
+                    {editingBalance === 'quickbooks_balance' ? (
+                        <div className="flex items-center gap-1">
+                            <Input
+                                value={tempBalance}
+                                onChange={(e) => setTempBalance(e.target.value)}
+                                className="w-28 h-7 text-xs"
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') handleBalanceSave('quickbooks_balance');
+                                    if (e.key === 'Escape') setEditingBalance(null);
+                                }}
+                                autoFocus
+                            />
+                            <Button size="icon" className="h-7 w-7" onClick={() => handleBalanceSave('quickbooks_balance')}>
+                                <Save className="h-3 w-3" />
+                            </Button>
+                        </div>
+                    ) : (
+                        <div
+                            className="cursor-pointer hover:bg-gray-100 p-1 rounded flex items-center justify-between"
+                            onClick={() => handleBalanceEdit('quickbooks_balance')}
+                        >
+                            <span>{formatCurrency(qbBalance, statement.extractedData?.currency || 'USD')}</span>
+                            <Edit className="h-3 w-3 ml-2 text-gray-400" />
+                        </div>
+                    )}
+                </TableCell>
                 <TableCell className={difference !== 0 ? 'text-red-600 font-semibold' : ''}>
                     {formatCurrency(difference, statement.extractedData?.currency || 'USD')}
                 </TableCell>
@@ -1079,23 +1115,23 @@ export function BankStatementBulkUploadDialog({
         }
     };
 
-    
+
     const handleVouchAllCompanies = async () => {
         setUploading(true);
         let successCount = 0;
         let errorCount = 0;
-    
+
         try {
             console.log('🔄 Starting vouch all companies process');
-            const allStatementsToVouch = companyGroups.flatMap(group => 
+            const allStatementsToVouch = companyGroups.flatMap(group =>
                 group.statements.filter(s => !s.isVouched)
             );
             console.log(`📊 Vouching ${allStatementsToVouch.length} statements across ${companyGroups.length} companies`);
-    
+
             for (const statement of allStatementsToVouch) {
                 try {
                     await saveStatementToDatabase(statement);
-                    
+
                     // Update UI state for this specific item
                     const itemIndex = uploadItems.findIndex(i => i.file.name === statement.file.name);
                     if (itemIndex > -1) {
@@ -1111,22 +1147,22 @@ export function BankStatementBulkUploadDialog({
                     errorCount++;
                 }
             }
-    
+
             // Update all company groups at the end
             setCompanyGroups(prev => prev.map(group => ({
                 ...group,
                 isVouched: true,
             })));
-    
+
             toast({
                 title: 'Vouching Complete',
                 description: `Successfully vouched ${successCount} statements. ${errorCount} failed.`,
             });
-    
+
             if (errorCount === 0) {
                 window.dispatchEvent(new CustomEvent('bankStatementsUpdated'));
             }
-    
+
         } catch (error) {
             console.error('Error vouching all companies:', error);
             toast({
@@ -1138,23 +1174,23 @@ export function BankStatementBulkUploadDialog({
             setUploading(false);
         }
     };
-    
+
     const handleVouchCompany = async (companyId: number) => {
         const group = companyGroups.find(g => g.companyId === companyId);
         if (!group) return;
-    
+
         setUploading(true);
         let successCount = 0;
         let errorCount = 0;
-    
+
         try {
             console.log(`🔄 Vouching company: ${group.companyName}`);
-    
+
             for (const statement of group.statements) {
                 if (!statement.isVouched) {
                     try {
                         await saveStatementToDatabase(statement);
-    
+
                         const itemIndex = uploadItems.findIndex(i => i.file.name === statement.file.name);
                         if (itemIndex > -1) {
                             setUploadItems(prev => {
@@ -1170,13 +1206,13 @@ export function BankStatementBulkUploadDialog({
                     }
                 }
             }
-    
+
             if (errorCount === 0) {
                 setCompanyGroups(prev => prev.map(g =>
                     g.companyId === companyId ? { ...g, isVouched: true } : g
                 ));
             }
-    
+
             toast({
                 title: `Company Vouched`,
                 description: `${group.companyName}: ${successCount} statements saved and vouched. ${errorCount} failed.`,
@@ -1197,13 +1233,13 @@ export function BankStatementBulkUploadDialog({
         if (!statement.matchedBank || !statement.extractedData) {
             throw new Error('Invalid statement data for saving.');
         }
-    
+
         console.log(`💾 Saving statement to database: ${statement.file.name}`, statement.extractedData);
-    
+
         // STEP 1: Extract actual period (same as your current code)
         let actualMonth = cycleMonth;
         let actualYear = cycleYear;
-    
+
         if (statement.extractedData?.statement_period) {
             const periodResult = parseStatementPeriod(statement.extractedData.statement_period);
             if (periodResult) {
@@ -1212,10 +1248,10 @@ export function BankStatementBulkUploadDialog({
                 console.log(`📅 Using extracted period: ${actualMonth + 1}/${actualYear}`);
             }
         }
-    
+
         // STEP 2: Get cycle ID
         const cycleId = await getOrCreateStatementCycle(actualYear, actualMonth, statement.statementType || 'monthly');
-    
+
         // STEP 3: Check for existing statement
         const { data: existingStatement, error: existingError } = await supabase
             .from('acc_cycle_bank_statements')
@@ -1224,11 +1260,11 @@ export function BankStatementBulkUploadDialog({
             .eq('statement_cycle_id', cycleId)
             .eq('statement_type', statement.statementType || 'monthly')
             .maybeSingle();
-    
+
         if (existingError && existingError.code !== 'PGRST116') {
             throw existingError;
         }
-    
+
         // STEP 4: Prepare comprehensive statement data (FIXED to match single upload)
         const statementData = {
             bank_id: statement.matchedBank.id,
@@ -1239,7 +1275,7 @@ export function BankStatementBulkUploadDialog({
             statement_type: statement.statementType || 'monthly',
             has_soft_copy: true,
             has_hard_copy: false,
-            
+
             // FIX: Complete document structure
             statement_document: {
                 statement_pdf: statement.extractedData.pdf_path || null,
@@ -1251,26 +1287,26 @@ export function BankStatementBulkUploadDialog({
                 user_period_input: statement.userPeriodInput || null,
                 upload_timestamp: new Date().toISOString()
             },
-            
+
             // FIX: Complete extractions structure with proper balance handling
             statement_extractions: {
                 // Core financial data
                 bank_name: statement.matchedBank.bank_name,
                 account_number: statement.matchedBank.account_number,
                 currency: statement.matchedBank.bank_currency,
-                
+
                 // Balances - properly formatted
-                opening_balance: statement.extractedData.opening_balance ? 
+                opening_balance: statement.extractedData.opening_balance ?
                     parseFloat(statement.extractedData.opening_balance) : null,
-                closing_balance: statement.extractedData.closing_balance ? 
+                closing_balance: statement.extractedData.closing_balance ?
                     parseFloat(statement.extractedData.closing_balance) : null,
-                
+
                 // Period information
                 statement_period: statement.extractedData.statement_period || null,
                 statement_period_adjusted: statement.extractedData.statement_period_adjusted || null,
                 period_adjustment_reason: statement.extractedData.period_adjustment_reason || null,
                 last_transaction_date: statement.extractedData.last_transaction_date || null,
-                
+
                 // Monthly balances - properly formatted
                 monthly_balances: (statement.extractedData.monthly_balances || []).map(balance => ({
                     month: parseInt(balance.month),
@@ -1285,14 +1321,14 @@ export function BankStatementBulkUploadDialog({
                     verified_by: null,
                     verified_at: null
                 })),
-                
+
                 // Quality and confidence indicators
                 extraction_confidence: statement.extractedData.extraction_confidence || 'MEDIUM',
                 data_quality_issues: statement.extractedData.data_quality_issues || [],
                 embeddings_confirmed: statement.extractedData.embeddings_confirmed || false,
                 total_pages: statement.extractedData.total_pages || 1,
                 total_pages_analyzed: statement.extractedData.total_pages_analyzed || 0,
-                
+
                 // Processing metadata
                 processing_metadata: {
                     extraction_date: new Date().toISOString(),
@@ -1303,13 +1339,13 @@ export function BankStatementBulkUploadDialog({
                     bulk_upload: true,
                     password_protected: !!statement.passwordApplied
                 },
-                
+
                 // Vouching data
                 verified_balances: true,
                 vouched_at: new Date().toISOString(),
                 vouched_by: 'bulk_upload_user' // Replace with actual user
             },
-            
+
             // FIX: Proper validation status
             validation_status: {
                 is_validated: true,
@@ -1319,7 +1355,7 @@ export function BankStatementBulkUploadDialog({
                 extraction_confidence: statement.extractedData.extraction_confidence || 'MEDIUM',
                 requires_review: (statement.extractedData.data_quality_issues?.length || 0) > 0
             },
-            
+
             // FIX: Proper status structure (THIS IS CRITICAL)
             status: {
                 status: 'vouched',
@@ -1330,25 +1366,25 @@ export function BankStatementBulkUploadDialog({
                 // CRITICAL: Include QuickBooks balance in status like single upload
                 quickbooks_balance: statement.extractedData.quickbooks_balance || null
             },
-            
+
             // FIX: Add missing QuickBooks balance field at root level
             quickbooks_balance: statement.extractedData.quickbooks_balance || null
         };
-    
+
         console.log(`💾 Prepared complete statement data:`, {
             ...statementData,
             statement_document: { ...statementData.statement_document, statement_pdf: '[FILE_PATH]' },
-            statement_extractions: { 
-                ...statementData.statement_extractions, 
-                monthly_balances: `[${statementData.statement_extractions.monthly_balances?.length || 0} balances]` 
+            statement_extractions: {
+                ...statementData.statement_extractions,
+                monthly_balances: `[${statementData.statement_extractions.monthly_balances?.length || 0} balances]`
             }
         });
-    
+
         // STEP 5: Database operation with proper conflict handling
         try {
             if (existingStatement) {
                 console.log(`🔄 Updating existing statement with ID: ${existingStatement.id}`);
-                
+
                 // Merge with existing data intelligently
                 const mergedExtractions = {
                     ...existingStatement.statement_extractions,
@@ -1357,13 +1393,13 @@ export function BankStatementBulkUploadDialog({
                     verified_balances: true, // Always true when vouching
                     vouched_at: new Date().toISOString()
                 };
-                
+
                 const mergedStatus = {
                     ...existingStatement.status,
                     ...statementData.status,
                     status: 'vouched' // Always vouched when saving from bulk upload
                 };
-    
+
                 const { data: updateResult, error: updateError } = await supabase
                     .from('acc_cycle_bank_statements')
                     .update({
@@ -1374,16 +1410,16 @@ export function BankStatementBulkUploadDialog({
                     })
                     .eq('id', existingStatement.id)
                     .select();
-    
+
                 if (updateError) {
                     console.error("Supabase update error:", updateError);
                     throw updateError;
                 }
-                
+
                 console.log(`✅ Statement updated successfully:`, updateResult);
             } else {
                 console.log(`➕ Inserting new statement`);
-                
+
                 const { data: insertResult, error: insertError } = await supabase
                     .from('acc_cycle_bank_statements')
                     .insert([{
@@ -1391,19 +1427,19 @@ export function BankStatementBulkUploadDialog({
                         created_at: new Date().toISOString()
                     }])
                     .select();
-    
+
                 if (insertError) {
                     console.error("Supabase insert error:", insertError);
                     throw insertError;
                 }
-                
+
                 console.log(`✅ Statement inserted successfully:`, insertResult);
             }
         } catch (error) {
             console.error("Database operation failed:", error);
             throw new Error(`Failed to save statement: ${error.message}`);
         }
-    
+
         console.log(`✅ Statement saved successfully: ${statement.file.name}`);
     };
 
@@ -2353,7 +2389,7 @@ export function BankStatementBulkUploadDialog({
             }));
         }, 100);
     }, [onUploadsComplete, onClose]);
-        
+
     // Event handlers
     const removeItem = (index: number) => {
         setUploadItems(items => items.filter((_, i) => i !== index))
@@ -2598,13 +2634,21 @@ export function BankStatementBulkUploadDialog({
                                                         <TableCell>
                                                             <div className="space-y-1">
                                                                 {item.matchedBank && (
-                                                                    <Badge variant="outline" className="text-xs bg-green-50">
-                                                                        {item.matchedBank.company_name}
+                                                                    <Badge
+                                                                        variant="outline"
+                                                                        className={`text-xs ${item.isFallbackMatch ? 'bg-yellow-50 text-yellow-700' : 'bg-green-50 text-green-700'}`}
+                                                                    >
+                                                                        {item.isFallbackMatch ? '📋 Extracted' : '✅ Matched'} {item.matchedBank.company_name}
                                                                     </Badge>
                                                                 )}
                                                                 {item.detectedAccountNumber && (
                                                                     <Badge variant="secondary" className="text-xs">
                                                                         {item.detectedAccountNumber}
+                                                                    </Badge>
+                                                                )}
+                                                                {item.matchConfidence > 0 && (
+                                                                    <Badge variant="outline" className="text-xs">
+                                                                        {Math.round(item.matchConfidence * 100)}% confidence
                                                                     </Badge>
                                                                 )}
                                                             </div>
