@@ -242,39 +242,80 @@ export function BankStatementBulkUploadDialog({
                 return <Badge variant="outline">Unknown</Badge>
         }
     }
-    
-    // NEW: Function to handle balance updates from the StatementRowComponent
+
+    function extractActualPeriod(extractedData: any) {
+        if (extractedData?.statement_period) {
+            const periodResult = parseStatementPeriod(extractedData.statement_period);
+            if (periodResult) {
+                return {
+                    month: periodResult.endMonth - 1, // 0-based
+                    year: periodResult.endYear
+                };
+            }
+        }
+
+        // Fallback to monthly_balances
+        if (extractedData?.monthly_balances?.length > 0) {
+            const lastBalance = extractedData.monthly_balances[extractedData.monthly_balances.length - 1];
+            return {
+                month: lastBalance.month - 1, // Convert to 0-based
+                year: lastBalance.year
+            };
+        }
+
+        // Final fallback to dialog values
+        return {
+            month: cycleMonth,
+            year: cycleYear
+        };
+
+    }
+    // Enhanced handleBalanceUpdate function
     const handleBalanceUpdate = (itemToUpdate: BulkUploadItem, field: string, value: number | null) => {
         setUploadItems(prevItems => {
             const itemIndex = prevItems.findIndex(item => item.file.name === itemToUpdate.file.name);
-            if (itemIndex === -1) {
-                console.warn("Could not find item to update balance for.");
-                return prevItems;
-            }
-
+            if (itemIndex === -1) return prevItems;
+    
             const updatedItems = [...prevItems];
-            
-            // Create a deep copy of the item to ensure immutability
-            const updatedItem = JSON.parse(JSON.stringify(updatedItems[itemIndex]));
-
-            // Update the extractedData object
+            const updatedItem = { ...updatedItems[itemIndex] };
+    
             if (!updatedItem.extractedData) {
                 updatedItem.extractedData = {};
             }
+    
+            // Update the main field
             updatedItem.extractedData[field] = value;
-            
-            // If updating closing balance, also update the latest monthly balance if it exists
-            if (field === 'closing_balance' && Array.isArray(updatedItem.extractedData.monthly_balances) && updatedItem.extractedData.monthly_balances.length > 0) {
-                 const lastBalanceIndex = updatedItem.extractedData.monthly_balances.length - 1;
-                 updatedItem.extractedData.monthly_balances[lastBalanceIndex].closing_balance = value;
+    
+            // FIX: Handle both closing_balance and quickbooks_balance
+            if (field === 'closing_balance' && Array.isArray(updatedItem.extractedData.monthly_balances)) {
+                const actualPeriod = extractActualPeriod(updatedItem.extractedData);
+                const balanceIndex = updatedItem.extractedData.monthly_balances.findIndex(
+                    balance => balance.month === (actualPeriod.month + 1) && balance.year === actualPeriod.year
+                );
+                
+                if (balanceIndex !== -1) {
+                    updatedItem.extractedData.monthly_balances[balanceIndex] = {
+                        ...updatedItem.extractedData.monthly_balances[balanceIndex],
+                        closing_balance: value
+                    };
+                }
             }
-
+    
+            // FIX: Add QuickBooks balance handling
+            if (field === 'quickbooks_balance') {
+                updatedItem.extractedData.quickbooks_balance = value;
+            }
+    
             updatedItems[itemIndex] = updatedItem;
-
-            console.log(`Updated balance for ${itemToUpdate.file.name}: ${field} = ${value}`);
             return updatedItems;
         });
+    
+        // Trigger immediate UI refresh
+        window.dispatchEvent(new CustomEvent('balanceUpdated', {
+            detail: { fileName: itemToUpdate.file.name, field, value }
+        }));
     };
+
 
     // NEW: Placeholder for editing period, can be expanded later
     const handleEditPeriod = (item: BulkUploadItem) => {
@@ -431,12 +472,12 @@ export function BankStatementBulkUploadDialog({
             setUploading(false);
         }
     };
-    
+
     // FIX: This function now correctly updates the status after a successful DB operation
     const handleVouchStatement = async (statementItem: BulkUploadItem, isVouched: boolean) => {
         const itemIndex = uploadItems.findIndex(i => i.file.name === statementItem.file.name);
         if (itemIndex < 0) return;
-        
+
         // Optimistically update the UI
         const updatedStatus = isVouched ? 'vouched' : 'uploaded';
         setUploadItems(prev => {
@@ -740,8 +781,8 @@ export function BankStatementBulkUploadDialog({
         const [tempBalance, setTempBalance] = useState('');
 
         const formatNumberWithCommas = (value) => {
-             if (value === null || value === undefined || isNaN(value)) return '';
-             return value.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+            if (value === null || value === undefined || isNaN(value)) return '';
+            return value.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
         };
 
         const handleBalanceEdit = (field: string) => {
@@ -758,7 +799,7 @@ export function BankStatementBulkUploadDialog({
         };
 
         const closingBalance = statement.extractedData?.closing_balance;
-        const qbBalance = statement.extractedData?.quickbooks_balance; // Assuming QB balance is stored here
+        const qbBalance = statement.extractedData?.quickbooks_balance || statement.extractedData?.qb_balance || statement.status?.quickbooks_balance;
         const difference = (closingBalance !== null && qbBalance !== null) ? closingBalance - qbBalance : null;
 
         return (
@@ -822,9 +863,32 @@ export function BankStatementBulkUploadDialog({
                     )}
                 </TableCell>
                 <TableCell>
-                    {/* Placeholder for editable QB Balance */}
-                    {formatCurrency(qbBalance, statement.extractedData?.currency || 'USD')}
-                </TableCell>
+    {editingBalance === 'quickbooks_balance' ? (
+        <div className="flex items-center gap-1">
+            <Input
+                value={tempBalance}
+                onChange={(e) => setTempBalance(e.target.value)}
+                className="w-28 h-7 text-xs"
+                onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleBalanceSave('quickbooks_balance');
+                    if (e.key === 'Escape') setEditingBalance(null);
+                }}
+                autoFocus
+            />
+            <Button size="icon" className="h-7 w-7" onClick={() => handleBalanceSave('quickbooks_balance')}>
+                <Save className="h-3 w-3" />
+            </Button>
+        </div>
+    ) : (
+        <div
+            className="cursor-pointer hover:bg-gray-100 p-1 rounded flex items-center justify-between"
+            onClick={() => handleBalanceEdit('quickbooks_balance')}
+        >
+            <span>{formatCurrency(qbBalance, statement.extractedData?.currency || 'USD')}</span>
+            <Edit className="h-3 w-3 ml-2 text-gray-400" />
+        </div>
+    )}
+</TableCell>
                 <TableCell className={difference !== 0 ? 'text-red-600 font-semibold' : ''}>
                     {formatCurrency(difference, statement.extractedData?.currency || 'USD')}
                 </TableCell>
@@ -1015,6 +1079,335 @@ export function BankStatementBulkUploadDialog({
         }
     };
 
+    
+    const handleVouchAllCompanies = async () => {
+        setUploading(true);
+        let successCount = 0;
+        let errorCount = 0;
+    
+        try {
+            console.log('🔄 Starting vouch all companies process');
+            const allStatementsToVouch = companyGroups.flatMap(group => 
+                group.statements.filter(s => !s.isVouched)
+            );
+            console.log(`📊 Vouching ${allStatementsToVouch.length} statements across ${companyGroups.length} companies`);
+    
+            for (const statement of allStatementsToVouch) {
+                try {
+                    await saveStatementToDatabase(statement);
+                    
+                    // Update UI state for this specific item
+                    const itemIndex = uploadItems.findIndex(i => i.file.name === statement.file.name);
+                    if (itemIndex > -1) {
+                        setUploadItems(prev => {
+                            const updated = [...prev];
+                            updated[itemIndex] = { ...updated[itemIndex], isVouched: true, status: 'vouched' };
+                            return updated;
+                        });
+                    }
+                    successCount++;
+                } catch (error) {
+                    console.error(`Failed to vouch statement ${statement.file.name}:`, error);
+                    errorCount++;
+                }
+            }
+    
+            // Update all company groups at the end
+            setCompanyGroups(prev => prev.map(group => ({
+                ...group,
+                isVouched: true,
+            })));
+    
+            toast({
+                title: 'Vouching Complete',
+                description: `Successfully vouched ${successCount} statements. ${errorCount} failed.`,
+            });
+    
+            if (errorCount === 0) {
+                window.dispatchEvent(new CustomEvent('bankStatementsUpdated'));
+            }
+    
+        } catch (error) {
+            console.error('Error vouching all companies:', error);
+            toast({
+                title: 'Vouching Error',
+                description: error.message,
+                variant: 'destructive'
+            });
+        } finally {
+            setUploading(false);
+        }
+    };
+    
+    const handleVouchCompany = async (companyId: number) => {
+        const group = companyGroups.find(g => g.companyId === companyId);
+        if (!group) return;
+    
+        setUploading(true);
+        let successCount = 0;
+        let errorCount = 0;
+    
+        try {
+            console.log(`🔄 Vouching company: ${group.companyName}`);
+    
+            for (const statement of group.statements) {
+                if (!statement.isVouched) {
+                    try {
+                        await saveStatementToDatabase(statement);
+    
+                        const itemIndex = uploadItems.findIndex(i => i.file.name === statement.file.name);
+                        if (itemIndex > -1) {
+                            setUploadItems(prev => {
+                                const updated = [...prev];
+                                updated[itemIndex] = { ...updated[itemIndex], isVouched: true, status: 'vouched' };
+                                return updated;
+                            });
+                        }
+                        successCount++;
+                    } catch (error) {
+                        console.error(`Error vouching statement ${statement.file.name}:`, error);
+                        errorCount++;
+                    }
+                }
+            }
+    
+            if (errorCount === 0) {
+                setCompanyGroups(prev => prev.map(g =>
+                    g.companyId === companyId ? { ...g, isVouched: true } : g
+                ));
+            }
+    
+            toast({
+                title: `Company Vouched`,
+                description: `${group.companyName}: ${successCount} statements saved and vouched. ${errorCount} failed.`,
+            });
+        } catch (error) {
+            console.error(`Error vouching company ${companyId}:`, error);
+            toast({
+                title: 'Vouching Error',
+                description: error.message,
+                variant: 'destructive'
+            });
+        } finally {
+            setUploading(false);
+        }
+    };
+
+    const saveStatementToDatabase = async (statement: BulkUploadItem) => {
+        if (!statement.matchedBank || !statement.extractedData) {
+            throw new Error('Invalid statement data for saving.');
+        }
+    
+        console.log(`💾 Saving statement to database: ${statement.file.name}`, statement.extractedData);
+    
+        // STEP 1: Extract actual period (same as your current code)
+        let actualMonth = cycleMonth;
+        let actualYear = cycleYear;
+    
+        if (statement.extractedData?.statement_period) {
+            const periodResult = parseStatementPeriod(statement.extractedData.statement_period);
+            if (periodResult) {
+                actualMonth = periodResult.endMonth - 1;
+                actualYear = periodResult.endYear;
+                console.log(`📅 Using extracted period: ${actualMonth + 1}/${actualYear}`);
+            }
+        }
+    
+        // STEP 2: Get cycle ID
+        const cycleId = await getOrCreateStatementCycle(actualYear, actualMonth, statement.statementType || 'monthly');
+    
+        // STEP 3: Check for existing statement
+        const { data: existingStatement, error: existingError } = await supabase
+            .from('acc_cycle_bank_statements')
+            .select('id, status, statement_extractions')
+            .eq('bank_id', statement.matchedBank.id)
+            .eq('statement_cycle_id', cycleId)
+            .eq('statement_type', statement.statementType || 'monthly')
+            .maybeSingle();
+    
+        if (existingError && existingError.code !== 'PGRST116') {
+            throw existingError;
+        }
+    
+        // STEP 4: Prepare comprehensive statement data (FIXED to match single upload)
+        const statementData = {
+            bank_id: statement.matchedBank.id,
+            company_id: statement.matchedBank.company_id,
+            statement_cycle_id: cycleId,
+            statement_month: actualMonth,
+            statement_year: actualYear,
+            statement_type: statement.statementType || 'monthly',
+            has_soft_copy: true,
+            has_hard_copy: false,
+            
+            // FIX: Complete document structure
+            statement_document: {
+                statement_pdf: statement.extractedData.pdf_path || null,
+                statement_excel: null,
+                document_size: statement.file.size,
+                document_type: 'pdf',
+                password: statement.appliedPassword || null,
+                extraction_metadata: statement.extractedData?.processing_metadata || {},
+                user_period_input: statement.userPeriodInput || null,
+                upload_timestamp: new Date().toISOString()
+            },
+            
+            // FIX: Complete extractions structure with proper balance handling
+            statement_extractions: {
+                // Core financial data
+                bank_name: statement.matchedBank.bank_name,
+                account_number: statement.matchedBank.account_number,
+                currency: statement.matchedBank.bank_currency,
+                
+                // Balances - properly formatted
+                opening_balance: statement.extractedData.opening_balance ? 
+                    parseFloat(statement.extractedData.opening_balance) : null,
+                closing_balance: statement.extractedData.closing_balance ? 
+                    parseFloat(statement.extractedData.closing_balance) : null,
+                
+                // Period information
+                statement_period: statement.extractedData.statement_period || null,
+                statement_period_adjusted: statement.extractedData.statement_period_adjusted || null,
+                period_adjustment_reason: statement.extractedData.period_adjustment_reason || null,
+                last_transaction_date: statement.extractedData.last_transaction_date || null,
+                
+                // Monthly balances - properly formatted
+                monthly_balances: (statement.extractedData.monthly_balances || []).map(balance => ({
+                    month: parseInt(balance.month),
+                    year: parseInt(balance.year),
+                    opening_balance: balance.opening_balance ? parseFloat(balance.opening_balance) : null,
+                    closing_balance: balance.closing_balance ? parseFloat(balance.closing_balance) : null,
+                    closing_date: balance.closing_date || null,
+                    balance_scenario: balance.balance_scenario || 'NORMAL',
+                    is_complete: balance.is_complete !== false,
+                    statement_page: balance.statement_page || 1,
+                    notes: balance.notes || null,
+                    verified_by: null,
+                    verified_at: null
+                })),
+                
+                // Quality and confidence indicators
+                extraction_confidence: statement.extractedData.extraction_confidence || 'MEDIUM',
+                data_quality_issues: statement.extractedData.data_quality_issues || [],
+                embeddings_confirmed: statement.extractedData.embeddings_confirmed || false,
+                total_pages: statement.extractedData.total_pages || 1,
+                total_pages_analyzed: statement.extractedData.total_pages_analyzed || 0,
+                
+                // Processing metadata
+                processing_metadata: {
+                    extraction_date: new Date().toISOString(),
+                    extraction_version: '2.0-bulk',
+                    scenarios_analyzed: statement.extractedData.processing_metadata?.scenarios_analyzed || false,
+                    all_pages_processed: (statement.extractedData.total_pages_analyzed || 0) > 0,
+                    manual_input: !!statement.userPeriodInput,
+                    bulk_upload: true,
+                    password_protected: !!statement.passwordApplied
+                },
+                
+                // Vouching data
+                verified_balances: true,
+                vouched_at: new Date().toISOString(),
+                vouched_by: 'bulk_upload_user' // Replace with actual user
+            },
+            
+            // FIX: Proper validation status
+            validation_status: {
+                is_validated: true,
+                validation_date: new Date().toISOString(),
+                validated_by: 'bulk_upload_user', // Replace with actual user
+                mismatches: [], // Should calculate mismatches if QB balance exists
+                extraction_confidence: statement.extractedData.extraction_confidence || 'MEDIUM',
+                requires_review: (statement.extractedData.data_quality_issues?.length || 0) > 0
+            },
+            
+            // FIX: Proper status structure (THIS IS CRITICAL)
+            status: {
+                status: 'vouched',
+                assigned_to: null,
+                verification_date: new Date().toISOString(),
+                uploaded_by: 'bulk_upload_user', // Replace with actual user
+                upload_method: 'bulk_upload',
+                // CRITICAL: Include QuickBooks balance in status like single upload
+                quickbooks_balance: statement.extractedData.quickbooks_balance || null
+            },
+            
+            // FIX: Add missing QuickBooks balance field at root level
+            quickbooks_balance: statement.extractedData.quickbooks_balance || null
+        };
+    
+        console.log(`💾 Prepared complete statement data:`, {
+            ...statementData,
+            statement_document: { ...statementData.statement_document, statement_pdf: '[FILE_PATH]' },
+            statement_extractions: { 
+                ...statementData.statement_extractions, 
+                monthly_balances: `[${statementData.statement_extractions.monthly_balances?.length || 0} balances]` 
+            }
+        });
+    
+        // STEP 5: Database operation with proper conflict handling
+        try {
+            if (existingStatement) {
+                console.log(`🔄 Updating existing statement with ID: ${existingStatement.id}`);
+                
+                // Merge with existing data intelligently
+                const mergedExtractions = {
+                    ...existingStatement.statement_extractions,
+                    ...statementData.statement_extractions,
+                    // Preserve any existing validated data that might be more accurate
+                    verified_balances: true, // Always true when vouching
+                    vouched_at: new Date().toISOString()
+                };
+                
+                const mergedStatus = {
+                    ...existingStatement.status,
+                    ...statementData.status,
+                    status: 'vouched' // Always vouched when saving from bulk upload
+                };
+    
+                const { data: updateResult, error: updateError } = await supabase
+                    .from('acc_cycle_bank_statements')
+                    .update({
+                        ...statementData,
+                        statement_extractions: mergedExtractions,
+                        status: mergedStatus,
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq('id', existingStatement.id)
+                    .select();
+    
+                if (updateError) {
+                    console.error("Supabase update error:", updateError);
+                    throw updateError;
+                }
+                
+                console.log(`✅ Statement updated successfully:`, updateResult);
+            } else {
+                console.log(`➕ Inserting new statement`);
+                
+                const { data: insertResult, error: insertError } = await supabase
+                    .from('acc_cycle_bank_statements')
+                    .insert([{
+                        ...statementData,
+                        created_at: new Date().toISOString()
+                    }])
+                    .select();
+    
+                if (insertError) {
+                    console.error("Supabase insert error:", insertError);
+                    throw insertError;
+                }
+                
+                console.log(`✅ Statement inserted successfully:`, insertResult);
+            }
+        } catch (error) {
+            console.error("Database operation failed:", error);
+            throw new Error(`Failed to save statement: ${error.message}`);
+        }
+    
+        console.log(`✅ Statement saved successfully: ${statement.file.name}`);
+    };
+    
+
     const handleBulkUpload = async () => {
         const itemsToUpload = uploadItems.filter(item =>
             item.status === 'matched' && item.matchedBank && item.extractedData
@@ -1120,185 +1513,6 @@ export function BankStatementBulkUploadDialog({
                 }
             });
 
-            // Enhanced vouching functions
-            const handleVouchAllCompanies = async () => {
-                setUploading(true);
-                let successCount = 0;
-                let errorCount = 0;
-
-                try {
-                    console.log('🔄 Starting vouch all companies process');
-                    const allStatementsToVouch = companyGroups.flatMap(group => group.statements.filter(s => !s.isVouched));
-                    console.log(`📊 Vouching ${allStatementsToVouch.length} statements across ${companyGroups.length} companies`);
-
-                    for (const statement of allStatementsToVouch) {
-                        try {
-                            await saveStatementToDatabase(statement);
-                            
-                            // Update UI state for this specific item
-                            const itemIndex = uploadItems.findIndex(i => i.file.name === statement.file.name);
-                            if (itemIndex > -1) {
-                                setUploadItems(prev => {
-                                    const updated = [...prev];
-                                    updated[itemIndex] = { ...updated[itemIndex], isVouched: true, status: 'vouched' };
-                                    return updated;
-                                });
-                            }
-                            successCount++;
-                        } catch (error) {
-                            console.error(`Failed to vouch statement ${statement.file.name}:`, error);
-                            errorCount++;
-                        }
-                    }
-
-                    // Update all company groups at the end
-                    setCompanyGroups(prev => prev.map(group => ({
-                        ...group,
-                        isVouched: true,
-                    })));
-
-                    toast({
-                        title: 'Vouching Complete',
-                        description: `Successfully vouched ${successCount} statements. ${errorCount} failed.`,
-                    });
-
-                    if (errorCount === 0) {
-                        window.dispatchEvent(new CustomEvent('bankStatementsUpdated'));
-                    }
-
-                } catch (error) {
-                    console.error('Error vouching all companies:', error);
-                    toast({
-                        title: 'Vouching Error',
-                        description: error.message,
-                        variant: 'destructive'
-                    });
-                } finally {
-                    setUploading(false);
-                }
-            };
-
-            const handleVouchCompany = async (companyId: number) => {
-                const group = companyGroups.find(g => g.companyId === companyId);
-                if (!group) return;
-
-                setUploading(true);
-                let successCount = 0;
-                let errorCount = 0;
-
-                try {
-                    console.log(`🔄 Vouching company: ${group.companyName}`);
-                    
-                    for (const statement of group.statements) {
-                         if (!statement.isVouched) {
-                            try {
-                                await saveStatementToDatabase(statement);
-                                
-                                const itemIndex = uploadItems.findIndex(i => i.file.name === statement.file.name);
-                                if (itemIndex > -1) {
-                                    setUploadItems(prev => {
-                                        const updated = [...prev];
-                                        updated[itemIndex] = { ...updated[itemIndex], isVouched: true, status: 'vouched' };
-                                        return updated;
-                                    });
-                                }
-                                successCount++;
-                            } catch(error) {
-                                console.error(`Error vouching statement ${statement.file.name}:`, error);
-                                errorCount++;
-                            }
-                         }
-                    }
-
-                    if (errorCount === 0) {
-                        setCompanyGroups(prev => prev.map(g =>
-                            g.companyId === companyId ? { ...g, isVouched: true } : g
-                        ));
-                    }
-                    
-                    toast({
-                        title: `Company Vouched`,
-                        description: `${group.companyName}: ${successCount} statements saved and vouched. ${errorCount} failed.`,
-                    });
-                } catch (error) {
-                    console.error(`Error vouching company ${companyId}:`, error);
-                    toast({
-                        title: 'Vouching Error',
-                        description: error.message,
-                        variant: 'destructive'
-                    });
-                } finally {
-                    setUploading(false);
-                }
-            };
-
-            // FIX: This function now correctly handles the data payload, including edited balances.
-            const saveStatementToDatabase = async (statement: BulkUploadItem) => {
-                if (!statement.matchedBank || !statement.extractedData) {
-                    throw new Error('Invalid statement data for saving.');
-                }
-
-                console.log(`💾 Saving statement to database: ${statement.file.name}`, statement.extractedData);
-
-                let actualMonth = cycleMonth;
-                let actualYear = cycleYear;
-
-                if (statement.extractedData.statement_period) {
-                    const periodResult = parseStatementPeriod(statement.extractedData.statement_period);
-                    if (periodResult) {
-                        actualMonth = periodResult.endMonth - 1;
-                        actualYear = periodResult.endYear;
-                    }
-                }
-
-                const cycleId = await getOrCreateStatementCycle(actualYear, actualMonth, statement.statementType || 'monthly');
-
-                const statementData = {
-                    bank_id: statement.matchedBank.id,
-                    company_id: statement.matchedBank.company_id,
-                    statement_cycle_id: cycleId,
-                    statement_month: actualMonth,
-                    statement_year: actualYear,
-                    statement_type: statement.statementType || 'monthly',
-                    has_soft_copy: true,
-                    has_hard_copy: false,
-                    // Assume document path already exists from upload step, or upload here if needed
-                    statement_document: {
-                        statement_pdf: statement.extractedData.pdf_path || `temp_path_${Date.now()}.pdf`, 
-                        document_size: statement.file.size,
-                        password: statement.appliedPassword,
-                    },
-                    statement_extractions: {
-                        ...statement.extractedData, // This will include the user-edited closing_balance
-                        verified_balances: true,
-                        vouched_at: new Date().toISOString()
-                    },
-                    validation_status: {
-                        is_validated: true,
-                        validation_date: new Date().toISOString(),
-                        validated_by: 'bulk_upload_user', // Replace with actual user
-                        mismatches: []
-                    },
-                    status: {
-                        status: 'vouched',
-                        assigned_to: null,
-                        verification_date: new Date().toISOString()
-                    }
-                };
-
-                const { error } = await supabase
-                    .from('acc_cycle_bank_statements')
-                    .upsert([statementData], {
-                        onConflict: 'bank_id,statement_cycle_id,statement_type'
-                    });
-
-                if (error) {
-                    console.error("Supabase upsert error:", error);
-                    throw error;
-                }
-
-                console.log(`✅ Statement saved successfully: ${statement.file.name}`);
-            };
 
             const toggleCompanyExpansion = (companyId: number, forceOpen?: boolean) => {
                 setCompanyGroups(prev => prev.map(group => ({
@@ -1478,6 +1692,40 @@ export function BankStatementBulkUploadDialog({
             await proceedToNextItem(currentIndex, allItems);
         }
     };
+
+    // Add to DetailedBankStatementsView.tsx
+    const refreshStatements = useCallback(async () => {
+        if (!selectedBank) return;
+
+        setLoading(true);
+        try {
+            // Clear existing state
+            setStatements([]);
+            setSelectedStatements(new Set());
+
+            // Reload with cache busting
+            const { data, error } = await supabase
+                .from('acc_cycle_bank_statements')
+                .select(`
+                *,
+                acc_portal_banks(*),
+                statement_cycles(*)
+            `)
+                .eq('bank_id', selectedBank.id)
+                .gte('statement_year', dateRange.fromYear)
+                .lte('statement_year', dateRange.toYear);
+
+            if (!error && data) {
+                setStatements(data);
+            }
+        } catch (error) {
+            console.error('Error refreshing statements:', error);
+        } finally {
+            setLoading(false);
+        }
+
+
+    }, [selectedBank, dateRange]);
 
     // Proceed to the next item in the sequence
     const proceedToNextItem = async (currentIndex: number, allItems: BulkUploadItem[]) => {
@@ -1752,21 +2000,26 @@ export function BankStatementBulkUploadDialog({
         console.log(`🔄 Starting single statement upload for item ${itemIndex}:`, {
             fileName: item.file.name,
             bankId: item.matchedBank?.id,
+            companyId: item.matchedBank?.company_id,
             extractedPeriod: item.extractedData?.statement_period,
-            currentDialogPeriod: `${cycleYear}/${cycleMonth}`
+            statementType: item.statementType,
+            currentDialogPeriod: `${cycleYear}/${cycleMonth + 1}`
         });
 
+        // Initialize progress tracking
         setUploadItems(prev => {
             const updated = [...prev];
-            updated[itemIndex] = { ...updated[itemIndex], uploadProgress: 10 };
+            updated[itemIndex] = { ...updated[itemIndex], uploadProgress: 5, status: 'processing' };
             return updated;
         });
 
         try {
-            // 🔧 FIX: Extract actual month/year from the statement period
+            // STEP 1: Extract actual period from statement data
             let actualMonth = cycleMonth;
             let actualYear = cycleYear;
+            let actualStatementType = item.statementType || 'monthly';
 
+            // Primary: Use extracted statement period
             if (item.extractedData?.statement_period) {
                 const periodResult = parseStatementPeriod(item.extractedData.statement_period);
                 if (periodResult) {
@@ -1774,101 +2027,166 @@ export function BankStatementBulkUploadDialog({
                     actualYear = periodResult.endYear;
                     console.log(`📅 Using extracted period: ${actualMonth + 1}/${actualYear} from "${item.extractedData.statement_period}"`);
                 }
-            } else if (item.extractedData?.monthly_balances?.length > 0) {
-                // Fallback: use the month from monthly_balances
+            }
+            // Secondary: Use monthly_balances data
+            else if (item.extractedData?.monthly_balances?.length > 0) {
                 const lastBalance = item.extractedData.monthly_balances[item.extractedData.monthly_balances.length - 1];
                 actualMonth = lastBalance.month - 1; // Convert to 0-based month
                 actualYear = lastBalance.year;
                 console.log(`📅 Using balance period: ${actualMonth + 1}/${actualYear} from monthly_balances`);
             }
+            // Tertiary: Use user manual input if available
+            else if (item.userPeriodInput) {
+                const periodResult = parseStatementPeriod(item.userPeriodInput);
+                if (periodResult) {
+                    actualMonth = periodResult.endMonth - 1;
+                    actualYear = periodResult.endYear;
+                    console.log(`📅 Using user input period: ${actualMonth + 1}/${actualYear} from "${item.userPeriodInput}"`);
+                }
+            }
 
-            const fileName = `single_${item.matchedBank.company_id}_${item.matchedBank.id}_${actualYear}_${actualMonth}_${Date.now()}.pdf`;
-            const filePath = `statement_documents/${actualYear}/${actualMonth + 1}/${item.matchedBank.company_id}/${fileName}`;
+            // Validate the determined period
+            if (actualMonth < 0 || actualMonth > 11 || actualYear < 2000 || actualYear > 2100) {
+                throw new Error(`Invalid statement period determined: ${actualMonth + 1}/${actualYear}`);
+            }
 
-            // 1. File Upload
-            console.log(`📁 Uploading file to path: ${filePath}`);
+            setUploadItems(prev => {
+                const updated = [...prev];
+                updated[itemIndex] = { ...updated[itemIndex], uploadProgress: 15 };
+                return updated;
+            });
+
+            // STEP 2: Prepare file upload with correct naming and path
+            const fileName = `${actualStatementType}_${item.matchedBank.company_id}_${item.matchedBank.id}_${actualYear}_${String(actualMonth + 1).padStart(2, '0')}_${Date.now()}.pdf`;
+            const filePath = `statement_documents/${actualYear}/${String(actualMonth + 1).padStart(2, '0')}/${item.matchedBank.company_id}/${fileName}`;
+
+            console.log(`📁 Uploading file to storage:`, {
+                fileName,
+                filePath,
+                fileSize: item.file.size
+            });
+
+            // Upload file to Supabase storage
             const { data: uploadData, error: uploadError } = await supabase.storage
                 .from('Statement-Cycle')
                 .upload(filePath, item.file, { upsert: true });
 
             if (uploadError) {
                 console.error(`❌ File upload failed:`, uploadError);
-                throw uploadError;
+                throw new Error(`File upload failed: ${uploadError.message}`);
             }
+
             console.log(`✅ File uploaded successfully:`, uploadData);
-            
-            // Store the path back into the item for later use
-            if(item.extractedData) item.extractedData.pdf_path = uploadData.path;
+
+            // Store the path back into the item for database reference
+            if (item.extractedData) {
+                item.extractedData.pdf_path = uploadData.path;
+            }
 
             setUploadItems(prev => {
                 const updated = [...prev];
-                updated[itemIndex] = { ...updated[itemIndex], uploadProgress: 40 };
+                updated[itemIndex] = { ...updated[itemIndex], uploadProgress: 35 };
                 return updated;
             });
 
-            // 2. Get or Create Statement Cycle with CORRECT month/year
-            console.log(`🔄 Getting/creating statement cycle for ${actualYear}/${actualMonth}`);
-            const cycleId = await getOrCreateStatementCycle(actualYear, actualMonth, 'monthly');
+            // STEP 3: Get or create statement cycle with correct period and type
+            console.log(`🔄 Getting/creating statement cycle for ${actualYear}/${actualMonth + 1} (type: ${actualStatementType})`);
+            const cycleId = await getOrCreateStatementCycle(actualYear, actualMonth, actualStatementType);
             console.log(`✅ Statement cycle ID: ${cycleId}`);
 
+            if (!cycleId) {
+                throw new Error(`Failed to create or retrieve statement cycle for ${actualYear}/${actualMonth + 1}`);
+            }
+
             setUploadItems(prev => {
                 const updated = [...prev];
-                updated[itemIndex] = { ...updated[itemIndex], uploadProgress: 60 };
+                updated[itemIndex] = { ...updated[itemIndex], uploadProgress: 50 };
                 return updated;
             });
 
-            // 3. Check for existing statement with CORRECT cycle
+            // STEP 4: Check for existing statement with proper conflict resolution
             console.log(`🔍 Checking for existing statement...`);
-            const { data: existingStatement } = await supabase
+            const { data: existingStatement, error: existingError } = await supabase
                 .from('acc_cycle_bank_statements')
-                .select('id')
+                .select('id, statement_type, statement_extractions')
                 .eq('bank_id', item.matchedBank.id)
                 .eq('statement_cycle_id', cycleId)
-                .eq('statement_type', 'monthly')
+                .eq('statement_type', actualStatementType)
                 .maybeSingle();
 
-            console.log(`📋 Existing statement check:`, existingStatement);
+            if (existingError) {
+                console.error(`❌ Error checking existing statement:`, existingError);
+                throw new Error(`Database query failed: ${existingError.message}`);
+            }
 
-            // 4. Prepare statement data with CORRECT month/year
+            console.log(`📋 Existing statement check result:`, existingStatement);
+
+            setUploadItems(prev => {
+                const updated = [...prev];
+                updated[itemIndex] = { ...updated[itemIndex], uploadProgress: 65 };
+                return updated;
+            });
+
+            // STEP 5: Prepare comprehensive statement data
             const statementData = {
                 bank_id: item.matchedBank.id,
                 company_id: item.matchedBank.company_id,
                 statement_cycle_id: cycleId,
-                statement_month: actualMonth,        // 🔧 FIX: Use actual month
-                statement_year: actualYear,          // 🔧 FIX: Use actual year
-                statement_type: 'monthly',
+                statement_month: actualMonth,
+                statement_year: actualYear,
+                statement_type: actualStatementType,
                 has_soft_copy: true,
                 has_hard_copy: false,
                 statement_document: {
                     statement_pdf: uploadData.path,
                     document_size: item.file.size,
                     password: item.passwordApplied ? item.appliedPassword : null,
-                    extraction_metadata: item.extractedData.processing_metadata,
-                    user_period_input: item.userPeriodInput || null
+                    extraction_metadata: item.extractedData?.processing_metadata || {},
+                    user_period_input: item.userPeriodInput || null,
+                    upload_timestamp: new Date().toISOString()
                 },
                 statement_extractions: {
                     ...item.extractedData,
+                    // Ensure monthly_balances is properly formatted
+                    monthly_balances: item.extractedData?.monthly_balances?.map(balance => ({
+                        ...balance,
+                        month: parseInt(balance.month),
+                        year: parseInt(balance.year),
+                        opening_balance: balance.opening_balance ? parseFloat(balance.opening_balance) : null,
+                        closing_balance: balance.closing_balance ? parseFloat(balance.closing_balance) : null
+                    })) || [],
                     enhanced_processing: true,
-                    all_pages_analyzed: item.extractedData.total_pages_analyzed > 0
+                    all_pages_analyzed: (item.extractedData?.total_pages_analyzed || 0) > 0,
+                    upload_source: 'bulk_upload',
+                    processing_timestamp: new Date().toISOString()
                 },
                 validation_status: {
                     is_validated: false,
                     validation_date: null,
                     validated_by: null,
                     mismatches: [],
-                    extraction_confidence: item.extractedData.extraction_confidence || 'MEDIUM'
+                    extraction_confidence: item.extractedData?.extraction_confidence || 'MEDIUM',
+                    requires_review: item.extractedData?.data_quality_issues?.length > 0
                 },
                 status: {
                     status: 'pending_validation',
                     assigned_to: null,
-                    verification_date: null
+                    verification_date: null,
+                    uploaded_by: 'bulk_upload_user', // Replace with actual user context
+                    upload_method: 'bulk_upload'
                 }
             };
 
             console.log(`💾 Prepared statement data for database:`, {
                 ...statementData,
-                statement_document: { ...statementData.statement_document, statement_pdf: '[PATH]' },
-                statement_extractions: { ...statementData.statement_extractions, monthly_balances: `[${statementData.statement_extractions.monthly_balances?.length || 0} balances]` }
+                statement_document: {
+                    ...statementData.statement_document,
+                    statement_pdf: '[FILE_PATH]'
+                },
+                statement_extractions: {
+                    ...statementData.statement_extractions,
+                    monthly_balances: `[${statementData.statement_extractions.monthly_balances?.length || 0} balances]`
+                }
             });
 
             setUploadItems(prev => {
@@ -1877,68 +2195,117 @@ export function BankStatementBulkUploadDialog({
                 return updated;
             });
 
-            // 5. Database operation
+            // STEP 6: Database operation with proper error handling
+            let dbResult;
             if (existingStatement) {
                 console.log(`🔄 Updating existing statement with ID: ${existingStatement.id}`);
+
+                // Merge existing and new data intelligently
+                const mergedExtractions = {
+                    ...existingStatement.statement_extractions,
+                    ...statementData.statement_extractions,
+                    // Preserve any existing validated data
+                    verified_balances: existingStatement.statement_extractions?.verified_balances || false,
+                    vouched_at: existingStatement.statement_extractions?.vouched_at || null
+                };
+
                 const { data: updateResult, error: updateError } = await supabase
                     .from('acc_cycle_bank_statements')
-                    .update(statementData)
+                    .update({
+                        ...statementData,
+                        statement_extractions: mergedExtractions,
+                        updated_at: new Date().toISOString()
+                    })
                     .eq('id', existingStatement.id)
                     .select();
 
                 if (updateError) {
                     console.error(`❌ Update failed:`, updateError);
-                    throw updateError;
+                    throw new Error(`Database update failed: ${updateError.message}`);
                 }
+
+                dbResult = updateResult;
                 console.log(`✅ Statement updated successfully:`, updateResult);
             } else {
                 console.log(`➕ Inserting new statement for ${actualMonth + 1}/${actualYear}`);
+
                 const { data: insertResult, error: insertError } = await supabase
                     .from('acc_cycle_bank_statements')
-                    .insert([statementData])
+                    .insert([{
+                        ...statementData,
+                        created_at: new Date().toISOString()
+                    }])
                     .select();
 
                 if (insertError) {
                     console.error(`❌ Insert failed:`, insertError);
-                    throw insertError;
-                } else {
-                    console.log(`✅ Statement inserted successfully:`, insertResult);
+                    // Handle specific database constraint errors
+                    if (insertError.code === '23505') {
+                        throw new Error(`Statement already exists for this bank and period`);
+                    }
+                    throw new Error(`Database insert failed: ${insertError.message}`);
                 }
+
+                dbResult = insertResult;
+                console.log(`✅ Statement inserted successfully:`, insertResult);
             }
 
-            // 6. Final status update
+            // STEP 7: Validate database operation result
+            if (!dbResult || dbResult.length === 0) {
+                throw new Error('Database operation completed but returned no data');
+            }
+
+            // STEP 8: Update UI state to reflect successful upload
             setUploadItems(prev => {
                 const updated = [...prev];
                 updated[itemIndex] = {
                     ...updated[itemIndex],
                     status: 'uploaded',
-                    uploadProgress: 100
+                    uploadProgress: 100,
+                    error: undefined,
+                    databaseId: dbResult[0]?.id,
+                    actualPeriod: `${actualMonth + 1}/${actualYear}`,
+                    uploadedAt: new Date().toISOString()
                 };
                 return updated;
             });
 
-            console.log(`🎉 Single statement upload completed for item ${itemIndex}`);
+            console.log(`🎉 Upload completed successfully for ${item.file.name}:`, {
+                fileName: item.file.name,
+                databaseId: dbResult[0]?.id,
+                actualPeriod: `${actualMonth + 1}/${actualYear}`,
+                statementType: actualStatementType
+            });
+
             return true;
 
         } catch (error) {
-            console.error(`💥 Error in single statement upload for item ${itemIndex}:`, {
-                error: error.message,
-                stack: error.stack,
+            console.error(`💥 Upload failed for item ${itemIndex}:`, {
                 fileName: item.file.name,
-                bankId: item.matchedBank?.id
+                error: error.message,
+                stack: error.stack
             });
 
+            // Handle specific error types gracefully
+            const errorMessage = error.message?.includes('duplicate key')
+                ? 'Statement already exists for this period'
+                : error.message || 'Unknown upload error';
+
+            // Update UI to show failure state
             setUploadItems(prev => {
                 const updated = [...prev];
                 updated[itemIndex] = {
                     ...updated[itemIndex],
                     status: 'failed',
-                    error: error.message,
-                    uploadProgress: 0
+                    error: errorMessage,
+                    uploadProgress: 0,
+                    failedAt: new Date().toISOString()
                 };
                 return updated;
             });
-            return false;
+
+            // Re-throw error for upstream handling
+            throw new Error(`Upload failed for ${item.file.name}: ${errorMessage}`);
         }
     };
 
@@ -1957,7 +2324,7 @@ export function BankStatementBulkUploadDialog({
             let group = groups.find(g => g.companyId === companyId);
 
             if (!group) {
-                 group = {
+                group = {
                     companyId,
                     companyName,
                     isExpanded: false,
@@ -1966,7 +2333,7 @@ export function BankStatementBulkUploadDialog({
                 };
                 groups.push(group);
             }
-            
+
             // Avoid adding duplicates
             if (!group.statements.some(s => s.file.name === item.file.name)) {
                 group.statements.push(item);
@@ -1979,7 +2346,7 @@ export function BankStatementBulkUploadDialog({
         groupedByCompany.forEach(group => {
             group.isVouched = group.statements.length > 0 && group.statements.every(s => s.isVouched);
         });
-        
+
         // Sort groups: unvouched first, then alphabetically
         groupedByCompany.sort((a, b) => {
             if (a.isVouched && !b.isVouched) return 1;

@@ -243,8 +243,13 @@ export function DetailedBankStatementsView({
         return () => document.removeEventListener('visibilitychange', handleFocus);
     }, [selectedBank, dateRange]);
 
+    // Fix the refresh mechanism in DetailedBankStatementsView.tsx
     const forceRefresh = useCallback(() => {
+        // Clear all derived state first
         setStatements([]);
+        setSelectedStatements(new Set());
+
+        // Force reload
         if (selectedBank) {
             loadStatements(selectedBank.id, dateRange);
         }
@@ -252,6 +257,19 @@ export function DetailedBankStatementsView({
             loadBanks(selectedCompany.id);
         }
     }, [selectedBank, selectedCompany, dateRange]);
+
+    // Add proper dependency to useEffect for refresh events
+    useEffect(() => {
+        const handleBankStatementsUpdated = (event) => {
+            console.log('Received bankStatementsUpdated event', event.detail);
+            forceRefresh();
+        };
+
+        window.addEventListener('bankStatementsUpdated', handleBankStatementsUpdated);
+        return () => {
+            window.removeEventListener('bankStatementsUpdated', handleBankStatementsUpdated);
+        };
+    }, [forceRefresh]);
 
     const loadCompanies = async () => {
         try {
@@ -631,7 +649,7 @@ export function DetailedBankStatementsView({
         }
     }
 
-    
+
     const handleBulkExport = async () => {
         if (!selectedCompany || !selectedBank) {
             toast({
