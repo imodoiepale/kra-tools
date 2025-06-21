@@ -1406,7 +1406,7 @@ export function BankStatementBulkUploadDialog({
     
         console.log(`✅ Statement saved successfully: ${statement.file.name}`);
     };
-    
+
 
     const handleBulkUpload = async () => {
         const itemsToUpload = uploadItems.filter(item =>
@@ -1693,39 +1693,6 @@ export function BankStatementBulkUploadDialog({
         }
     };
 
-    // Add to DetailedBankStatementsView.tsx
-    const refreshStatements = useCallback(async () => {
-        if (!selectedBank) return;
-
-        setLoading(true);
-        try {
-            // Clear existing state
-            setStatements([]);
-            setSelectedStatements(new Set());
-
-            // Reload with cache busting
-            const { data, error } = await supabase
-                .from('acc_cycle_bank_statements')
-                .select(`
-                *,
-                acc_portal_banks(*),
-                statement_cycles(*)
-            `)
-                .eq('bank_id', selectedBank.id)
-                .gte('statement_year', dateRange.fromYear)
-                .lte('statement_year', dateRange.toYear);
-
-            if (!error && data) {
-                setStatements(data);
-            }
-        } catch (error) {
-            console.error('Error refreshing statements:', error);
-        } finally {
-            setLoading(false);
-        }
-
-
-    }, [selectedBank, dateRange]);
 
     // Proceed to the next item in the sequence
     const proceedToNextItem = async (currentIndex: number, allItems: BulkUploadItem[]) => {
@@ -2386,6 +2353,7 @@ export function BankStatementBulkUploadDialog({
             }));
         }, 100);
     }, [onUploadsComplete, onClose]);
+        
     // Event handlers
     const removeItem = (index: number) => {
         setUploadItems(items => items.filter((_, i) => i !== index))
