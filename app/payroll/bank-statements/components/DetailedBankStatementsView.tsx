@@ -11,6 +11,14 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Label } from '@/components/ui/label'
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuTrigger,
+    DropdownMenuSeparator,
+} from '@/components/ui/dropdown-menu'
 import {
     Table,
     TableBody,
@@ -34,11 +42,15 @@ import {
     Plus,
     ArrowUpDown,
     ArrowUp,
-    ArrowDown
+    ArrowDown,
+    Download,
+    Package,
+    FileDown
 } from 'lucide-react'
 import { format } from 'date-fns'
 import { BankStatementUploadDialog } from './BankStatementUploadDialog'
 import BankExtractionDialog from './BankExtractionDialog'
+import { analyzeStatementsForExport, createZipExport, downloadIndividualFiles } from '../utils/exportUtils'
 
 interface Company {
     id: number;
@@ -70,7 +82,9 @@ interface BankStatement {
     statement_type: 'monthly' | 'range';
     statement_document: {
         statement_pdf: string | null;
+        statement_excel: string | null;
         document_size?: number;
+        password?: string | null;
     };
     statement_extractions: {
         closing_balance: number | null;
@@ -108,6 +122,15 @@ interface CombinedMonthData {
     monthlyDifference: number | null;
     rangeDifference: number | null;
     status: 'complete' | 'partial' | 'missing' | 'mismatch';
+}
+
+interface ExportFilters {
+    companyStartDate: string;
+    companyEndDate: string;
+    takeoverDateByBCL: string;
+    recordsFromDate: string;
+    bankStartDate: string;
+    bankEndDate: string;
 }
 
 type SortField = 'month' | 'monthlyBalance' | 'rangeBalance' | 'monthlyDiff' | 'rangeDiff' | 'status';
@@ -153,6 +176,22 @@ export function DetailedBankStatementsView({
     const [extractionDialogOpen, setExtractionDialogOpen] = useState(false)
     const [activeStatement, setActiveStatement] = useState<BankStatement | null>(null)
 
+    // Export states
+    const [selectedStatements, setSelectedStatements] = useState<Set<string>>(new Set());
+    const [exportFilters, setExportFilters] = useState<ExportFilters>({
+        companyStartDate: '',
+        companyEndDate: '',
+        takeoverDateByBCL: '',
+        recordsFromDate: '',
+        bankStartDate: '',
+        bankEndDate: ''
+    });
+    const [exportOptions, setExportOptions] = useState({
+        autoZip: true,
+        includePassword: true,
+        renameFiles: true
+    });
+
     // Load companies on mount
     useEffect(() => {
         loadCompanies()
@@ -161,7 +200,6 @@ export function DetailedBankStatementsView({
     // Load banks when company changes
     useEffect(() => {
         if (selectedCompany) {
-            // Immediately clear old bank data to prevent showing stale info
             setBanks([]);
             setSelectedBank(null);
             loadBanks(selectedCompany.id);
@@ -180,27 +218,23 @@ export function DetailedBankStatementsView({
         }
     }, [selectedBank, dateRange])
 
+    // Auto-refresh handlers
     useEffect(() => {
         const handleBankStatementsUpdated = () => {
-            console.log('🔄 Auto-refreshing due to bank statements update');
             if (selectedBank) {
                 loadStatements(selectedBank.id, dateRange);
             }
         };
 
-        // Listen for custom refresh events
         window.addEventListener('bankStatementsUpdated', handleBankStatementsUpdated);
-
         return () => {
             window.removeEventListener('bankStatementsUpdated', handleBankStatementsUpdated);
         };
     }, [selectedBank, dateRange]);
 
-    // Also add refresh on focus
     useEffect(() => {
         const handleFocus = () => {
             if (document.visibilityState === 'visible' && selectedBank) {
-                console.log('🔄 Page focus detected - refreshing statements');
                 loadStatements(selectedBank.id, dateRange);
             }
         };
@@ -209,39 +243,16 @@ export function DetailedBankStatementsView({
         return () => document.removeEventListener('visibilitychange', handleFocus);
     }, [selectedBank, dateRange]);
 
-    // Add a refresh function that properly reloads all data
-const forceRefresh = useCallback(() => {
-    console.log('🔄 Force refreshing detailed view data');
-    
-    // Clear existing data first to ensure fresh load
-    setStatements([]);
-    
-    // Reload statements if bank is selected
-    if (selectedBank) {
-        loadStatements(selectedBank.id, dateRange);
-    }
-    
-    // Also reload banks if company is selected
-    if (selectedCompany) {
-        loadBanks(selectedCompany.id);
-    }
-}, [selectedBank, selectedCompany, dateRange]);
+    const forceRefresh = useCallback(() => {
+        setStatements([]);
+        if (selectedBank) {
+            loadStatements(selectedBank.id, dateRange);
+        }
+        if (selectedCompany) {
+            loadBanks(selectedCompany.id);
+        }
+    }, [selectedBank, selectedCompany, dateRange]);
 
-// Update the event listener effect
-useEffect(() => {
-    const handleBankStatementsUpdated = (event) => {
-        console.log('🔄 Auto-refreshing due to bank statements update', event.detail);
-        forceRefresh();
-    };
-
-    // Listen for custom refresh events
-    window.addEventListener('bankStatementsUpdated', handleBankStatementsUpdated);
-    
-    return () => {
-        window.removeEventListener('bankStatementsUpdated', handleBankStatementsUpdated);
-    };
-}, [forceRefresh]);
-    
     const loadCompanies = async () => {
         try {
             setLoading(true)
@@ -263,7 +274,7 @@ useEffect(() => {
                 description: 'Failed to load companies. Please check your connection.',
                 variant: 'destructive'
             })
-            setCompanies([]) // Ensure we have a fallback
+            setCompanies([])
         } finally {
             setLoading(false)
         }
@@ -282,10 +293,8 @@ useEffect(() => {
                 throw error
             }
 
-            // FIX: Handle cases with and without banks found
             if (data && data.length > 0) {
                 setBanks(data);
-                // Auto-select first bank if available
                 setSelectedBank(data[0]);
             } else {
                 setBanks([]);
@@ -298,7 +307,6 @@ useEffect(() => {
                 description: 'Failed to load banks. Please check your connection.',
                 variant: 'destructive'
             })
-            // FIX: Ensure state is cleared on error
             setBanks([]);
             setSelectedBank(null);
         }
@@ -306,7 +314,6 @@ useEffect(() => {
 
     const loadStatements = async (bankId: number, dateRange: any) => {
         try {
-            // FIX: Use correct table name and simplified query
             const { data, error } = await supabase
                 .from('acc_cycle_bank_statements')
                 .select(`
@@ -327,7 +334,6 @@ useEffect(() => {
                 throw error
             }
 
-            // Filter by month range if same year, otherwise get all months
             let filteredData = data || []
             if (dateRange.fromYear === dateRange.toYear) {
                 filteredData = filteredData.filter(s =>
@@ -344,7 +350,7 @@ useEffect(() => {
                 description: 'Failed to load statements. Please check your connection.',
                 variant: 'destructive'
             })
-            setStatements([]) // Ensure we have a fallback
+            setStatements([])
         }
     }
 
@@ -354,7 +360,6 @@ useEffect(() => {
 
         let filtered = companies;
 
-        // Filter by client types
         if (selectedClientTypes && selectedClientTypes.length > 0) {
             const currentDate = new Date();
             filtered = filtered.filter(company => {
@@ -381,7 +386,6 @@ useEffect(() => {
             });
         }
 
-        // Filter by search term with null safety
         if (searchTerm) {
             filtered = filtered.filter(company =>
                 company &&
@@ -403,9 +407,8 @@ useEffect(() => {
         let currentDate = new Date(dateRange.fromYear, dateRange.fromMonth);
         const endDate = new Date(dateRange.toYear, dateRange.toMonth);
 
-        // Prevent infinite loops
         let iterations = 0;
-        const maxIterations = 120; // 10 years max
+        const maxIterations = 120;
 
         while (currentDate <= endDate && iterations < maxIterations) {
             const month = currentDate.getMonth();
@@ -413,7 +416,7 @@ useEffect(() => {
             months.push({
                 month,
                 year,
-                monthNumber: month + 1, // 1-12 for display
+                monthNumber: month + 1,
                 monthName: format(new Date(year, month), 'MMM'),
                 key: `${year}-${month}`
             });
@@ -462,7 +465,6 @@ useEffect(() => {
             const rangeDifference = (rangeClosingBalance !== null && rangeQBBalance !== null)
                 ? rangeClosingBalance - rangeQBBalance : null;
 
-            // Determine status
             let status: CombinedMonthData['status'] = 'missing';
             if (monthlyStatement && rangeStatement) {
                 const hasDiscrepancy = (monthlyDifference !== null && Math.abs(monthlyDifference) > 0.01) ||
@@ -545,7 +547,7 @@ useEffect(() => {
         if (sortField === field) {
             setSortDirection(sortDirection === 'asc' ? 'desc' : sortDirection === 'desc' ? null : 'asc');
             if (sortDirection === 'desc') {
-                setSortField('month'); // Reset to default
+                setSortField('month');
             }
         } else {
             setSortField(field);
@@ -629,6 +631,84 @@ useEffect(() => {
         }
     }
 
+    
+    const handleBulkExport = async () => {
+        if (!selectedCompany || !selectedBank) {
+            toast({
+                title: 'Error',
+                description: 'Company and bank must be selected for export.',
+                variant: 'destructive',
+            });
+            return;
+        }
+
+        const selectedStatementsData = statements.filter(s =>
+            selectedStatements.has(s.id)
+        );
+
+        try {
+            const analysis = analyzeStatementsForExport(selectedStatementsData);
+            await createZipExport(selectedStatementsData, selectedCompany, selectedBank, exportOptions);
+
+            let description = `Successfully exported ${analysis.uniqueFiles} unique files`;
+            if (analysis.duplicateRangeGroups.length > 0) {
+                description += ` (deduplicated ${selectedStatementsData.length - analysis.uniqueFiles} shared range statements)`;
+            }
+
+            toast({
+                title: 'Export Successful',
+                description,
+            });
+        } catch (error) {
+            console.error('Export failed:', error);
+            toast({
+                title: 'Export Failed',
+                description: 'Failed to export statements. Please try again.',
+                variant: 'destructive',
+            });
+        }
+    };
+
+    const handleIndividualExport = async () => {
+        if (!selectedCompany || !selectedBank) {
+            toast({
+                title: 'Error',
+                description: 'Company and bank must be selected for export.',
+                variant: 'destructive',
+            });
+            return;
+        }
+
+        const selectedStatementsData = statements.filter(s =>
+            selectedStatements.has(s.id)
+        );
+
+        try {
+            const analysis = analyzeStatementsForExport(selectedStatementsData);
+            await downloadIndividualFiles(selectedStatementsData, selectedCompany, selectedBank, {
+                includePassword: exportOptions.includePassword,
+                renameFiles: exportOptions.renameFiles,
+            });
+
+            let description = `Started downloading ${analysis.uniqueFiles} unique files`;
+            if (analysis.duplicateRangeGroups.length > 0) {
+                description += ` (deduplicated ${selectedStatementsData.length - analysis.uniqueFiles} shared range statements)`;
+            }
+
+            toast({
+                title: 'Export Started',
+                description,
+            });
+        } catch (error) {
+            console.error('Export failed:', error);
+            toast({
+                title: 'Export Failed',
+                description: 'Failed to export statements. Please try again.',
+                variant: 'destructive',
+            });
+        }
+    };
+
     const handleOpenUpload = (month: number, year: number) => {
         setUploadDialogOpen(true)
     }
@@ -674,18 +754,6 @@ useEffect(() => {
                     <p className="text-sm text-gray-600">Select a company to view statements</p>
                 </div>
 
-                {/* Search and filters */}
-                <div className="flex-shrink-0 p-4 border-b bg-background">
-                    <div className="flex gap-2 items-center">
-                        <Input
-                            placeholder="Search companies..."
-                            value={searchTerm}
-                            onChange={(e) => {/* This will be handled by parent */ }}
-                            className="flex-1"
-                        />
-                    </div>
-                </div>
-
                 {/* Companies List */}
                 <div className="flex-1 overflow-y-auto">
                     {loading ? (
@@ -724,52 +792,175 @@ useEffect(() => {
                     <>
                         {/* Header */}
                         <div className="bg-white border-b border-gray-200 p-4">
-                            <div className="flex flex-col gap-2">
-                                {/* Title and Duration */}
-                                <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+                            <div className="flex flex-col gap-4">
+                                {/* Title and Company Info */}
+                                <div className="flex flex-wrap items-center justify-between gap-4">
                                     <div className="text-xl font-semibold text-gray-900">
                                         {selectedCompany.company_name}
                                     </div>
-                                    {/* FIX: Add guard to prevent crash when selectedBank is null */}
                                     {selectedBank && (
-                                        <div className="flex flex-wrap items-center gap-6 text-md text-gray-700">
-                                            {/* Bank Name */}
-                                            <div className="flex items-center gap-1 font-medium text-primary">
+                                        <>
+                                            <div className="flex items-center gap-2 font-medium text-primary">
                                                 <FileText className="h-4 w-4 text-primary" />
                                                 <span>{selectedBank.bank_name} Statements</span>
                                             </div>
-
-                                            {/* Account Number */}
-                                            <div className="flex items-center gap-1">
-                                                <span className="text-gray-400">Account:</span>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-gray-500">Account:</span>
                                                 <span className="font-mono">{selectedBank.account_number}</span>
                                             </div>
-
-                                            {/* Currency */}
-                                            <div className="flex items-center gap-1">
-                                                <span className="text-gray-400">Currency:</span>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-gray-500">Currency:</span>
                                                 <span>{selectedBank.bank_currency || 'USD'}</span>
                                             </div>
-
-                                            {/* Password Status */}
-                                            <div className="flex items-center gap-1">
-                                                <span className="text-gray-400">Password:</span>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-gray-500">Password:</span>
                                                 <span className={`font-semibold ${selectedBank.acc_password ? 'text-green-600' : 'text-red-600'}`}>
                                                     {selectedBank.acc_password || 'Missing'}
                                                 </span>
                                             </div>
-
-                                            {/* Statement Count */}
-                                            <div className="flex items-center gap-1">
-                                                <span className="text-gray-400">Statements:</span>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-gray-500">Statements:</span>
                                                 <span>{statements.length}</span>
                                             </div>
-
-                                            {/* FIX: Removed fields that don't exist in the interfaces */}
-                                        </div>
+                                        </>
                                     )}
+
                                     <div className="text-gray-500 text-sm">
                                         {format(new Date(dateRange.fromYear, dateRange.fromMonth), 'MMM yyyy')} – {format(new Date(dateRange.toYear, dateRange.toMonth), 'MMM yyyy')}
+                                    </div>
+                                </div>
+
+                                {/* Bank Details */}
+                                {selectedBank && (
+                                    <div className="flex flex-wrap items-center gap-6 text-sm text-gray-700 bg-gray-50 p-3 rounded-lg">
+
+                                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-gray-500 text-sm">Company Start:</span>
+                                                <span className="text-sm font-medium">{exportFilters.companyStartDate || 'Not set'}</span>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-gray-500 text-sm">Company End:</span>
+                                                <span className="text-sm font-medium">{exportFilters.companyEndDate || 'Not set'}</span>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-gray-500 text-sm">Takeover by BCL:</span>
+                                                <span className="text-sm font-medium">{exportFilters.takeoverDateByBCL || 'Not set'}</span>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-gray-500 text-sm">Records From:</span>
+                                                <span className="text-sm font-medium">{exportFilters.recordsFromDate || 'Not set'}</span>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-gray-500 text-sm">Bank Start:</span>
+                                                <span className="text-sm font-medium">{exportFilters.bankStartDate || 'Not set'}</span>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-gray-500 text-sm">Bank End:</span>
+                                                <span className="text-sm font-medium">{exportFilters.bankEndDate || 'Not set'}</span>
+                                            </div>
+                                        </div>
+
+                                    </div>
+                                )}
+
+                                {/* Export Controls */}
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                        <Checkbox
+                                            checked={selectedStatements.size === statements.length && statements.length > 0}
+                                            onCheckedChange={(checked) => {
+                                                if (checked) {
+                                                    setSelectedStatements(new Set(statements.map(s => s.id)));
+                                                } else {
+                                                    setSelectedStatements(new Set());
+                                                }
+                                            }}
+                                        />
+                                        <span className="text-sm text-gray-600">
+                                            {selectedStatements.size} of {statements.length} selected
+                                        </span>
+                                    </div>
+
+                                    <div className="flex items-center gap-2">
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => setSelectedStatements(new Set(statements.map(s => s.id)))}
+                                            disabled={statements.length === 0}
+                                        >
+                                            Select All
+                                        </Button>
+
+                                        <DropdownMenu>
+                                            <DropdownMenuTrigger asChild>
+                                                <Button
+                                                    variant="default"
+                                                    disabled={selectedStatements.size === 0}
+                                                    className="flex items-center gap-2"
+                                                >
+                                                    <Download className="h-4 w-4" />
+                                                    Export ({selectedStatements.size})
+                                                </Button>
+                                            </DropdownMenuTrigger>
+                                            <DropdownMenuContent align="end" className="w-64">
+                                                <div className="p-3 space-y-3">
+                                                    <div className="flex items-center space-x-2">
+                                                        <Checkbox
+                                                            id="autoZip"
+                                                            checked={exportOptions.autoZip}
+                                                            onCheckedChange={(checked) =>
+                                                                setExportOptions(prev => ({ ...prev, autoZip: checked as boolean }))
+                                                            }
+                                                        />
+                                                        <Label htmlFor="autoZip" className="text-sm">Auto ZIP files</Label>
+                                                    </div>
+
+                                                    {/* <div className="flex items-center space-x-2">
+                                                        <Checkbox
+                                                            id="renameFiles"
+                                                            checked={exportOptions.renameFiles}
+                                                            onCheckedChange={(checked) =>
+                                                                setExportOptions(prev => ({ ...prev, renameFiles: checked as boolean }))
+                                                            }
+                                                        />
+                                                        <Label htmlFor="renameFiles" className="text-sm">Rename files</Label>
+                                                    </div> */}
+
+                                                    <div className="flex items-center space-x-2">
+                                                        <Checkbox
+                                                            id="includePassword"
+                                                            checked={exportOptions.includePassword}
+                                                            onCheckedChange={(checked) =>
+                                                                setExportOptions(prev => ({ ...prev, includePassword: checked as boolean }))
+                                                            }
+                                                        />
+                                                        <Label htmlFor="includePassword" className="text-sm">Include passwords in filename</Label>
+                                                    </div>
+
+                                                    <DropdownMenuSeparator />
+
+                                                    <Button
+                                                        className="w-full"
+                                                        size="sm"
+                                                        onClick={() => handleBulkExport()}
+                                                    >
+                                                        <Package className="h-4 w-4 mr-2" />
+                                                        Download ZIP
+                                                    </Button>
+
+                                                    <Button
+                                                        variant="outline"
+                                                        className="w-full"
+                                                        size="sm"
+                                                        onClick={() => handleIndividualExport()}
+                                                    >
+                                                        <FileDown className="h-4 w-4 mr-2" />
+                                                        Download Individual
+                                                    </Button>
+                                                </div>
+                                            </DropdownMenuContent>
+                                        </DropdownMenu>
                                     </div>
                                 </div>
                             </div>
@@ -799,8 +990,6 @@ useEffect(() => {
                         <div className="flex-1 overflow-hidden p-4">
                             {selectedBank ? (
                                 <div className="h-full flex flex-col space-y-4">
-
-
                                     {/* Statement Type Tabs */}
                                     <div className="flex-1 overflow-hidden">
                                         <Tabs value={activeStatementTab} onValueChange={setActiveStatementTab} className="h-full flex flex-col">
@@ -828,6 +1017,26 @@ useEffect(() => {
                                                             <Table>
                                                                 <TableHeader className="sticky top-0 bg-background z-10">
                                                                     <TableRow>
+                                                                        <TableHead className="w-8">
+                                                                            <Checkbox
+                                                                                checked={
+                                                                                    statements.filter(s => s.statement_type === 'monthly').length > 0 &&
+                                                                                    statements.filter(s => s.statement_type === 'monthly').every(s => selectedStatements.has(s.id))
+                                                                                }
+                                                                                onCheckedChange={(checked) => {
+                                                                                    const monthlyStatements = statements.filter(s => s.statement_type === 'monthly');
+                                                                                    if (checked) {
+                                                                                        setSelectedStatements(prev => new Set([...prev, ...monthlyStatements.map(s => s.id)]));
+                                                                                    } else {
+                                                                                        setSelectedStatements(prev => {
+                                                                                            const newSet = new Set(prev);
+                                                                                            monthlyStatements.forEach(s => newSet.delete(s.id));
+                                                                                            return newSet;
+                                                                                        });
+                                                                                    }
+                                                                                }}
+                                                                            />
+                                                                        </TableHead>
                                                                         <TableHead className="min-w-[120px]">Month</TableHead>
                                                                         <TableHead className="min-w-[150px]">Statement Period</TableHead>
                                                                         <TableHead className="min-w-[120px]">Opening Balance</TableHead>
@@ -845,6 +1054,24 @@ useEffect(() => {
 
                                                                         return (
                                                                             <TableRow key={key}>
+                                                                                <TableCell>
+                                                                                    {statement && (
+                                                                                        <Checkbox
+                                                                                            checked={selectedStatements.has(statement.id)}
+                                                                                            onCheckedChange={(checked) => {
+                                                                                                if (checked) {
+                                                                                                    setSelectedStatements(prev => new Set([...prev, statement.id]));
+                                                                                                } else {
+                                                                                                    setSelectedStatements(prev => {
+                                                                                                        const newSet = new Set(prev);
+                                                                                                        newSet.delete(statement.id);
+                                                                                                        return newSet;
+                                                                                                    });
+                                                                                                }
+                                                                                            }}
+                                                                                        />
+                                                                                    )}
+                                                                                </TableCell>
                                                                                 <TableCell className="font-medium">
                                                                                     <div className="flex items-center gap-2">
                                                                                         <span className="text-xs text-gray-500 w-6 font-mono">{monthNumber.toString().padStart(2, '0')}.</span>
@@ -936,6 +1163,26 @@ useEffect(() => {
                                                             <Table>
                                                                 <TableHeader className="sticky top-0 bg-background z-10">
                                                                     <TableRow>
+                                                                        <TableHead className="w-8">
+                                                                            <Checkbox
+                                                                                checked={
+                                                                                    statements.filter(s => s.statement_type === 'range').length > 0 &&
+                                                                                    statements.filter(s => s.statement_type === 'range').every(s => selectedStatements.has(s.id))
+                                                                                }
+                                                                                onCheckedChange={(checked) => {
+                                                                                    const rangeStatements = statements.filter(s => s.statement_type === 'range');
+                                                                                    if (checked) {
+                                                                                        setSelectedStatements(prev => new Set([...prev, ...rangeStatements.map(s => s.id)]));
+                                                                                    } else {
+                                                                                        setSelectedStatements(prev => {
+                                                                                            const newSet = new Set(prev);
+                                                                                            rangeStatements.forEach(s => newSet.delete(s.id));
+                                                                                            return newSet;
+                                                                                        });
+                                                                                    }
+                                                                                }}
+                                                                            />
+                                                                        </TableHead>
                                                                         <TableHead className="min-w-[120px]">Month</TableHead>
                                                                         <TableHead className="min-w-[150px]">Statement Period</TableHead>
                                                                         <TableHead className="min-w-[100px]">Status</TableHead>
@@ -951,6 +1198,24 @@ useEffect(() => {
 
                                                                         return (
                                                                             <TableRow key={key}>
+                                                                                <TableCell>
+                                                                                    {statement && (
+                                                                                        <Checkbox
+                                                                                            checked={selectedStatements.has(statement.id)}
+                                                                                            onCheckedChange={(checked) => {
+                                                                                                if (checked) {
+                                                                                                    setSelectedStatements(prev => new Set([...prev, statement.id]));
+                                                                                                } else {
+                                                                                                    setSelectedStatements(prev => {
+                                                                                                        const newSet = new Set(prev);
+                                                                                                        newSet.delete(statement.id);
+                                                                                                        return newSet;
+                                                                                                    });
+                                                                                                }
+                                                                                            }}
+                                                                                        />
+                                                                                    )}
+                                                                                </TableCell>
                                                                                 <TableCell className="font-medium">
                                                                                     <div className="flex items-center gap-2">
                                                                                         <span className="text-xs text-gray-500 w-6 font-mono">{monthNumber.toString().padStart(2, '0')}.</span>
@@ -1008,7 +1273,6 @@ useEffect(() => {
                                                                                             </Button>
                                                                                         )}
 
-                                                                                        {/* Add monthly statement if range exists but monthly doesn't */}
                                                                                         {statement && !hasStatementType(month, year, 'monthly') && (
                                                                                             <Button
                                                                                                 variant="ghost"
@@ -1032,7 +1296,7 @@ useEffect(() => {
                                                 </Card>
                                             </TabsContent>
 
-                                            {/* Combined Tab - NEW ENHANCED VIEW */}
+                                            {/* Combined Tab */}
                                             <TabsContent value="combined" className="flex-1 overflow-hidden mt-2">
                                                 <Card className="h-full flex flex-col">
                                                     <CardHeader className="flex-shrink-0">
@@ -1070,6 +1334,41 @@ useEffect(() => {
                                                             <Table>
                                                                 <TableHeader className="sticky top-0 bg-background z-10">
                                                                     <TableRow>
+                                                                        <TableHead className="w-8">
+                                                                            <Checkbox
+                                                                                checked={
+                                                                                    filteredCombinedData.length > 0 &&
+                                                                                    filteredCombinedData.every(data =>
+                                                                                        (data.monthlyStatement && selectedStatements.has(data.monthlyStatement.id)) ||
+                                                                                        (data.rangeStatement && selectedStatements.has(data.rangeStatement.id)) ||
+                                                                                        (!data.monthlyStatement && !data.rangeStatement)
+                                                                                    )
+                                                                                }
+                                                                                onCheckedChange={(checked) => {
+                                                                                    if (checked) {
+                                                                                        const allStatementIds = filteredCombinedData.flatMap(data => {
+                                                                                            const ids = [];
+                                                                                            if (data.monthlyStatement) ids.push(data.monthlyStatement.id);
+                                                                                            if (data.rangeStatement) ids.push(data.rangeStatement.id);
+                                                                                            return ids;
+                                                                                        });
+                                                                                        setSelectedStatements(prev => new Set([...prev, ...allStatementIds]));
+                                                                                    } else {
+                                                                                        const allStatementIds = filteredCombinedData.flatMap(data => {
+                                                                                            const ids = [];
+                                                                                            if (data.monthlyStatement) ids.push(data.monthlyStatement.id);
+                                                                                            if (data.rangeStatement) ids.push(data.rangeStatement.id);
+                                                                                            return ids;
+                                                                                        });
+                                                                                        setSelectedStatements(prev => {
+                                                                                            const newSet = new Set(prev);
+                                                                                            allStatementIds.forEach(id => newSet.delete(id));
+                                                                                            return newSet;
+                                                                                        });
+                                                                                    }
+                                                                                }}
+                                                                            />
+                                                                        </TableHead>
                                                                         <TableHead className="min-w-[120px]">
                                                                             <Button
                                                                                 variant="ghost"
@@ -1145,6 +1444,45 @@ useEffect(() => {
                                                                                     data.status === 'partial' ? 'bg-yellow-50' :
                                                                                         'bg-green-50'
                                                                         }>
+                                                                            <TableCell>
+                                                                                <div className="flex items-center gap-1">
+                                                                                    {data.monthlyStatement && (
+                                                                                        <Checkbox
+                                                                                            checked={selectedStatements.has(data.monthlyStatement.id)}
+                                                                                            onCheckedChange={(checked) => {
+                                                                                                if (checked) {
+                                                                                                    setSelectedStatements(prev => new Set([...prev, data.monthlyStatement!.id]));
+                                                                                                } else {
+                                                                                                    setSelectedStatements(prev => {
+                                                                                                        const newSet = new Set(prev);
+                                                                                                        newSet.delete(data.monthlyStatement!.id);
+                                                                                                        return newSet;
+                                                                                                    });
+                                                                                                }
+                                                                                            }}
+                                                                                            className="mr-1"
+                                                                                            title="Monthly Statement"
+                                                                                        />
+                                                                                    )}
+                                                                                    {data.rangeStatement && (
+                                                                                        <Checkbox
+                                                                                            checked={selectedStatements.has(data.rangeStatement.id)}
+                                                                                            onCheckedChange={(checked) => {
+                                                                                                if (checked) {
+                                                                                                    setSelectedStatements(prev => new Set([...prev, data.rangeStatement!.id]));
+                                                                                                } else {
+                                                                                                    setSelectedStatements(prev => {
+                                                                                                        const newSet = new Set(prev);
+                                                                                                        newSet.delete(data.rangeStatement!.id);
+                                                                                                        return newSet;
+                                                                                                    });
+                                                                                                }
+                                                                                            }}
+                                                                                            title="Range Statement"
+                                                                                        />
+                                                                                    )}
+                                                                                </div>
+                                                                            </TableCell>
                                                                             <TableCell className="font-medium">
                                                                                 <div className="flex items-center gap-2">
                                                                                     <span className="text-xs text-gray-500 w-6 font-mono">{data.monthNumber.toString().padStart(2, '0')}.</span>
